@@ -1,0 +1,180 @@
+Preserve all existing work. Do not remove or break the current Opportunities portal, current Tahoe/Liquid Glass styling direction, current settings page, or current routing unless explicitly required for this upgrade.
+
+I need a strategic upgrade of this project into a multi-source intelligence platform.
+
+CRITICAL RULES
+- Do not use mock data, fake records, placeholder opportunities, simulated API responses, or invented integrations.
+- If an API/source cannot be fully connected yet because credentials, docs, account access, or exact endpoints are missing, build the real integration architecture and show a clear “not configured yet” state.
+- Do not guess private or undocumented API details.
+- Keep the app production-oriented and maintainable.
+- Strongly preserve and enhance the macOS Tahoe / Liquid Glass aesthetic throughout the interface.
+
+PRIMARY OBJECTIVE
+Upgrade the current Opportunities system so it can support and manage multiple intelligence/data sources from one app.
+
+SOURCES TO SUPPORT
+1. SAM.gov
+2. Gemini API
+3. Serper API
+4. Tavily API
+5. Tango API
+6. BidNet
+
+IMPORTANT SOURCE HANDLING
+- SAM.gov should remain the primary live contracting/opportunity source.
+- Gemini, Serper, Tavily, Tango, and BidNet should be integrated through a modular provider architecture.
+- If exact BidNet or Tango programmatic access details are not confirmed in code/docs, do not invent them. Instead:
+  - create provider stubs/adapters
+  - create config placeholders
+  - create clear status messaging in the UI
+  - explain exactly what credentials, endpoints, or account details are needed later
+
+ARCHITECTURE REQUIREMENTS
+Create a clean modular source-provider system with:
+- a shared provider interface
+- one adapter/service per source
+- central config/environment management
+- a unified fetch/search pipeline
+- normalized mapping into the app’s internal opportunity/intelligence schema
+- strong error handling per provider
+- provider status reporting in Settings
+
+Create or update a structure like:
+- src/lib/providers/
+  - samGov.ts
+  - gemini.ts
+  - serper.ts
+  - tavily.ts
+  - tango.ts
+  - bidnet.ts
+  - types.ts
+  - index.ts
+- src/lib/config/
+  - env.ts
+  - providerConfig.ts
+- src/lib/search/
+  - unifiedSearch.ts
+  - scoring.ts
+  - normalization.ts
+
+ENVIRONMENT / CONFIG
+Support these environment variables and wire them into the app:
+
+- SAM_GOV_API_KEY
+- SAM_GOV_BASE_URL
+- GEMINI_API_KEY
+- SERPER_API_KEY
+- TAVILY_API_KEY
+- TANGO_API_KEY
+- BIDNET_API_KEY
+- BIDNET_BASE_URL
+
+If some are not needed yet, still prepare the architecture so they can be added later.
+
+SETTINGS PAGE UPGRADES
+Upgrade the Settings page into a true Integrations / Data Sources control center.
+
+For each provider, show:
+- provider name
+- configured / not configured status
+- required credentials
+- base URL or endpoint field if applicable
+- whether the integration is live, partially configured, or awaiting more details
+- last sync / last attempt if available
+- friendly error state if credentials are missing or invalid
+
+Add a section called:
+“Data Source Integrations”
+
+Within it create cards/panels for:
+- SAM.gov
+- Gemini
+- Serper
+- Tavily
+- Tango
+- BidNet
+
+Each card should:
+- visually match the Tahoe / Liquid Glass system
+- use frosted translucent surfaces
+- have elegant, restrained Apple-like polish
+- include status indicators
+- include exactly what is needed to activate that provider
+
+UNIFIED SEARCH / INTELLIGENCE LOGIC
+Add a unified intelligence/search layer that can combine data from multiple providers where appropriate.
+
+Design it so:
+- SAM.gov provides primary live opportunity records
+- Gemini can be used for summarization, classification, tagging, or fit analysis once configured
+- Serper can support web search enrichment
+- Tavily can support research / web intelligence enrichment
+- Tango can support additional procurement/intelligence sourcing if configured
+- BidNet can support opportunity sourcing if configured
+
+If some providers cannot yet be fully activated, still prepare the workflow and UI states cleanly.
+
+OPPORTUNITY ENRICHMENT
+Design the app so an opportunity can later be enriched with:
+- AI summary
+- relevance/fit explanation
+- extracted key signals
+- source provenance
+- tags / categories
+- recommended next action
+
+Do not fabricate enrichment results without live configuration.
+
+UI / DESIGN REQUIREMENTS
+This is very important:
+Preserve and strengthen the macOS Tahoe / Liquid Glass aesthetic.
+
+The interface must strongly emphasize:
+- translucent frosted panels
+- subtle background blur
+- layered depth
+- refined sidebar glass
+- elegant toolbar glass
+- restrained blue / indigo / silver palette
+- soft luminous gradients behind the glass
+- premium native-feeling spacing and alignment
+- no generic admin template look
+- no chunky pastel pills
+- no flat ugly utility panels
+
+Specifically improve:
+- sidebar elegance
+- settings/integrations card design
+- provider status cards
+- toolbar/search controls
+- empty states
+- overall glass realism and polish
+
+The glass effect should feel intentional and visible, not barely there.
+It should look like a premium internal Mac app, not generic web glassmorphism.
+
+HOME / SUITE STRUCTURE
+If possible without breaking current routing, introduce a top-level concept of an intelligence suite:
+- Home / Suite page
+- Opportunities
+- Integrations / Settings
+- future modules can be added later
+
+If this is too much for one pass, prioritize integrations architecture and settings page first.
+
+DELIVERABLES
+Implement as much real architecture as possible in this single pass.
+At the end:
+1. summarize exactly what was added
+2. list which providers are fully wired vs partially prepared
+3. list exactly what credentials / endpoints / account info I still need to provide
+4. do not claim a provider is live unless it is truly wired
+5. keep the app runnable
+
+Again:
+- preserve existing project work
+- no fake data
+- no invented integrations
+- strong Liquid Glass / Tahoe styling
+- modular provider architecture
+- central integrations settings page

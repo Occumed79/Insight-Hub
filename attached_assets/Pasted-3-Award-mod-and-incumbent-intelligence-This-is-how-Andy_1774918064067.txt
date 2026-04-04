@@ -1,0 +1,203 @@
+3. Award, mod, and incumbent intelligence
+
+This is how Andy figures out who already owns the space and whether contracts are growing, extending, or wobbling.
+
+Use:
+
+USAspending API
+USAspending recipient profiles
+SAM reporting/search views for contract data
+
+USAspending exposes public spending data through an API, does not currently require authorization for endpoints, and has recipient profiles showing award trends and rankings.
+
+What to capture:
+
+award amount
+base + option structure if visible
+modifications
+obligation trend
+recipient / incumbent
+awarding office
+linked competitors
+location footprint
+
+This is one of the strongest pieces for Andy because it helps answer:
+
+Who is the incumbent?
+Are they expanding?
+Are they on short bridges?
+Are they getting lots of mods instead of clean recompetes?
+Which primes keep showing up around the same agencies?
+4. Oversight / failure / pain-point intelligence
+
+This is probably the most underrated category.
+
+Use:
+
+Oversight.gov
+open recommendations on Oversight.gov
+GAO recent reports and testimonies
+agency OIG report pages, especially DHS OIG and DoD OIG
+
+Oversight.gov lets you search reports and open recommendations across the IG community. GAO has a continuously updated reports feed.
+
+This is where Andy can learn:
+
+which agencies are struggling operationally
+where contractor oversight is weak
+where staffing, compliance, or medical support failures are being documented
+where Congress or IGs are applying pressure
+
+What to capture:
+
+agency
+component
+report type
+report date
+finding theme
+open recommendation count
+contractor named
+operational risk theme such as staffing, medical care, readiness, contracting delays, data failures, oversight breakdowns
+
+This is the kind of intelligence that turns into “here is the pain they need solved,” which is much more useful than generic headlines.
+
+5. Budget and funding intelligence
+
+Andy also needs to know where agencies are likely to have money, lose money, or re-prioritize.
+
+Use:
+
+OMB Budget Appendix
+agency Congressional Budget Justifications for DHS, State, OPM, HHS, DoD, DOJ, etc.
+GovInfo’s federal budget collection
+
+OMB’s FY 2026 Budget Appendix and agency CBJs are public and detail what agencies say they want funded. DHS, State, OPM, and DoD all publish FY 2026 budget materials.
+
+What to capture:
+
+program / bureau
+requested funding change
+FTE change
+modernization or mission priority
+language around health, readiness, detention, travel, workforce, security, or contractor support
+
+This helps Andy connect the dots between:
+budget priority -> operational push -> future contracting demand.
+
+6. Congressional and policy pressure intelligence
+
+Sometimes a contract opportunity is driven less by normal procurement flow and more by hearings, reports, legislation, or political pressure.
+
+Use:
+
+Congress.gov API
+GovInfo collections for hearings, reports, and budget documents
+Federal Register public inspection and published documents
+
+Congress.gov offers a public API, and GovInfo provides congressional materials and an API for programmatic access to content and metadata. Federal Register’s public inspection page previews documents before publication.
+
+What to capture:
+
+hearing title
+committee
+agency mentioned
+contractor/mission mentioned
+whether it signals reform, pressure, funding change, or investigation
+
+For Andy, this is useful because congressional heat often precedes:
+
+new compliance demands
+emergency procurements
+reorganizations
+oversight-heavy recompetes.
+7. Protest and litigation intelligence
+
+This is critical for capture strategy.
+
+Use:
+
+GAO recent bid protest decisions
+GAO bid protest dockets
+Court of Federal Claims public opinions when relevant
+Acquisition.gov deviations / FAR overhaul pages for rule changes affecting evaluation or procurement structure
+
+GAO publishes recent protest decisions and docket pages with filing dates, due dates, agencies, and outcomes. Acquisition.gov is also where class deviations and current FAR-overhaul deviation material are being posted.
+
+What to capture:
+
+agency
+solicitation number
+protester
+incumbent if identifiable
+grounds
+outcome
+whether procurement was delayed, canceled, restructured, or corrected
+
+This tells Andy:
+
+who is fighting for what
+which agencies keep getting protested
+whether a requirement is unstable
+whether there may be a re-opened capture window.
+8. Workforce and organizational stress intelligence
+
+This is a very good proxy for future outsourced demand.
+
+Use:
+
+USAJOBS Developer feeds/APIs
+OPM developer/open-data resources
+GAO workforce reports
+agency pressrooms for leadership changes and organizational announcements
+
+USAJOBS provides search APIs, historic JOAs, RSS feeds, and exports. OPM’s developer page points to USAJOBS open data. GAO is also publishing workforce-related reports, including updates tied to OPM workforce data.
+
+What to capture:
+
+repeated openings by office
+hiring surges
+location clusters
+mission-critical occupations
+vacancy age
+leadership changes
+
+If an agency keeps posting around occupational health, readiness, medical support, industrial hygiene, compliance, or program management, that can be a leading indicator of capacity issues or expansion.
+
+9. Travel, deployment, and medical-operational intelligence
+
+This is especially relevant to Occu-Med’s world.
+
+Use:
+
+CDC Travel Health Notices
+CDC travel RSS feeds
+State Department Travel Advisories
+FAA Guide for Aviation Medical Examiners
+FMCSA medical program / NRII transition materials
+
+CDC publishes travel health notices and RSS feeds; State publishes advisories and travel alert channels; FAA posts a regular AME Guide update schedule; FMCSA has published NRII-related medical certification updates and temporary waivers.
+
+This matters because it can warn Andy about:
+
+deployment friction
+country risk changes
+medical clearance or certification workflow changes
+demand for travel-related exams, vaccination planning, or screening readiness.
+The highest-priority agencies to watch first
+
+For Occu-Med, I would not track everything equally. I’d prioritize:
+
+DoD
+State
+DHS
+CBP
+ICE
+USCIS
+DOJ / BOP
+HHS
+OPM
+DOL / OSHA
+FMCSA
+FAA
+
+That gives you the strongest overlap with procurement, federal contractor support, screening standards, travel/deployment issues, detention/border medical activity, and workforce pressure.

@@ -1,0 +1,84 @@
+We used Replit as an AI app builder to get you past the blank-screen / low-code-builder nonsense from Retool.
+
+Instead of manually wiring components, we had Replit generate the foundation of the project for you.
+
+What Replit successfully created
+1. A real project scaffold
+
+Replit built an actual app codebase instead of just a visual mockup.
+
+From the zip, this turned into a React/Vite-style project with real pages and styling files.
+
+2. The first portal screen
+
+It created the Opportunity Intelligence Portal screen with:
+
+a left sidebar
+an Opportunities dashboard
+search/filter area
+import CSV option
+settings area
+an empty state instead of fake records
+
+This was important because you specifically did not want mock data.
+
+3. A SAM.gov integration path
+
+Replit then claimed to wire the project toward the real SAM.gov opportunities API, including:
+
+a service for SAM.gov fetching
+field mapping into your app structure
+settings/configuration for API credentials
+error handling for missing/invalid API keys
+deduplication/update logic for repeated fetches
+
+In other words, it tried to make the app ready for real live data, not fake demo rows.
+
+4. A settings-driven setup flow
+
+It added the idea that the portal should work like this:
+
+no data appears until a real source is configured
+you add the SAM.gov API key in Settings
+then fetch real opportunities
+or use CSV import if you want a manual fallback
+
+That was actually a good architectural choice.
+
+5. A first pass at the visual redesign
+
+After the structure existed, we used more Replit actions to push the design toward a macOS Tahoe / Liquid Glass look.
+
+That changed the interface from a generic admin template into something more like:
+
+translucent panels
+blurred glass surfaces
+soft purple/blue gradient background
+lighter, more premium feeling UI
+
+It is not fully where you want it yet, but the design direction was already shifting.
+
+What Replit did not finish
+1. It did not create the new home page
+
+You wanted a top-level home page with three destinations:
+
+Opportunity Intelligence Portal
+Provider Network Intelligence
+Exam Operations Intelligence
+
+That part did not get built because you ran out of free usage.
+
+2. The design is still incomplete
+
+Even after the Tahoe-style pass, the portal is still not fully polished.
+
+The current problems are things like:
+
+the empty-state area is still too dominant
+the layout still feels a little template-y
+the glass look is there, but not fully refined
+the route structure is still portal-first, not suite-first
+3. We have not verified the live data flow end-to-end
+
+Replit says the SAM.gov integration is wired, but we have not personally proven all of it yet by running a successful real fetch and validating the results field-by-field.

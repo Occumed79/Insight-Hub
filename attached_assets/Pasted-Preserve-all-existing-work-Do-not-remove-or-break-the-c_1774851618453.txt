@@ -1,0 +1,222 @@
+Preserve all existing work. Do not remove or break the current home page, opportunities portal, settings page, SAM.gov work, or current Tahoe / Liquid Glass styling direction.
+
+This is the final structural pass. Prioritize architecture, routing, search-source strategy, and data model completeness over decorative polish.
+
+OBJECTIVE
+Push this project to a near-finish state so it can be taken over manually afterward with minimal work.
+
+PART 1 — HOME / ROUTING / INFORMATION ARCHITECTURE
+
+Update the home page and routing so the app becomes a real multi-portal intelligence suite.
+
+1. Change the home screen title to:
+   "Occu-Med Insight Hub"
+
+2. Update the subtitle so it feels like a premium strategic intelligence suite for Occu-Med.
+
+3. The 3 main portal areas must be:
+   - Opportunity Intelligence Portal
+   - Client Intelligence
+   - Competitor Intelligence
+
+4. Replace the two future portal concepts with these exact portals:
+
+   A. Client Intelligence
+   Subtitle: "Track client profiles, needs, patterns, priorities, decision-makers, and strategic insights."
+
+   B. Competitor Intelligence
+   Subtitle: "Monitor competitors, capabilities, contract activity, positioning, and market threats."
+
+5. Create real route/page shells for all 3 portals:
+   - /portal/opportunities
+   - /portal/clients
+   - /portal/competitors
+
+6. Make the Client Intelligence and Competitor Intelligence cards clickable and route to their own real page shells.
+   These new pages should be elegant empty-state shells only.
+   Do not add mock data, fake charts, fake clients, or fake competitor content.
+
+7. Update sidebar/navigation so it reflects:
+   - Home
+   - Opportunities
+   - Clients
+   - Competitors
+   - Settings / Integrations
+
+8. Keep the current opportunities portal intact and working, but upgrade it into a true multi-source opportunity intelligence portal.
+
+PART 2 — OPPORTUNITY PORTAL MUST BE MULTI-SOURCE
+
+This is extremely important:
+The Opportunities portal must NOT feel like a SAM.gov-only fetch page.
+
+It should become a unified multi-source opportunity intelligence portal where multiple sources can be searched, configured, and surfaced.
+
+The Opportunities portal must support:
+- fetching/searching opportunities from SAM.gov
+- future fetching/searching opportunities from BidNet and Tango if configured
+- web-intelligence-assisted opportunity discovery using Serper, Tavily, and Gemini workflows where appropriate
+
+Clarification on source roles:
+- SAM.gov = direct opportunity source
+- BidNet = direct opportunity source if configured
+- Tango = direct opportunity source if configured
+- Serper = intelligent web search to discover relevant RFPs/opportunities across the web
+- Tavily = intelligent web/research search to discover and investigate RFPs/opportunities across the web
+- Gemini = can assist with highly intelligent query generation, source discovery strategy, result interpretation, relevance assessment, and opportunity research workflows — not just summarization
+
+Do not treat Gemini / Serper / Tavily as simple enrichment-only tools.
+They are part of the opportunity discovery and intelligence process.
+
+Add UI and architecture so the Opportunities portal clearly supports multiple source inputs and search modes.
+
+Examples of what should exist in the Opportunities portal:
+- source selector or source filters
+- search/fetch controls that are not SAM.gov-only
+- clear indication of which providers are active / available
+- ability to display the source of each result
+- empty states that mention all configured sources, not just SAM.gov
+
+PART 3 — MULTI-SOURCE INTEGRATION BACKBONE
+
+I need the app ready for these sources:
+- SAM.gov
+- Gemini API
+- Serper API
+- Tavily API
+- Tango API
+- BidNet
+
+Important rules:
+- Do not invent undocumented API details
+- Do not simulate fake responses
+- If exact connection details are missing, still build the provider architecture, config plumbing, settings UI, and provider status handling
+- Keep the app runnable even if some providers are not yet fully configured
+
+Implement or complete a modular provider architecture with:
+- provider interface/types
+- one provider module per source
+- central provider registry/index
+- env/config handling
+- provider status model
+- normalized opportunity/intelligence schema where relevant
+- graceful “not configured yet” states
+
+Support these environment/config fields where appropriate:
+- SAM_GOV_API_KEY
+- SAM_GOV_BASE_URL
+- GEMINI_API_KEY
+- SERPER_API_KEY
+- TAVILY_API_KEY
+- TANGO_API_KEY
+- BIDNET_API_KEY
+- BIDNET_BASE_URL
+
+SAM.gov should remain the primary fully wired source if already implemented.
+
+Serper / Tavily / Gemini should be architected as opportunity-discovery and intelligence-search providers, not merely post-fetch enrichers.
+
+Tango / BidNet should be prepared as direct-source provider adapters with clear configuration requirements if exact access details are missing.
+
+PART 4 — OPPORTUNITY DATA MODEL / CARD CONTENT / DETAIL VIEW
+
+Expand the normalized opportunity schema and UI so opportunities/cards/detail views can include richer contracting intelligence.
+
+Where available from source data, support:
+- title
+- agency
+- office / subagency
+- posted date
+- due date / response date
+- solicitation number / notice ID
+- notice type
+- set-aside
+- NAICS
+- PSC / classification code
+- place of performance
+- source
+- source URL
+- estimated contract value
+- ceiling value
+- floor value
+- award amount / award value
+- contract type
+- duration / period of performance
+- incumbent if later available
+- summary / description
+- relevance / fit score
+- source confidence / provenance
+- tags
+- notes
+- status
+
+Very important:
+- Do not fabricate contract values or fields that are not present.
+- If a field is unavailable, the schema should support it but the UI should show it gracefully as unavailable.
+- Cards/list rows should surface key high-value fields, not just title and date.
+- Detail views should feel like real intelligence records, not bare notices.
+
+Update the Opportunities portal UI so cards/table rows and detail views visibly include more intelligence, such as:
+- source
+- due date
+- agency
+- set-aside
+- NAICS
+- value if available
+- relevance/fit
+- status
+
+PART 5 — SETTINGS / INTEGRATIONS CONTROL CENTER
+
+Turn Settings into a polished integrations control center.
+
+For each provider card, clearly show:
+- configured / not configured / partial
+- required credentials
+- optional base URL / endpoint if needed
+- short explanation of what the provider is used for
+- whether it is used for:
+  - direct opportunity sourcing
+  - intelligent web discovery
+  - research / analysis
+  - hybrid use
+- any missing information still required
+- strong, readable status messaging
+
+Do not claim a provider is live unless it is truly wired.
+
+Also update any wording that currently makes the Opportunities portal seem SAM.gov-only.
+For example, if the portal says “Fetch SAM.gov” only, generalize the portal language so it reflects the broader multi-source design.
+
+PART 6 — TAHOE / LIQUID GLASS
+
+Preserve and strengthen the macOS Tahoe / Liquid Glass aesthetic.
+
+This is important:
+- maintain visible frosted translucency
+- keep layered glass panels
+- retain polished, premium Mac-like depth
+- keep the home page, sidebar, and integrations/settings area feeling sleek and intentional
+- keep the opportunities portal itself visually premium
+- do not flatten the design into a generic admin template
+- keep readability high
+
+PART 7 — DELIVERY REQUIREMENTS
+
+At the end:
+1. summarize exactly what was changed
+2. list all routes/pages added or updated
+3. list which providers are fully wired vs partially scaffolded
+4. list exactly what credentials / endpoints / account details I still need to provide
+5. list what fields are now supported in the normalized opportunity schema
+6. keep the app runnable
+7. do not add mock data
+
+Again:
+- no fake data
+- no fake clients
+- no fake competitors
+- no fake opportunity records
+- no invented integrations
+- preserve existing work
+- prioritize structural completeness

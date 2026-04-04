@@ -1,0 +1,18 @@
+State procurement and state contract intelligence
+
+For all 50 states, use NASPO’s procurement-by-state directory and official state procurement websites as the source-of-truth entry point. Then index RFPs, RFIs, cooperative contracts, statewide medical/occupational health services buys, correctional health, public employee exams, transportation/driver medical programs, workers’ comp medical services, public safety/POST physicals, and emergency medical staffing procurements.
+
+What to flag:
+
+state contracts mentioning employee health, occupational medicine, pre-employment physicals, drug screens, fit testing, vaccines, public safety medical exams, DOT/CDL medical, corrections medical, mobile medical units, employee wellness, travel medicine
+any contract that could create a new client, a subcontract path, or a competitor foothold
+3) Regulatory / rulemaking / standards intelligence
+
+This module should combine Federal Register, OSHA, EEOC, HHS OCR, FMCSA, and relevant state legislative trackers. FederalRegister.gov offers a public API that does not require API keys and provides access to Federal Register documents; OSHA provides RSS feeds and enforcement/news pages; EEOC publishes guidance on pre-employment medical questions and exams; HHS OCR has an active newsroom with HIPAA enforcement announcements; FMCSA publishes medical certification changes and registry information; NCSL maintains 50-state searchable bill tracking databases.
+
+This is where Andy sees:
+
+federal or state changes that affect what can be asked, what exam stage allows what, privacy/compliance exposure, driver medical rules, state employment screening rules, telehealth changes, or occupational safety obligations. The EEOC’s guidance is especially important because it distinguishes restrictions at the pre-offer, post-offer, and employee stages.
+4) Workforce, layoffs, hiring spikes, and labor-market pressure
+
+This is one of the most underused intel layers. Pull from state WARN notices, DOL WARN contacts, state workforce agencies, USAJOBS, BLS, and OSHA injury/illness data. DOL maintains WARN contacts and state workforce agency links; USAJOBS has a developer API; BLS has a public API that does not require registration; OSHA provides downloadable injury and illness datasets and recently released detailed 2023 case data covering more than 890,000 injuries/illnesses at over 91,000 workplaces.
