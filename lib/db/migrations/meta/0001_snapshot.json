@@ -1,0 +1,68 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "prevId": "6c7d7446-b97f-415a-a8ba-981475e187b7",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.federal_intel_items": {
+      "name": "federal_intel_items",
+      "schema": "",
+      "columns": {
+        "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
+        "bucket": { "name": "bucket", "type": "federal_intel_bucket", "primaryKey": false, "notNull": true },
+        "source_type": { "name": "source_type", "type": "federal_intel_source_type", "primaryKey": false, "notNull": true, "default": "'other'" },
+        "agency": { "name": "agency", "type": "text", "primaryKey": false, "notNull": false },
+        "component": { "name": "component", "type": "text", "primaryKey": false, "notNull": false },
+        "office": { "name": "office", "type": "text", "primaryKey": false, "notNull": false },
+        "region_country": { "name": "region_country", "type": "text", "primaryKey": false, "notNull": false },
+        "title": { "name": "title", "type": "text", "primaryKey": false, "notNull": true },
+        "summary": { "name": "summary", "type": "text", "primaryKey": false, "notNull": false },
+        "date_posted": { "name": "date_posted", "type": "timestamp", "primaryKey": false, "notNull": false },
+        "status": { "name": "status", "type": "text", "primaryKey": false, "notNull": false },
+        "contractor_incumbent": { "name": "contractor_incumbent", "type": "text", "primaryKey": false, "notNull": false },
+        "related_ref": { "name": "related_ref", "type": "text", "primaryKey": false, "notNull": false },
+        "budget_signal": { "name": "budget_signal", "type": "text", "primaryKey": false, "notNull": false },
+        "oversight_signal": { "name": "oversight_signal", "type": "text", "primaryKey": false, "notNull": false },
+        "medical_travel_relevance": { "name": "medical_travel_relevance", "type": "text", "primaryKey": false, "notNull": false },
+        "occu_med_score": { "name": "occu_med_score", "type": "integer", "primaryKey": false, "notNull": false, "default": 0 },
+        "action_tag": { "name": "action_tag", "type": "federal_intel_action_tag", "primaryKey": false, "notNull": false, "default": "'monitor'" },
+        "source_url": { "name": "source_url", "type": "text", "primaryKey": false, "notNull": false },
+        "raw_json": { "name": "raw_json", "type": "text", "primaryKey": false, "notNull": false },
+        "fetched_at": { "name": "fetched_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" },
+        "created_at": { "name": "created_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" },
+        "updated_at": { "name": "updated_at", "type": "timestamp", "primaryKey": false, "notNull": true, "default": "now()" }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "enums": {
+    "public.federal_intel_bucket": {
+      "name": "federal_intel_bucket",
+      "schema": "public",
+      "values": ["forecast", "recompete-watch", "agency-pain", "policy-radar", "incumbent-tracker", "leadership-org", "deployment-medical", "budget-funding", "protest-litigation"]
+    },
+    "public.federal_intel_action_tag": {
+      "name": "federal_intel_action_tag",
+      "schema": "public",
+      "values": ["monitor", "pursue", "brief", "contact", "wait"]
+    },
+    "public.federal_intel_source_type": {
+      "name": "federal_intel_source_type",
+      "schema": "public",
+      "values": ["sam_gov", "usaspending", "oversight_gov", "gao", "oig", "federal_register", "acquisition_gov", "usajobs", "rss_feed", "govinfo", "cdc", "state_dept", "faa", "omb", "other"]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

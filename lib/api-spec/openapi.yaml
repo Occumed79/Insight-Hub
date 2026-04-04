@@ -1,0 +1,539 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 1.0.0
+  description: Occu-Med Insight Hub API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: opportunities
+    description: Opportunity management
+  - name: settings
+    description: Application settings
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /opportunities:
+    get:
+      operationId: listOpportunities
+      tags: [opportunities]
+      summary: List opportunities
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: naicsCode
+          schema:
+            type: string
+        - in: query
+          name: agency
+          schema:
+            type: string
+        - in: query
+          name: source
+          schema:
+            type: string
+            description: Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Paginated opportunities list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunitiesResponse"
+
+  /opportunities/fetch:
+    post:
+      operationId: fetchOpportunities
+      tags: [opportunities]
+      summary: Fetch from one or more configured sources
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords:
+                  type: string
+                dateRange:
+                  type: integer
+                  default: 30
+                providers:
+                  type: array
+                  items:
+                    type: string
+                  description: List of provider names to fetch from. Defaults to all configured providers.
+      responses:
+        "200":
+          description: Fetch result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FetchResult"
+        "400":
+          description: No providers configured or invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /opportunities/import:
+    post:
+      operationId: importOpportunitiesFromCsv
+      tags: [opportunities]
+      summary: Import from CSV
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /opportunities/{id}:
+    get:
+      operationId: getOpportunity
+      tags: [opportunities]
+      summary: Get opportunity by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Opportunity detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteOpportunity
+      tags: [opportunities]
+      summary: Delete an opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /providers:
+    get:
+      operationId: listProviders
+      tags: [settings]
+      summary: Get all provider statuses
+      responses:
+        "200":
+          description: Provider status list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvidersResponse"
+
+  /providers/{name}:
+    put:
+      operationId: updateProvider
+      tags: [settings]
+      summary: Save credentials for a provider
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+      responses:
+        "200":
+          description: Updated provider status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  status:
+                    $ref: "#/components/schemas/ProviderStatus"
+        "404":
+          description: Unknown provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Opportunity:
+      type: object
+      required: [id, title, agency, type, status, postedDate]
+      properties:
+        id:
+          type: string
+        noticeId:
+          type: string
+        title:
+          type: string
+        agency:
+          type: string
+        subAgency:
+          type: string
+        office:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+        naicsCode:
+          type: string
+        naicsDescription:
+          type: string
+        pscCode:
+          type: string
+          description: Product/Service Code or classification code
+        contractType:
+          type: string
+          description: e.g. Fixed-Price, IDIQ, Cost-Plus
+        postedDate:
+          type: string
+          format: date-time
+        responseDeadline:
+          type: string
+          format: date-time
+        periodOfPerformance:
+          type: string
+          description: Duration or period of performance description
+        setAside:
+          type: string
+        placeOfPerformance:
+          type: string
+        description:
+          type: string
+        solicitationNumber:
+          type: string
+        samUrl:
+          type: string
+        # Financial fields
+        estimatedValue:
+          type: number
+          description: Estimated contract value
+        ceilingValue:
+          type: number
+          description: Contract ceiling value
+        floorValue:
+          type: number
+          description: Contract floor value
+        awardAmount:
+          type: number
+        awardee:
+          type: string
+        # Source tracking
+        source:
+          type: string
+          enum: [sam_gov, csv_import, manual]
+        providerName:
+          type: string
+          description: Originating provider identifier (sam_gov, serper, tavily, tango, bidnet, etc.)
+        # Intelligence fields
+        relevanceScore:
+          type: number
+          description: Computed relevance/fit score (0-100)
+        sourceConfidence:
+          type: string
+          enum: [high, medium, low]
+          description: Confidence level of the source data
+        tags:
+          type: string
+          description: JSON array of tags
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OpportunitiesResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Opportunity"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    FetchResult:
+      type: object
+      required: [fetched, created, updated, skipped]
+      properties:
+        fetched:
+          type: integer
+        created:
+          type: integer
+        updated:
+          type: integer
+        skipped:
+          type: integer
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              fetched:
+                type: integer
+              error:
+                type: string
+
+    ImportResult:
+      type: object
+      required: [imported, skipped, errors]
+      properties:
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+
+    Settings:
+      type: object
+      properties:
+        samApiKeyConfigured:
+          type: boolean
+        samApiKeyMasked:
+          type: string
+        defaultKeywords:
+          type: string
+        defaultDateRange:
+          type: integer
+        organizationName:
+          type: string
+
+    SettingsUpdate:
+      type: object
+      properties:
+        samApiKey:
+          type: string
+        defaultKeywords:
+          type: string
+        defaultDateRange:
+          type: integer
+        organizationName:
+          type: string
+
+    ProviderField:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+          enum: [secret, text, url]
+        placeholder:
+          type: string
+        description:
+          type: string
+        dbKey:
+          type: string
+
+    ProviderStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+        healthy:
+          type: boolean
+        errorMessage:
+          type: string
+        recordCount:
+          type: integer
+        lastAttempt:
+          type: string
+          format: date-time
+        lastSuccess:
+          type: string
+          format: date-time
+
+    Provider:
+      type: object
+      required: [name, displayName, description, category, capabilities, requiredFields, optionalFields, status]
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [primary, ai, search, procurement]
+        useCase:
+          type: string
+          enum: [direct_source, web_discovery, research_analysis, hybrid]
+          description: How this provider is used in opportunity intelligence
+        capabilities:
+          type: array
+          items:
+            type: string
+        docsUrl:
+          type: string
+        signupUrl:
+          type: string
+        notes:
+          type: string
+        requiredFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderField"
+        optionalFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderField"
+        status:
+          $ref: "#/components/schemas/ProviderStatus"
+
+    ProvidersResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Provider"
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          type: string
