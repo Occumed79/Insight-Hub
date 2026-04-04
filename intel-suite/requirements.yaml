@@ -1,0 +1,25 @@
+packages:
+  "framer-motion": "For premium page transitions, stagger animations, and fluid glassmorphic hover effects"
+  "date-fns": "For elegant, human-readable date formatting in the opportunities table"
+  "@hookform/resolvers": "Required for react-hook-form Zod validation"
+  "clsx": "For merging tailwind classes in custom components"
+  "tailwind-merge": "For safely merging tailwind classes"
+
+images:
+  - path: "artifacts/intel-suite/public/images/bg-mesh.png"
+    description: "A dark, premium, abstract gradient mesh background featuring deep rich indigo, dark violet, and subtle cyan light leaks. Very soft, out of focus, professional high-end tech aesthetic."
+    aspect_ratio: "16:9"
+  - path: "artifacts/intel-suite/public/images/portal-opps.png"
+    description: "Abstract 3D glassmorphic illustration of interconnected nodes and data visualization in deep blues and purples, representing government opportunity intelligence."
+    aspect_ratio: "16:9"
+  - path: "artifacts/intel-suite/public/images/portal-provider.png"
+    description: "Abstract 3D glassmorphic illustration of a medical cross and network graph in deep purples and teal, representing healthcare provider networks."
+    aspect_ratio: "16:9"
+  - path: "artifacts/intel-suite/public/images/portal-exam.png"
+    description: "Abstract 3D glassmorphic illustration of a shield and checkmarks in deep indigo and magenta, representing exam operations security."
+    aspect_ratio: "16:9"
+
+notes:
+  - Uses @workspace/api-client-react for TanStack Query hooks generated from OpenAPI
+  - App is designed "dark-mode first" with a premium glassmorphic aesthetic
+  - Ensure API runs on /api to match the configured hooks
