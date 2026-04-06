@@ -1,0 +1,18 @@
+run = "pnpm run start:prod"
+entrypoint = "api-server/src/index.ts"
+
+[env]
+PORT = "3000"
+BASE_PATH = "/"
+NODE_ENV = "production"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "pnpm run start:prod"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
