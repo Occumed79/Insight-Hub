@@ -1,5 +1,7 @@
 packages:
   - artifacts/*
+  - api-server
+  - intel-suite
   - lib/*
   - lib/integrations/*
   - scripts

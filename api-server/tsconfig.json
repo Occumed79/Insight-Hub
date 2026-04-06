@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
@@ -8,10 +8,10 @@
   "include": ["src"],
   "references": [
     {
-      "path": "../../lib/db"
+      "path": "../lib/db"
     },
     {
-      "path": "../../lib/api-zod"
+      "path": "../lib/api-zod"
     }
   ]
 }
