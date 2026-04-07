@@ -39,7 +39,7 @@ app.use("/api", router);
 if (process.env["NODE_ENV"] === "production") {
   const frontendDist = path.resolve(__dirname, "../../intel-suite/dist/public");
   app.use(express.static(frontendDist));
-  app.get("*", (_req, res) => {
+  app.get("*path", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
