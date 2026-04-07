@@ -1169,8 +1169,8 @@ export default function ClientsPage() {
       ) : clients.length === 0 ? (
         <div className="glass-panel rounded-3xl border border-white/10 flex flex-col items-center justify-center p-12 text-center flex-1 min-h-[300px]">
           <Building2 className="w-10 h-10 text-primary mb-4" />
-          <p className="text-white font-semibold mb-2">Loading clients...</p>
-          <p className="text-muted-foreground text-sm">The 28 clients will appear shortly.</p>
+          <p className="text-white font-semibold mb-2">No clients yet</p>
+          <p className="text-muted-foreground text-sm">Add your first client to get started.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="glass-panel rounded-2xl p-10 text-center border border-white/5">
