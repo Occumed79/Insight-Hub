@@ -6,6 +6,9 @@ export * from "./tavily";
 export * from "./tango";
 export * from "./bidnet";
 export * from "./statePortals";
+export * from "./firecrawl";
+export * from "./openrouter";
+export * from "./groq";
 
 import { samGovProvider } from "./samGov";
 import { geminiProvider } from "./gemini";
@@ -14,6 +17,9 @@ import { tavilyProvider } from "./tavily";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
 import { statePortalsProvider } from "./statePortals";
+import { firecrawlProvider } from "./firecrawl";
+import { openrouterProvider } from "./openrouter";
+import { groqProvider } from "./groq";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -28,6 +34,9 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   tango: tangoProvider,
   bidnet: bidnetProvider,
   statePortals: statePortalsProvider as unknown as DataSourceProvider,
+  firecrawl: firecrawlProvider,
+  openrouter: openrouterProvider,
+  groq: groqProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {

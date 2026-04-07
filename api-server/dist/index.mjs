@@ -73450,6 +73450,115 @@ var PROVIDER_DEFINITIONS = {
     ],
     status: "live",
     notes: "Requires Serper to be configured. Searches portals via Google site: queries \u2014 results are low-confidence and should be verified on the source portal."
+  },
+  firecrawl: {
+    name: "firecrawl",
+    displayName: "FireCrawl",
+    description: "Deep web scraping that converts any URL into clean markdown. Gives AI providers full page content instead of 2-sentence snippets, dramatically improving extraction accuracy.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at firecrawl.dev",
+        dbKey: "firecrawlApiKey",
+        envKey: "FIRECRAWL_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.firecrawl.dev",
+    signupUrl: "https://firecrawl.dev",
+    capabilities: [
+      "Scrape any URL into clean markdown for AI analysis",
+      "Removes ads, nav, and boilerplate \u2014 main content only",
+      "Built-in web search with full-page results",
+      "Batch scraping up to 5 URLs in parallel"
+    ],
+    status: "partial",
+    notes: "When configured alongside Serper or Tavily, FireCrawl scrapes the full page content of discovered URLs so AI providers extract structured data from complete text rather than snippets."
+  },
+  openrouter: {
+    name: "openrouter",
+    displayName: "OpenRouter",
+    description: "Single API for 100+ AI models including Claude, GPT-4, Mistral, Llama, and Gemma. Use as a flexible AI backend for query generation, extraction, and scoring.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at openrouter.ai",
+        dbKey: "openrouterApiKey",
+        envKey: "OPENROUTER_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "meta-llama/llama-3.1-8b-instruct:free",
+        description: "Any model from openrouter.ai/models \u2014 defaults to Llama 3.1 8B (free tier)",
+        dbKey: "openrouterModel",
+        envKey: "OPENROUTER_MODEL"
+      }
+    ],
+    docsUrl: "https://openrouter.ai/docs",
+    signupUrl: "https://openrouter.ai",
+    capabilities: [
+      "Access to 100+ models via one API key",
+      "Claude, GPT-4, Mistral, Llama, Gemma and more",
+      "Opportunity query generation and extraction",
+      "Relevance scoring and intelligence research",
+      "Free-tier models available at zero cost"
+    ],
+    status: "partial",
+    notes: "Acts as an alternative or complement to Gemini. Configure a free model like meta-llama/llama-3.1-8b-instruct:free to get AI-powered discovery without per-call costs."
+  },
+  groq: {
+    name: "groq",
+    displayName: "Groq",
+    description: "Ultra-fast AI inference for Llama 3, Mixtral, and Gemma models. Ideal for high-volume, latency-sensitive extraction steps in the opportunity discovery pipeline.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at console.groq.com",
+        dbKey: "groqApiKey",
+        envKey: "GROQ_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "llama-3.1-8b-instant",
+        description: "Groq model to use \u2014 defaults to llama-3.1-8b-instant. Options: llama3-70b-8192, mixtral-8x7b-32768, gemma2-9b-it",
+        dbKey: "groqModel",
+        envKey: "GROQ_MODEL"
+      }
+    ],
+    docsUrl: "https://console.groq.com/docs",
+    signupUrl: "https://console.groq.com",
+    capabilities: [
+      "Fastest open-source model inference available",
+      "Llama 3.1, Mixtral 8x7B, Gemma 2 support",
+      "High-volume per-URL extraction at low latency",
+      "Free tier with generous rate limits",
+      "Opportunity query generation and scoring"
+    ],
+    status: "partial",
+    notes: "Groq's speed makes it ideal for bulk extraction \u2014 processing dozens of search results in seconds. Pairs well with FireCrawl for full-page content analysis at scale."
   }
 };
 async function resolveCredential(dbKey, envKey) {
@@ -75169,6 +75278,376 @@ var settings_default = router3;
 // src/routes/providers.ts
 var import_express4 = __toESM(require_express2(), 1);
 
+// src/lib/providers/firecrawl.ts
+var FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
+var FirecrawlProvider = class {
+  name = "firecrawl";
+  async getApiKey() {
+    return resolveCredential("firecrawlApiKey", "FIRECRAWL_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Scrape a single URL and return clean markdown content.
+   * Returns null if the provider is not configured or the scrape fails.
+   */
+  async scrape(url2) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: url2,
+        formats: ["markdown"],
+        onlyMainContent: true,
+        timeout: 2e4
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`FireCrawl scrape error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    if (!json3.success || !json3.data?.markdown) return null;
+    return {
+      url: json3.data.metadata?.sourceURL ?? url2,
+      title: json3.data.metadata?.title ?? "",
+      description: json3.data.metadata?.description ?? "",
+      markdown: json3.data.markdown
+    };
+  }
+  /**
+   * Scrape multiple URLs in parallel (up to 5 concurrent).
+   * Silently skips failed URLs.
+   */
+  async scrapeMany(urls) {
+    const CONCURRENCY = 5;
+    const results = [];
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value) results.push(r.value);
+      }
+    }
+    return results;
+  }
+  /**
+   * Search the web via FireCrawl's built-in search endpoint.
+   */
+  async search(query, limit = 10) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return [];
+    const response = await fetch(`${FIRECRAWL_BASE}/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ query, limit, scrapeOptions: { formats: ["markdown"], onlyMainContent: true } })
+    });
+    if (!response.ok) return [];
+    const json3 = await response.json();
+    if (!json3.success || !json3.data) return [];
+    return json3.data.filter((r) => r.markdown).map((r) => ({
+      url: r.url ?? "",
+      title: r.title ?? "",
+      description: r.description ?? "",
+      markdown: r.markdown ?? ""
+    }));
+  }
+};
+var firecrawlProvider = new FirecrawlProvider();
+
+// src/lib/providers/openrouter.ts
+var OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+var DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
+var OpenRouterProvider = class {
+  name = "openrouter";
+  async getApiKey() {
+    return resolveCredential("openrouterApiKey", "OPENROUTER_API_KEY");
+  }
+  async getModel() {
+    const model = await resolveCredential("openrouterModel", "OPENROUTER_MODEL");
+    return model ?? DEFAULT_MODEL;
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Send a chat completion request to OpenRouter.
+   */
+  async complete(prompt, maxTokens = 512) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("OpenRouter API key not configured.");
+    const model = await this.getModel();
+    const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://occu-med.com",
+        "X-Title": "Occu-Med Insight Hub"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.2
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`OpenRouter error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    return (json3.choices?.[0]?.message?.content ?? "").trim();
+  }
+  /**
+   * Generate targeted search queries for Occu-Med opportunity discovery.
+   * Falls back to OCCUMED_DEFAULT_QUERIES if the call fails.
+   */
+  async generateSearchQueries(customKeywords) {
+    const QUERY_YEAR2 = (/* @__PURE__ */ new Date()).getFullYear();
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.
+
+Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
+They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
+${customKeywords ? `User-specified focus: ${customKeywords}` : ""}
+
+Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs, solicitations, and procurement opportunities that Occu-Med could bid on.
+
+Rules:
+- Each query must be a Google search string
+- Target OPEN/ACTIVE opportunities only \u2014 include year ${QUERY_YEAR2} in each query
+- Mix different Occu-Med service lines across the 8 queries
+- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract, procurement
+
+Respond ONLY with a JSON array of 8 query strings:
+["query1", "query2", ..., "query8"]`;
+    try {
+      const text2 = await this.complete(prompt, 600);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const queries = JSON.parse(cleaned);
+      if (Array.isArray(queries) && queries.length > 0) return queries;
+    } catch {
+    }
+    return OCCUMED_DEFAULT_QUERIES;
+  }
+  /**
+   * Analyze a web result and extract opportunity data.
+   * Returns null if the call fails.
+   */
+  async extractOpportunityFromWebResult(title, url2, content) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const prompt = `You are a procurement intelligence analyst for Occu-Med, an occupational health services company.
+
+Occu-Med's services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
+Today's date: ${today}
+
+Analyze this web result and determine if it is an ACTIVE, OPEN solicitation or RFP that Occu-Med could bid on.
+
+Title: ${title}
+URL: ${url2}
+Content: ${content.slice(0, 2500)}
+
+If this IS an active open opportunity respond ONLY with JSON (no markdown):
+{
+  "isOpportunity": true,
+  "title": "clean opportunity title",
+  "agency": "procuring organization",
+  "description": "what is being procured (2-3 sentences)",
+  "deadline": "YYYY-MM-DD or null",
+  "estimatedValue": number or null,
+  "location": "city/state or null",
+  "relevanceScore": 0-100,
+  "relevanceReason": "one sentence"
+}
+
+If NOT a valid opportunity respond ONLY with:
+{"isOpportunity": false, "reason": "brief reason"}`;
+    try {
+      const text2 = await this.complete(prompt, 512);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Score an opportunity's relevance to Occu-Med (0-100).
+   */
+  async scoreRelevance(opportunityTitle, description, orgContext) {
+    const prompt = `Score the relevance of this opportunity to the organization.
+
+Organization: ${orgContext}
+Opportunity: ${opportunityTitle}
+Description: ${description.slice(0, 2e3)}
+
+Respond ONLY with JSON: {"score": <0-100>, "explanation": "1-2 sentences"}`;
+    try {
+      const text2 = await this.complete(prompt, 256);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+};
+var openrouterProvider = new OpenRouterProvider();
+
+// src/lib/providers/groq.ts
+var GROQ_BASE = "https://api.groq.com/openai/v1";
+var DEFAULT_MODEL2 = "llama-3.1-8b-instant";
+var GroqProvider = class {
+  name = "groq";
+  async getApiKey() {
+    return resolveCredential("groqApiKey", "GROQ_API_KEY");
+  }
+  async getModel() {
+    const model = await resolveCredential("groqModel", "GROQ_MODEL");
+    return model ?? DEFAULT_MODEL2;
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Send a chat completion request to Groq.
+   */
+  async complete(prompt, maxTokens = 512) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("Groq API key not configured.");
+    const model = await this.getModel();
+    const response = await fetch(`${GROQ_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.2
+      })
+    });
+    if (response.status === 429) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(`GROQ_RATE_LIMITED: ${body?.error?.message ?? "Rate limit reached"}`);
+    }
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Groq error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    return (json3.choices?.[0]?.message?.content ?? "").trim();
+  }
+  /**
+   * Generate targeted search queries for Occu-Med opportunity discovery.
+   * Groq's speed makes it well-suited for this batch generation step.
+   * Falls back to OCCUMED_DEFAULT_QUERIES if the call fails.
+   */
+  async generateSearchQueries(customKeywords) {
+    const QUERY_YEAR2 = (/* @__PURE__ */ new Date()).getFullYear();
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.
+
+Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
+They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
+${customKeywords ? `User focus: ${customKeywords}` : ""}
+
+Generate exactly 8 targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR2}.
+
+Rules:
+- Google search strings only (not URLs)
+- Include year ${QUERY_YEAR2} in each query
+- Mix different Occu-Med service lines
+- Use terms: RFP, solicitation, bid, contract, procurement
+
+Respond ONLY with a JSON array: ["query1", ..., "query8"]`;
+    try {
+      const text2 = await this.complete(prompt, 600);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const queries = JSON.parse(cleaned);
+      if (Array.isArray(queries) && queries.length > 0) return queries;
+    } catch {
+    }
+    return OCCUMED_DEFAULT_QUERIES;
+  }
+  /**
+   * Quickly analyze a web result and extract structured opportunity data.
+   * Groq's low latency is ideal for per-URL extraction in bulk pipelines.
+   */
+  async extractOpportunityFromWebResult(title, url2, content) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const prompt = `Procurement analyst for Occu-Med (occupational health services).
+Today: ${today}
+
+Is this an ACTIVE, OPEN solicitation Occu-Med could bid on?
+
+Title: ${title}
+URL: ${url2}
+Content: ${content.slice(0, 2e3)}
+
+If YES, respond with JSON only:
+{"isOpportunity":true,"title":"...","agency":"...","description":"...","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city/state or null","relevanceScore":0-100,"relevanceReason":"..."}
+
+If NO:
+{"isOpportunity":false,"reason":"..."}`;
+    try {
+      const text2 = await this.complete(prompt, 400);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Score opportunity relevance to Occu-Med (0-100).
+   */
+  async scoreRelevance(opportunityTitle, description, orgContext) {
+    const prompt = `Score relevance 0-100.
+Org: ${orgContext}
+Opportunity: ${opportunityTitle}
+Description: ${description.slice(0, 1500)}
+
+JSON only: {"score":<0-100>,"explanation":"1-2 sentences"}`;
+    try {
+      const text2 = await this.complete(prompt, 200);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+};
+var groqProvider = new GroqProvider();
+
 // src/lib/providers/index.ts
 var providerRegistry = {
   samGov: samGovProvider,
@@ -75177,7 +75656,10 @@ var providerRegistry = {
   tavily: tavilyProvider,
   tango: tangoProvider,
   bidnet: bidnetProvider,
-  statePortals: statePortalsProvider
+  statePortals: statePortalsProvider,
+  firecrawl: firecrawlProvider,
+  openrouter: openrouterProvider,
+  groq: groqProvider
 };
 
 // src/routes/providers.ts
