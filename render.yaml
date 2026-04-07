@@ -25,6 +25,16 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: FIRECRAWL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
 
 databases:
   - name: insight-hub-db
