@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals";
+export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -229,6 +229,118 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ],
     status: "live",
     notes: "Requires Serper to be configured. Searches portals via Google site: queries — results are low-confidence and should be verified on the source portal.",
+  },
+
+  firecrawl: {
+    name: "firecrawl",
+    displayName: "FireCrawl",
+    description: "Deep web scraping that converts any URL into clean markdown. Gives AI providers full page content instead of 2-sentence snippets, dramatically improving extraction accuracy.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at firecrawl.dev",
+        dbKey: "firecrawlApiKey",
+        envKey: "FIRECRAWL_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.firecrawl.dev",
+    signupUrl: "https://firecrawl.dev",
+    capabilities: [
+      "Scrape any URL into clean markdown for AI analysis",
+      "Removes ads, nav, and boilerplate — main content only",
+      "Built-in web search with full-page results",
+      "Batch scraping up to 5 URLs in parallel",
+    ],
+    status: "partial",
+    notes: "When configured alongside Serper or Tavily, FireCrawl scrapes the full page content of discovered URLs so AI providers extract structured data from complete text rather than snippets.",
+  },
+
+  openrouter: {
+    name: "openrouter",
+    displayName: "OpenRouter",
+    description: "Single API for 100+ AI models including Claude, GPT-4, Mistral, Llama, and Gemma. Use as a flexible AI backend for query generation, extraction, and scoring.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at openrouter.ai",
+        dbKey: "openrouterApiKey",
+        envKey: "OPENROUTER_API_KEY",
+      },
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "meta-llama/llama-3.1-8b-instruct:free",
+        description: "Any model from openrouter.ai/models — defaults to Llama 3.1 8B (free tier)",
+        dbKey: "openrouterModel",
+        envKey: "OPENROUTER_MODEL",
+      },
+    ],
+    docsUrl: "https://openrouter.ai/docs",
+    signupUrl: "https://openrouter.ai",
+    capabilities: [
+      "Access to 100+ models via one API key",
+      "Claude, GPT-4, Mistral, Llama, Gemma and more",
+      "Opportunity query generation and extraction",
+      "Relevance scoring and intelligence research",
+      "Free-tier models available at zero cost",
+    ],
+    status: "partial",
+    notes: "Acts as an alternative or complement to Gemini. Configure a free model like meta-llama/llama-3.1-8b-instruct:free to get AI-powered discovery without per-call costs.",
+  },
+
+  groq: {
+    name: "groq",
+    displayName: "Groq",
+    description: "Ultra-fast AI inference for Llama 3, Mixtral, and Gemma models. Ideal for high-volume, latency-sensitive extraction steps in the opportunity discovery pipeline.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at console.groq.com",
+        dbKey: "groqApiKey",
+        envKey: "GROQ_API_KEY",
+      },
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "llama-3.1-8b-instant",
+        description: "Groq model to use — defaults to llama-3.1-8b-instant. Options: llama3-70b-8192, mixtral-8x7b-32768, gemma2-9b-it",
+        dbKey: "groqModel",
+        envKey: "GROQ_MODEL",
+      },
+    ],
+    docsUrl: "https://console.groq.com/docs",
+    signupUrl: "https://console.groq.com",
+    capabilities: [
+      "Fastest open-source model inference available",
+      "Llama 3.1, Mixtral 8x7B, Gemma 2 support",
+      "High-volume per-URL extraction at low latency",
+      "Free tier with generous rate limits",
+      "Opportunity query generation and scoring",
+    ],
+    status: "partial",
+    notes: "Groq's speed makes it ideal for bulk extraction — processing dozens of search results in seconds. Pairs well with FireCrawl for full-page content analysis at scale.",
   },
 };
 
