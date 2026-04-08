@@ -1,7 +1,27 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq, ilike, and, or, sql, isNull } from "drizzle-orm";
+import { eq, ilike, and, or, sql, isNull, lt } from "drizzle-orm";
+
+/**
+ * Auto-archive any "active" opportunities whose response deadline has passed.
+ * Runs silently before list/fetch responses so stale data is never shown.
+ */
+async function archiveExpiredOpportunities(): Promise<void> {
+  try {
+    await db
+      .update(opportunitiesTable)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(
+        and(
+          eq(opportunitiesTable.status, "active"),
+          lt(opportunitiesTable.responseDeadline, new Date())
+        )
+      );
+  } catch {
+    // Non-critical — don't fail the request if this errors
+  }
+}
 import { unifiedFetch } from "../lib/search/unifiedSearch";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
@@ -13,6 +33,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 router.get("/opportunities", async (req, res) => {
   try {
+    // Silently archive anything whose deadline has already passed before returning results
+    await archiveExpiredOpportunities();
+
     const { search, status, type, naicsCode, agency, source, page = "1", limit = "50" } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -109,6 +132,9 @@ router.post("/opportunities/fetch", async (req, res) => {
       dateRange,
       providers: resolvedProviders as any,
     });
+
+    // Immediately archive anything that slipped through with a past deadline
+    await archiveExpiredOpportunities();
 
     res.json({
       fetched: result.fetched,

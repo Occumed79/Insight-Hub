@@ -35,6 +35,20 @@ services:
         sync: false
       - key: GROQ_MODEL
         sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: BROWSE_AI_API_KEY
+        sync: false
+      - key: BROWSE_AI_ROBOT_ID
+        sync: false
+      - key: BROWSER_USE_API_KEY
+        sync: false
+      - key: OLOSTEP_API_KEY
+        sync: false
+      - key: CLOD_API_KEY
+        sync: false
+      - key: CLOD_MODEL
+        sync: false
 
 databases:
   - name: insight-hub-db

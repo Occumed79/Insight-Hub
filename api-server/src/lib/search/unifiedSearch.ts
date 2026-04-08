@@ -99,8 +99,8 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     }
   }
 
-  // ── Web Intelligence (Serper + Tavily + Gemini + State Portals) ──────────
-  const webProviders = ["serper", "tavily", "gemini", "statePortals"];
+  // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -108,6 +108,8 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const useTavily = requestedProviders.includes("tavily");
     const useGemini = requestedProviders.includes("gemini");
     const useStatePortals = requestedProviders.includes("statePortals");
+    const useExa = requestedProviders.includes("exa");
+    const useFirecrawl = requestedProviders.includes("firecrawl");
 
     try {
       const webResult = await webIntelligenceFetch({
@@ -116,6 +118,8 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
         useTavily,
         useGemini,
         useStatePortals,
+        useExa,
+        useFirecrawl,
       });
 
       allRecords.push(...webResult.opportunities);

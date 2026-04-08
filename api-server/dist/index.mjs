@@ -73559,6 +73559,173 @@ var PROVIDER_DEFINITIONS = {
     ],
     status: "partial",
     notes: "Groq's speed makes it ideal for bulk extraction \u2014 processing dozens of search results in seconds. Pairs well with FireCrawl for full-page content analysis at scale."
+  },
+  exa: {
+    name: "exa",
+    displayName: "Exa",
+    description: "Neural search engine designed for AI use cases. Understands semantic intent, not just keywords. Supports deep multi-query search with structured output extraction and full-page content.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Available at dashboard.exa.ai",
+        dbKey: "exaApiKey",
+        envKey: "EXA_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.exa.ai",
+    signupUrl: "https://dashboard.exa.ai",
+    capabilities: [
+      "Neural semantic search \u2014 finds relevant results by intent, not keywords",
+      "Deep multi-query search with structured JSON output",
+      "Full-page content retrieval for RAG pipelines",
+      "People, company, news, and research paper category search",
+      "Field-level citations and confidence scores"
+    ],
+    status: "partial",
+    notes: "Best-in-class for finding semantically relevant procurement opportunities. Deep search mode runs multiple query variations and synthesizes results \u2014 ideal for thorough opportunity discovery."
+  },
+  browseAi: {
+    name: "browseAi",
+    displayName: "Browse AI",
+    description: "No-code web scraping via pre-configured robots. Define scraping workflows on the Browse AI dashboard, then trigger them via API to extract structured data from any website.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Full key in userId:apiKey format \u2014 found in Browse AI dashboard",
+        dbKey: "browseAiApiKey",
+        envKey: "BROWSE_AI_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "robotId",
+        label: "Default Robot ID",
+        type: "text",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Robot ID to run by default \u2014 create robots at browse.ai/dashboard",
+        dbKey: "browseAiRobotId",
+        envKey: "BROWSE_AI_ROBOT_ID"
+      }
+    ],
+    docsUrl: "https://docs.browse.ai/docs/api",
+    signupUrl: "https://browse.ai",
+    capabilities: [
+      "Run pre-configured scraping robots via API",
+      "Extract structured data from dynamic/JS-heavy sites",
+      "Capture tables, lists, screenshots, and text",
+      "Schedule recurring scrapes or trigger on demand"
+    ],
+    status: "partial",
+    notes: "Create a robot on the Browse AI dashboard targeting a procurement portal (e.g. BidSync, DemandStar). Set the Robot ID here, then trigger it from research workflows to pull structured opportunity data."
+  },
+  browserUse: {
+    name: "browserUse",
+    displayName: "BrowserUse AI",
+    description: "AI-powered browser automation. Give it a natural-language task and it autonomously navigates, clicks, fills forms, and extracts data from any web application \u2014 bypassing bot protection.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "bu_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at browser-use.com",
+        dbKey: "browserUseApiKey",
+        envKey: "BROWSER_USE_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.browser-use.com",
+    signupUrl: "https://browser-use.com",
+    capabilities: [
+      "Autonomous browser control via natural language instructions",
+      "Handles login flows, pagination, dynamic content",
+      "Bypasses Cloudflare and bot detection with real browser",
+      "Extracts structured data from complex web applications",
+      "Ideal for portals that block API scraping"
+    ],
+    status: "partial",
+    notes: "Best for procurement portals that require authentication or JavaScript interaction. Instruct it to 'navigate to X portal, search for occupational health RFPs, and return titles with deadlines.'"
+  },
+  olostep: {
+    name: "olostep",
+    displayName: "Olostep",
+    description: "Residential-proxy web scraping. Routes requests through real residential IPs to bypass bot detection and Cloudflare on procurement portals. Returns clean markdown for AI analysis.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "olostep_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at olostep.com",
+        dbKey: "olostepApiKey",
+        envKey: "OLOSTEP_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://www.olostep.com/docs",
+    signupUrl: "https://olostep.com",
+    capabilities: [
+      "Residential IP proxies \u2014 bypasses Cloudflare and bot detection",
+      "Returns clean markdown, HTML, or plain text",
+      "Batch scraping up to 5 URLs in parallel",
+      "Handles JavaScript-rendered pages"
+    ],
+    status: "partial",
+    notes: "Ideal complement to FireCrawl \u2014 use Olostep for sites that block conventional scrapers. Residential proxies make requests look like real user traffic."
+  },
+  clod: {
+    name: "clod",
+    displayName: "CL\u014DD AI",
+    description: "OpenAI-compatible AI endpoint for your CL\u014DD project. Provides query generation, opportunity extraction, and relevance scoring via the api.clod.io inference endpoint.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key (JWT)",
+        type: "secret",
+        placeholder: "eyJhbGci...",
+        description: "JWT token from your CL\u014DD project settings",
+        dbKey: "clodApiKey",
+        envKey: "CLOD_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "claude-sonnet-4-5",
+        description: "Model to use via the CL\u014DD endpoint \u2014 defaults to claude-sonnet-4-5",
+        dbKey: "clodModel",
+        envKey: "CLOD_MODEL"
+      }
+    ],
+    docsUrl: "https://api.clod.io/v1",
+    signupUrl: "https://clod.io",
+    capabilities: [
+      "OpenAI-compatible endpoint at api.clod.io",
+      "Opportunity query generation and extraction",
+      "Relevance scoring and intelligence analysis",
+      "Configurable model selection"
+    ],
+    status: "partial",
+    notes: "Uses your CL\u014DD project JWT as the API key. Set endpoint to https://api.clod.io/v1. Functions identically to OpenRouter/Groq \u2014 can run query generation, extraction, and scoring workflows."
   }
 };
 async function resolveCredential(dbKey, envKey) {
@@ -73977,9 +74144,12 @@ Focus on government contracts (federal, state, local) and include both well-know
 
 Rules:
 - Each query must be a Google search string (not a URL)
-- Target OPEN/ACTIVE opportunities only \u2014 include year ${QUERY_YEAR} in each query; never target expired or awarded contracts
+- Include year ${QUERY_YEAR} in every query
+- Append -awarded -"contract award" -"award notice" to EVERY query to exclude closed bids
+- Target procurement portals when possible (site:demandstar.com, site:bidsync.com, site:publicpurchase.com)
+- Use "response due" OR "proposals due" OR "bid due" phrasing to surface active deadlines
 - Mix different Occu-Med service lines across the 8 queries
-- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract, procurement
+- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract
 
 Respond ONLY with a JSON array of 8 query strings with no other text:
 ["query1", "query2", ..., "query8"]`;
@@ -74001,33 +74171,42 @@ Respond ONLY with a JSON array of 8 query strings with no other text:
     const apiKey = await this.getApiKey();
     if (!apiKey) return null;
     const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-    const prompt = `You are a procurement intelligence analyst for Occu-Med, an occupational health services company.
+    const prompt = `You are a strict procurement intelligence analyst for Occu-Med (occupational health services company).
 
-Occu-Med's services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
-Occu-Med's clients: ${OCCUMED_PROFILE.clientTypes.slice(0, 5).join(", ")}.
+Occu-Med services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
 Today's date: ${today}
 
-Analyze this web search result and determine if it is an ACTIVE, OPEN solicitation or RFP that Occu-Med could realistically bid on.
+Analyze this web content. You must determine with HIGH CONFIDENCE whether this is a CURRENTLY OPEN solicitation that Occu-Med could bid on RIGHT NOW.
 
 Title: ${title}
 URL: ${url2}
-Content: ${content.slice(0, 2500)}
+Content: ${content.slice(0, 3e3)}
 
-If this IS an active open opportunity, respond ONLY with this JSON (no markdown):
+HARD REJECTION RULES \u2014 return isOpportunity: false immediately if ANY of these apply:
+1. The content is a news article REPORTING on an RFP, not the actual solicitation posting
+2. The deadline/due date has already passed (compare to today: ${today})
+3. The title or content contains "awarded", "award notice", "contract award", "selected vendor"
+4. The content is a job posting, career page, or employment ad
+5. You cannot find clear evidence the solicitation is currently accepting proposals
+6. The services needed have nothing to do with occupational health, medical exams, drug testing, or employee health
+7. The content is a government regulation, policy, or federal register notice (not a bid)
+8. The deadline year is ${(/* @__PURE__ */ new Date()).getFullYear() - 1} or earlier
+
+If this IS a currently open opportunity respond ONLY with JSON (no markdown, no explanation):
 {
   "isOpportunity": true,
-  "title": "clean opportunity title",
-  "agency": "name of procuring organization",
-  "description": "what health/medical services are being procured (2-3 sentences)",
-  "deadline": "YYYY-MM-DD if response deadline found in text, otherwise null",
-  "estimatedValue": numeric dollar amount if stated, otherwise null,
-  "location": "place of performance city/state if stated, otherwise null",
-  "relevanceScore": integer 0-100 scoring how well this matches Occu-Med services,
-  "relevanceReason": "one sentence explaining the match to Occu-Med"
+  "title": "exact solicitation title",
+  "agency": "procuring organization name",
+  "description": "specific health/medical services being procured (2-3 sentences)",
+  "deadline": "YYYY-MM-DD \u2014 extract exact date from text, or null if not found",
+  "estimatedValue": number or null,
+  "location": "city, state or null",
+  "relevanceScore": 0-100,
+  "relevanceReason": "one sentence on Occu-Med fit"
 }
 
-If NOT a valid opportunity (news article, expired bid, contract award announcement, unrelated services, vague/no procurement intent), respond ONLY with:
-{"isOpportunity": false, "reason": "brief reason"}
+If NOT a valid active opportunity respond ONLY with:
+{"isOpportunity": false, "reason": "specific reason"}
 
 Be precise \u2014 only return isOpportunity: true for real, currently open solicitations.`;
     try {
@@ -74092,7 +74271,7 @@ Respond ONLY with valid JSON:
 var geminiProvider = new GeminiProvider();
 
 // src/lib/providers/serper.ts
-var SERPER_BASE = "https://google.serper.dev/search";
+var SERPER_BASE = "https://google.serper.dev";
 var SerperProvider = class {
   name = "serper";
   async getApiKey() {
@@ -74110,24 +74289,30 @@ var SerperProvider = class {
   }
   /**
    * Execute a single Google search query via Serper.
+   * @param type "search" (default) | "news" — news mode returns recently published articles
+   * @param tbs Time-based search filter: "qdr:w" = past week, "qdr:m" = past month
    */
-  async search(query, num = 10) {
+  async search(query, num = 10, options = {}) {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Serper API key not configured.");
-    const response = await fetch(SERPER_BASE, {
+    const endpoint = options.type === "news" ? "/news" : "/search";
+    const body = { q: query, num };
+    if (options.tbs) body["tbs"] = options.tbs;
+    const response = await fetch(`${SERPER_BASE}${endpoint}`, {
       method: "POST",
       headers: {
         "X-API-KEY": apiKey,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ q: query, num })
+      body: JSON.stringify(body)
     });
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Serper API error ${response.status}: ${body.slice(0, 200)}`);
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Serper API error ${response.status}: ${text2.slice(0, 200)}`);
     }
     const json3 = await response.json();
-    return (json3.organic ?? []).map((r) => ({
+    const items = json3.organic ?? json3.news ?? [];
+    return items.map((r) => ({
       title: r.title ?? "",
       link: r.link ?? "",
       snippet: r.snippet ?? "",
@@ -74478,37 +74663,351 @@ var StatePortalsProvider = class {
 };
 var statePortalsProvider = new StatePortalsProvider();
 
+// src/lib/providers/exa.ts
+var EXA_BASE = "https://api.exa.ai";
+var ExaProvider = class {
+  name = "exa";
+  async getApiKey() {
+    return resolveCredential("exaApiKey", "EXA_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  async request(path2, body) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("Exa API key not configured.");
+    const response = await fetch(`${EXA_BASE}${path2}`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Exa error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Search the web using Exa's neural search. Returns results with highlights.
+   * type: "auto" for most queries, "deep" for thorough research (4-12s).
+   */
+  async search(query, options = {}) {
+    const {
+      numResults = 10,
+      type = "auto",
+      maxHighlightChars = 4e3,
+      startPublishedDate,
+      includeDomains,
+      excludeDomains,
+      category
+    } = options;
+    const body = {
+      query,
+      num_results: numResults,
+      type,
+      contents: { highlights: { max_characters: maxHighlightChars } }
+    };
+    if (startPublishedDate) body["startPublishedDate"] = startPublishedDate;
+    if (includeDomains?.length) body["includeDomains"] = includeDomains;
+    if (excludeDomains?.length) body["excludeDomains"] = excludeDomains;
+    if (category) body["category"] = category;
+    const data = await this.request("/search", body);
+    return data.results ?? [];
+  }
+  /**
+   * Search with full text content (for RAG / deep analysis).
+   */
+  async searchWithContent(query, numResults = 5, maxChars = 1e4) {
+    const body = {
+      query,
+      num_results: numResults,
+      type: "deep",
+      contents: { text: { max_characters: maxChars } }
+    };
+    const data = await this.request("/search", body);
+    return data.results ?? [];
+  }
+  /**
+   * Get full content for known URLs.
+   */
+  async getContents(urls, maxChars = 1e4) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return [];
+    const response = await fetch(`${EXA_BASE}/contents`, {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        urls,
+        text: { max_characters: maxChars }
+      })
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.results ?? [];
+  }
+  /**
+   * Run multiple search queries in parallel and deduplicate by URL.
+   */
+  async searchMultiple(queries, numPerQuery = 8) {
+    const batches = await Promise.allSettled(
+      queries.map((q) => this.search(q, { numResults: numPerQuery }))
+    );
+    const seen = /* @__PURE__ */ new Set();
+    const results = [];
+    for (const b of batches) {
+      if (b.status === "fulfilled") {
+        for (const r of b.value) {
+          if (r.url && !seen.has(r.url)) {
+            seen.add(r.url);
+            results.push(r);
+          }
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Find active RFPs and procurement opportunities for Occu-Med via neural search.
+   */
+  async findOpportunities(keywords) {
+    const year = (/* @__PURE__ */ new Date()).getFullYear();
+    const queries = keywords ? [
+      `${keywords} RFP solicitation government contract ${year}`,
+      `${keywords} bid procurement open ${year}`
+    ] : [
+      `occupational health services RFP government contract ${year}`,
+      `employee health drug testing solicitation open ${year}`,
+      `DOT physical occupational medicine government bid ${year}`
+    ];
+    return this.searchMultiple(queries, 10);
+  }
+};
+var exaProvider = new ExaProvider();
+
+// src/lib/providers/firecrawl.ts
+var FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
+var FirecrawlProvider = class {
+  name = "firecrawl";
+  async getApiKey() {
+    return resolveCredential("firecrawlApiKey", "FIRECRAWL_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Scrape a single URL and return clean markdown content.
+   * Returns null if the provider is not configured or the scrape fails.
+   */
+  async scrape(url2) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: url2,
+        formats: ["markdown"],
+        onlyMainContent: true,
+        timeout: 2e4
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`FireCrawl scrape error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    if (!json3.success || !json3.data?.markdown) return null;
+    return {
+      url: json3.data.metadata?.sourceURL ?? url2,
+      title: json3.data.metadata?.title ?? "",
+      description: json3.data.metadata?.description ?? "",
+      markdown: json3.data.markdown
+    };
+  }
+  /**
+   * Scrape multiple URLs in parallel (up to 5 concurrent).
+   * Silently skips failed URLs.
+   */
+  async scrapeMany(urls) {
+    const CONCURRENCY = 5;
+    const results = [];
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value) results.push(r.value);
+      }
+    }
+    return results;
+  }
+  /**
+   * Search the web via FireCrawl's built-in search endpoint.
+   */
+  async search(query, limit = 10) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return [];
+    const response = await fetch(`${FIRECRAWL_BASE}/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ query, limit, scrapeOptions: { formats: ["markdown"], onlyMainContent: true } })
+    });
+    if (!response.ok) return [];
+    const json3 = await response.json();
+    if (!json3.success || !json3.data) return [];
+    return json3.data.filter((r) => r.markdown).map((r) => ({
+      url: r.url ?? "",
+      title: r.title ?? "",
+      description: r.description ?? "",
+      markdown: r.markdown ?? ""
+    }));
+  }
+};
+var firecrawlProvider = new FirecrawlProvider();
+
 // src/lib/search/webIntelligence.ts
 var CURRENT_YEAR2 = (/* @__PURE__ */ new Date()).getFullYear();
-var TAVILY_BASE_QUERIES = [
-  `occupational health services government RFP solicitation open ${CURRENT_YEAR2}`,
-  `pre-employment drug testing services contract opportunity active ${CURRENT_YEAR2}`,
-  `occupational medicine clinic services government solicitation ${CURRENT_YEAR2} due`
-];
-var MIN_RELEVANCE_SCORE = 40;
+var NEXT_YEAR = CURRENT_YEAR2 + 1;
+var NOW = /* @__PURE__ */ new Date();
+var MIN_RELEVANCE_SCORE = 65;
 var GEMINI_BATCH_SIZE = 3;
 var GEMINI_BATCH_DELAY_MS = 500;
+var FIRECRAWL_MAX_URLS = 10;
+var OCCUMED_WEB_QUERIES = [
+  // Portal-targeted searches — these sites only list active bids
+  { query: `site:demandstar.com "occupational health" OR "drug testing" OR "medical examination"`, type: "search" },
+  { query: `site:bidsync.com "occupational health" OR "drug screening" OR "occupational medicine"`, type: "search" },
+  { query: `site:publicpurchase.com "occupational health" OR "employee health"`, type: "search" },
+  // Strong procurement language + current year + no award language
+  { query: `"request for proposal" "occupational health services" deadline ${CURRENT_YEAR2} -awarded -award`, type: "search" },
+  { query: `"request for proposal" "drug testing" OR "drug screening" government ${CURRENT_YEAR2} response due -award`, type: "search" },
+  // News mode — finds RFPs issued in the last 30 days
+  { query: `"occupational health" OR "occupational medicine" RFP solicitation government issued ${CURRENT_YEAR2}`, type: "news", tbs: "qdr:m" },
+  { query: `"pre-employment" OR "drug testing" OR "DOT physical" "request for proposal" government ${CURRENT_YEAR2}`, type: "news", tbs: "qdr:m" },
+  // NAICS-targeted government search
+  { query: `NAICS 621111 OR NAICS 621999 "occupational health" solicitation RFP ${CURRENT_YEAR2} active`, type: "search" },
+  // Broader procurement search with deadline language
+  { query: `"solicitation" "occupational medicine" OR "occupational health" "due date" ${CURRENT_YEAR2} OR ${NEXT_YEAR}`, type: "search" },
+  { query: `"invitation to bid" OR "sources sought" "occupational health" OR "employee health" government ${CURRENT_YEAR2}`, type: "search" }
+];
+var EXA_QUERIES = [
+  `active government RFP for occupational health services ${CURRENT_YEAR2}`,
+  `open solicitation drug testing pre-employment physical services government ${CURRENT_YEAR2}`,
+  `government contract opportunity occupational medicine DOT physical ${CURRENT_YEAR2}`
+];
+var TAVILY_QUERIES = [
+  `occupational health services government RFP solicitation open ${CURRENT_YEAR2}`,
+  `pre-employment drug testing government contract opportunity active ${CURRENT_YEAR2}`
+];
+var BLOCKED_DOMAINS = [
+  "linkedin.com",
+  "facebook.com",
+  "twitter.com",
+  "instagram.com",
+  "wikipedia.org",
+  "reddit.com",
+  "youtube.com",
+  "govinfo.gov",
+  // regulations/FR, not active bids
+  "federalregister.gov",
+  // rules, not bids
+  "usaspending.gov",
+  // awarded contracts, not open bids
+  "fpds.gov",
+  // contract awards
+  "bloomberg.com",
+  "reuters.com",
+  "wsj.com",
+  "nytimes.com",
+  "forbes.com",
+  "inc.com",
+  "businesswire.com",
+  "prnewswire.com",
+  "businessinsider.com",
+  "indeed.com",
+  "glassdoor.com",
+  "ziprecruiter.com",
+  // job sites
+  "yelp.com",
+  "healthgrades.com"
+  // consumer sites
+];
 var RFP_KEYWORDS = [
   "rfp",
   "request for proposal",
+  "request for proposals",
   "solicitation",
-  "bid opportunity",
-  "procurement",
-  "contract opportunity",
-  "bid notice",
   "invitation to bid",
-  "itb",
   "invitation for bid",
-  "request for quotation",
+  "itb",
   "rfq",
-  "proposal",
-  "seeking proposals",
+  "request for quotation",
+  "bid opportunity",
+  "bid notice",
+  "sources sought",
   "pre-solicitation",
-  "sources sought"
+  "response due",
+  "proposals due",
+  "submission deadline",
+  "bids due",
+  "seeking proposals",
+  "contract opportunity",
+  "procurement notice"
 ];
+var REJECT_SIGNALS = [
+  "contract awarded",
+  "contract award",
+  "award notice",
+  "award announcement",
+  "awarded to",
+  "selected vendor",
+  "task order award",
+  "mod to contract",
+  "contract modification",
+  "job description",
+  "job posting",
+  "we are hiring",
+  "career opportunity"
+];
+function isBlockedDomain(url2) {
+  try {
+    const hostname2 = new URL(url2).hostname.replace("www.", "");
+    return BLOCKED_DOMAINS.some((d) => hostname2 === d || hostname2.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
 function isRfpCandidate(candidate) {
   const text2 = `${candidate.title} ${candidate.url} ${candidate.content}`.toLowerCase();
+  if (REJECT_SIGNALS.some((s) => text2.includes(s))) return false;
   return RFP_KEYWORDS.some((kw) => text2.includes(kw));
+}
+function isExpiredDeadline(deadline) {
+  if (!deadline) return false;
+  const oneDayAgo = new Date(NOW.getTime() - 24 * 60 * 60 * 1e3);
+  return deadline < oneDayAgo;
 }
 function candidateToFallbackOpportunity(candidate) {
   const urlHash = createHash2("sha256").update(candidate.url).digest("hex").slice(0, 20);
@@ -74516,6 +75015,7 @@ function candidateToFallbackOpportunity(candidate) {
     candidate.content,
     candidate.title
   );
+  if (isExpiredDeadline(deadline)) return null;
   return {
     externalId: `web-${urlHash}`,
     title: candidate.title,
@@ -74531,7 +75031,8 @@ function candidateToFallbackOpportunity(candidate) {
     rawData: {
       url: candidate.url,
       fallback: true,
-      extractedFrom: candidate.sourceProvider
+      extractedFrom: candidate.sourceProvider,
+      firecrawlEnriched: candidate.firecrawlEnriched ?? false
     }
   };
 }
@@ -74562,24 +75063,51 @@ async function webIntelligenceFetch(options) {
   const errors = [];
   const stats = {
     serperResults: 0,
+    exaResults: 0,
     tavilyResults: 0,
     statePortalResults: 0,
     totalCandidates: 0,
     preFiltered: 0,
+    firecrawlEnriched: 0,
     extracted: 0,
     rejected: 0,
+    expiredRejected: 0,
     geminiRateLimited: false
   };
   const useSerper = options.useSerper !== false;
   const useTavily = options.useTavily !== false;
   const useGemini = options.useGemini !== false;
   const useStatePortals = options.useStatePortals === true;
-  let serperQueries = [...OCCUMED_DEFAULT_QUERIES];
-  let tavilyQueries = [...TAVILY_BASE_QUERIES];
+  const useExa = options.useExa !== false;
+  const useFirecrawl = options.useFirecrawl !== false;
+  let serperQueries = OCCUMED_WEB_QUERIES;
+  let exaQueries = [...EXA_QUERIES];
+  let tavilyQueries = [...TAVILY_QUERIES];
+  if (options.keywords?.trim()) {
+    const kw = options.keywords.trim();
+    const kwQ = `"${kw}" "request for proposal" OR solicitation OR "bid opportunity" government ${CURRENT_YEAR2} -awarded`;
+    serperQueries = [
+      { query: kwQ, type: "search" },
+      { query: kwQ, type: "news", tbs: "qdr:m" },
+      ...serperQueries
+    ];
+    exaQueries = [
+      `active government RFP for ${kw} services ${CURRENT_YEAR2}`,
+      ...exaQueries
+    ];
+    tavilyQueries = [
+      `${kw} government contract RFP solicitation open ${CURRENT_YEAR2}`,
+      ...tavilyQueries
+    ];
+  }
+  let geminiQueries = [];
   if (useGemini) {
     try {
-      const geminiQueries = await geminiProvider.generateSearchQueries(options.keywords);
-      if (geminiQueries.length > 0) serperQueries = geminiQueries;
+      const generated = await geminiProvider.generateSearchQueries(options.keywords);
+      geminiQueries = generated.map((q) => ({
+        query: `${q} -awarded -"contract award" -"award notice"`,
+        type: "search"
+      }));
     } catch (err) {
       if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
         stats.geminiRateLimited = true;
@@ -74589,21 +75117,24 @@ async function webIntelligenceFetch(options) {
       }
     }
   }
-  if (options.keywords?.trim()) {
-    const kw = options.keywords.trim();
-    serperQueries = [
-      `"${kw}" RFP OR solicitation OR "request for proposal" occupational health 2025 OR 2026`,
-      ...serperQueries
-    ];
-    tavilyQueries = [
-      `${kw} occupational health government RFP contract opportunity`,
-      ...tavilyQueries
-    ];
-  }
-  const [serperResults, tavilyResults, statePortalRaw] = await Promise.all([
-    useSerper ? serperProvider.searchMultiple(serperQueries, 10).catch((err) => {
+  const allSerperQueries = [...serperQueries, ...geminiQueries];
+  const [serperRaw, exaRaw, tavilyRaw, statePortalRaw] = await Promise.all([
+    useSerper ? Promise.allSettled(
+      allSerperQueries.map(
+        (q) => serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [])
+      )
+    ).then(
+      (results) => results.flatMap((r) => r.status === "fulfilled" ? r.value : [])
+    ).catch((err) => {
       errors.push(`Serper: ${err.message}`);
       return [];
+    }) : Promise.resolve([]),
+    useExa ? exaProvider.isConfigured().then(async (configured) => {
+      if (!configured) return [];
+      return exaProvider.searchMultiple(exaQueries, 10).catch((err) => {
+        errors.push(`Exa: ${err.message}`);
+        return [];
+      });
     }) : Promise.resolve([]),
     useTavily ? tavilyProvider.researchMultiple(tavilyQueries, 5).catch((err) => {
       errors.push(`Tavily: ${err.message}`);
@@ -74614,8 +75145,9 @@ async function webIntelligenceFetch(options) {
       return [];
     }) : Promise.resolve([])
   ]);
-  stats.serperResults = serperResults.length;
-  stats.tavilyResults = tavilyResults.length;
+  stats.serperResults = serperRaw.length;
+  stats.exaResults = exaRaw.length;
+  stats.tavilyResults = tavilyRaw.length;
   const statePortalOpportunities = statePortalsProvider.toOpportunities(statePortalRaw);
   stats.statePortalResults = statePortalOpportunities.length;
   const seen = /* @__PURE__ */ new Set();
@@ -74623,17 +75155,22 @@ async function webIntelligenceFetch(options) {
   for (const opp of statePortalOpportunities) {
     if (opp.sourceUrl) seen.add(opp.sourceUrl);
   }
-  for (const r of serperResults) {
-    if (r.link && !seen.has(r.link)) {
-      seen.add(r.link);
-      candidates.push({ title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper" });
-    }
+  for (const r of serperRaw) {
+    if (!r.link || seen.has(r.link) || isBlockedDomain(r.link)) continue;
+    seen.add(r.link);
+    candidates.push({ title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper" });
   }
-  for (const r of tavilyResults) {
-    if (r.url && !seen.has(r.url)) {
-      seen.add(r.url);
-      candidates.push({ title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
-    }
+  for (const r of exaRaw) {
+    const url2 = r.url ?? "";
+    if (!url2 || seen.has(url2) || isBlockedDomain(url2)) continue;
+    seen.add(url2);
+    const content = (r.highlights ?? []).join(" ") || r.text?.slice(0, 1e3) || "";
+    candidates.push({ title: r.title ?? "", url: url2, content, sourceProvider: "exa" });
+  }
+  for (const r of tavilyRaw) {
+    if (!r.url || seen.has(r.url) || isBlockedDomain(r.url)) continue;
+    seen.add(r.url);
+    candidates.push({ title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
   }
   stats.totalCandidates = candidates.length;
   const filtered = candidates.filter(isRfpCandidate);
@@ -74642,22 +75179,45 @@ async function webIntelligenceFetch(options) {
   if (filtered.length === 0) {
     return { opportunities: statePortalOpportunities, stats, errors };
   }
+  const enrichedCandidates = [...filtered];
+  if (useFirecrawl) {
+    const fcConfigured = await firecrawlProvider.isConfigured();
+    if (fcConfigured) {
+      const toEnrich = filtered.filter((c) => c.content.length < 800).slice(0, FIRECRAWL_MAX_URLS);
+      if (toEnrich.length > 0) {
+        const urls = toEnrich.map((c) => c.url);
+        try {
+          const scraped = await firecrawlProvider.scrapeMany(urls);
+          for (const result of scraped) {
+            const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
+            if (idx >= 0 && result.markdown) {
+              enrichedCandidates[idx] = {
+                ...enrichedCandidates[idx],
+                content: result.markdown.slice(0, 4e3),
+                firecrawlEnriched: true
+              };
+              stats.firecrawlEnriched++;
+            }
+          }
+        } catch (err) {
+          errors.push(`FireCrawl enrichment: ${err.message}`);
+        }
+      }
+    }
+  }
   if (!useGemini || stats.geminiRateLimited) {
-    const fallbackOpps = filtered.map(candidateToFallbackOpportunity);
+    const fallbackOpps = enrichedCandidates.map(candidateToFallbackOpportunity).filter(Boolean);
     return {
       opportunities: [...statePortalOpportunities, ...fallbackOpps],
       stats: { ...stats, extracted: fallbackOpps.length },
-      errors: [
-        ...errors,
-        "Gemini unavailable \u2014 saving pre-filtered web results for manual review (confidence: low)."
-      ]
+      errors: [...errors, "Gemini unavailable \u2014 saving pre-filtered results as low-confidence."]
     };
   }
   const opportunities = [];
   let geminiQuotaHit = false;
   try {
     const extractionResults = await runInBatches(
-      filtered,
+      enrichedCandidates,
       GEMINI_BATCH_SIZE,
       GEMINI_BATCH_DELAY_MS,
       async (candidate) => {
@@ -74671,13 +75231,18 @@ async function webIntelligenceFetch(options) {
           stats.rejected++;
           return null;
         }
+        const deadline = extraction.deadline ? new Date(extraction.deadline) : void 0;
+        const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : void 0;
+        if (isExpiredDeadline(validDeadline)) {
+          stats.expiredRejected++;
+          stats.rejected++;
+          return null;
+        }
         if ((extraction.relevanceScore ?? 0) < MIN_RELEVANCE_SCORE) {
           stats.rejected++;
           return null;
         }
         const urlHash = createHash2("sha256").update(candidate.url).digest("hex").slice(0, 20);
-        const deadline = extraction.deadline ? new Date(extraction.deadline) : void 0;
-        const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : void 0;
         return {
           externalId: `web-${urlHash}`,
           title: extraction.title ?? candidate.title,
@@ -74695,7 +75260,8 @@ async function webIntelligenceFetch(options) {
             url: candidate.url,
             relevanceScore: extraction.relevanceScore,
             relevanceReason: extraction.relevanceReason,
-            extractedFrom: candidate.sourceProvider
+            extractedFrom: candidate.sourceProvider,
+            firecrawlEnriched: candidate.firecrawlEnriched ?? false
           }
         };
       },
@@ -74713,30 +75279,32 @@ async function webIntelligenceFetch(options) {
   } catch (err) {
     if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
       stats.geminiRateLimited = true;
-      errors.push(
-        "Gemini daily quota reached mid-run \u2014 saving pre-filtered candidates as low-confidence opportunities for manual review."
-      );
-      const remaining = filtered.filter(
+      errors.push("Gemini quota reached mid-run \u2014 saving remaining as low-confidence.");
+      const remaining = enrichedCandidates.filter(
         (c) => !opportunities.some((o) => o.sourceUrl === c.url)
       );
       for (const c of remaining) {
-        opportunities.push(candidateToFallbackOpportunity(c));
-        stats.extracted++;
+        const opp = candidateToFallbackOpportunity(c);
+        if (opp) {
+          opportunities.push(opp);
+          stats.extracted++;
+        }
       }
     } else {
       errors.push(`Web intelligence error: ${err.message}`);
     }
   }
   if (geminiQuotaHit) {
-    errors.push(
-      "Gemini quota reached \u2014 remaining candidates saved as low-confidence results for manual review."
-    );
-    const remaining = filtered.filter(
+    errors.push("Gemini quota hit \u2014 remaining candidates saved as low-confidence.");
+    const remaining = enrichedCandidates.filter(
       (c) => !opportunities.some((o) => o.sourceUrl === c.url)
     );
     for (const c of remaining) {
-      opportunities.push(candidateToFallbackOpportunity(c));
-      stats.extracted++;
+      const opp = candidateToFallbackOpportunity(c);
+      if (opp) {
+        opportunities.push(opp);
+        stats.extracted++;
+      }
     }
   }
   return { opportunities: [...statePortalOpportunities, ...opportunities], stats, errors };
@@ -74789,20 +75357,24 @@ async function unifiedFetch(options = {}) {
       result.providerResults.push({ provider: name, fetched: 0, errors: [err.message ?? String(err)] });
     }
   }
-  const webProviders = ["serper", "tavily", "gemini", "statePortals"];
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
   if (useWebIntel) {
     const useSerper = requestedProviders.includes("serper");
     const useTavily = requestedProviders.includes("tavily");
     const useGemini = requestedProviders.includes("gemini");
     const useStatePortals = requestedProviders.includes("statePortals");
+    const useExa = requestedProviders.includes("exa");
+    const useFirecrawl = requestedProviders.includes("firecrawl");
     try {
       const webResult = await webIntelligenceFetch({
         keywords: options.keywords,
         useSerper,
         useTavily,
         useGemini,
-        useStatePortals
+        useStatePortals,
+        useExa,
+        useFirecrawl
       });
       allRecords.push(...webResult.opportunities);
       const { stats, errors } = webResult;
@@ -74961,10 +75533,22 @@ function parseDate(val) {
 
 // src/routes/opportunities.ts
 var import_multer = __toESM(require_multer(), 1);
+async function archiveExpiredOpportunities() {
+  try {
+    await db.update(opportunitiesTable).set({ status: "archived", updatedAt: /* @__PURE__ */ new Date() }).where(
+      and(
+        eq(opportunitiesTable.status, "active"),
+        lt(opportunitiesTable.responseDeadline, /* @__PURE__ */ new Date())
+      )
+    );
+  } catch {
+  }
+}
 var router2 = (0, import_express2.Router)();
 var upload = (0, import_multer.default)({ storage: import_multer.default.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 router2.get("/opportunities", async (req, res) => {
   try {
+    await archiveExpiredOpportunities();
     const { search, status, type, naicsCode, agency, source, page = "1", limit = "50" } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(200, parseInt(limit) || 50);
@@ -75038,6 +75622,7 @@ router2.post("/opportunities/fetch", async (req, res) => {
       dateRange,
       providers: resolvedProviders
     });
+    await archiveExpiredOpportunities();
     res.json({
       fetched: result.fetched,
       created: result.created,
@@ -75277,99 +75862,6 @@ var settings_default = router3;
 
 // src/routes/providers.ts
 var import_express4 = __toESM(require_express2(), 1);
-
-// src/lib/providers/firecrawl.ts
-var FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
-var FirecrawlProvider = class {
-  name = "firecrawl";
-  async getApiKey() {
-    return resolveCredential("firecrawlApiKey", "FIRECRAWL_API_KEY");
-  }
-  async isConfigured() {
-    return !!await this.getApiKey();
-  }
-  async fetch(_options) {
-    return { records: [], total: 0, errors: [] };
-  }
-  async getStatus() {
-    const configured = await this.isConfigured();
-    return { name: this.name, configured, healthy: configured };
-  }
-  /**
-   * Scrape a single URL and return clean markdown content.
-   * Returns null if the provider is not configured or the scrape fails.
-   */
-  async scrape(url2) {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) return null;
-    const response = await fetch(`${FIRECRAWL_BASE}/scrape`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        url: url2,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        timeout: 2e4
-      })
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`FireCrawl scrape error ${response.status}: ${body.slice(0, 200)}`);
-    }
-    const json3 = await response.json();
-    if (!json3.success || !json3.data?.markdown) return null;
-    return {
-      url: json3.data.metadata?.sourceURL ?? url2,
-      title: json3.data.metadata?.title ?? "",
-      description: json3.data.metadata?.description ?? "",
-      markdown: json3.data.markdown
-    };
-  }
-  /**
-   * Scrape multiple URLs in parallel (up to 5 concurrent).
-   * Silently skips failed URLs.
-   */
-  async scrapeMany(urls) {
-    const CONCURRENCY = 5;
-    const results = [];
-    for (let i = 0; i < urls.length; i += CONCURRENCY) {
-      const batch = urls.slice(i, i + CONCURRENCY);
-      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
-      for (const r of settled) {
-        if (r.status === "fulfilled" && r.value) results.push(r.value);
-      }
-    }
-    return results;
-  }
-  /**
-   * Search the web via FireCrawl's built-in search endpoint.
-   */
-  async search(query, limit = 10) {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) return [];
-    const response = await fetch(`${FIRECRAWL_BASE}/search`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ query, limit, scrapeOptions: { formats: ["markdown"], onlyMainContent: true } })
-    });
-    if (!response.ok) return [];
-    const json3 = await response.json();
-    if (!json3.success || !json3.data) return [];
-    return json3.data.filter((r) => r.markdown).map((r) => ({
-      url: r.url ?? "",
-      title: r.title ?? "",
-      description: r.description ?? "",
-      markdown: r.markdown ?? ""
-    }));
-  }
-};
-var firecrawlProvider = new FirecrawlProvider();
 
 // src/lib/providers/openrouter.ts
 var OPENROUTER_BASE = "https://openrouter.ai/api/v1";
@@ -75648,6 +76140,388 @@ JSON only: {"score":<0-100>,"explanation":"1-2 sentences"}`;
 };
 var groqProvider = new GroqProvider();
 
+// src/lib/providers/browseAi.ts
+var BROWSE_AI_BASE = "https://api.browse.ai/v2";
+var BrowseAiProvider = class {
+  name = "browseAi";
+  async getCredentials() {
+    const apiKey = await resolveCredential("browseAiApiKey", "BROWSE_AI_API_KEY");
+    if (!apiKey) return null;
+    const robotId = await resolveCredential("browseAiRobotId", "BROWSE_AI_ROBOT_ID");
+    return { apiKey, robotId: robotId ?? void 0 };
+  }
+  async isConfigured() {
+    return !!await this.getCredentials();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Run a robot and return the task result.
+   * inputParameters can override the robot's default inputs (e.g. search term, URL).
+   */
+  async runRobot(robotId, inputParameters) {
+    const creds = await this.getCredentials();
+    if (!creds) return null;
+    const body = {};
+    if (inputParameters) body["inputParameters"] = inputParameters;
+    const response = await fetch(`${BROWSE_AI_BASE}/robots/${robotId}/tasks`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Browse AI error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    const data = await response.json();
+    return data.result?.task ?? null;
+  }
+  /**
+   * Get the result of a previously run task.
+   */
+  async getTask(robotId, taskId) {
+    const creds = await this.getCredentials();
+    if (!creds) return null;
+    const response = await fetch(`${BROWSE_AI_BASE}/robots/${robotId}/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${creds.apiKey}` }
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.result?.task ?? null;
+  }
+  /**
+   * List recent tasks for a robot.
+   */
+  async listTasks(robotId, page = 1) {
+    const creds = await this.getCredentials();
+    if (!creds) return [];
+    const response = await fetch(
+      `${BROWSE_AI_BASE}/robots/${robotId}/tasks?page=${page}`,
+      { headers: { Authorization: `Bearer ${creds.apiKey}` } }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.result?.tasks ?? [];
+  }
+  /**
+   * Run the default configured robot and wait for completion (polls up to 60s).
+   */
+  async runDefaultRobot(inputParameters) {
+    const creds = await this.getCredentials();
+    if (!creds?.robotId) return null;
+    const task = await this.runRobot(creds.robotId, inputParameters);
+    if (!task) return null;
+    const start = Date.now();
+    let current = task;
+    while (current.status === "pending" || current.status === "running") {
+      if (Date.now() - start > 6e4) break;
+      await new Promise((r) => setTimeout(r, 3e3));
+      const updated = await this.getTask(creds.robotId, current.id);
+      if (updated) current = updated;
+      else break;
+    }
+    return current;
+  }
+};
+var browseAiProvider = new BrowseAiProvider();
+
+// src/lib/providers/browserUse.ts
+var BROWSER_USE_BASE = "https://api.browser-use.com/api/v1";
+var BrowserUseProvider = class {
+  name = "browserUse";
+  async getApiKey() {
+    return resolveCredential("browserUseApiKey", "BROWSER_USE_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Create a new browser task with a natural-language instruction.
+   */
+  async createTask(task) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${BROWSER_USE_BASE}/run-task`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ task })
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`BrowserUse error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Get the status and output of a running task.
+   */
+  async getTask(taskId) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${BROWSER_USE_BASE}/task/${taskId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!response.ok) return null;
+    return response.json();
+  }
+  /**
+   * Stop a running task.
+   */
+  async stopTask(taskId) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return;
+    await fetch(`${BROWSER_USE_BASE}/stop-task/${taskId}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+  }
+  /**
+   * Run a task and poll until completion (up to maxWaitMs).
+   * Returns the final task with output, or null on timeout/failure.
+   */
+  async runAndWait(task, maxWaitMs = 12e4) {
+    const created = await this.createTask(task);
+    if (!created) return null;
+    const start = Date.now();
+    let current = created;
+    const terminalStates = ["finished", "stopped", "failed"];
+    while (!terminalStates.includes(current.status)) {
+      if (Date.now() - start > maxWaitMs) {
+        await this.stopTask(current.id).catch(() => {
+        });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 4e3));
+      const updated = await this.getTask(current.id);
+      if (updated) current = updated;
+      else break;
+    }
+    return current;
+  }
+  /**
+   * Use BrowserUse to research a specific URL or web workflow.
+   * Example: "Go to sam.gov and find open occupational health contracts. Return titles, agencies, and deadlines."
+   */
+  async research(instruction) {
+    const result = await this.runAndWait(instruction);
+    return result?.output ?? null;
+  }
+};
+var browserUseProvider = new BrowserUseProvider();
+
+// src/lib/providers/olostep.ts
+var OLOSTEP_BASE = "https://agent.olostep.com/olostep-p2p-network";
+var OlostepProvider = class {
+  name = "olostep";
+  async getApiKey() {
+    return resolveCredential("olostepApiKey", "OLOSTEP_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Scrape a URL through Olostep's residential proxy network.
+   * Returns markdown content for AI analysis.
+   */
+  async scrape(url2, options = {}) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const { formats = ["markdown"], waitFor } = options;
+    const params = new URLSearchParams({
+      token: apiKey,
+      url: url2,
+      formats: formats.join(","),
+      ...waitFor ? { wait_before_scraping: String(waitFor) } : {}
+    });
+    const response = await fetch(`${OLOSTEP_BASE}?${params.toString()}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" }
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Olostep error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Scrape multiple URLs in parallel (up to 5 concurrent).
+   * Returns only successful results with content.
+   */
+  async scrapeMany(urls) {
+    const CONCURRENCY = 5;
+    const results = [];
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value?.markdown_content) {
+          results.push(r.value);
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Get the text content from a URL, suitable for AI processing.
+   */
+  async getText(url2) {
+    const result = await this.scrape(url2, { formats: ["markdown"] });
+    return result?.markdown_content ?? result?.text_content ?? null;
+  }
+};
+var olostepProvider = new OlostepProvider();
+
+// src/lib/providers/clod.ts
+var CLOD_BASE = "https://api.clod.io/v1";
+var DEFAULT_MODEL3 = "claude-sonnet-4-5";
+var ClodProvider = class {
+  name = "clod";
+  async getApiKey() {
+    return resolveCredential("clodApiKey", "CLOD_API_KEY");
+  }
+  async getModel() {
+    const model = await resolveCredential("clodModel", "CLOD_MODEL");
+    return model ?? DEFAULT_MODEL3;
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Send a chat completion to the CLōD endpoint.
+   */
+  async complete(prompt, maxTokens = 512) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("CL\u014DD API key not configured.");
+    const model = await this.getModel();
+    const response = await fetch(`${CLOD_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.2
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`CL\u014DD error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    return (json3.choices?.[0]?.message?.content ?? "").trim();
+  }
+  /**
+   * Generate targeted search queries for Occu-Med opportunity discovery.
+   */
+  async generateSearchQueries(customKeywords) {
+    const QUERY_YEAR2 = (/* @__PURE__ */ new Date()).getFullYear();
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.
+
+Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
+They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
+${customKeywords ? `User focus: ${customKeywords}` : ""}
+
+Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR2}.
+
+Rules:
+- Google search strings only (not URLs)
+- Include year ${QUERY_YEAR2} in each query
+- Mix different Occu-Med service lines
+- Use terms: RFP, solicitation, bid, contract, procurement
+
+Respond ONLY with a JSON array of 8 strings: ["query1", ..., "query8"]`;
+    try {
+      const text2 = await this.complete(prompt, 600);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const queries = JSON.parse(cleaned);
+      if (Array.isArray(queries) && queries.length > 0) return queries;
+    } catch {
+    }
+    return OCCUMED_DEFAULT_QUERIES;
+  }
+  /**
+   * Analyze a web result and extract structured opportunity data.
+   */
+  async extractOpportunityFromWebResult(title, url2, content) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const prompt = `You are a procurement intelligence analyst for Occu-Med (occupational health services).
+Today: ${today}
+
+Is this an ACTIVE, OPEN solicitation Occu-Med could bid on?
+
+Title: ${title}
+URL: ${url2}
+Content: ${content.slice(0, 2500)}
+
+If YES, respond with JSON only (no markdown):
+{"isOpportunity":true,"title":"...","agency":"...","description":"...","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city/state or null","relevanceScore":0-100,"relevanceReason":"..."}
+
+If NO:
+{"isOpportunity":false,"reason":"..."}`;
+    try {
+      const text2 = await this.complete(prompt, 512);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Score relevance of an opportunity to Occu-Med (0-100).
+   */
+  async scoreRelevance(opportunityTitle, description, orgContext) {
+    const prompt = `Score relevance 0-100.
+Organization: ${orgContext}
+Opportunity: ${opportunityTitle}
+Description: ${description.slice(0, 2e3)}
+
+JSON only: {"score": <0-100>, "explanation": "1-2 sentences"}`;
+    try {
+      const text2 = await this.complete(prompt, 256);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+};
+var clodProvider = new ClodProvider();
+
 // src/lib/providers/index.ts
 var providerRegistry = {
   samGov: samGovProvider,
@@ -75659,7 +76533,12 @@ var providerRegistry = {
   statePortals: statePortalsProvider,
   firecrawl: firecrawlProvider,
   openrouter: openrouterProvider,
-  groq: groqProvider
+  groq: groqProvider,
+  exa: exaProvider,
+  browseAi: browseAiProvider,
+  browserUse: browserUseProvider,
+  olostep: olostepProvider,
+  clod: clodProvider
 };
 
 // src/routes/providers.ts
@@ -75678,6 +76557,7 @@ router4.get("/providers", async (req, res) => {
             displayName: def.displayName,
             description: def.description,
             category: def.category,
+            useCase: def.useCase,
             capabilities: def.capabilities,
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
@@ -75713,6 +76593,7 @@ router4.get("/providers", async (req, res) => {
             displayName: def.displayName,
             description: def.description,
             category: def.category,
+            useCase: def.useCase,
             capabilities: def.capabilities,
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
@@ -79397,7 +80278,7 @@ app.use("/api", routes_default);
 if (process.env["NODE_ENV"] === "production") {
   const frontendDist = path.resolve(__dirname2, "../../intel-suite/dist/public");
   app.use(import_express14.default.static(frontendDist));
-  app.get("*", (_req, res) => {
+  app.get("*path", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
