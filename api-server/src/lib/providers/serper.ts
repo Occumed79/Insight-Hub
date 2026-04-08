@@ -10,7 +10,7 @@
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
 
-const SERPER_BASE = "https://google.serper.dev/search";
+const SERPER_BASE = "https://google.serper.dev";
 
 export interface SerperSearchResult {
   title: string;
@@ -42,30 +42,44 @@ export class SerperProvider implements DataSourceProvider {
 
   /**
    * Execute a single Google search query via Serper.
+   * @param type "search" (default) | "news" — news mode returns recently published articles
+   * @param tbs Time-based search filter: "qdr:w" = past week, "qdr:m" = past month
    */
-  async search(query: string, num: number = 10): Promise<SerperSearchResult[]> {
+  async search(
+    query: string,
+    num: number = 10,
+    options: { type?: "search" | "news"; tbs?: string } = {}
+  ): Promise<SerperSearchResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Serper API key not configured.");
 
-    const response = await fetch(SERPER_BASE, {
+    const endpoint = options.type === "news" ? "/news" : "/search";
+
+    const body: Record<string, unknown> = { q: query, num };
+    if (options.tbs) body["tbs"] = options.tbs;
+
+    const response = await fetch(`${SERPER_BASE}${endpoint}`, {
       method: "POST",
       headers: {
         "X-API-KEY": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ q: query, num }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Serper API error ${response.status}: ${body.slice(0, 200)}`);
+      const text = await response.text().catch(() => "");
+      throw new Error(`Serper API error ${response.status}: ${text.slice(0, 200)}`);
     }
 
     const json = (await response.json()) as {
       organic?: { title?: string; link?: string; snippet?: string; date?: string; source?: string }[];
+      news?: { title?: string; link?: string; snippet?: string; date?: string; source?: string }[];
     };
 
-    return (json.organic ?? []).map((r) => ({
+    const items = json.organic ?? json.news ?? [];
+
+    return items.map((r) => ({
       title: r.title ?? "",
       link: r.link ?? "",
       snippet: r.snippet ?? "",
