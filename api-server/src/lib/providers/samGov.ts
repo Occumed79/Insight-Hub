@@ -93,11 +93,15 @@ export class SamGovProvider implements DataSourceProvider {
     let recordCount: number | undefined;
 
     if (configured) {
-      const rows = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(opportunitiesTable)
-        .where(eq(opportunitiesTable.source, "sam_gov"));
-      recordCount = Number(rows[0]?.count ?? 0);
+      try {
+        const rows = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(opportunitiesTable)
+          .where(eq(opportunitiesTable.source, "sam_gov"));
+        recordCount = Number(rows[0]?.count ?? 0);
+      } catch {
+        // DB may not be migrated yet — record count is non-critical
+      }
     }
 
     return { name: this.name, configured, healthy: configured, recordCount };
