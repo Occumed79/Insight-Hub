@@ -73559,6 +73559,173 @@ var PROVIDER_DEFINITIONS = {
     ],
     status: "partial",
     notes: "Groq's speed makes it ideal for bulk extraction \u2014 processing dozens of search results in seconds. Pairs well with FireCrawl for full-page content analysis at scale."
+  },
+  exa: {
+    name: "exa",
+    displayName: "Exa",
+    description: "Neural search engine designed for AI use cases. Understands semantic intent, not just keywords. Supports deep multi-query search with structured output extraction and full-page content.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Available at dashboard.exa.ai",
+        dbKey: "exaApiKey",
+        envKey: "EXA_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.exa.ai",
+    signupUrl: "https://dashboard.exa.ai",
+    capabilities: [
+      "Neural semantic search \u2014 finds relevant results by intent, not keywords",
+      "Deep multi-query search with structured JSON output",
+      "Full-page content retrieval for RAG pipelines",
+      "People, company, news, and research paper category search",
+      "Field-level citations and confidence scores"
+    ],
+    status: "partial",
+    notes: "Best-in-class for finding semantically relevant procurement opportunities. Deep search mode runs multiple query variations and synthesizes results \u2014 ideal for thorough opportunity discovery."
+  },
+  browseAi: {
+    name: "browseAi",
+    displayName: "Browse AI",
+    description: "No-code web scraping via pre-configured robots. Define scraping workflows on the Browse AI dashboard, then trigger them via API to extract structured data from any website.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Full key in userId:apiKey format \u2014 found in Browse AI dashboard",
+        dbKey: "browseAiApiKey",
+        envKey: "BROWSE_AI_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "robotId",
+        label: "Default Robot ID",
+        type: "text",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Robot ID to run by default \u2014 create robots at browse.ai/dashboard",
+        dbKey: "browseAiRobotId",
+        envKey: "BROWSE_AI_ROBOT_ID"
+      }
+    ],
+    docsUrl: "https://docs.browse.ai/docs/api",
+    signupUrl: "https://browse.ai",
+    capabilities: [
+      "Run pre-configured scraping robots via API",
+      "Extract structured data from dynamic/JS-heavy sites",
+      "Capture tables, lists, screenshots, and text",
+      "Schedule recurring scrapes or trigger on demand"
+    ],
+    status: "partial",
+    notes: "Create a robot on the Browse AI dashboard targeting a procurement portal (e.g. BidSync, DemandStar). Set the Robot ID here, then trigger it from research workflows to pull structured opportunity data."
+  },
+  browserUse: {
+    name: "browserUse",
+    displayName: "BrowserUse AI",
+    description: "AI-powered browser automation. Give it a natural-language task and it autonomously navigates, clicks, fills forms, and extracts data from any web application \u2014 bypassing bot protection.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "bu_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at browser-use.com",
+        dbKey: "browserUseApiKey",
+        envKey: "BROWSER_USE_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.browser-use.com",
+    signupUrl: "https://browser-use.com",
+    capabilities: [
+      "Autonomous browser control via natural language instructions",
+      "Handles login flows, pagination, dynamic content",
+      "Bypasses Cloudflare and bot detection with real browser",
+      "Extracts structured data from complex web applications",
+      "Ideal for portals that block API scraping"
+    ],
+    status: "partial",
+    notes: "Best for procurement portals that require authentication or JavaScript interaction. Instruct it to 'navigate to X portal, search for occupational health RFPs, and return titles with deadlines.'"
+  },
+  olostep: {
+    name: "olostep",
+    displayName: "Olostep",
+    description: "Residential-proxy web scraping. Routes requests through real residential IPs to bypass bot detection and Cloudflare on procurement portals. Returns clean markdown for AI analysis.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "olostep_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at olostep.com",
+        dbKey: "olostepApiKey",
+        envKey: "OLOSTEP_API_KEY"
+      }
+    ],
+    optionalFields: [],
+    docsUrl: "https://www.olostep.com/docs",
+    signupUrl: "https://olostep.com",
+    capabilities: [
+      "Residential IP proxies \u2014 bypasses Cloudflare and bot detection",
+      "Returns clean markdown, HTML, or plain text",
+      "Batch scraping up to 5 URLs in parallel",
+      "Handles JavaScript-rendered pages"
+    ],
+    status: "partial",
+    notes: "Ideal complement to FireCrawl \u2014 use Olostep for sites that block conventional scrapers. Residential proxies make requests look like real user traffic."
+  },
+  clod: {
+    name: "clod",
+    displayName: "CL\u014DD AI",
+    description: "OpenAI-compatible AI endpoint for your CL\u014DD project. Provides query generation, opportunity extraction, and relevance scoring via the api.clod.io inference endpoint.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key (JWT)",
+        type: "secret",
+        placeholder: "eyJhbGci...",
+        description: "JWT token from your CL\u014DD project settings",
+        dbKey: "clodApiKey",
+        envKey: "CLOD_API_KEY"
+      }
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "claude-sonnet-4-5",
+        description: "Model to use via the CL\u014DD endpoint \u2014 defaults to claude-sonnet-4-5",
+        dbKey: "clodModel",
+        envKey: "CLOD_MODEL"
+      }
+    ],
+    docsUrl: "https://api.clod.io/v1",
+    signupUrl: "https://clod.io",
+    capabilities: [
+      "OpenAI-compatible endpoint at api.clod.io",
+      "Opportunity query generation and extraction",
+      "Relevance scoring and intelligence analysis",
+      "Configurable model selection"
+    ],
+    status: "partial",
+    notes: "Uses your CL\u014DD project JWT as the API key. Set endpoint to https://api.clod.io/v1. Functions identically to OpenRouter/Groq \u2014 can run query generation, extraction, and scoring workflows."
   }
 };
 async function resolveCredential(dbKey, envKey) {
@@ -75648,6 +75815,519 @@ JSON only: {"score":<0-100>,"explanation":"1-2 sentences"}`;
 };
 var groqProvider = new GroqProvider();
 
+// src/lib/providers/exa.ts
+var EXA_BASE = "https://api.exa.ai";
+var ExaProvider = class {
+  name = "exa";
+  async getApiKey() {
+    return resolveCredential("exaApiKey", "EXA_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  async request(path2, body) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("Exa API key not configured.");
+    const response = await fetch(`${EXA_BASE}${path2}`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Exa error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Search the web using Exa's neural search. Returns results with highlights.
+   * type: "auto" for most queries, "deep" for thorough research (4-12s).
+   */
+  async search(query, options = {}) {
+    const {
+      numResults = 10,
+      type = "auto",
+      maxHighlightChars = 4e3,
+      startPublishedDate,
+      includeDomains,
+      excludeDomains,
+      category
+    } = options;
+    const body = {
+      query,
+      num_results: numResults,
+      type,
+      contents: { highlights: { max_characters: maxHighlightChars } }
+    };
+    if (startPublishedDate) body["startPublishedDate"] = startPublishedDate;
+    if (includeDomains?.length) body["includeDomains"] = includeDomains;
+    if (excludeDomains?.length) body["excludeDomains"] = excludeDomains;
+    if (category) body["category"] = category;
+    const data = await this.request("/search", body);
+    return data.results ?? [];
+  }
+  /**
+   * Search with full text content (for RAG / deep analysis).
+   */
+  async searchWithContent(query, numResults = 5, maxChars = 1e4) {
+    const body = {
+      query,
+      num_results: numResults,
+      type: "deep",
+      contents: { text: { max_characters: maxChars } }
+    };
+    const data = await this.request("/search", body);
+    return data.results ?? [];
+  }
+  /**
+   * Get full content for known URLs.
+   */
+  async getContents(urls, maxChars = 1e4) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return [];
+    const response = await fetch(`${EXA_BASE}/contents`, {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        urls,
+        text: { max_characters: maxChars }
+      })
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.results ?? [];
+  }
+  /**
+   * Run multiple search queries in parallel and deduplicate by URL.
+   */
+  async searchMultiple(queries, numPerQuery = 8) {
+    const batches = await Promise.allSettled(
+      queries.map((q) => this.search(q, { numResults: numPerQuery }))
+    );
+    const seen = /* @__PURE__ */ new Set();
+    const results = [];
+    for (const b of batches) {
+      if (b.status === "fulfilled") {
+        for (const r of b.value) {
+          if (r.url && !seen.has(r.url)) {
+            seen.add(r.url);
+            results.push(r);
+          }
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Find active RFPs and procurement opportunities for Occu-Med via neural search.
+   */
+  async findOpportunities(keywords) {
+    const year = (/* @__PURE__ */ new Date()).getFullYear();
+    const queries = keywords ? [
+      `${keywords} RFP solicitation government contract ${year}`,
+      `${keywords} bid procurement open ${year}`
+    ] : [
+      `occupational health services RFP government contract ${year}`,
+      `employee health drug testing solicitation open ${year}`,
+      `DOT physical occupational medicine government bid ${year}`
+    ];
+    return this.searchMultiple(queries, 10);
+  }
+};
+var exaProvider = new ExaProvider();
+
+// src/lib/providers/browseAi.ts
+var BROWSE_AI_BASE = "https://api.browse.ai/v2";
+var BrowseAiProvider = class {
+  name = "browseAi";
+  async getCredentials() {
+    const apiKey = await resolveCredential("browseAiApiKey", "BROWSE_AI_API_KEY");
+    if (!apiKey) return null;
+    const robotId = await resolveCredential("browseAiRobotId", "BROWSE_AI_ROBOT_ID");
+    return { apiKey, robotId: robotId ?? void 0 };
+  }
+  async isConfigured() {
+    return !!await this.getCredentials();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Run a robot and return the task result.
+   * inputParameters can override the robot's default inputs (e.g. search term, URL).
+   */
+  async runRobot(robotId, inputParameters) {
+    const creds = await this.getCredentials();
+    if (!creds) return null;
+    const body = {};
+    if (inputParameters) body["inputParameters"] = inputParameters;
+    const response = await fetch(`${BROWSE_AI_BASE}/robots/${robotId}/tasks`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Browse AI error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    const data = await response.json();
+    return data.result?.task ?? null;
+  }
+  /**
+   * Get the result of a previously run task.
+   */
+  async getTask(robotId, taskId) {
+    const creds = await this.getCredentials();
+    if (!creds) return null;
+    const response = await fetch(`${BROWSE_AI_BASE}/robots/${robotId}/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${creds.apiKey}` }
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.result?.task ?? null;
+  }
+  /**
+   * List recent tasks for a robot.
+   */
+  async listTasks(robotId, page = 1) {
+    const creds = await this.getCredentials();
+    if (!creds) return [];
+    const response = await fetch(
+      `${BROWSE_AI_BASE}/robots/${robotId}/tasks?page=${page}`,
+      { headers: { Authorization: `Bearer ${creds.apiKey}` } }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.result?.tasks ?? [];
+  }
+  /**
+   * Run the default configured robot and wait for completion (polls up to 60s).
+   */
+  async runDefaultRobot(inputParameters) {
+    const creds = await this.getCredentials();
+    if (!creds?.robotId) return null;
+    const task = await this.runRobot(creds.robotId, inputParameters);
+    if (!task) return null;
+    const start = Date.now();
+    let current = task;
+    while (current.status === "pending" || current.status === "running") {
+      if (Date.now() - start > 6e4) break;
+      await new Promise((r) => setTimeout(r, 3e3));
+      const updated = await this.getTask(creds.robotId, current.id);
+      if (updated) current = updated;
+      else break;
+    }
+    return current;
+  }
+};
+var browseAiProvider = new BrowseAiProvider();
+
+// src/lib/providers/browserUse.ts
+var BROWSER_USE_BASE = "https://api.browser-use.com/api/v1";
+var BrowserUseProvider = class {
+  name = "browserUse";
+  async getApiKey() {
+    return resolveCredential("browserUseApiKey", "BROWSER_USE_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Create a new browser task with a natural-language instruction.
+   */
+  async createTask(task) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${BROWSER_USE_BASE}/run-task`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ task })
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`BrowserUse error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Get the status and output of a running task.
+   */
+  async getTask(taskId) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const response = await fetch(`${BROWSER_USE_BASE}/task/${taskId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!response.ok) return null;
+    return response.json();
+  }
+  /**
+   * Stop a running task.
+   */
+  async stopTask(taskId) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return;
+    await fetch(`${BROWSER_USE_BASE}/stop-task/${taskId}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+  }
+  /**
+   * Run a task and poll until completion (up to maxWaitMs).
+   * Returns the final task with output, or null on timeout/failure.
+   */
+  async runAndWait(task, maxWaitMs = 12e4) {
+    const created = await this.createTask(task);
+    if (!created) return null;
+    const start = Date.now();
+    let current = created;
+    const terminalStates = ["finished", "stopped", "failed"];
+    while (!terminalStates.includes(current.status)) {
+      if (Date.now() - start > maxWaitMs) {
+        await this.stopTask(current.id).catch(() => {
+        });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 4e3));
+      const updated = await this.getTask(current.id);
+      if (updated) current = updated;
+      else break;
+    }
+    return current;
+  }
+  /**
+   * Use BrowserUse to research a specific URL or web workflow.
+   * Example: "Go to sam.gov and find open occupational health contracts. Return titles, agencies, and deadlines."
+   */
+  async research(instruction) {
+    const result = await this.runAndWait(instruction);
+    return result?.output ?? null;
+  }
+};
+var browserUseProvider = new BrowserUseProvider();
+
+// src/lib/providers/olostep.ts
+var OLOSTEP_BASE = "https://agent.olostep.com/olostep-p2p-network";
+var OlostepProvider = class {
+  name = "olostep";
+  async getApiKey() {
+    return resolveCredential("olostepApiKey", "OLOSTEP_API_KEY");
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Scrape a URL through Olostep's residential proxy network.
+   * Returns markdown content for AI analysis.
+   */
+  async scrape(url2, options = {}) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) return null;
+    const { formats = ["markdown"], waitFor } = options;
+    const params = new URLSearchParams({
+      token: apiKey,
+      url: url2,
+      formats: formats.join(","),
+      ...waitFor ? { wait_before_scraping: String(waitFor) } : {}
+    });
+    const response = await fetch(`${OLOSTEP_BASE}?${params.toString()}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" }
+    });
+    if (!response.ok) {
+      const text2 = await response.text().catch(() => "");
+      throw new Error(`Olostep error ${response.status}: ${text2.slice(0, 200)}`);
+    }
+    return response.json();
+  }
+  /**
+   * Scrape multiple URLs in parallel (up to 5 concurrent).
+   * Returns only successful results with content.
+   */
+  async scrapeMany(urls) {
+    const CONCURRENCY = 5;
+    const results = [];
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const batch = urls.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value?.markdown_content) {
+          results.push(r.value);
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Get the text content from a URL, suitable for AI processing.
+   */
+  async getText(url2) {
+    const result = await this.scrape(url2, { formats: ["markdown"] });
+    return result?.markdown_content ?? result?.text_content ?? null;
+  }
+};
+var olostepProvider = new OlostepProvider();
+
+// src/lib/providers/clod.ts
+var CLOD_BASE = "https://api.clod.io/v1";
+var DEFAULT_MODEL3 = "claude-sonnet-4-5";
+var ClodProvider = class {
+  name = "clod";
+  async getApiKey() {
+    return resolveCredential("clodApiKey", "CLOD_API_KEY");
+  }
+  async getModel() {
+    const model = await resolveCredential("clodModel", "CLOD_MODEL");
+    return model ?? DEFAULT_MODEL3;
+  }
+  async isConfigured() {
+    return !!await this.getApiKey();
+  }
+  async fetch(_options) {
+    return { records: [], total: 0, errors: [] };
+  }
+  async getStatus() {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
+  }
+  /**
+   * Send a chat completion to the CLōD endpoint.
+   */
+  async complete(prompt, maxTokens = 512) {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("CL\u014DD API key not configured.");
+    const model = await this.getModel();
+    const response = await fetch(`${CLOD_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.2
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`CL\u014DD error ${response.status}: ${body.slice(0, 200)}`);
+    }
+    const json3 = await response.json();
+    return (json3.choices?.[0]?.message?.content ?? "").trim();
+  }
+  /**
+   * Generate targeted search queries for Occu-Med opportunity discovery.
+   */
+  async generateSearchQueries(customKeywords) {
+    const QUERY_YEAR2 = (/* @__PURE__ */ new Date()).getFullYear();
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.
+
+Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
+They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
+${customKeywords ? `User focus: ${customKeywords}` : ""}
+
+Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR2}.
+
+Rules:
+- Google search strings only (not URLs)
+- Include year ${QUERY_YEAR2} in each query
+- Mix different Occu-Med service lines
+- Use terms: RFP, solicitation, bid, contract, procurement
+
+Respond ONLY with a JSON array of 8 strings: ["query1", ..., "query8"]`;
+    try {
+      const text2 = await this.complete(prompt, 600);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const queries = JSON.parse(cleaned);
+      if (Array.isArray(queries) && queries.length > 0) return queries;
+    } catch {
+    }
+    return OCCUMED_DEFAULT_QUERIES;
+  }
+  /**
+   * Analyze a web result and extract structured opportunity data.
+   */
+  async extractOpportunityFromWebResult(title, url2, content) {
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const prompt = `You are a procurement intelligence analyst for Occu-Med (occupational health services).
+Today: ${today}
+
+Is this an ACTIVE, OPEN solicitation Occu-Med could bid on?
+
+Title: ${title}
+URL: ${url2}
+Content: ${content.slice(0, 2500)}
+
+If YES, respond with JSON only (no markdown):
+{"isOpportunity":true,"title":"...","agency":"...","description":"...","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city/state or null","relevanceScore":0-100,"relevanceReason":"..."}
+
+If NO:
+{"isOpportunity":false,"reason":"..."}`;
+    try {
+      const text2 = await this.complete(prompt, 512);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Score relevance of an opportunity to Occu-Med (0-100).
+   */
+  async scoreRelevance(opportunityTitle, description, orgContext) {
+    const prompt = `Score relevance 0-100.
+Organization: ${orgContext}
+Opportunity: ${opportunityTitle}
+Description: ${description.slice(0, 2e3)}
+
+JSON only: {"score": <0-100>, "explanation": "1-2 sentences"}`;
+    try {
+      const text2 = await this.complete(prompt, 256);
+      const cleaned = text2.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+};
+var clodProvider = new ClodProvider();
+
 // src/lib/providers/index.ts
 var providerRegistry = {
   samGov: samGovProvider,
@@ -75659,7 +76339,12 @@ var providerRegistry = {
   statePortals: statePortalsProvider,
   firecrawl: firecrawlProvider,
   openrouter: openrouterProvider,
-  groq: groqProvider
+  groq: groqProvider,
+  exa: exaProvider,
+  browseAi: browseAiProvider,
+  browserUse: browserUseProvider,
+  olostep: olostepProvider,
+  clod: clodProvider
 };
 
 // src/routes/providers.ts
