@@ -73791,8 +73791,11 @@ var SamGovProvider = class {
     const configured = await this.isConfigured();
     let recordCount;
     if (configured) {
-      const rows = await db.select({ count: sql`count(*)` }).from(opportunitiesTable).where(eq(opportunitiesTable.source, "sam_gov"));
-      recordCount = Number(rows[0]?.count ?? 0);
+      try {
+        const rows = await db.select({ count: sql`count(*)` }).from(opportunitiesTable).where(eq(opportunitiesTable.source, "sam_gov"));
+        recordCount = Number(rows[0]?.count ?? 0);
+      } catch {
+      }
     }
     return { name: this.name, configured, healthy: configured, recordCount };
   }
@@ -76631,7 +76634,12 @@ router4.put("/providers/:name", async (req, res) => {
       }
     }
     const provider = providerRegistry[name];
-    const status = await provider.getStatus();
+    let status;
+    try {
+      status = await provider.getStatus();
+    } catch {
+      status = { name, configured: true, healthy: false, errorMessage: "Status check unavailable" };
+    }
     res.json({ name, status });
   } catch (err) {
     req.log.error(err);
