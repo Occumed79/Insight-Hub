@@ -124,7 +124,7 @@ function LocationCard({ loc, jobs, onDelete }: { loc: Location; jobs: Job[]; onD
                   {locType.label}
                 </span>
                 {loc.openPositions > 0 && (
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ring-1 ${trend.bg || "bg-transparent"} ${trend.text} ${trend.ring}`}>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ring-1 bg-transparent ${trend.text} ${trend.ring}`}>
                     <span className={`inline-block w-1.5 h-1.5 rounded-full ${trend.dot} mr-1`} />
                     {trend.label}
                   </span>

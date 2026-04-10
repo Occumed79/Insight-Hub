@@ -135,9 +135,12 @@ Focus on government contracts (federal, state, local) and include both well-know
 
 Rules:
 - Each query must be a Google search string (not a URL)
-- Target OPEN/ACTIVE opportunities only — include year ${QUERY_YEAR} in each query; never target expired or awarded contracts
+- Include year ${QUERY_YEAR} in every query
+- Append -awarded -"contract award" -"award notice" to EVERY query to exclude closed bids
+- Target procurement portals when possible (site:demandstar.com, site:bidsync.com, site:publicpurchase.com)
+- Use "response due" OR "proposals due" OR "bid due" phrasing to surface active deadlines
 - Mix different Occu-Med service lines across the 8 queries
-- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract, procurement
+- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract
 
 Respond ONLY with a JSON array of 8 query strings with no other text:
 ["query1", "query2", ..., "query8"]`;
@@ -180,33 +183,42 @@ Respond ONLY with a JSON array of 8 query strings with no other text:
 
     const today = new Date().toISOString().split("T")[0];
 
-    const prompt = `You are a procurement intelligence analyst for Occu-Med, an occupational health services company.
+    const prompt = `You are a strict procurement intelligence analyst for Occu-Med (occupational health services company).
 
-Occu-Med's services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
-Occu-Med's clients: ${OCCUMED_PROFILE.clientTypes.slice(0, 5).join(", ")}.
+Occu-Med services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
 Today's date: ${today}
 
-Analyze this web search result and determine if it is an ACTIVE, OPEN solicitation or RFP that Occu-Med could realistically bid on.
+Analyze this web content. You must determine with HIGH CONFIDENCE whether this is a CURRENTLY OPEN solicitation that Occu-Med could bid on RIGHT NOW.
 
 Title: ${title}
 URL: ${url}
-Content: ${content.slice(0, 2500)}
+Content: ${content.slice(0, 3000)}
 
-If this IS an active open opportunity, respond ONLY with this JSON (no markdown):
+HARD REJECTION RULES — return isOpportunity: false immediately if ANY of these apply:
+1. The content is a news article REPORTING on an RFP, not the actual solicitation posting
+2. The deadline/due date has already passed (compare to today: ${today})
+3. The title or content contains "awarded", "award notice", "contract award", "selected vendor"
+4. The content is a job posting, career page, or employment ad
+5. You cannot find clear evidence the solicitation is currently accepting proposals
+6. The services needed have nothing to do with occupational health, medical exams, drug testing, or employee health
+7. The content is a government regulation, policy, or federal register notice (not a bid)
+8. The deadline year is ${new Date().getFullYear() - 1} or earlier
+
+If this IS a currently open opportunity respond ONLY with JSON (no markdown, no explanation):
 {
   "isOpportunity": true,
-  "title": "clean opportunity title",
-  "agency": "name of procuring organization",
-  "description": "what health/medical services are being procured (2-3 sentences)",
-  "deadline": "YYYY-MM-DD if response deadline found in text, otherwise null",
-  "estimatedValue": numeric dollar amount if stated, otherwise null,
-  "location": "place of performance city/state if stated, otherwise null",
-  "relevanceScore": integer 0-100 scoring how well this matches Occu-Med services,
-  "relevanceReason": "one sentence explaining the match to Occu-Med"
+  "title": "exact solicitation title",
+  "agency": "procuring organization name",
+  "description": "specific health/medical services being procured (2-3 sentences)",
+  "deadline": "YYYY-MM-DD — extract exact date from text, or null if not found",
+  "estimatedValue": number or null,
+  "location": "city, state or null",
+  "relevanceScore": 0-100,
+  "relevanceReason": "one sentence on Occu-Med fit"
 }
 
-If NOT a valid opportunity (news article, expired bid, contract award announcement, unrelated services, vague/no procurement intent), respond ONLY with:
-{"isOpportunity": false, "reason": "brief reason"}
+If NOT a valid active opportunity respond ONLY with:
+{"isOpportunity": false, "reason": "specific reason"}
 
 Be precise — only return isOpportunity: true for real, currently open solicitations.`;
 

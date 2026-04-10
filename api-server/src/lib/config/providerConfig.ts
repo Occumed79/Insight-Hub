@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq";
+export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -341,6 +341,178 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ],
     status: "partial",
     notes: "Groq's speed makes it ideal for bulk extraction — processing dozens of search results in seconds. Pairs well with FireCrawl for full-page content analysis at scale.",
+  },
+
+  exa: {
+    name: "exa",
+    displayName: "Exa",
+    description: "Neural search engine designed for AI use cases. Understands semantic intent, not just keywords. Supports deep multi-query search with structured output extraction and full-page content.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Available at dashboard.exa.ai",
+        dbKey: "exaApiKey",
+        envKey: "EXA_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.exa.ai",
+    signupUrl: "https://dashboard.exa.ai",
+    capabilities: [
+      "Neural semantic search — finds relevant results by intent, not keywords",
+      "Deep multi-query search with structured JSON output",
+      "Full-page content retrieval for RAG pipelines",
+      "People, company, news, and research paper category search",
+      "Field-level citations and confidence scores",
+    ],
+    status: "partial",
+    notes: "Best-in-class for finding semantically relevant procurement opportunities. Deep search mode runs multiple query variations and synthesizes results — ideal for thorough opportunity discovery.",
+  },
+
+  browseAi: {
+    name: "browseAi",
+    displayName: "Browse AI",
+    description: "No-code web scraping via pre-configured robots. Define scraping workflows on the Browse AI dashboard, then trigger them via API to extract structured data from any website.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Full key in userId:apiKey format — found in Browse AI dashboard",
+        dbKey: "browseAiApiKey",
+        envKey: "BROWSE_AI_API_KEY",
+      },
+    ],
+    optionalFields: [
+      {
+        key: "robotId",
+        label: "Default Robot ID",
+        type: "text",
+        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        description: "Robot ID to run by default — create robots at browse.ai/dashboard",
+        dbKey: "browseAiRobotId",
+        envKey: "BROWSE_AI_ROBOT_ID",
+      },
+    ],
+    docsUrl: "https://docs.browse.ai/docs/api",
+    signupUrl: "https://browse.ai",
+    capabilities: [
+      "Run pre-configured scraping robots via API",
+      "Extract structured data from dynamic/JS-heavy sites",
+      "Capture tables, lists, screenshots, and text",
+      "Schedule recurring scrapes or trigger on demand",
+    ],
+    status: "partial",
+    notes: "Create a robot on the Browse AI dashboard targeting a procurement portal (e.g. BidSync, DemandStar). Set the Robot ID here, then trigger it from research workflows to pull structured opportunity data.",
+  },
+
+  browserUse: {
+    name: "browserUse",
+    displayName: "BrowserUse AI",
+    description: "AI-powered browser automation. Give it a natural-language task and it autonomously navigates, clicks, fills forms, and extracts data from any web application — bypassing bot protection.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "bu_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at browser-use.com",
+        dbKey: "browserUseApiKey",
+        envKey: "BROWSER_USE_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    docsUrl: "https://docs.browser-use.com",
+    signupUrl: "https://browser-use.com",
+    capabilities: [
+      "Autonomous browser control via natural language instructions",
+      "Handles login flows, pagination, dynamic content",
+      "Bypasses Cloudflare and bot detection with real browser",
+      "Extracts structured data from complex web applications",
+      "Ideal for portals that block API scraping",
+    ],
+    status: "partial",
+    notes: "Best for procurement portals that require authentication or JavaScript interaction. Instruct it to 'navigate to X portal, search for occupational health RFPs, and return titles with deadlines.'",
+  },
+
+  olostep: {
+    name: "olostep",
+    displayName: "Olostep",
+    description: "Residential-proxy web scraping. Routes requests through real residential IPs to bypass bot detection and Cloudflare on procurement portals. Returns clean markdown for AI analysis.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "olostep_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        description: "Available at olostep.com",
+        dbKey: "olostepApiKey",
+        envKey: "OLOSTEP_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    docsUrl: "https://www.olostep.com/docs",
+    signupUrl: "https://olostep.com",
+    capabilities: [
+      "Residential IP proxies — bypasses Cloudflare and bot detection",
+      "Returns clean markdown, HTML, or plain text",
+      "Batch scraping up to 5 URLs in parallel",
+      "Handles JavaScript-rendered pages",
+    ],
+    status: "partial",
+    notes: "Ideal complement to FireCrawl — use Olostep for sites that block conventional scrapers. Residential proxies make requests look like real user traffic.",
+  },
+
+  clod: {
+    name: "clod",
+    displayName: "CLōD AI",
+    description: "OpenAI-compatible AI endpoint for your CLōD project. Provides query generation, opportunity extraction, and relevance scoring via the api.clod.io inference endpoint.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key (JWT)",
+        type: "secret",
+        placeholder: "eyJhbGci...",
+        description: "JWT token from your CLōD project settings",
+        dbKey: "clodApiKey",
+        envKey: "CLOD_API_KEY",
+      },
+    ],
+    optionalFields: [
+      {
+        key: "model",
+        label: "Model ID",
+        type: "text",
+        placeholder: "claude-sonnet-4-5",
+        description: "Model to use via the CLōD endpoint — defaults to claude-sonnet-4-5",
+        dbKey: "clodModel",
+        envKey: "CLOD_MODEL",
+      },
+    ],
+    docsUrl: "https://api.clod.io/v1",
+    signupUrl: "https://clod.io",
+    capabilities: [
+      "OpenAI-compatible endpoint at api.clod.io",
+      "Opportunity query generation and extraction",
+      "Relevance scoring and intelligence analysis",
+      "Configurable model selection",
+    ],
+    status: "partial",
+    notes: "Uses your CLōD project JWT as the API key. Set endpoint to https://api.clod.io/v1. Functions identically to OpenRouter/Groq — can run query generation, extraction, and scoring workflows.",
   },
 };
 

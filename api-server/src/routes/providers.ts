@@ -78,10 +78,10 @@ router.get("/providers", async (req, res) => {
         }
       })
     );
-    res.json({ providers: statuses });
+    return res.json({ providers: statuses });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get provider statuses" });
+    return res.status(500).json({ error: "Failed to get provider statuses" });
   }
 });
 
@@ -111,13 +111,19 @@ router.put("/providers/:name", async (req, res) => {
       }
     }
 
-    // Return updated status
+    // Return updated status — wrap in try/catch so a failing status check
+    // doesn't prevent the credential from being saved successfully.
     const provider = providerRegistry[name as ProviderName];
-    const status = await provider.getStatus();
-    res.json({ name, status });
+    let status: Awaited<ReturnType<typeof provider.getStatus>>;
+    try {
+      status = await provider.getStatus();
+    } catch {
+      status = { name: name as ProviderName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
+    }
+    return res.json({ name, status });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to save provider credentials" });
+    return res.status(500).json({ error: "Failed to save provider credentials" });
   }
 });
 

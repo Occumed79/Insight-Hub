@@ -296,10 +296,10 @@ router.get("/state-agencies/states", async (req, res) => {
       countMap[c.stateCode] = (countMap[c.stateCode] || 0) + 1;
     }
 
-    res.json({ states: states.map((s) => ({ ...s, itemCount: countMap[s.stateCode] || 0 })) });
+    return res.json({ states: states.map((s) => ({ ...s, itemCount: countMap[s.stateCode] || 0 })) });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list states" });
+    return res.status(500).json({ error: "Failed to list states" });
   }
 });
 
@@ -328,10 +328,10 @@ router.get("/state-agencies/items", async (req, res) => {
       bucketCounts[i.bucket] = (bucketCounts[i.bucket] || 0) + 1;
     }
 
-    res.json({ items, bucketCounts });
+    return res.json({ items, bucketCounts });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get items" });
+    return res.status(500).json({ error: "Failed to get items" });
   }
 });
 
@@ -399,10 +399,10 @@ router.post("/state-agencies/refresh", async (req, res) => {
       and(eq(stateAgencyItemsTable.stateCode, stateCode.toUpperCase()), eq(stateAgencyItemsTable.bucket, bucket))
     );
 
-    res.json({ items, added, errors, bucket, stateCode: stateCode.toUpperCase() });
+    return res.json({ items, added, errors, bucket, stateCode: stateCode.toUpperCase() });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Refresh failed" });
+    return res.status(500).json({ error: "Refresh failed" });
   }
 });
 
@@ -416,10 +416,10 @@ router.get("/state-agencies/intel", async (req, res) => {
     const channelCounts: Record<string, number> = {};
     const all = await db.select({ channel: stateIntelItemsTable.channel }).from(stateIntelItemsTable);
     for (const i of all) { channelCounts[i.channel] = (channelCounts[i.channel] || 0) + 1; }
-    res.json({ items, channelCounts });
+    return res.json({ items, channelCounts });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get intel items" });
+    return res.status(500).json({ error: "Failed to get intel items" });
   }
 });
 
@@ -484,10 +484,10 @@ router.post("/state-agencies/intel/refresh", async (req, res) => {
     }
 
     const items = await db.select().from(stateIntelItemsTable).where(eq(stateIntelItemsTable.channel, channel));
-    res.json({ items, added, errors, channel });
+    return res.json({ items, added, errors, channel });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Intel refresh failed" });
+    return res.status(500).json({ error: "Intel refresh failed" });
   }
 });
 
@@ -500,10 +500,10 @@ router.delete("/state-agencies/items", async (req, res) => {
     const conditions = [eq(stateAgencyItemsTable.stateCode, stateCode.toUpperCase())];
     if (bucket) conditions.push(eq(stateAgencyItemsTable.bucket, bucket as StateAgencyBucket));
     await db.delete(stateAgencyItemsTable).where(and(...conditions));
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Delete failed" });
+    return res.status(500).json({ error: "Delete failed" });
   }
 });
 

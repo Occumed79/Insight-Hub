@@ -305,8 +305,8 @@ export default function StateAgenciesPage() {
             style={{ width: "100%", height: "100%" }}
           >
             <Geographies geography={GEO_URL}>
-              {({ geographies }) =>
-                geographies.map((geo) => {
+              {({ geographies }: { geographies: Array<{ rsmKey: string; properties: { name?: string } }> }) =>
+                geographies.map((geo: { rsmKey: string; properties: { name?: string } }) => {
                   const name: string = geo.properties.name ?? "";
                   const code = STATE_NAME_TO_CODE[name] ?? "";
                   if (!code) return null;
