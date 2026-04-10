@@ -67,7 +67,7 @@ export default function OpportunitiesDashboard() {
   const [isEnriching, setIsEnriching] = useState(false);
   
   // Fetch form state
-  const [fetchKeywords, setFetchKeywords] = useState("");
+  const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
   const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "serper", "tavily", "statePortals"]);
 
@@ -178,7 +178,7 @@ export default function OpportunitiesDashboard() {
 
   // Handlers
   const handleOpenFetch = () => {
-    setFetchKeywords(settings?.defaultKeywords || "");
+    setFetchQuery(settings?.defaultKeywords || "");
     setFetchDays(settings?.defaultDateRange?.toString() || "30");
     setIsFetchOpen(true);
   };
@@ -212,7 +212,7 @@ export default function OpportunitiesDashboard() {
     e.preventDefault();
     fetchMutation.mutate({
       data: {
-        keywords: fetchKeywords,
+        keywords: fetchQuery.trim(),
         dateRange: parseInt(fetchDays, 10),
         providers: fetchProviders.length > 0 ? fetchProviders : undefined,
       }
@@ -598,7 +598,7 @@ export default function OpportunitiesDashboard() {
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Fetch Intelligence</DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                Choose sources and keywords for this intelligence run.
+                Choose sources and enter a search-style query for this intelligence run.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-5 py-6">
@@ -660,14 +660,36 @@ export default function OpportunitiesDashboard() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="keywords">Keywords</Label>
-                <Input 
-                  id="keywords" 
-                  value={fetchKeywords}
-                  onChange={(e) => setFetchKeywords(e.target.value)}
-                  placeholder="e.g. occupational health, drug testing" 
-                  className="bg-background/50 border-white/10"
-                />
+                <Label htmlFor="query">Search Query</Label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input
+                    id="query"
+                    value={fetchQuery}
+                    onChange={(e) => setFetchQuery(e.target.value)}
+                    placeholder='e.g. "occupational health services" government RFP due in 30 days'
+                    className="bg-background/50 border-white/10 pl-9"
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Think like a search engine: include service, buyer type, and intent (RFP, bid, solicitation).
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {[
+                    'occupational health services city county RFP',
+                    'drug testing and DOT physical solicitation',
+                    'employee wellness contract opportunity state government',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setFetchQuery(preset)}
+                      className="text-[10px] px-2 py-1 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="days">Date Range (Days Back)</Label>
