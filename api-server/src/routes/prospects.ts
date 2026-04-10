@@ -27,10 +27,10 @@ router.get("/prospects", async (req, res) => {
       .select()
       .from(prospectsTable)
       .orderBy(prospectsTable.name);
-    res.json({ prospects: rows });
+    return res.json({ prospects: rows });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list prospects" });
+    return res.status(500).json({ error: "Failed to list prospects" });
   }
 });
 
@@ -60,10 +60,10 @@ router.post("/prospects", async (req, res) => {
         updatedAt: new Date(),
       })
       .returning();
-    res.status(201).json({ prospect: row[0] });
+    return res.status(201).json({ prospect: row[0] });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to create prospect" });
+    return res.status(500).json({ error: "Failed to create prospect" });
   }
 });
 
@@ -94,10 +94,10 @@ router.patch("/prospects/:id", async (req, res) => {
       .returning();
 
     if (!row.length) return res.status(404).json({ error: "Prospect not found" });
-    res.json({ prospect: row[0] });
+    return res.json({ prospect: row[0] });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to update prospect" });
+    return res.status(500).json({ error: "Failed to update prospect" });
   }
 });
 
@@ -111,10 +111,10 @@ router.delete("/prospects/:id", async (req, res) => {
       .where(eq(prospectsTable.id, id))
       .returning();
     if (!deleted.length) return res.status(404).json({ error: "Prospect not found" });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to delete prospect" });
+    return res.status(500).json({ error: "Failed to delete prospect" });
   }
 });
 
@@ -246,7 +246,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
       .where(eq(prospectsTable.id, id))
       .returning();
 
-    res.json({
+    return res.json({
       prospect: updated[0],
       stats: {
         serperResults: serperResults.length,
@@ -258,7 +258,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Research failed" });
+    return res.status(500).json({ error: "Research failed" });
   }
 });
 

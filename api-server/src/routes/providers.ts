@@ -78,10 +78,10 @@ router.get("/providers", async (req, res) => {
         }
       })
     );
-    res.json({ providers: statuses });
+    return res.json({ providers: statuses });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get provider statuses" });
+    return res.status(500).json({ error: "Failed to get provider statuses" });
   }
 });
 
@@ -98,16 +98,29 @@ router.put("/providers/:name", async (req, res) => {
       return res.status(404).json({ error: `Unknown provider: ${name}` });
     }
 
-    const body = req.body as Record<string, string>;
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+      return res.status(400).json({ error: "Invalid request body" });
+    }
+
+    const body = req.body as Record<string, unknown>;
     const allFields = [...def.requiredFields, ...def.optionalFields];
 
     for (const field of allFields) {
       const value = body[field.dbKey];
-      if (value !== undefined && value.trim() !== "") {
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      if (typeof value === "object") {
+        return res.status(400).json({ error: `Invalid value for ${field.dbKey}` });
+      }
+
+      const normalized = String(value).trim();
+      if (normalized !== "") {
         await db
           .insert(settingsTable)
-          .values({ key: field.dbKey, value: value.trim() })
-          .onConflictDoUpdate({ target: settingsTable.key, set: { value: value.trim() } });
+          .values({ key: field.dbKey, value: normalized })
+          .onConflictDoUpdate({ target: settingsTable.key, set: { value: normalized } });
       }
     }
 
@@ -120,10 +133,10 @@ router.put("/providers/:name", async (req, res) => {
     } catch {
       status = { name: name as ProviderName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
     }
-    res.json({ name, status });
+    return res.json({ name, status });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to save provider credentials" });
+    return res.status(500).json({ error: "Failed to save provider credentials" });
   }
 });
 

@@ -18,6 +18,7 @@
 import { createHash } from "crypto";
 import { geminiProvider, OCCUMED_DEFAULT_QUERIES } from "../providers/gemini";
 import { serperProvider } from "../providers/serper";
+import type { SerperSearchResult } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
 import { statePortalsProvider } from "../providers/statePortals";
 import { exaProvider } from "../providers/exa";
@@ -315,7 +316,7 @@ export async function webIntelligenceFetch(options: {
   }
 
   // Use Gemini to generate additional targeted Serper queries if configured
-  let geminiQueries: { query: string; type?: "search" | "news" }[] = [];
+  let geminiQueries: { query: string; type?: "search" | "news"; tbs?: string }[] = [];
   if (useGemini) {
     try {
       const generated = await geminiProvider.generateSearchQueries(options.keywords);
@@ -341,7 +342,7 @@ export async function webIntelligenceFetch(options: {
     useSerper
       ? Promise.allSettled(
           allSerperQueries.map((q) =>
-            serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [] as typeof serperRaw[0] extends PromiseSettledResult<infer R> ? R : never)
+            serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [] as SerperSearchResult[])
           )
         ).then((results) =>
           results.flatMap((r) => (r.status === "fulfilled" ? r.value : []))

@@ -73,10 +73,10 @@ router.get("/federal-intel/:bucket", async (req, res) => {
     ]);
 
     const total = Number(totalRows[0]?.count ?? 0);
-    res.json({ items: rows, bucket, total, page, limit, pages: Math.ceil(total / limit) });
+    return res.json({ items: rows, bucket, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list federal intel items" });
+    return res.status(500).json({ error: "Failed to list federal intel items" });
   }
 });
 
@@ -96,10 +96,10 @@ router.patch("/federal-intel/:id/tag", async (req, res) => {
       .where(eq(federalIntelItemsTable.id, id))
       .returning();
     if (!rows.length) return res.status(404).json({ error: "Item not found" });
-    res.json({ item: rows[0] });
+    return res.json({ item: rows[0] });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to update action tag" });
+    return res.status(500).json({ error: "Failed to update action tag" });
   }
 });
 
@@ -152,10 +152,10 @@ router.post("/federal-intel/:bucket/refresh", async (req, res) => {
       if (rows[0]) upserted.push(rows[0]);
     }
 
-    res.json({ items: upserted, count: upserted.length, bucket, sources: sourceLog });
+    return res.json({ items: upserted, count: upserted.length, bucket, sources: sourceLog });
   } catch (err: any) {
     req.log.error(err);
-    res.status(500).json({ error: err?.message ?? "Refresh failed" });
+    return res.status(500).json({ error: err?.message ?? "Refresh failed" });
   }
 });
 
