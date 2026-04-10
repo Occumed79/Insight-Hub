@@ -177,10 +177,10 @@ router.get("/prospects/:id/locations", async (req, res) => {
       .from(prospectLocationsTable)
       .where(eq(prospectLocationsTable.prospectId, id))
       .orderBy(prospectLocationsTable.country, prospectLocationsTable.city);
-    res.json({ locations: locs });
+    return res.json({ locations: locs });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list locations" });
+    return res.status(500).json({ error: "Failed to list locations" });
   }
 });
 
@@ -345,10 +345,10 @@ ${textSample}`;
       .where(eq(prospectLocationsTable.prospectId, id))
       .orderBy(prospectLocationsTable.country, prospectLocationsTable.city);
 
-    res.json({ locations: allLocs, added, total: allLocs.length, errors, warnings, source });
+    return res.json({ locations: allLocs, added, total: allLocs.length, errors, warnings, source });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Location discovery failed" });
+    return res.status(500).json({ error: "Location discovery failed" });
   }
 });
 
@@ -362,10 +362,10 @@ router.get("/prospects/:id/jobs", async (req, res) => {
       .from(prospectJobsTable)
       .where(eq(prospectJobsTable.prospectId, id))
       .orderBy(prospectJobsTable.createdAt);
-    res.json({ jobs });
+    return res.json({ jobs });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list jobs" });
+    return res.status(500).json({ error: "Failed to list jobs" });
   }
 });
 
@@ -509,7 +509,7 @@ router.post("/prospects/:id/discover-jobs", async (req, res) => {
       .from(prospectLocationsTable)
       .where(eq(prospectLocationsTable.prospectId, id));
 
-    res.json({
+    return res.json({
       jobs: allJobs,
       locations: allLocs,
       stats: {
@@ -521,7 +521,7 @@ router.post("/prospects/:id/discover-jobs", async (req, res) => {
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Job discovery failed" });
+    return res.status(500).json({ error: "Job discovery failed" });
   }
 });
 
@@ -532,10 +532,10 @@ router.delete("/prospects/:id/locations/:locId", async (req, res) => {
     const { locId } = req.params;
     await db.delete(prospectJobsTable).where(eq(prospectJobsTable.locationId, locId));
     await db.delete(prospectLocationsTable).where(eq(prospectLocationsTable.id, locId));
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to delete location" });
+    return res.status(500).json({ error: "Failed to delete location" });
   }
 });
 

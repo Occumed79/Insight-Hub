@@ -94,10 +94,10 @@ router.get("/opportunities", async (req, res) => {
       relevanceScore: opp.relevanceScore ? parseFloat(opp.relevanceScore) : undefined,
     }));
 
-    res.json({ data: mapped, total, page: pageNum, limit: limitNum });
+    return res.json({ data: mapped, total, page: pageNum, limit: limitNum });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to fetch opportunities" });
+    return res.status(500).json({ error: "Failed to fetch opportunities" });
   }
 });
 
@@ -136,7 +136,7 @@ router.post("/opportunities/fetch", async (req, res) => {
     // Immediately archive anything that slipped through with a past deadline
     await archiveExpiredOpportunities();
 
-    res.json({
+    return res.json({
       fetched: result.fetched,
       created: result.created,
       updated: result.updated,
@@ -149,10 +149,10 @@ router.post("/opportunities/fetch", async (req, res) => {
     });
   } catch (err: any) {
     if (err.message === "SAM_API_KEY_NOT_CONFIGURED") {
-      res.status(400).json({ error: "No data sources are configured. Please add API keys in Integrations." });
+      return res.status(400).json({ error: "No data sources are configured. Please add API keys in Integrations." });
     } else {
       req.log.error(err);
-      res.status(500).json({ error: "Failed to fetch from data sources", details: err.message });
+      return res.status(500).json({ error: "Failed to fetch from data sources", details: err.message });
     }
   }
 });
@@ -164,10 +164,10 @@ router.post("/opportunities/import", upload.single("file"), async (req, res) => 
     }
     const csvContent = req.file.buffer.toString("utf-8");
     const result = await importFromCsv(csvContent);
-    res.json(result);
+    return res.json(result);
   } catch (err: any) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to import CSV", details: err.message });
+    return res.status(500).json({ error: "Failed to import CSV", details: err.message });
   }
 });
 
@@ -178,7 +178,7 @@ router.get("/opportunities/:id", async (req, res) => {
       return res.status(404).json({ error: "Opportunity not found" });
     }
     const opp = rows[0];
-    res.json({
+    return res.json({
       ...opp,
       awardAmount: opp.awardAmount ? parseFloat(opp.awardAmount) : undefined,
       estimatedValue: opp.estimatedValue ? parseFloat(opp.estimatedValue) : undefined,
@@ -188,17 +188,17 @@ router.get("/opportunities/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get opportunity" });
+    return res.status(500).json({ error: "Failed to get opportunity" });
   }
 });
 
 router.delete("/opportunities/:id", async (req, res) => {
   try {
     await db.delete(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to delete opportunity" });
+    return res.status(500).json({ error: "Failed to delete opportunity" });
   }
 });
 
@@ -317,7 +317,7 @@ router.post("/opportunities/enrich", async (req, res) => {
       }
     }
 
-    res.json({
+    return res.json({
       enriched: stats.enriched,
       agencyUpdated: stats.agencyUpdated,
       deadlineUpdated: stats.deadlineUpdated,
@@ -327,7 +327,7 @@ router.post("/opportunities/enrich", async (req, res) => {
     });
   } catch (err: any) {
     req.log.error(err);
-    res.status(500).json({ error: "Enrichment failed", details: err.message });
+    return res.status(500).json({ error: "Enrichment failed", details: err.message });
   }
 });
 

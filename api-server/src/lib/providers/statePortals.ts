@@ -104,7 +104,7 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
     estimatedValue: estimatedValue ?? undefined,
     description: snippet,
     sourceUrl: url,
-    source: "manual" as const,
+    source: "statePortals" as const,
     rawData: {
       providerName: "state_portals",
       portalName,

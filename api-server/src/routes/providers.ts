@@ -78,10 +78,10 @@ router.get("/providers", async (req, res) => {
         }
       })
     );
-    res.json({ providers: statuses });
+    return res.json({ providers: statuses });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get provider statuses" });
+    return res.status(500).json({ error: "Failed to get provider statuses" });
   }
 });
 
@@ -120,10 +120,10 @@ router.put("/providers/:name", async (req, res) => {
     } catch {
       status = { name: name as ProviderName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
     }
-    res.json({ name, status });
+    return res.json({ name, status });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to save provider credentials" });
+    return res.status(500).json({ error: "Failed to save provider credentials" });
   }
 });
 
