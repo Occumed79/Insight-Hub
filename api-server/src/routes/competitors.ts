@@ -27,10 +27,10 @@ router.get("/competitors", async (req, res) => {
       .select()
       .from(competitorsTable)
       .orderBy(competitorsTable.name);
-    res.json({ competitors: rows });
+    return res.json({ competitors: rows });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list competitors" });
+    return res.status(500).json({ error: "Failed to list competitors" });
   }
 });
 
@@ -59,10 +59,10 @@ router.post("/competitors", async (req, res) => {
         updatedAt: new Date(),
       })
       .returning();
-    res.status(201).json({ competitor: row[0] });
+    return res.status(201).json({ competitor: row[0] });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to create competitor" });
+    return res.status(500).json({ error: "Failed to create competitor" });
   }
 });
 
@@ -92,10 +92,10 @@ router.patch("/competitors/:id", async (req, res) => {
       .returning();
 
     if (!row.length) return res.status(404).json({ error: "Competitor not found" });
-    res.json({ competitor: row[0] });
+    return res.json({ competitor: row[0] });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to update competitor" });
+    return res.status(500).json({ error: "Failed to update competitor" });
   }
 });
 
@@ -109,10 +109,10 @@ router.delete("/competitors/:id", async (req, res) => {
       .where(eq(competitorsTable.id, id))
       .returning();
     if (!deleted.length) return res.status(404).json({ error: "Competitor not found" });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to delete competitor" });
+    return res.status(500).json({ error: "Failed to delete competitor" });
   }
 });
 
@@ -358,7 +358,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
       .where(eq(competitorsTable.id, id))
       .returning();
 
-    res.json({
+    return res.json({
       competitor: updated[0],
       stats: {
         serperResults: serperResults.length,
@@ -372,7 +372,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Research failed" });
+    return res.status(500).json({ error: "Research failed" });
   }
 });
 

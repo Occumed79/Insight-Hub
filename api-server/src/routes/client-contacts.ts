@@ -65,10 +65,10 @@ router.get("/clients/:id/contacts", async (req, res) => {
       .from(clientContactsTable)
       .where(eq(clientContactsTable.clientId, req.params.id))
       .orderBy(clientContactsTable.category, clientContactsTable.name);
-    res.json({ contacts });
+    return res.json({ contacts });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list contacts" });
+    return res.status(500).json({ error: "Failed to list contacts" });
   }
 });
 
@@ -93,10 +93,10 @@ router.post("/clients/:id/contacts", async (req, res) => {
       updatedAt: new Date(),
     };
     const [inserted] = await db.insert(clientContactsTable).values(contact).returning();
-    res.json({ contact: inserted });
+    return res.json({ contact: inserted });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to add contact" });
+    return res.status(500).json({ error: "Failed to add contact" });
   }
 });
 
@@ -140,10 +140,10 @@ router.post("/clients/:id/contacts/bulk", async (req, res) => {
       .where(eq(clientContactsTable.clientId, req.params.id))
       .orderBy(clientContactsTable.category);
 
-    res.json({ contacts: all, added: rows.length });
+    return res.json({ contacts: all, added: rows.length });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to bulk insert contacts" });
+    return res.status(500).json({ error: "Failed to bulk insert contacts" });
   }
 });
 
@@ -157,10 +157,10 @@ router.delete("/clients/:id/contacts/:cid", async (req, res) => {
           eq(clientContactsTable.clientId, req.params.id)
         )
       );
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to delete contact" });
+    return res.status(500).json({ error: "Failed to delete contact" });
   }
 });
 

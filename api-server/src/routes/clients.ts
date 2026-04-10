@@ -201,10 +201,10 @@ router.get("/clients", async (req, res) => {
       branchCount: branchCountMap[c.id] || 0,
     }));
 
-    res.json({ clients: clientsWithCounts });
+    return res.json({ clients: clientsWithCounts });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to list clients" });
+    return res.status(500).json({ error: "Failed to list clients" });
   }
 });
 
@@ -222,10 +222,10 @@ router.get("/clients/:id", async (req, res) => {
       .where(eq(clientBranchesTable.clientId, id))
       .orderBy(clientBranchesTable.country, clientBranchesTable.city);
 
-    res.json({ client: rows[0], branches });
+    return res.json({ client: rows[0], branches });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get client" });
+    return res.status(500).json({ error: "Failed to get client" });
   }
 });
 
@@ -380,10 +380,10 @@ ${textSample}`;
       .where(eq(clientBranchesTable.clientId, id))
       .orderBy(clientBranchesTable.country, clientBranchesTable.city);
 
-    res.json({ branches: allBranches, added, total: allBranches.length, errors, warnings, source });
+    return res.json({ branches: allBranches, added, total: allBranches.length, errors, warnings, source });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Branch discovery failed" });
+    return res.status(500).json({ error: "Branch discovery failed" });
   }
 });
 
@@ -404,10 +404,10 @@ router.get("/clients/:id/branches/:branchId/hiring", async (req, res) => {
       .where(eq(branchHiringPostsTable.branchId, branchId))
       .orderBy(branchHiringPostsTable.createdAt);
 
-    res.json({ branch: branch[0], posts });
+    return res.json({ branch: branch[0], posts });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Failed to get hiring data" });
+    return res.status(500).json({ error: "Failed to get hiring data" });
   }
 });
 
@@ -578,7 +578,7 @@ Respond with the summary sentence(s) on line 1, then the direction word on the l
       .from(branchHiringPostsTable)
       .where(eq(branchHiringPostsTable.branchId, branchId));
 
-    res.json({
+    return res.json({
       branch: updatedBranch[0],
       posts,
       stats: { postsFound: postsToInsert.length, trendDirection, overallClientTrend: overallTrend },
@@ -586,7 +586,7 @@ Respond with the summary sentence(s) on line 1, then the direction word on the l
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Hiring refresh failed" });
+    return res.status(500).json({ error: "Hiring refresh failed" });
   }
 });
 
@@ -648,10 +648,10 @@ router.get("/clients/intelligence/summary", async (req, res) => {
       activeLitigationCount,
     };
     intelCacheSet("summary", summaryResult);
-    res.json(summaryResult);
+    return res.json(summaryResult);
   } catch (err: unknown) {
     req.log.error(err);
-    res.status(500).json({ error: "Summary failed", detail: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "Summary failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -791,11 +791,11 @@ router.get("/clients/:id/intelligence/fec", async (req, res) => {
       recentDisbursements,
     };
     intelCacheSet(`fec:${id}`, fecResult);
-    res.json(fecResult);
+    return res.json(fecResult);
   } catch (err: unknown) {
     req.log.error(err);
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: "FEC data fetch failed", detail: msg });
+    return res.status(500).json({ error: "FEC data fetch failed", detail: msg });
   }
 });
 
@@ -887,10 +887,10 @@ router.get("/clients/:id/intelligence/osha", async (req, res) => {
 
     const oshaResult = { configured: true, inspections, total: inspections.length, source: "serper" };
     intelCacheSet(`osha:${id}`, oshaResult);
-    res.json(oshaResult);
+    return res.json(oshaResult);
   } catch (err: unknown) {
     req.log.error(err);
-    res.status(500).json({ error: "OSHA data fetch failed", detail: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "OSHA data fetch failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -962,10 +962,10 @@ router.get("/clients/:id/intelligence/litigation", async (req, res) => {
 
     const litigationResult = { configured: true, cases, total: data.count || cases.length };
     intelCacheSet(`litigation:${id}`, litigationResult);
-    res.json(litigationResult);
+    return res.json(litigationResult);
   } catch (err: unknown) {
     req.log.error(err);
-    res.status(500).json({ error: "Litigation data fetch failed", detail: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "Litigation data fetch failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 
