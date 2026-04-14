@@ -55,6 +55,18 @@ export class SamGovProvider implements DataSourceProvider {
     const fmt = (d: Date) =>
       `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
 
+    // Occu-Med relevant NAICS codes:
+    // 621111 - Offices of Physicians (except Mental Health)
+    // 621999 - All Other Miscellaneous Ambulatory Health Care Services
+    // 621512 - Diagnostic Imaging Centers
+    // 621310 - Offices of Chiropractors (DOT/physical exams)
+    // 561320 - Temporary Help Services (staffed health programs)
+    // 923120 - Administration of Public Health Programs
+    const OCCUMED_NAICS = ["621111", "621999", "621512", "621310", "561320", "923120"];
+
+    // Occu-Med default keywords to search when no custom keywords provided
+    const DEFAULT_KEYWORDS = "occupational health drug testing pre-employment physical DOT medical examination";
+
     const params = new URLSearchParams({
       api_key: apiKey,
       postedFrom: fmt(fromDate),
@@ -63,7 +75,12 @@ export class SamGovProvider implements DataSourceProvider {
       offset: String(options.offset ?? 0),
     });
 
-    if (options.keywords?.trim()) params.set("keywords", options.keywords.trim());
+    // Always search with Occu-Med relevant keywords for better signal
+    const searchKeywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
+    params.set("keywords", searchKeywords);
+
+    // Filter to active solicitations only — exclude awards, modifications, cancellations
+    params.set("typeOfNotice", "o,p,k,r"); // Solicitation, Pre-sol, Sources Sought, Special Notice
 
     const response = await fetch(`${baseUrl}?${params}`);
     if (!response.ok) {
@@ -81,10 +98,32 @@ export class SamGovProvider implements DataSourceProvider {
 
     const opps = json.opportunitiesData ?? [];
 
+    const OCCUMED_RELEVANT_TERMS = [
+      "occupational health", "occupational medicine", "drug test", "drug screen",
+      "pre-employment", "pre employment", "physical exam", "medical exam",
+      "dot physical", "fit for duty", "employee health", "workplace health",
+      "wellness", "pulmonary", "audiometric", "audiometry", "spirometry",
+      "respiratory protection", "eap ", "employee assistance",
+      "health screening", "biometric", "vaccination", "immunization",
+      "substance abuse", "mro ", "medical review officer", "breath alcohol",
+      "random testing", "post-accident", "return to duty",
+      "621111", "621999", "621512", "621310",
+    ];
+
+    const normalized = opps.map((o) => this.normalize(o));
+
+    // Filter to only include opportunities relevant to Occu-Med's service lines
+    const relevant = normalized.filter((opp) => {
+      const text = `${opp.title} ${opp.description ?? ""} ${opp.naicsCode ?? ""}`.toLowerCase();
+      return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term));
+    });
+
     return {
-      records: opps.map((o) => this.normalize(o)),
+      records: relevant.length > 0 ? relevant : normalized, // fallback to all if nothing matches
       total: json.totalRecords ?? opps.length,
-      errors: [],
+      errors: relevant.length === 0 && normalized.length > 0
+        ? ["Note: no results matched Occu-Med service lines — returning all results as fallback"]
+        : [],
     };
   }
 

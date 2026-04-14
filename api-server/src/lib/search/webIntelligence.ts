@@ -30,8 +30,8 @@ const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 const NOW = new Date();
 
-// Minimum Gemini relevance score to include (0-100). Raised from 40 to 65.
-const MIN_RELEVANCE_SCORE = 65;
+// Minimum Gemini relevance score to include (0-100). Raised to 75 for quality control.
+const MIN_RELEVANCE_SCORE = 75;
 
 // Gemini concurrency per batch
 const GEMINI_BATCH_SIZE = 3;
@@ -89,16 +89,33 @@ const TAVILY_QUERIES = [
  * and other non-procurement sources that flood Google results.
  */
 const BLOCKED_DOMAINS = [
-  "linkedin.com", "facebook.com", "twitter.com", "instagram.com",
-  "wikipedia.org", "reddit.com", "youtube.com",
-  "govinfo.gov", // regulations/FR, not active bids
-  "federalregister.gov", // rules, not bids
-  "usaspending.gov", // awarded contracts, not open bids
-  "fpds.gov", // contract awards
-  "bloomberg.com", "reuters.com", "wsj.com", "nytimes.com",
+  // Social media
+  "linkedin.com", "facebook.com", "twitter.com", "instagram.com", "x.com",
+  "reddit.com", "youtube.com", "tiktok.com",
+  // Reference / encyclopedias
+  "wikipedia.org", "britannica.com",
+  // Government reference (NOT procurement)
+  "govinfo.gov",          // regulations/FR, not active bids
+  "federalregister.gov",  // rules, not bids
+  "usaspending.gov",      // awarded contracts — NOT open bids
+  "fpds.gov",             // contract awards
+  "regulations.gov",      // regulations
+  "gao.gov",              // audit reports
+  "opm.gov",              // federal HR
+  // News / media
+  "bloomberg.com", "reuters.com", "wsj.com", "nytimes.com", "washingtonpost.com",
   "forbes.com", "inc.com", "businesswire.com", "prnewswire.com", "businessinsider.com",
-  "indeed.com", "glassdoor.com", "ziprecruiter.com", // job sites
-  "yelp.com", "healthgrades.com", // consumer sites
+  "apnews.com", "cnbc.com", "cnn.com", "foxbusiness.com", "politico.com",
+  "govexec.com", "nextgov.com", "federalnewsnetwork.com", // govt news — not bids
+  // Job boards
+  "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com",
+  "careerbuilder.com", "simplyhired.com", "usajobs.gov", "jobs.mil",
+  // Consumer health
+  "yelp.com", "healthgrades.com", "webmd.com", "healthline.com",
+  // Document/sharing
+  "scribd.com", "slideshare.net", "issuu.com",
+  // Vendor marketing (not actual bids)
+  "gartner.com", "capterra.com", "g2.com",
 ];
 
 /**
@@ -457,13 +474,12 @@ export async function webIntelligenceFetch(options: {
   }
 
   if (!useGemini || stats.geminiRateLimited) {
-    const fallbackOpps = enrichedCandidates
-      .map(candidateToFallbackOpportunity)
-      .filter(Boolean);
+    // When Gemini is unavailable, do NOT save low-confidence fallback results —
+    // they produce too many garbage entries. Return only validated state portal results.
     return {
-      opportunities: [...statePortalOpportunities, ...fallbackOpps],
-      stats: { ...stats, extracted: fallbackOpps.length },
-      errors: [...errors, "Gemini unavailable — saving pre-filtered results as low-confidence."],
+      opportunities: statePortalOpportunities,
+      stats: { ...stats, extracted: 0 },
+      errors: [...errors, "Gemini unavailable — web results skipped to avoid low-quality entries. Try again when quota resets."],
     };
   }
 
@@ -545,28 +561,16 @@ export async function webIntelligenceFetch(options: {
   } catch (err: any) {
     if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
       stats.geminiRateLimited = true;
-      errors.push("Gemini quota reached mid-run — saving remaining as low-confidence.");
-      const remaining = enrichedCandidates.filter(
-        (c) => !opportunities.some((o) => o.sourceUrl === c.url)
-      );
-      for (const c of remaining) {
-        const opp = candidateToFallbackOpportunity(c);
-        if (opp) { opportunities.push(opp); stats.extracted++; }
-      }
+      errors.push("Gemini quota reached mid-run — remaining candidates discarded to avoid low-quality entries.");
+      // Do NOT save remaining candidates as fallback — they produce garbage results.
     } else {
       errors.push(`Web intelligence error: ${err.message}`);
     }
   }
 
   if (geminiQuotaHit) {
-    errors.push("Gemini quota hit — remaining candidates saved as low-confidence.");
-    const remaining = enrichedCandidates.filter(
-      (c) => !opportunities.some((o) => o.sourceUrl === c.url)
-    );
-    for (const c of remaining) {
-      const opp = candidateToFallbackOpportunity(c);
-      if (opp) { opportunities.push(opp); stats.extracted++; }
-    }
+    errors.push("Gemini quota hit — remaining unprocessed candidates discarded (not saved as low-confidence).");
+    // Intentionally not saving fallback results — quality control.
   }
 
   return { opportunities: [...statePortalOpportunities, ...opportunities], stats, errors };
