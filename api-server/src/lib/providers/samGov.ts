@@ -65,7 +65,7 @@ export class SamGovProvider implements DataSourceProvider {
     const OCCUMED_NAICS = ["621111", "621999", "621512", "621310", "561320", "923120"];
 
     // Occu-Med default keywords to search when no custom keywords provided
-    const DEFAULT_KEYWORDS = "occupational health drug testing pre-employment physical DOT medical examination";
+    const DEFAULT_KEYWORDS = "occupational health";
 
     const params = new URLSearchParams({
       api_key: apiKey,
@@ -79,8 +79,8 @@ export class SamGovProvider implements DataSourceProvider {
     const searchKeywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
     params.set("keywords", searchKeywords);
 
-    // Filter to active solicitations only — exclude awards, modifications, cancellations
-    params.set("typeOfNotice", "o,p,k,r"); // Solicitation, Pre-sol, Sources Sought, Special Notice
+    // Note: we do NOT filter by typeOfNotice here because SAM.gov returns "o,p,k,r" format
+    // differently across API versions. Post-fetch relevance filtering handles quality instead.
 
     const response = await fetch(`${baseUrl}?${params}`);
     if (!response.ok) {
