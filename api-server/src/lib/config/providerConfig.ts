@@ -514,8 +514,6 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     status: "partial",
     notes: "Uses your CLōD project JWT as the API key. Set endpoint to https://api.clod.io/v1. Functions identically to OpenRouter/Groq — can run query generation, extraction, and scoring workflows.",
   },
-};
-
 
   jina: {
     name: "jina",
@@ -542,6 +540,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ],
     status: "active",
   },
+};
 
 /**
  * Get a setting value from DB first, then fall back to environment variable.
@@ -559,3 +558,4 @@ export async function resolveCredential(dbKey: string, envKey?: string): Promise
 
   return null;
 }
+
