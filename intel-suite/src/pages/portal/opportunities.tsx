@@ -619,6 +619,10 @@ export default function OpportunitiesDashboard() {
                     { key: "olostep", label: "Olostep", desc: "Web crawling & scraping", stub: false },
                     { key: "browseAi", label: "Browse AI", desc: "Automated web extraction", stub: false },
                     { key: "firecrawl", label: "Firecrawl", desc: "Deep web crawling", stub: false },
+                    { key: "you", label: "You.com", desc: "AI-powered web search", stub: false },
+                    { key: "langsearch", label: "Langsearch", desc: "LLM-native search", stub: false },
+                    { key: "websearch", label: "WebSearch API", desc: "Broad web coverage", stub: false },
+                    { key: "minimax", label: "Minimax AI", desc: "AI scoring ensemble", stub: false },
                     { key: "tango", label: "Tango", desc: "Pending API access", stub: true },
                     { key: "bidnet", label: "BidNet Direct", desc: "Pending API access", stub: true },
                   ].map(({ key, label, desc, stub }) => {
