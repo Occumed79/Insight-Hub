@@ -610,8 +610,15 @@ export default function OpportunitiesDashboard() {
                     { key: "sam_gov", label: "SAM.gov", desc: "Federal solicitations", stub: false },
                     { key: "serper", label: "Serper", desc: "Web search (Google)", stub: false },
                     { key: "tavily", label: "Tavily", desc: "Deep AI research", stub: false },
-                    { key: "gemini", label: "Gemini AI", desc: "Structured extraction", stub: false },
+                    { key: "exa", label: "Exa", desc: "Semantic web search", stub: false },
+                    { key: "jina", label: "Jina AI", desc: "URL content extraction", stub: false },
+                    { key: "gemini", label: "Gemini AI", desc: "AI scoring & extraction", stub: false },
+                    { key: "groq", label: "Groq", desc: "Fast AI scoring", stub: false },
+                    { key: "openrouter", label: "OpenRouter", desc: "Multi-model AI scoring", stub: false },
                     { key: "statePortals", label: "State Portals", desc: "24 state & regional portals", stub: false },
+                    { key: "olostep", label: "Olostep", desc: "Web crawling & scraping", stub: false },
+                    { key: "browseAi", label: "Browse AI", desc: "Automated web extraction", stub: false },
+                    { key: "firecrawl", label: "Firecrawl", desc: "Deep web crawling", stub: false },
                     { key: "tango", label: "Tango", desc: "Pending API access", stub: true },
                     { key: "bidnet", label: "BidNet Direct", desc: "Pending API access", stub: true },
                   ].map(({ key, label, desc, stub }) => {
@@ -769,3 +776,4 @@ export default function OpportunitiesDashboard() {
     </div>
   );
 }
+
