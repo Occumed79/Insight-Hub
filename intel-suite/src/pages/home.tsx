@@ -6,38 +6,41 @@ import occuMedLogo from "@assets/OM-logo-150dpi_1774901578920.png";
 export default function Home() {
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
-      {/* Background — animated glowing orbs */}
+      {/* Animated glowing orbs background */}
       <style>{`
-        @keyframes home-drift-1 {
-          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.30; }
-          33%  { transform: translate(5%, 10%)   scale(1.10); opacity: 0.40; }
-          66%  { transform: translate(-5%, 4%)   scale(0.94); opacity: 0.22; }
-          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.30; }
+        @keyframes home-orb1 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          25%  { transform: translate(70px, 90px) scale(1.13); }
+          50%  { transform: translate(20px, 160px) scale(0.90); }
+          75%  { transform: translate(-50px, 70px) scale(1.07); }
+          100% { transform: translate(0px, 0px) scale(1); }
         }
-        @keyframes home-drift-2 {
-          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.22; }
-          33%  { transform: translate(-8%, -6%)  scale(1.12); opacity: 0.32; }
-          66%  { transform: translate(6%, -9%)   scale(0.91); opacity: 0.14; }
-          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.22; }
+        @keyframes home-orb2 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          25%  { transform: translate(-90px, -70px) scale(1.18); }
+          50%  { transform: translate(-40px, -130px) scale(0.87); }
+          75%  { transform: translate(60px, -60px) scale(1.09); }
+          100% { transform: translate(0px, 0px) scale(1); }
         }
-        @keyframes home-drift-3 {
-          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.18; }
-          50%  { transform: translate(9%, -7%)   scale(1.18); opacity: 0.28; }
-          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.18; }
+        @keyframes home-orb3 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          33%  { transform: translate(110px, -90px) scale(1.22); }
+          66%  { transform: translate(-70px, 70px) scale(0.84); }
+          100% { transform: translate(0px, 0px) scale(1); }
         }
         @keyframes home-pulse {
-          0%, 100% { opacity: 0.10; }
-          50%       { opacity: 0.20; }
+          0%, 100% { opacity: 0.55; transform: scale(1); }
+          50%       { opacity: 0.90; transform: scale(1.18); }
         }
       `}</style>
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 bg-background" />
-        <div style={{position:"absolute",top:"-25%",left:"-10%",width:"62%",height:"62%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, transparent 70%)",filter:"blur(100px)",animation:"home-drift-1 20s ease-in-out infinite"}} />
-        <div style={{position:"absolute",bottom:"-20%",right:"-8%",width:"52%",height:"67%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, hsl(var(--accent)) 40%, transparent 70%)",filter:"blur(110px)",animation:"home-drift-2 25s ease-in-out infinite",animationDelay:"-9s"}} />
-        <div style={{position:"absolute",top:"25%",right:"15%",width:"32%",height:"37%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--accent)) 0%, hsl(var(--primary)) 50%, transparent 70%)",filter:"blur(80px)",animation:"home-drift-3 16s ease-in-out infinite",animationDelay:"-6s"}} />
-        <div style={{position:"absolute",top:"55%",left:"30%",width:"27%",height:"27%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, transparent 70%)",filter:"blur(70px)",animation:"home-pulse 11s ease-in-out infinite",animationDelay:"-4s"}} />
+        <div style={{position:"absolute",top:"-12%",left:"-8%",width:"650px",height:"650px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(56,182,255,0.60) 0%, rgba(56,182,255,0.28) 35%, transparent 70%)",filter:"blur(40px)",animation:"home-orb1 22s ease-in-out infinite"}} />
+        <div style={{position:"absolute",bottom:"-10%",right:"-6%",width:"750px",height:"750px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,140,255,0.65) 0%, rgba(80,200,255,0.30) 35%, transparent 70%)",filter:"blur(45px)",animation:"home-orb2 28s ease-in-out infinite",animationDelay:"-11s"}} />
+        <div style={{position:"absolute",top:"28%",right:"12%",width:"480px",height:"480px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(0,200,220,0.50) 0%, rgba(56,182,255,0.22) 40%, transparent 70%)",filter:"blur(35px)",animation:"home-orb3 17s ease-in-out infinite",animationDelay:"-6s"}} />
+        <div style={{position:"absolute",top:"5%",right:"8%",width:"300px",height:"300px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.75) 0%, rgba(56,182,255,0.35) 40%, transparent 70%)",filter:"blur(25px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s"}} />
+        <div style={{position:"absolute",bottom:"12%",left:"6%",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.55) 0%, rgba(56,182,255,0.25) 40%, transparent 70%)",filter:"blur(30px)",animation:"home-pulse 14s ease-in-out infinite",animationDelay:"-8s"}} />
       </div>
-
       <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
         
         <motion.div 
