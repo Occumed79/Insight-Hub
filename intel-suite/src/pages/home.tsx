@@ -6,13 +6,36 @@ import occuMedLogo from "@assets/OM-logo-150dpi_1774901578920.png";
 export default function Home() {
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
-      {/* Background — rich navy gradient blobs for liquid glass depth */}
+      {/* Background — animated glowing orbs */}
+      <style>{`
+        @keyframes home-drift-1 {
+          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.30; }
+          33%  { transform: translate(5%, 10%)   scale(1.10); opacity: 0.40; }
+          66%  { transform: translate(-5%, 4%)   scale(0.94); opacity: 0.22; }
+          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.30; }
+        }
+        @keyframes home-drift-2 {
+          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.22; }
+          33%  { transform: translate(-8%, -6%)  scale(1.12); opacity: 0.32; }
+          66%  { transform: translate(6%, -9%)   scale(0.91); opacity: 0.14; }
+          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.22; }
+        }
+        @keyframes home-drift-3 {
+          0%   { transform: translate(0%, 0%)    scale(1);    opacity: 0.18; }
+          50%  { transform: translate(9%, -7%)   scale(1.18); opacity: 0.28; }
+          100% { transform: translate(0%, 0%)    scale(1);    opacity: 0.18; }
+        }
+        @keyframes home-pulse {
+          0%, 100% { opacity: 0.10; }
+          50%       { opacity: 0.20; }
+        }
+      `}</style>
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 bg-background" />
-        <div className="absolute top-[-25%] left-[-10%] w-[60%] h-[60%] rounded-full bg-primary/30 blur-[120px]" />
-        <div className="absolute bottom-[-20%] right-[-8%] w-[50%] h-[65%] rounded-full bg-accent/22 blur-[130px]" />
-        <div className="absolute top-[25%] right-[15%] w-[30%] h-[35%] rounded-full bg-primary/18 blur-[90px]" />
-        <div className="absolute top-[55%] left-[30%] w-[25%] h-[25%] rounded-full bg-accent/14 blur-[80px]" />
+        <div style={{position:"absolute",top:"-25%",left:"-10%",width:"62%",height:"62%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, transparent 70%)",filter:"blur(100px)",animation:"home-drift-1 20s ease-in-out infinite"}} />
+        <div style={{position:"absolute",bottom:"-20%",right:"-8%",width:"52%",height:"67%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, hsl(var(--accent)) 40%, transparent 70%)",filter:"blur(110px)",animation:"home-drift-2 25s ease-in-out infinite",animationDelay:"-9s"}} />
+        <div style={{position:"absolute",top:"25%",right:"15%",width:"32%",height:"37%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--accent)) 0%, hsl(var(--primary)) 50%, transparent 70%)",filter:"blur(80px)",animation:"home-drift-3 16s ease-in-out infinite",animationDelay:"-6s"}} />
+        <div style={{position:"absolute",top:"55%",left:"30%",width:"27%",height:"27%",borderRadius:"50%",background:"radial-gradient(circle, hsl(var(--primary)) 0%, transparent 70%)",filter:"blur(70px)",animation:"home-pulse 11s ease-in-out infinite",animationDelay:"-4s"}} />
       </div>
 
       <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
