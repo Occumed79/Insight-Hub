@@ -20,6 +20,9 @@ import { randomUUID } from "crypto";
 import { samGovProvider } from "../providers/samGov";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
+import { youProvider } from "../providers/you";
+import { langsearchProvider } from "../providers/langsearch";
+import { websearchProvider } from "../providers/websearch";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -100,7 +103,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   }
 
   // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl"];
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -110,6 +113,11 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const useStatePortals = requestedProviders.includes("statePortals");
     const useExa = requestedProviders.includes("exa");
     const useFirecrawl = requestedProviders.includes("firecrawl");
+    const useYou = requestedProviders.includes("you");
+    const useLangsearch = requestedProviders.includes("langsearch");
+    const useWebsearch = requestedProviders.includes("websearch");
+    const useGroqFetch = requestedProviders.includes("groq");
+    const useOpenrouterFetch = requestedProviders.includes("openrouter");
 
     try {
       const webResult = await webIntelligenceFetch({
@@ -120,6 +128,11 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
         useStatePortals,
         useExa,
         useFirecrawl,
+        useYou,
+        useLangsearch,
+        useWebsearch,
+        useGroqFetch,
+        useOpenrouterFetch,
       });
 
       allRecords.push(...webResult.opportunities);

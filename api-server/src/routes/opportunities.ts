@@ -117,6 +117,19 @@ router.post("/opportunities/fetch", async (req, res) => {
       tavily: "tavily",
       tango: "tango",
       bidnet: "bidnet",
+      exa: "exa",
+      jina: "jina",
+      firecrawl: "firecrawl",
+      groq: "groq",
+      openrouter: "openrouter",
+      minimax: "minimax",
+      statePortals: "statePortals",
+      olostep: "olostep",
+      browseAi: "browseAi",
+      browserUse: "browserUse",
+      you: "you",
+      langsearch: "langsearch",
+      websearch: "websearch",
     };
 
     let resolvedProviders: string[];

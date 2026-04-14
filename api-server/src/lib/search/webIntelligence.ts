@@ -26,6 +26,9 @@ import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
 import { jinaProvider } from "../providers/jina";
 import { extractWithMultipleAIs } from "./multiScorer";
+import { youProvider } from "../providers/you";
+import { langsearchProvider } from "../providers/langsearch";
+import { websearchProvider } from "../providers/websearch";
 import type { NormalizedOpportunity } from "../providers/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -287,6 +290,11 @@ export async function webIntelligenceFetch(options: {
   useStatePortals?: boolean;
   useExa?: boolean;
   useFirecrawl?: boolean;
+  useYou?: boolean;
+  useLangsearch?: boolean;
+  useWebsearch?: boolean;
+  useGroqFetch?: boolean;
+  useOpenrouterFetch?: boolean;
 }): Promise<WebIntelligenceResult> {
   const errors: string[] = [];
   const stats = {
@@ -309,6 +317,9 @@ export async function webIntelligenceFetch(options: {
   const useStatePortals = options.useStatePortals === true;
   const useExa = options.useExa !== false;
   const useFirecrawl = options.useFirecrawl !== false;
+  const useYou = options.useYou === true;
+  const useLangsearch = options.useLangsearch === true;
+  const useWebsearch = options.useWebsearch === true;
 
   // ── 1. Generate custom queries if Gemini is available ──────────────────────
   let serperQueries = OCCUMED_WEB_QUERIES;
@@ -357,7 +368,7 @@ export async function webIntelligenceFetch(options: {
   const allSerperQueries = [...serperQueries, ...geminiQueries];
 
   // ── 2. Fetch from Serper, Exa, Tavily, and State Portals in parallel ───────
-  const [serperRaw, exaRaw, tavilyRaw, statePortalRaw] = await Promise.all([
+  const [serperRaw, exaRaw, tavilyRaw, statePortalRaw, youRaw, langsearchRaw, websearchRaw] = await Promise.all([
     useSerper
       ? Promise.allSettled(
           allSerperQueries.map((q) =>
@@ -394,11 +405,36 @@ export async function webIntelligenceFetch(options: {
           return [];
         })
       : Promise.resolve([]),
+
+    useYou
+      ? youProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
+          errors.push(`You.com: ${err.message}`);
+          return [];
+        })
+      : Promise.resolve([]),
+
+    useLangsearch
+      ? langsearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
+          errors.push(`Langsearch: ${err.message}`);
+          return [];
+        })
+      : Promise.resolve([]),
+
+    useWebsearch
+      ? websearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
+          errors.push(`WebSearch: ${err.message}`);
+          return [];
+        })
+      : Promise.resolve([]),
   ]);
 
   stats.serperResults = serperRaw.length;
   stats.exaResults = exaRaw.length;
   stats.tavilyResults = tavilyRaw.length;
+  // Additional provider raw counts logged but not in stats struct (to avoid schema change)
+  if (youRaw.length) errors.push(`You.com: ${youRaw.length} raw results`);
+  if (langsearchRaw.length) errors.push(`Langsearch: ${langsearchRaw.length} raw results`);
+  if (websearchRaw.length) errors.push(`WebSearch: ${websearchRaw.length} raw results`);
 
   const statePortalOpportunities = statePortalsProvider.toOpportunities(statePortalRaw);
   stats.statePortalResults = statePortalOpportunities.length;
@@ -429,6 +465,30 @@ export async function webIntelligenceFetch(options: {
     if (!r.url || seen.has(r.url) || isBlockedDomain(r.url)) continue;
     seen.add(r.url);
     candidates.push({ title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
+  }
+
+  // Add You.com results to candidates
+  for (const r of youRaw as any[]) {
+    const url = r.url ?? r.sourceUrl ?? "";
+    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
+    seen.add(url);
+    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "you" });
+  }
+
+  // Add Langsearch results to candidates
+  for (const r of langsearchRaw as any[]) {
+    const url = r.url ?? r.sourceUrl ?? "";
+    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
+    seen.add(url);
+    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "langsearch" });
+  }
+
+  // Add WebSearch results to candidates
+  for (const r of websearchRaw as any[]) {
+    const url = r.url ?? r.sourceUrl ?? "";
+    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
+    seen.add(url);
+    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "websearch" });
   }
 
   stats.totalCandidates = candidates.length;

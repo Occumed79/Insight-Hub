@@ -14,6 +14,7 @@
 import { geminiProvider } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
+import { minimaxProvider } from "../providers/minimax";
 import { OCCUMED_PROFILE } from "../providers/gemini";
 
 export type ScoringMode = "consensus" | "majority" | "union";
@@ -46,10 +47,11 @@ export async function scoreWithMultipleAIs(
   description: string,
   mode: ScoringMode = "union"
 ): Promise<MultiScorerResult> {
-  const [geminiResult, groqResult, openrouterResult] = await Promise.allSettled([
+  const [geminiResult, groqResult, openrouterResult, minimaxResult] = await Promise.allSettled([
     geminiProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
     groqProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
     openrouterProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
+    minimaxProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
   ]);
 
   const votes: ScorerVote[] = [];
@@ -69,6 +71,7 @@ export async function scoreWithMultipleAIs(
   addVote("gemini", geminiResult);
   addVote("groq", groqResult);
   addVote("openrouter", openrouterResult);
+  addVote("minimax", minimaxResult);
 
   if (votes.length === 0) {
     // All scorers failed — default pass with low score so we don't silently drop things
@@ -131,9 +134,10 @@ export async function extractWithMultipleAIs(
   winnerScorer?: string;
   reason?: string;
 } | null> {
-  const [geminiResult, groqResult] = await Promise.allSettled([
+  const [geminiResult, groqResult, minimaxExtractResult] = await Promise.allSettled([
     geminiProvider.extractOpportunityFromWebResult(title, url, content).catch(() => null),
     groqProvider.extractOpportunityFromWebResult(title, url, content).catch(() => null),
+    minimaxProvider.extractOpportunityFromWebResult(title, url, content).catch(() => null),
   ]);
 
   const results: Array<{
@@ -146,6 +150,9 @@ export async function extractWithMultipleAIs(
   }
   if (groqResult.status === "fulfilled" && groqResult.value?.isOpportunity) {
     results.push({ scorer: "groq", data: groqResult.value });
+  }
+  if (minimaxExtractResult.status === "fulfilled" && minimaxExtractResult.value?.isOpportunity) {
+    results.push({ scorer: "minimax", data: minimaxExtractResult.value });
   }
 
   if (results.length === 0) {
