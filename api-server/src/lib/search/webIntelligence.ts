@@ -24,6 +24,8 @@ import { statePortalsProvider } from "../providers/statePortals";
 import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
+import { jinaProvider } from "../providers/jina";
+import { extractWithMultipleAIs } from "./multiScorer";
 import type { NormalizedOpportunity } from "../providers/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -440,8 +442,11 @@ export async function webIntelligenceFetch(options: {
     return { opportunities: statePortalOpportunities, stats, errors };
   }
 
-  // ── 5. FireCrawl full-page enrichment (top candidates only) ───────────────
+  // ── 5. Full-page enrichment (FireCrawl primary, Jina fallback) ─────────────
   const enrichedCandidates = [...filtered];
+
+  // Track which URLs still need enrichment after FireCrawl
+  const needsJinaEnrichment: typeof filtered = [];
 
   if (useFirecrawl) {
     const fcConfigured = await firecrawlProvider.isConfigured();
@@ -473,17 +478,44 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  if (!useGemini || stats.geminiRateLimited) {
-    // When Gemini is unavailable, do NOT save low-confidence fallback results —
-    // they produce too many garbage entries. Return only validated state portal results.
-    return {
-      opportunities: statePortalOpportunities,
-      stats: { ...stats, extracted: 0 },
-      errors: [...errors, "Gemini unavailable — web results skipped to avoid low-quality entries. Try again when quota resets."],
-    };
+  // ── 5b. Jina enrichment for candidates still lacking full content ──────────
+  //    Runs on candidates that FireCrawl didn't enrich (short content, no FC key, etc.)
+  const jinaConfigured = await jinaProvider.isConfigured();
+  if (jinaConfigured) {
+    const stillShort = enrichedCandidates.filter(
+      (c) => !c.firecrawlEnriched && c.content.length < 600
+    );
+    if (stillShort.length > 0) {
+      try {
+        const jinaResults = await jinaProvider.extractUrls(
+          stillShort.map((c) => c.url),
+          4,     // concurrency
+          5000   // max chars per page
+        );
+        for (const [url, text] of jinaResults) {
+          const idx = enrichedCandidates.findIndex((c) => c.url === url);
+          if (idx >= 0 && text.length > 200) {
+            enrichedCandidates[idx] = {
+              ...enrichedCandidates[idx],
+              content: text,
+            };
+          }
+        }
+      } catch (err: any) {
+        errors.push(`Jina enrichment: ${err.message}`);
+      }
+    }
   }
 
-  // ── 6. Gemini extraction with full content ─────────────────────────────────
+  // Previously we'd bail here if Gemini was unavailable.
+  // Now we have Groq + OpenRouter as fallbacks, so we always proceed.
+  if (stats.geminiRateLimited) {
+    errors.push("Gemini rate limited — falling back to Groq + OpenRouter for scoring.");
+  }
+
+  // ── 6. Multi-AI extraction (Gemini + Groq + OpenRouter in parallel) ─────────
+  //    Union mode: if ANY scorer says it's an opportunity, we keep it.
+  //    Each scorer's vote is stored in rawData for UI transparency.
   const opportunities: NormalizedOpportunity[] = [];
   let geminiQuotaHit = false;
 
@@ -493,9 +525,8 @@ export async function webIntelligenceFetch(options: {
       GEMINI_BATCH_SIZE,
       GEMINI_BATCH_DELAY_MS,
       async (candidate) => {
-        if (geminiQuotaHit) return null;
-
-        const extraction = await geminiProvider.extractOpportunityFromWebResult(
+        // Use multi-scorer: Gemini + Groq run in parallel, union mode
+        const extraction = await extractWithMultipleAIs(
           candidate.title,
           candidate.url,
           candidate.content
@@ -516,8 +547,8 @@ export async function webIntelligenceFetch(options: {
           return null;
         }
 
-        // ── 7b. Relevance threshold ─────────────────────────────────────────
-        if ((extraction.relevanceScore ?? 0) < MIN_RELEVANCE_SCORE) {
+        // ── 7b. Relevance threshold (lowered: union mode means any scorer passed already) ──
+        if ((extraction.relevanceScore ?? 0) < 45) {
           stats.rejected++;
           return null;
         }
@@ -541,6 +572,8 @@ export async function webIntelligenceFetch(options: {
             url: candidate.url,
             relevanceScore: extraction.relevanceScore,
             relevanceReason: extraction.relevanceReason,
+            winnerScorer: (extraction as {winnerScorer?: string}).winnerScorer,
+            scorerVotes: (extraction as {scorerVotes?: unknown}).scorerVotes,
             extractedFrom: candidate.sourceProvider,
             firecrawlEnriched: candidate.firecrawlEnriched ?? false,
           },

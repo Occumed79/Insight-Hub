@@ -7,6 +7,7 @@ export * from "./tango";
 export * from "./bidnet";
 export * from "./statePortals";
 export * from "./firecrawl";
+export * from "./jina";
 export * from "./openrouter";
 export * from "./groq";
 export * from "./exa";
@@ -23,6 +24,7 @@ import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
 import { statePortalsProvider } from "./statePortals";
 import { firecrawlProvider } from "./firecrawl";
+import { jinaProvider } from "./jina";
 import { openrouterProvider } from "./openrouter";
 import { groqProvider } from "./groq";
 import { exaProvider } from "./exa";
@@ -45,6 +47,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   bidnet: bidnetProvider,
   statePortals: statePortalsProvider as unknown as DataSourceProvider,
   firecrawl: firecrawlProvider,
+  jina: jinaProvider,
   openrouter: openrouterProvider,
   groq: groqProvider,
   exa: exaProvider,

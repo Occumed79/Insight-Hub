@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod";
+export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -515,6 +515,33 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     notes: "Uses your CLōD project JWT as the API key. Set endpoint to https://api.clod.io/v1. Functions identically to OpenRouter/Groq — can run query generation, extraction, and scoring workflows.",
   },
 };
+
+
+  jina: {
+    name: "jina",
+    label: "Jina AI Reader",
+    description: "Converts any URL into clean markdown content for AI analysis. Complements FireCrawl for web content extraction.",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "jina_...",
+        description: "Available at jina.ai",
+        dbKey: "jinaApiKey",
+        envKey: "JINA_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    docsUrl: "https://jina.ai/reader/",
+    signupUrl: "https://jina.ai",
+    capabilities: [
+      "URL to clean markdown extraction",
+      "Used to enrich web search results with full page content",
+      "Faster and cheaper than full browser rendering",
+    ],
+    status: "active",
+  },
 
 /**
  * Get a setting value from DB first, then fall back to environment variable.
