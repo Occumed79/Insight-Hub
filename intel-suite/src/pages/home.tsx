@@ -51,7 +51,7 @@ export default function Home() {
           className="text-center mb-16"
         >
           <div className="inline-flex items-center justify-center mb-8">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "220px", width: "auto", objectFit: "contain", display: "block" }} />
+            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "120px", width: "auto", objectFit: "contain", display: "block" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
@@ -128,14 +128,13 @@ export default function Home() {
               <Link href={card.href} className="block h-full">
                 <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="relative h-40 rounded-2xl overflow-hidden mb-4 border border-white/10">
+                  <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
                     <img
                       src={card.imgUrl}
                       alt={card.alt}
-                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
+                      className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
                     />
-                    <div className="absolute inset-0 bg-blue-950/50 mix-blend-multiply" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/60 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
                     <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
                       {card.icon}
                     </div>
