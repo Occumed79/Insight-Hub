@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map } from "lucide-react";
-import occuMedLogo from "@assets/OM-logo-150dpi_1774901578920.png";
+
+const LOGO_URL = "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/307ed9399_Logocopy.png";
 
 export default function Home() {
   return (
@@ -49,8 +50,8 @@ export default function Home() {
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center justify-center mb-8 bg-white rounded-2xl px-8 py-4 shadow-2xl shadow-black/30">
-            <img src={occuMedLogo} alt="Occu-Med" className="h-14 w-auto object-contain" />
+          <div className="inline-flex items-center justify-center mb-8">
+            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "220px", width: "auto", objectFit: "contain", display: "block" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
@@ -65,7 +66,7 @@ export default function Home() {
           {[
             {
               href: "/portal/opportunities",
-              img: "portal-opportunities.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
               alt: "Opportunity Intelligence",
               icon: <Search className="w-5 h-5 text-primary-foreground" />,
               title: "Opportunity Intelligence",
@@ -74,7 +75,7 @@ export default function Home() {
             },
             {
               href: "/portal/clients",
-              img: "portal-clients.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
               alt: "Client Intelligence",
               icon: <Users className="w-5 h-5 text-primary-foreground" />,
               title: "Client Intelligence",
@@ -83,7 +84,7 @@ export default function Home() {
             },
             {
               href: "/portal/competitors",
-              img: "portal-competitors.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
               alt: "Competitor Intelligence",
               icon: <Target className="w-5 h-5 text-primary-foreground" />,
               title: "Competitor Intelligence",
@@ -92,7 +93,7 @@ export default function Home() {
             },
             {
               href: "/portal/prospects",
-              img: "portal-prospects.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
               alt: "Prospect Intelligence",
               icon: <UserSearch className="w-5 h-5 text-primary-foreground" />,
               title: "Prospect Intelligence",
@@ -101,7 +102,7 @@ export default function Home() {
             },
             {
               href: "/portal/federal-agencies",
-              img: "portal-federal.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/e2e3572a9_5ad3d8f9-d805-4fc2-8cb7-a8614edc9c0fcopy.png",
               alt: "Federal Agencies",
               icon: <Landmark className="w-5 h-5 text-primary-foreground" />,
               title: "Federal Agencies",
@@ -110,7 +111,7 @@ export default function Home() {
             },
             {
               href: "/portal/state-agencies",
-              img: "portal-states.png",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/02588225c_783f5460-1289-4bbd-a0ac-a9316906a45e.png",
               alt: "State Agencies",
               icon: <Map className="w-5 h-5 text-primary-foreground" />,
               title: "State Agencies",
@@ -129,7 +130,7 @@ export default function Home() {
                   <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   <div className="relative h-40 rounded-2xl overflow-hidden mb-4 border border-white/10">
                     <img
-                      src={`${import.meta.env.BASE_URL}images/${card.img}`}
+                      src={card.imgUrl}
                       alt={card.alt}
                       className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
                     />
