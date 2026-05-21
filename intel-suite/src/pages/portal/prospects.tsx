@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useLocation as useWouterLocation } from "wouter";
 import {
   UserSearch, Plus, RefreshCw, ExternalLink, MapPin, Users, Building2,
-  X, ChevronRight, Sparkles, Globe, Search, Calendar, Zap, ArrowUpRight
+  X, ChevronRight, Sparkles, Globe, Search, Calendar, Zap, ArrowUpRight,
+  Pencil, Check, ChevronDown, StickyNote, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+async function patchProspect(id: string, data: Partial<Prospect>): Promise<Prospect> {
+  const res = await fetch(`${BASE}/api/prospects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update prospect");
+  const json = await res.json() as { prospect: Prospect };
+  return json.prospect;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Prospect {
@@ -178,17 +190,54 @@ function ProspectCard({
   onSelect,
   onResearch,
   researching,
+  onUpdate,
 }: {
   prospect: Prospect;
   isSelected: boolean;
   onSelect: () => void;
   onResearch: (e: React.MouseEvent) => void;
   researching: boolean;
+  onUpdate?: (updated: Prospect) => void;
 }) {
   const naics: string[] = prospect.naicsCodes ? JSON.parse(prospect.naicsCodes) : [];
   const signals: any[] = prospect.opportunitySignals ? JSON.parse(prospect.opportunitySignals) : [];
   const status = STATUS_CONFIG[prospect.status];
   const tier = TIER_CONFIG[prospect.tier];
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(prospect.notes || "");
+  const [savingNote, setSavingNote] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [savingTier, setSavingTier] = useState(false);
+
+  async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const newStatus = e.target.value;
+    setSavingStatus(true);
+    try {
+      const updated = await patchProspect(prospect.id, { status: newStatus });
+      onUpdate?.(updated);
+    } catch { /* noop */ } finally { setSavingStatus(false); }
+  }
+
+  async function handleTierChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const newTier = e.target.value;
+    setSavingTier(true);
+    try {
+      const updated = await patchProspect(prospect.id, { tier: newTier });
+      onUpdate?.(updated);
+    } catch { /* noop */ } finally { setSavingTier(false); }
+  }
+
+  async function saveNote(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSavingNote(true);
+    try {
+      const updated = await patchProspect(prospect.id, { notes: noteDraft || null } as any);
+      onUpdate?.(updated);
+      setEditingNotes(false);
+    } catch { /* noop */ } finally { setSavingNote(false); }
+  }
 
   return (
     <motion.div
@@ -220,13 +269,32 @@ function ProspectCard({
               )}
             </button>
           </div>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tier.bg} ${tier.color} ${tier.border}`}>
-              {tier.label}
-            </span>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${status.bg} ${status.text} ${status.border}`}>
-              {status.label}
-            </span>
+          <div className="flex items-center gap-2 flex-wrap mt-1" onClick={e => e.stopPropagation()}>
+            <div className="relative">
+              {savingTier && <Loader2 className="absolute right-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 animate-spin text-primary/60" />}
+              <select
+                value={prospect.tier}
+                onChange={handleTierChange}
+                className={`text-[10px] font-semibold pl-2 pr-5 py-0.5 rounded-full border appearance-none cursor-pointer bg-transparent ${tier.bg} ${tier.color} ${tier.border} focus:outline-none hover:opacity-80 transition-opacity`}
+              >
+                <option value="strategic">STRATEGIC</option>
+                <option value="enterprise">ENTERPRISE</option>
+                <option value="mid-market">MID-MARKET</option>
+              </select>
+            </div>
+            <div className="relative">
+              {savingStatus && <Loader2 className="absolute right-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 animate-spin text-primary/60" />}
+              <select
+                value={prospect.status}
+                onChange={handleStatusChange}
+                className={`text-[10px] font-semibold pl-2 pr-5 py-0.5 rounded-full border appearance-none cursor-pointer bg-transparent ${status.bg} ${status.text} ${status.border} focus:outline-none hover:opacity-80 transition-opacity`}
+              >
+                <option value="prospect">Prospect</option>
+                <option value="lead">Lead</option>
+                <option value="qualified">Qualified</option>
+                <option value="active">Active</option>
+              </select>
+            </div>
             {prospect.lastResearched && (
               <span className="text-[10px] text-accent flex items-center gap-1">
                 <Sparkles className="w-2.5 h-2.5" />
@@ -275,6 +343,41 @@ function ProspectCard({
         )}
         <ChevronRight className="w-4 h-4 opacity-40" />
       </div>
+
+      {/* Inline notes */}
+      <div className="border-t border-white/5 pt-2 mt-1" onClick={e => e.stopPropagation()}>
+        {editingNotes ? (
+          <div className="flex gap-2 items-start">
+            <textarea
+              value={noteDraft}
+              onChange={e => setNoteDraft(e.target.value)}
+              placeholder="Add a note…"
+              rows={2}
+              autoFocus
+              className="flex-1 text-xs bg-white/[0.06] border border-white/10 rounded-lg px-2 py-1.5 text-white/80 placeholder-white/25 resize-none focus:outline-none focus:border-primary/40"
+            />
+            <div className="flex flex-col gap-1">
+              <button onClick={saveNote} disabled={savingNote}
+                className="p-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-colors disabled:opacity-50">
+                {savingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+              </button>
+              <button onClick={e => { e.stopPropagation(); setEditingNotes(false); setNoteDraft(prospect.notes || ""); }}
+                className="p-1.5 rounded-lg text-white/30 hover:text-white/60 transition-colors">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={e => { e.stopPropagation(); setEditingNotes(true); setNoteDraft(prospect.notes || ""); }}
+            className="flex items-start gap-1.5 w-full text-left group">
+            <StickyNote className="w-3 h-3 text-white/20 group-hover:text-white/40 mt-0.5 flex-shrink-0 transition-colors" />
+            {prospect.notes
+              ? <span className="text-xs text-primary/60 italic group-hover:text-primary/80 transition-colors line-clamp-2">{prospect.notes}</span>
+              : <span className="text-xs text-white/20 italic group-hover:text-white/40 transition-colors">Add note…</span>
+            }
+          </button>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -290,6 +393,41 @@ function DetailPanel({ prospect, onClose, onResearch, researching }: {
   const signals: any[] = prospect.opportunitySignals ? JSON.parse(prospect.opportunitySignals) : [];
   const status = STATUS_CONFIG[prospect.status];
   const tier = TIER_CONFIG[prospect.tier];
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(prospect.notes || "");
+  const [savingNote, setSavingNote] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [savingTier, setSavingTier] = useState(false);
+
+  async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const newStatus = e.target.value;
+    setSavingStatus(true);
+    try {
+      const updated = await patchProspect(prospect.id, { status: newStatus });
+      onUpdate?.(updated);
+    } catch { /* noop */ } finally { setSavingStatus(false); }
+  }
+
+  async function handleTierChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const newTier = e.target.value;
+    setSavingTier(true);
+    try {
+      const updated = await patchProspect(prospect.id, { tier: newTier });
+      onUpdate?.(updated);
+    } catch { /* noop */ } finally { setSavingTier(false); }
+  }
+
+  async function saveNote(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSavingNote(true);
+    try {
+      const updated = await patchProspect(prospect.id, { notes: noteDraft || null } as any);
+      onUpdate?.(updated);
+      setEditingNotes(false);
+    } catch { /* noop */ } finally { setSavingNote(false); }
+  }
 
   return (
     <motion.div
@@ -731,6 +869,7 @@ export default function ProspectsPage() {
                     onSelect={() => navigate(`/portal/prospects/${p.id}`)}
                     onResearch={(e) => { e.stopPropagation(); research(p.id); }}
                     researching={!!researching[p.id]}
+                    onUpdate={(updated) => setProspects(prev => prev.map(x => x.id === updated.id ? updated : x))}
                   />
                 ))}
               </AnimatePresence>
