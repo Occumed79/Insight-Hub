@@ -914,9 +914,322 @@ function LitigationPanel({ clientId }: { clientId: string }) {
   );
 }
 
+
+// ── Occu-Med Exam Relevance Engine ────────────────────────────────────────────
+const ROLE_CATEGORIES: Array<{
+  label: string;
+  keywords: string[];
+  relevance: "very_high" | "high" | "medium" | "low";
+  examTypes: string[];
+  color: string;
+  bg: string;
+}> = [
+  {
+    label: "Deployment / Overseas",
+    keywords: ["deploy", "overseas", "logcap", "oconus", "expeditionary", "forward", "contingency"],
+    relevance: "very_high",
+    examTypes: ["Deployment Physical", "Dental", "Labs", "Vaccines", "Vision"],
+    color: "text-rose-400", bg: "bg-rose-500/12",
+  },
+  {
+    label: "Base Operations / Logistics",
+    keywords: ["base ops", "logistics", "base operation", "operations specialist", "life support", "supply chain"],
+    relevance: "very_high",
+    examTypes: ["Physical", "Labs", "Vaccines"],
+    color: "text-rose-400", bg: "bg-rose-500/12",
+  },
+  {
+    label: "Aviation / Aircraft",
+    keywords: ["aircraft", "aviation", "mechanic", "airframe", "powerplant", "avionics", "flight", "pilot"],
+    relevance: "high",
+    examTypes: ["Physical", "Vision", "Audiogram", "PFT"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "Security / Protective",
+    keywords: ["security", "guard", "protective", "armed", "law enforcement", "police"],
+    relevance: "high",
+    examTypes: ["Physical", "Vision", "Fitness Standard"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "Transportation / CDL",
+    keywords: ["driver", "cdl", "truck", "transport", "freight", "logistics driver", "hazmat driver"],
+    relevance: "high",
+    examTypes: ["DOT Physical", "Drug Screen", "FMCSA"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "Construction / Field Labor",
+    keywords: ["construction", "laborer", "ironwork", "carpenter", "electrician", "field", "site worker", "welder"],
+    relevance: "high",
+    examTypes: ["Physical", "Respirator/PFT", "Audiogram"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "Environmental / Hazmat",
+    keywords: ["environmental", "hazmat", "remediation", "ehs", "safety", "industrial hygiene", "toxicology"],
+    relevance: "high",
+    examTypes: ["Physical", "Respirator/PFT", "Hazmat Surveillance"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "EMS / Medical Transport",
+    keywords: ["paramedic", "emt", "ambulance", "medic", "first responder", "medical transport"],
+    relevance: "high",
+    examTypes: ["Physical", "Vaccines", "Drug Screen"],
+    color: "text-amber-400", bg: "bg-amber-500/12",
+  },
+  {
+    label: "Engineering / Technical",
+    keywords: ["engineer", "technician", "technical", "program manager", "systems"],
+    relevance: "medium",
+    examTypes: ["Physical (if field)"],
+    color: "text-sky-400", bg: "bg-sky-500/12",
+  },
+  {
+    label: "Corporate / Admin",
+    keywords: ["analyst", "coordinator", "admin", "hr ", "human resources", "finance", "accounting"],
+    relevance: "low",
+    examTypes: [],
+    color: "text-muted-foreground", bg: "bg-white/5",
+  },
+];
+
+function classifyPost(title: string): typeof ROLE_CATEGORIES[0] | null {
+  const lower = title.toLowerCase();
+  for (const cat of ROLE_CATEGORIES) {
+    if (cat.keywords.some((kw) => lower.includes(kw))) return cat;
+  }
+  return null;
+}
+
+// ── HiringIntelPanel ─────────────────────────────────────────────────────────
+function HiringIntelPanel({ clientId, branches }: { clientId: string; branches: ClientBranch[] }) {
+  const [allPosts, setAllPosts] = useState<BranchHiringPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterRelevance, setFilterRelevance] = useState<string>("all");
+
+  useEffect(() => {
+    async function loadAllPosts() {
+      setLoading(true);
+      const results: BranchHiringPost[] = [];
+      for (const branch of branches.filter(b => Number(b.postingCount || 0) > 0)) {
+        try {
+          const res = await fetch(`/api/clients/${clientId}/branches/${branch.id}/hiring`);
+          if (res.ok) {
+            const data = await res.json() as { posts: BranchHiringPost[] };
+            results.push(...(data.posts || []).map(p => ({ ...p, _branchName: `${branch.city || ""}${branch.state ? ", " + branch.state : ""}${branch.country && branch.country !== "United States" ? ", " + branch.country : ""}`.trim() || branch.name || "Unknown" })));
+          }
+        } catch { /* skip */ }
+      }
+      setAllPosts(results);
+      setLoading(false);
+    }
+    loadAllPosts();
+  }, [clientId, branches]);
+
+  const classified = useMemo(() => {
+    return allPosts.map(p => ({ ...p, _cat: classifyPost(p.title) }));
+  }, [allPosts]);
+
+  const filtered = useMemo(() => {
+    return classified.filter(p => {
+      const matchSearch = !searchTerm || p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p._branchName as string || "").toLowerCase().includes(searchTerm.toLowerCase());
+      const matchRel = filterRelevance === "all" || p._cat?.relevance === filterRelevance || (!p._cat && filterRelevance === "low");
+      return matchSearch && matchRel;
+    });
+  }, [classified, searchTerm, filterRelevance]);
+
+  // Aggregations
+  const relevanceCounts = useMemo(() => {
+    const counts: Record<string, number> = { very_high: 0, high: 0, medium: 0, low: 0, unclassified: 0 };
+    classified.forEach(p => {
+      const r = p._cat?.relevance;
+      if (r) counts[r] = (counts[r] || 0) + 1;
+      else counts.unclassified++;
+    });
+    return counts;
+  }, [classified]);
+
+  const categoryBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    classified.forEach(p => {
+      const label = p._cat?.label || "Unclassified";
+      counts[label] = (counts[label] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  }, [classified]);
+
+  const topLocations = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allPosts.forEach(p => {
+      const loc = (p as any)._branchName || "Unknown";
+      counts[loc] = (counts[loc] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [allPosts]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-40 gap-3">
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+        <span className="text-sm text-muted-foreground">Loading hiring intelligence across all branches…</span>
+      </div>
+    );
+  }
+
+  if (allPosts.length === 0) {
+    return (
+      <div className="glass-panel rounded-2xl p-12 text-center border border-white/5">
+        <TrendingUp className="w-10 h-10 text-primary/30 mx-auto mb-4" />
+        <p className="text-white font-semibold mb-2">No hiring data yet</p>
+        <p className="text-sm text-muted-foreground">Use "Refresh Hiring" on individual branches to pull job postings. Once loaded, Hiring Intel aggregates everything here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 pb-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "Total Postings", value: allPosts.length, color: "text-white", sub: "across all branches" },
+          { label: "Critical Relevance", value: relevanceCounts.very_high, color: "text-rose-400", sub: "Deployment / LOGCAP" },
+          { label: "High Relevance", value: relevanceCounts.high, color: "text-amber-400", sub: "Aviation, CDL, Security" },
+          { label: "Locations Active", value: new Set(allPosts.map(p => (p as any)._branchName)).size, color: "text-emerald-400", sub: "with open postings" },
+        ].map(({ label, value, color, sub }) => (
+          <div key={label} className="glass-panel rounded-xl p-4 border border-white/5">
+            <p className="text-xs text-muted-foreground mb-1">{label}</p>
+            <p className={`text-2xl font-display font-bold ${color}`}>{value}</p>
+            <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Role breakdown + top locations */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="glass-panel rounded-2xl p-5 border border-white/5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" />Role Categories
+          </h3>
+          <div className="space-y-2">
+            {categoryBreakdown.map(([label, count]) => {
+              const cat = ROLE_CATEGORIES.find(c => c.label === label);
+              const pct = Math.round((count / allPosts.length) * 100);
+              return (
+                <div key={label} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-medium ${cat?.color || "text-muted-foreground"}`}>{label}</span>
+                      <span className="text-xs text-muted-foreground">{count}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/5">
+                      <div className="h-full rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="glass-panel rounded-2xl p-5 border border-white/5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5" />Top Hiring Locations
+          </h3>
+          <div className="space-y-2">
+            {topLocations.map(([loc, count]) => (
+              <div key={loc} className="flex items-center justify-between">
+                <span className="text-sm text-white/80 truncate flex-1 mr-4">{loc || "Unknown"}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="h-1.5 w-16 rounded-full bg-white/5">
+                    <div className="h-full rounded-full bg-emerald-500/60" style={{ width: `${Math.round((count / (topLocations[0]?.[1] || 1)) * 100)}%` }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground w-5 text-right">{count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Exam demand callout */}
+      {(relevanceCounts.very_high + relevanceCounts.high) > 0 && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-300 mb-1">Exam Demand Prediction</p>
+              <p className="text-xs text-amber-200/70 leading-relaxed">
+                {relevanceCounts.very_high > 0 && `${relevanceCounts.very_high} deployment/LOGCAP postings suggest high demand for deployment physicals, dental, labs, and vaccines. `}
+                {relevanceCounts.high > 0 && (() => {
+                  const cats = classified.filter(p => p._cat?.relevance === "high");
+                  const examSet = new Set(cats.flatMap(p => p._cat?.examTypes || []));
+                  const exams = Array.from(examSet).slice(0, 5).join(", ");
+                  return `${relevanceCounts.high} high-relevance postings (${exams}) indicate active occupational health exam needs.`;
+                })()}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job list with search/filter */}
+      <div>
+        <div className="flex gap-3 mb-4 flex-wrap">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search job titles or locations…" className="pl-8 bg-white/5 border-white/10 text-sm h-9" />
+          </div>
+          <select value={filterRelevance} onChange={e => setFilterRelevance(e.target.value)}
+            className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white">
+            <option value="all">All Relevance</option>
+            <option value="very_high">Critical (Deployment)</option>
+            <option value="high">High (Aviation, CDL, Security)</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          {filtered.slice(0, 80).map((post) => {
+            const cat = post._cat;
+            return (
+              <div key={post.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${cat?.relevance === "very_high" ? "border-rose-500/20 bg-rose-500/5" : cat?.relevance === "high" ? "border-amber-500/15 bg-amber-500/4" : "border-white/5 bg-white/[0.02]"}`}>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cat?.relevance === "very_high" ? "bg-rose-400" : cat?.relevance === "high" ? "bg-amber-400" : cat?.relevance === "medium" ? "bg-sky-400" : "bg-white/20"}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-white truncate">{post.title}</span>
+                    {cat && (
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} flex-shrink-0`}>{cat.label}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{(post as any)._branchName || "Unknown"}</span>
+                    {cat?.examTypes && cat.examTypes.length > 0 && (
+                      <span className="text-[10px] text-primary/70">→ {cat.examTypes.slice(0,3).join(", ")}</span>
+                    )}
+                    {post.postedDate && <span className="text-[10px] text-muted-foreground/60">{post.postedDate}</span>}
+                  </div>
+                </div>
+                {post.url && <a href={post.url} target="_blank" rel="noreferrer" className="flex-shrink-0 text-muted-foreground hover:text-primary transition-colors"><ExternalLink className="w-3.5 h-3.5" /></a>}
+              </div>
+            );
+          })}
+          {filtered.length > 80 && (
+            <p className="text-xs text-muted-foreground text-center pt-2">Showing 80 of {filtered.length} — use search to narrow results</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Client Detail View ─────────────────────────────────────────────────────────
 
-type IntelTab = "contacts" | "branches" | "fec" | "osha" | "litigation";
+type IntelTab = "contacts" | "branches" | "hiring" | "fec" | "osha" | "litigation";
 
 function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => void }) {
   const { toast } = useToast();
@@ -956,10 +1269,11 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
 
   const tabs: { id: IntelTab; label: string; icon: React.ElementType }[] = [
     { id: "contacts",   label: "Org Structure",     icon: Users       },
+    { id: "hiring",     label: "Hiring Intel",      icon: TrendingUp  },
+    { id: "branches",   label: "Branches",          icon: Building2   },
     { id: "fec",        label: "FEC / Political",   icon: DollarSign  },
     { id: "osha",       label: "Regulatory",        icon: ShieldAlert },
     { id: "litigation", label: "Litigation",        icon: Scale       },
-    { id: "branches",   label: "Branches",          icon: Building2   },
   ];
 
   return (
@@ -1019,6 +1333,7 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {activeTab === "contacts"   && <OrgStructurePanel clientId={clientId} />}
+          {activeTab === "hiring"     && <HiringIntelPanel clientId={clientId} branches={branches} />}
           {activeTab === "fec"        && <FecPanel clientId={clientId} />}
           {activeTab === "osha"       && <OshaPanel clientId={clientId} />}
           {activeTab === "litigation" && <LitigationPanel clientId={clientId} />}
