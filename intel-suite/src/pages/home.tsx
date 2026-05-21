@@ -1,10 +1,72 @@
-import { motion } from "framer-motion";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map } from "lucide-react";
+import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2, X, Check } from "lucide-react";
 
 const LOGO_URL = "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/307ed9399_Logocopy.png";
 
+const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
+
+function getStoredLinks(): { outreach: string; relationship: string; hiringTrends: string } {
+  try {
+    return JSON.parse(localStorage.getItem(LINKS_STORAGE_KEY) || "{}");
+  } catch {
+    return { outreach: "", relationship: "", hiringTrends: "" };
+  }
+}
+
 export default function Home() {
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [links, setLinks] = useState(getStoredLinks);
+  const [draft, setDraft] = useState(getStoredLinks);
+  const [saved, setSaved] = useState(false);
+
+  function openLinks() {
+    setDraft(getStoredLinks());
+    setLinksOpen(true);
+    setSaved(false);
+  }
+
+  function saveLinks() {
+    localStorage.setItem(LINKS_STORAGE_KEY, JSON.stringify(draft));
+    setLinks(draft);
+    setSaved(true);
+    setTimeout(() => setLinksOpen(false), 700);
+  }
+
+  const extraCards = [
+    {
+      key: "outreach",
+      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
+      alt: "Outreach Intelligence",
+      icon: <Network className="w-5 h-5 text-primary-foreground" />,
+      title: "Outreach Intelligence",
+      desc: "Look up employee contacts, org charts, and decision-makers across client and prospect organizations to power targeted outreach.",
+      delay: 0.7,
+      link: links.outreach,
+    },
+    {
+      key: "relationship",
+      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
+      alt: "Relationship Intelligence",
+      icon: <Users className="w-5 h-5 text-primary-foreground" />,
+      title: "Relationship Intelligence",
+      desc: "Unified view of clients and prospects — relationship status, tiers, branches, contacts, and opportunity signals in one place.",
+      delay: 0.8,
+      link: links.relationship,
+    },
+    {
+      key: "hiringTrends",
+      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
+      alt: "Hiring Trend Intelligence",
+      icon: <TrendingUp className="w-5 h-5 text-primary-foreground" />,
+      title: "Hiring Trend Intelligence",
+      desc: "Track hiring velocity, open roles, and workforce expansion signals across client and prospect organizations to identify needs early.",
+      delay: 0.9,
+      link: links.hiringTrends,
+    },
+  ];
+
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
       {/* Animated glowing orbs background */}
@@ -42,9 +104,83 @@ export default function Home() {
         <div style={{position:"absolute",top:"5%",right:"8%",width:"300px",height:"300px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.75) 0%, rgba(56,182,255,0.35) 40%, transparent 70%)",filter:"blur(25px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s"}} />
         <div style={{position:"absolute",bottom:"12%",left:"6%",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.55) 0%, rgba(56,182,255,0.25) 40%, transparent 70%)",filter:"blur(30px)",animation:"home-pulse 14s ease-in-out infinite",animationDelay:"-8s"}} />
       </div>
+
+      {/* Subtle Links button — top right */}
+      <button
+        onClick={openLinks}
+        className="absolute top-5 right-5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-white/[0.04] text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-white/[0.07] transition-all text-[11px] font-medium"
+      >
+        <Link2 className="w-3 h-3" />
+        Links
+      </button>
+
+      {/* Links modal */}
+      <AnimatePresence>
+        {linksOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setLinksOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="bg-[#0a1220] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-4 h-4 text-primary/70" />
+                  <span className="text-sm font-semibold text-white/80">Portal Links</span>
+                </div>
+                <button onClick={() => setLinksOpen(false)} className="text-white/30 hover:text-white/60 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  { key: "outreach" as const, label: "Outreach Intelligence", placeholder: "https://employee-lookup1.onrender.com" },
+                  { key: "relationship" as const, label: "Relationship Intelligence", placeholder: "https://your-render-url.onrender.com" },
+                  { key: "hiringTrends" as const, label: "Hiring Trend Intelligence", placeholder: "https://your-render-url.onrender.com" },
+                ].map(field => (
+                  <div key={field.key}>
+                    <label className="block text-[11px] text-white/40 mb-1.5 font-medium">{field.label}</label>
+                    <input
+                      type="url"
+                      value={draft[field.key]}
+                      onChange={e => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      placeholder={field.placeholder}
+                      className="w-full text-xs bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white/70 placeholder-white/20 focus:outline-none focus:border-primary/40 transition-colors"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 mt-5">
+                <button
+                  onClick={saveLinks}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/30 transition-colors"
+                >
+                  {saved ? <Check className="w-4 h-4" /> : null}
+                  {saved ? "Saved!" : "Save Links"}
+                </button>
+                <button onClick={() => setLinksOpen(false)} className="px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
-        
-        <motion.div 
+
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: "easeOut" }}
@@ -150,6 +286,78 @@ export default function Home() {
                   </div>
                 </div>
               </Link>
+            </motion.div>
+          ))}
+
+          {/* 3 new external portal cards — identical structure */}
+          {extraCards.map((card) => (
+            <motion.div
+              key={card.key}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: card.delay }}
+            >
+              {card.link ? (
+                <a href={card.link} target="_blank" rel="noopener noreferrer" className="block h-full">
+                  <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                      <img
+                        src={card.imgUrl}
+                        alt={card.alt}
+                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                        {card.icon}
+                      </div>
+                      <div className="absolute top-4 right-4 glass-panel rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <ExternalLink className="w-3 h-3 text-primary-foreground/70" />
+                      </div>
+                    </div>
+                    <div className="px-5 pb-6">
+                      <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
+                        {card.title}
+                        <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                      </h3>
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        {card.desc}
+                      </p>
+                    </div>
+                  </div>
+                </a>
+              ) : (
+                <div onClick={openLinks} className="block h-full cursor-pointer">
+                  <div className="h-full glass-card rounded-3xl p-1 group relative overflow-hidden opacity-70 hover:opacity-90 transition-opacity">
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                      <img
+                        src={card.imgUrl}
+                        alt={card.alt}
+                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700 grayscale opacity-60"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                        {card.icon}
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[11px] text-white/50 bg-black/40 rounded-full px-3 py-1 border border-white/10">
+                          Add link →
+                        </span>
+                      </div>
+                    </div>
+                    <div className="px-5 pb-6">
+                      <h3 className="text-xl font-display font-semibold text-white/60 mb-2 flex items-center justify-between">
+                        {card.title}
+                        <Link2 className="w-4 h-4 text-white/20" />
+                      </h3>
+                      <p className="text-muted-foreground/60 text-sm leading-relaxed">
+                        {card.desc}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ))}
 
