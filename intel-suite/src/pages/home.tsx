@@ -5,8 +5,9 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.svg";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.svg";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.svg";
+import occuMedMainLogo from "@/assets/occu-med-main-logo.svg";
 
-const LOGO_URL = "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/307ed9399_Logocopy.png";
+const LOGO_URL = occuMedMainLogo;
 
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
@@ -190,7 +191,7 @@ export default function Home() {
           className="text-center mb-16"
         >
           <div className="inline-flex items-center justify-center mb-8">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "120px", width: "auto", objectFit: "contain", display: "block" }} />
+            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "150px", width: "auto", objectFit: "contain", display: "block" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
