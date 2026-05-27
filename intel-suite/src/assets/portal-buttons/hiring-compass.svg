@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 563" role="img" aria-label="Blue luminous compass portal button">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="72%">
+      <stop offset="0%" stop-color="#0bd9ff" stop-opacity="0.35"/>
+      <stop offset="48%" stop-color="#0635b8"/>
+      <stop offset="100%" stop-color="#010717"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#b2ffff"/><stop offset="0.24" stop-color="#0fb9ff"/><stop offset="0.64" stop-color="#064bff"/><stop offset="1" stop-color="#a1ffff"/>
+    </linearGradient>
+    <linearGradient id="ray" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#eaffff"/><stop offset="0.45" stop-color="#27e4ff"/><stop offset="1" stop-color="#0449ff"/></linearGradient>
+    <filter id="glow" x="-25%" y="-35%" width="150%" height="170%"><feGaussianBlur stdDeviation="8" result="b"/><feColorMatrix in="b" type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.62 0 0 0 0 1 0 0 0 0.95 0"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="blur"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="900" height="563" fill="transparent"/>
+  <g filter="url(#glow)">
+    <rect x="24" y="26" width="852" height="511" rx="57" fill="url(#bg)" stroke="url(#glass)" stroke-width="7"/>
+    <rect x="44" y="47" width="812" height="469" rx="42" fill="none" stroke="#84ffff" stroke-opacity="0.55" stroke-width="2.5"/>
+    <path d="M72 60c128-10 255-6 377-3 126 2 240-8 379 2" stroke="#d8ffff" stroke-width="3" stroke-opacity="0.7" fill="none"/>
+  </g>
+  <g opacity="0.45" filter="url(#blur)">
+    <circle cx="151" cy="354" r="70" fill="#008cff"/><circle cx="734" cy="358" r="80" fill="#00aaff"/><circle cx="247" cy="229" r="52" fill="#004cff"/><circle cx="651" cy="197" r="57" fill="#005dff"/>
+  </g>
+  <g transform="translate(450 282)" filter="url(#glow)">
+    <circle r="139" fill="none" stroke="#26d7ff" stroke-width="2" opacity="0.6"/>
+    <circle r="132" fill="none" stroke="#84ffff" stroke-width="1.5" opacity="0.35"/>
+    <circle r="104" fill="none" stroke="#23cfff" stroke-width="1.6" opacity="0.28"/>
+    <path d="M0 -188 L31 -58 L155 -120 L62 -27 L188 0 L62 27 L155 120 L31 58 L0 188 L-31 58 L-155 120 L-62 27 L-188 0 L-62 -27 L-155 -120 L-31 -58 Z" fill="url(#ray)" opacity="0.96"/>
+    <path d="M0 -188 L17 -43 L0 0 L-17 -43 Z" fill="#ffffff" opacity="0.8"/>
+    <path d="M188 0 L43 17 L0 0 L43 -17 Z" fill="#ffffff" opacity="0.72"/>
+    <path d="M0 188 L-17 43 L0 0 L17 43 Z" fill="#001cbd" opacity="0.75"/>
+    <path d="M-188 0 L-43 -17 L0 0 L-43 17 Z" fill="#dfffff" opacity="0.72"/>
+    <circle r="15" fill="#eaffff"/>
+    <circle r="7" fill="#0aa8ff"/>
+    <g stroke="#58eaff" stroke-width="1.4" opacity="0.8"><line x1="0" y1="-220" x2="0" y2="-154"/><line x1="0" y1="154" x2="0" y2="220"/><line x1="-220" y1="0" x2="-154" y2="0"/><line x1="154" y1="0" x2="220" y2="0"/><line x1="-150" y1="-150" x2="-108" y2="-108"/><line x1="150" y1="-150" x2="108" y2="-108"/><line x1="-150" y1="150" x2="-108" y2="108"/><line x1="150" y1="150" x2="108" y2="108"/></g>
+  </g>
+  <g fill="#eaffff">
+    <path d="M189 160l4 12 12 4-12 4-4 12-4-12-12-4 12-4z"/><path d="M720 166l5 15 15 5-15 5-5 15-5-15-15-5 15-5z"/><path d="M776 404l3 10 10 3-10 3-3 10-3-10-10-3 10-3z"/><path d="M211 425l4 12 12 4-12 4-4 12-4-12-12-4 12-4z"/>
+    <circle cx="132" cy="263" r="2.7"/><circle cx="273" cy="118" r="2.2"/><circle cx="288" cy="430" r="2.6"/><circle cx="623" cy="125" r="2.5"/><circle cx="754" cy="302" r="3.2"/><circle cx="793" cy="250" r="2.2"/><circle cx="584" cy="452" r="2.8"/><circle cx="342" cy="154" r="2.1"/>
+  </g>
+  <path d="M64 67c47-29 113-29 174-13C156 75 92 128 49 193V93c0-9 6-19 15-26z" fill="#aaffff" opacity="0.17"/>
+  <circle cx="63" cy="61" r="28" fill="#e6ffff" opacity="0.85" filter="url(#blur)"/>
+  <circle cx="839" cy="501" r="23" fill="#e6ffff" opacity="0.62" filter="url(#blur)"/>
+</svg>
