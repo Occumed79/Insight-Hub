@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 563" role="img" aria-label="Blue luminous planet portal button">
+  <defs>
+    <radialGradient id="bg" cx="54%" cy="48%" r="72%">
+      <stop offset="0%" stop-color="#0ed6ff" stop-opacity="0.4"/>
+      <stop offset="45%" stop-color="#0636b3"/>
+      <stop offset="100%" stop-color="#010718"/>
+    </radialGradient>
+    <linearGradient id="planet" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#6affff"/><stop offset="0.45" stop-color="#0097ff"/><stop offset="1" stop-color="#012dca"/>
+    </linearGradient>
+    <linearGradient id="land" x1="0" x2="1"><stop offset="0" stop-color="#00e5b9"/><stop offset="1" stop-color="#00a8ff"/></linearGradient>
+    <linearGradient id="glass" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#b2ffff"/><stop offset="0.25" stop-color="#10bcff"/><stop offset="0.65" stop-color="#064bff"/><stop offset="1" stop-color="#9effff"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-35%" width="150%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.01 0 0 0 0 0.55 0 0 0 0 1 0 0 0 0.95 0"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="blur"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="900" height="563" fill="transparent"/>
+  <g filter="url(#glow)">
+    <rect x="24" y="26" width="852" height="511" rx="57" fill="url(#bg)" stroke="url(#glass)" stroke-width="7"/>
+    <rect x="44" y="47" width="812" height="469" rx="42" fill="none" stroke="#84ffff" stroke-opacity="0.55" stroke-width="2.5"/>
+    <path d="M72 60c128-10 255-6 377-3 126 2 240-8 379 2" stroke="#d8ffff" stroke-width="3" stroke-opacity="0.7" fill="none"/>
+  </g>
+  <g opacity="0.92" fill="none" stroke="#18d4ff" filter="url(#glow)">
+    <circle cx="450" cy="282" r="183" stroke-width="2" opacity="0.6"/>
+    <circle cx="450" cy="282" r="150" stroke-width="2" opacity="0.48"/>
+    <circle cx="450" cy="282" r="118" stroke-width="2" opacity="0.38"/>
+    <circle cx="450" cy="282" r="90" stroke-width="3" opacity="0.32"/>
+  </g>
+  <circle cx="450" cy="282" r="122" fill="url(#planet)" filter="url(#glow)"/>
+  <path d="M329 250h61c15 0 24 8 24 19v22H315c-7 0-13-6-13-13v-1c0-15 11-27 27-27z" fill="url(#land)" opacity="0.85"/>
+  <path d="M476 210h62c12 0 22 10 22 22v3h-47v35h-96v-16h-33c-10 0-18-8-18-18v-3h53c18 0 31-9 31-21v-2h26z" fill="#00d8c5" opacity="0.9"/>
+  <path d="M425 352h100c14 0 25 11 25 25v3h-53v33h-93v-21h-38c-11 0-20-9-20-20v-2h54c14 0 25-8 25-18z" fill="#00d8c5" opacity="0.82"/>
+  <g fill="#dffcff" opacity="0.86">
+    <rect x="340" y="190" width="43" height="14" rx="7"/><rect x="384" y="263" width="58" height="24" rx="12"/><rect x="467" y="232" width="56" height="16" rx="8"/><rect x="540" y="281" width="40" height="15" rx="8"/><rect x="351" y="345" width="65" height="15" rx="8"/><rect x="497" y="327" width="58" height="17" rx="9"/><rect x="542" y="229" width="56" height="20" rx="10"/><rect x="586" y="252" width="33" height="12" rx="6"/>
+  </g>
+  <path d="M450 160a122 122 0 0 1 0 244" stroke="#65ffff" stroke-opacity="0.2" stroke-width="1.5"/>
+  <g fill="#eaffff">
+    <path d="M166 136l4 12 12 4-12 4-4 12-4-12-12-4 12-4z"/><path d="M742 177l5 15 15 5-15 5-5 15-5-15-15-5 15-5z"/><path d="M787 393l3 10 10 3-10 3-3 10-3-10-10-3 10-3z"/><path d="M213 392l4 12 12 4-12 4-4 12-4-12-12-4 12-4z"/>
+    <circle cx="137" cy="266" r="2.6"/><circle cx="223" cy="173" r="2.1"/><circle cx="281" cy="432" r="2.7"/><circle cx="659" cy="145" r="2.4"/><circle cx="724" cy="326" r="3.6"/><circle cx="789" cy="265" r="2.2"/><circle cx="570" cy="437" r="2.8"/><circle cx="362" cy="126" r="2.1"/>
+  </g>
+  <g opacity="0.3" filter="url(#blur)">
+    <circle cx="160" cy="415" r="38" fill="#008cff"/><circle cx="720" cy="410" r="60" fill="#00aeff"/><circle cx="222" cy="330" r="26" fill="#00dbff"/>
+  </g>
+  <path d="M64 67c47-29 113-29 174-13C156 75 92 128 49 193V93c0-9 6-19 15-26z" fill="#aaffff" opacity="0.17"/>
+  <circle cx="63" cy="61" r="28" fill="#e6ffff" opacity="0.85" filter="url(#blur)"/>
+  <circle cx="839" cy="501" r="23" fill="#e6ffff" opacity="0.62" filter="url(#blur)"/>
+</svg>
