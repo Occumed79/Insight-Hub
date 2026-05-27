@@ -2,6 +2,9 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2, X, Check } from "lucide-react";
+import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.svg";
+import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.svg";
+import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.svg";
 
 const LOGO_URL = "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/307ed9399_Logocopy.png";
 
@@ -37,7 +40,7 @@ export default function Home() {
   const extraCards = [
     {
       key: "outreach",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
+      imgUrl: outreachGalaxyButton,
       alt: "Outreach Intelligence",
       icon: <Network className="w-5 h-5 text-primary-foreground" />,
       title: "Outreach Intelligence",
@@ -47,7 +50,7 @@ export default function Home() {
     },
     {
       key: "relationship",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
+      imgUrl: relationshipPlanetButton,
       alt: "Relationship Intelligence",
       icon: <Users className="w-5 h-5 text-primary-foreground" />,
       title: "Relationship Intelligence",
@@ -57,7 +60,7 @@ export default function Home() {
     },
     {
       key: "hiringTrends",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
+      imgUrl: hiringCompassButton,
       alt: "Hiring Trend Intelligence",
       icon: <TrendingUp className="w-5 h-5 text-primary-foreground" />,
       title: "Hiring Trend Intelligence",
