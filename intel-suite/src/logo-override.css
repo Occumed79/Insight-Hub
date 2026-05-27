@@ -1,0 +1,5 @@
+img[src*="occu-med-main-logo"] {
+  height: 220px !important;
+  width: auto !important;
+  object-fit: contain !important;
+}
