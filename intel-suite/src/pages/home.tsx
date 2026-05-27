@@ -5,9 +5,9 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.svg";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.svg";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.svg";
-import occuMedMainLogo from "@/assets/occu-med-main-logo.svg";
+// Logo replaced with new Occu-Med branding
 
-const LOGO_URL = occuMedMainLogo;
+const LOGO_URL = "https://base44.app/api/apps/69f08d58f2a02a258d395477/files/mp/public/69f08d58f2a02a258d395477/48fce840d_occu-med-new-logo.png";
 
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
