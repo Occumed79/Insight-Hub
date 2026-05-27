@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 563" role="img" aria-label="Blue luminous galaxy portal button">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="48%" r="72%">
+      <stop offset="0%" stop-color="#0ccaff" stop-opacity="0.55"/>
+      <stop offset="42%" stop-color="#073cbb" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#02091e"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="26%" stop-color="#c9fbff"/>
+      <stop offset="55%" stop-color="#29d8ff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#006dff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#9ffcff" stop-opacity="0.95"/>
+      <stop offset="0.22" stop-color="#0ca8ff" stop-opacity="0.95"/>
+      <stop offset="0.62" stop-color="#044dff" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#93ffff" stop-opacity="0.95"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-35%" width="150%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.62 0 0 0 0 1 0 0 0 0.95 0"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="900" height="563" fill="transparent"/>
+  <g filter="url(#glow)">
+    <rect x="24" y="26" width="852" height="511" rx="57" fill="url(#bg)" stroke="url(#glass)" stroke-width="7"/>
+    <rect x="44" y="47" width="812" height="469" rx="42" fill="none" stroke="#7effff" stroke-opacity="0.55" stroke-width="2.5"/>
+    <path d="M70 60c140-10 240-4 350-1 128 4 247-11 405 0" stroke="#d8ffff" stroke-width="3" stroke-opacity="0.75" fill="none"/>
+    <path d="M74 512c140 9 238 6 349 3 132-4 246 10 404-1" stroke="#a8ffff" stroke-width="2.5" stroke-opacity="0.6" fill="none"/>
+  </g>
+  <ellipse cx="450" cy="280" rx="220" ry="70" fill="url(#core)" opacity="0.94"/>
+  <g fill="none" stroke-linecap="round" opacity="0.95">
+    <path d="M197 314c74-93 198-137 344-116 118 16 209 65 278 122" stroke="#08d7ff" stroke-width="23" opacity="0.43"/>
+    <path d="M149 301c96-144 289-201 490-152 117 29 185 80 224 136" stroke="#1fcfff" stroke-width="12" opacity="0.4"/>
+    <path d="M221 239c87-56 231-73 364-30 76 25 144 64 196 106" stroke="#5df5ff" stroke-width="14" opacity="0.38"/>
+    <path d="M122 366c119-31 249-34 395-3 108 24 215 21 325-33" stroke="#006eff" stroke-width="20" opacity="0.38"/>
+    <path d="M179 399c85 44 212 48 340 25 97-18 174-11 247 36" stroke="#00caff" stroke-width="14" opacity="0.33"/>
+    <ellipse cx="450" cy="280" rx="290" ry="96" stroke="#35e9ff" stroke-width="3" opacity="0.45"/>
+    <ellipse cx="450" cy="280" rx="230" ry="75" stroke="#96f8ff" stroke-width="3" opacity="0.4"/>
+    <ellipse cx="450" cy="280" rx="160" ry="51" stroke="#d4ffff" stroke-width="4" opacity="0.45"/>
+  </g>
+  <g filter="url(#soft)" opacity="0.65">
+    <circle cx="122" cy="390" r="18" fill="#00d9ff"/><circle cx="742" cy="136" r="20" fill="#04c7ff"/><circle cx="512" cy="92" r="22" fill="#07ccff"/><circle cx="315" cy="480" r="19" fill="#02b8ff"/>
+  </g>
+  <g fill="#dffcff">
+    <circle cx="95" cy="179" r="2.2"/><circle cx="131" cy="228" r="3.7"/><circle cx="181" cy="205" r="2.1"/><circle cx="236" cy="178" r="4.5"/><circle cx="290" cy="250" r="3.6"/><circle cx="357" cy="207" r="2.7"/><circle cx="398" cy="360" r="4.2"/><circle cx="499" cy="395" r="4.7"/><circle cx="585" cy="332" r="3.4"/><circle cx="665" cy="251" r="3.9"/><circle cx="764" cy="306" r="4.1"/><circle cx="820" cy="223" r="2.8"/><circle cx="803" cy="402" r="3.2"/><circle cx="150" cy="448" r="2.4"/><circle cx="713" cy="449" r="2.1"/>
+    <path d="M246 108l4 9 9 4-9 4-4 9-4-9-9-4 9-4z" fill="#00dfff"/><path d="M775 193l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#32eaff"/>
+  </g>
+  <path d="M64 67c46-28 109-29 168-14C152 73 91 125 49 190V93c0-9 6-19 15-26z" fill="#9bfaff" opacity="0.18"/>
+  <circle cx="63" cy="61" r="28" fill="#dfffff" opacity="0.85" filter="url(#soft)"/>
+  <circle cx="839" cy="501" r="23" fill="#dfffff" opacity="0.62" filter="url(#soft)"/>
+</svg>
