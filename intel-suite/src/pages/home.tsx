@@ -7,7 +7,7 @@ import relationshipPlanetButton from "@/assets/portal-buttons/relationship-plane
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.svg";
 // Logo replaced with new Occu-Med branding
 
-const LOGO_URL = "https://base44.app/api/apps/69f08d58f2a02a258d395477/files/mp/public/69f08d58f2a02a258d395477/48fce840d_occu-med-new-logo.png";
+const LOGO_URL = "https://base44.app/api/apps/69f08d58f2a02a258d395477/files/mp/public/69f08d58f2a02a258d395477/ac708dd5f_logo-transparent.png";
 
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
