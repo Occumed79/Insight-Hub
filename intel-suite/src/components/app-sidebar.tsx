@@ -38,10 +38,8 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
       <SidebarHeader className="p-4 pb-3">
-        <Link href="/" className="flex flex-col gap-1.5 transition-opacity hover:opacity-85">
-          <div className="bg-white rounded-xl px-3 py-2 shadow-lg shadow-black/20">
-            <img src={occuMedLogo} alt="Occu-Med" className="h-8 w-auto object-contain" />
-          </div>
+        <Link href="/" className="flex flex-col gap-2 transition-opacity hover:opacity-85">
+          <img src={occuMedLogo} alt="Occu-Med" className="h-16 w-auto object-contain" />
           <span className="text-[9px] text-muted-foreground uppercase tracking-widest pl-1">Insight Hub</span>
         </Link>
       </SidebarHeader>
