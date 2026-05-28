@@ -2,9 +2,9 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2, X, Check } from "lucide-react";
-import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.svg";
-import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.svg";
-import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.svg";
+import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
+import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
+import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
 // Logo replaced with new Occu-Med branding
 
 const LOGO_URL = "https://base44.app/api/apps/69f08d58f2a02a258d395477/files/mp/public/69f08d58f2a02a258d395477/ac708dd5f_logo-transparent.png";
