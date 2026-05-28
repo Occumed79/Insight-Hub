@@ -9,7 +9,7 @@ import {
   Map
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import occuMedLogo from "@assets/OM-logo-150dpi_1774901578920.png";
+import occuMedLogo from "@/assets/occu-med-logo.png";
 import {
   Sidebar,
   SidebarContent,
@@ -37,10 +37,16 @@ export function AppSidebar() {
 
   return (
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
-      <SidebarHeader className="p-4 pb-3">
-        <Link href="/" className="flex flex-col gap-2 transition-opacity hover:opacity-85">
-          <img src={occuMedLogo} alt="Occu-Med" className="h-20 w-auto object-contain drop-shadow-[0_0_12px_rgba(255,255,255,0.25)]" />
-          <span className="text-[9px] text-muted-foreground uppercase tracking-widest pl-1">Insight Hub</span>
+      <SidebarHeader className="px-3 pt-5 pb-3">
+        <Link href="/" className="block transition-opacity hover:opacity-85">
+          {/* Logo: fills the full sidebar width, no box constraint */}
+          <img
+            src={occuMedLogo}
+            alt="Occu-Med"
+            className="w-full h-auto object-contain drop-shadow-[0_0_18px_rgba(255,255,255,0.35)]"
+            style={{ minHeight: "80px", maxHeight: "140px" }}
+          />
+          <span className="block text-[9px] text-muted-foreground uppercase tracking-widest text-center mt-2">Insight Hub</span>
         </Link>
       </SidebarHeader>
       
