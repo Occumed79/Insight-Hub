@@ -5,9 +5,8 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
-// Logo replaced with new Occu-Med branding
-
-const LOGO_URL = "https://base44.app/api/apps/69f08d58f2a02a258d395477/files/mp/public/69f08d58f2a02a258d395477/ac708dd5f_logo-transparent.png";
+import occuMedLogoSrc from "@/assets/occu-med-logo.png";
+const LOGO_URL = occuMedLogoSrc;
 
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
@@ -191,7 +190,7 @@ export default function Home() {
           className="text-center mb-16"
         >
           <div className="inline-flex items-center justify-center mb-8">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ height: "150px", width: "auto", objectFit: "contain", display: "block" }} />
+            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "260px", height: "auto", objectFit: "contain", display: "block", filter: "drop-shadow(0 0 24px rgba(255,255,255,0.30))" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
