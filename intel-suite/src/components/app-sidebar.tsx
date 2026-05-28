@@ -39,7 +39,7 @@ export function AppSidebar() {
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
       <SidebarHeader className="p-4 pb-3">
         <Link href="/" className="flex flex-col gap-2 transition-opacity hover:opacity-85">
-          <img src={occuMedLogo} alt="Occu-Med" className="h-16 w-auto object-contain" />
+          <img src={occuMedLogo} alt="Occu-Med" className="h-20 w-auto object-contain drop-shadow-[0_0_12px_rgba(255,255,255,0.25)]" />
           <span className="text-[9px] text-muted-foreground uppercase tracking-widest pl-1">Insight Hub</span>
         </Link>
       </SidebarHeader>
