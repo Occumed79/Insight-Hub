@@ -112,6 +112,10 @@ router.post("/opportunities/fetch", async (req, res) => {
     // Map provider names from API format to internal ProviderName format
     const providerNameMap: Record<string, string> = {
       sam_gov: "samGov",
+      grantsGov: "grantsGov",
+      grants_gov: "grantsGov",
+      usaSpending: "usaSpending",
+      usa_spending: "usaSpending",
       gemini: "gemini",
       serper: "serper",
       tavily: "tavily",
