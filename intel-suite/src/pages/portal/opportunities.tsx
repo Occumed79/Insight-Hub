@@ -13,7 +13,12 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  ThumbsUp,
+  ThumbsDown,
+  Star,
+  Ban,
+  Brain
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -48,6 +53,65 @@ import {
   useListProviders
 } from "@workspace/api-client-react";
 
+// ── Grade types ──────────────────────────────────────────────────────────────
+type FeedbackGrade = "excellent" | "good" | "poor" | "spam";
+
+interface GradeConfig {
+  grade: FeedbackGrade;
+  label: string;
+  icon: React.ReactNode;
+  activeClass: string;
+  hoverClass: string;
+}
+
+const GRADE_CONFIGS: GradeConfig[] = [
+  {
+    grade: "excellent",
+    label: "Excellent fit",
+    icon: <Star className="w-3.5 h-3.5" />,
+    activeClass: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
+    hoverClass: "hover:bg-yellow-500/10 hover:text-yellow-400 hover:border-yellow-500/30",
+  },
+  {
+    grade: "good",
+    label: "Good fit",
+    icon: <ThumbsUp className="w-3.5 h-3.5" />,
+    activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
+    hoverClass: "hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30",
+  },
+  {
+    grade: "poor",
+    label: "Poor fit",
+    icon: <ThumbsDown className="w-3.5 h-3.5" />,
+    activeClass: "bg-orange-500/20 text-orange-400 border-orange-500/40",
+    hoverClass: "hover:bg-orange-500/10 hover:text-orange-400 hover:border-orange-500/30",
+  },
+  {
+    grade: "spam",
+    label: "Not relevant",
+    icon: <Ban className="w-3.5 h-3.5" />,
+    activeClass: "bg-red-500/20 text-red-400 border-red-500/40",
+    hoverClass: "hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30",
+  },
+];
+
+// Confidence score badge colour
+function getConfidenceColor(score: number | null | undefined): string {
+  if (score === null || score === undefined) return "text-muted-foreground";
+  if (score >= 80) return "text-yellow-400";
+  if (score >= 60) return "text-emerald-400";
+  if (score >= 40) return "text-white/70";
+  return "text-red-400/70";
+}
+
+function getConfidenceBg(score: number | null | undefined): string {
+  if (score === null || score === undefined) return "bg-white/5 border-white/10";
+  if (score >= 80) return "bg-yellow-500/10 border-yellow-500/20";
+  if (score >= 60) return "bg-emerald-500/10 border-emerald-500/20";
+  if (score >= 40) return "bg-white/5 border-white/10";
+  return "bg-red-500/10 border-red-500/20";
+}
+
 export default function OpportunitiesDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -73,6 +137,36 @@ export default function OpportunitiesDashboard() {
 
   // Import form state
   const [importFile, setImportFile] = useState<File | null>(null);
+
+  // Grading state — tracks pending grade submissions
+  const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
+
+  const handleGrade = async (opportunityId: string, grade: FeedbackGrade) => {
+    setGradingIds(prev => new Set(prev).add(opportunityId));
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const resp = await fetch(`${baseUrl}/api/opportunities/${opportunityId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to submit grade");
+      }
+      // Invalidate list to refresh userGrade + userConfidence
+      queryClient.invalidateQueries({ queryKey: getListOpportunitiesQueryKey() });
+      toast({ title: "Grade saved", description: `Marked as ${grade}. The model is learning.` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Grade failed", description: err.message });
+    } finally {
+      setGradingIds(prev => {
+        const next = new Set(prev);
+        next.delete(opportunityId);
+        return next;
+      });
+    }
+  };
 
   // Queries
   const { data: settings } = useGetSettings();
@@ -418,6 +512,13 @@ export default function OpportunitiesDashboard() {
                 <th className="p-4 font-medium">Set-Aside</th>
                 <th className="p-4 font-medium">Type</th>
                 <th className="p-4 font-medium">Status</th>
+                <th className="p-4 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Brain className="w-3.5 h-3.5 text-primary/70" />
+                    Confidence
+                  </span>
+                </th>
+                <th className="p-4 font-medium">Grade</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -529,6 +630,50 @@ export default function OpportunitiesDashboard() {
                           {opp.status}
                         </Badge>
                       </td>
+                      {/* Confidence score */}
+                      <td className="p-4 text-sm">
+                        {opp.userConfidence !== null && opp.userConfidence !== undefined ? (
+                          <Badge
+                            variant="outline"
+                            className={`font-mono font-semibold text-xs ${getConfidenceBg(opp.userConfidence)} ${getConfidenceColor(opp.userConfidence)}`}
+                          >
+                            {Math.round(Number(opp.userConfidence))}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* Grade buttons */}
+                      <td className="p-4">
+                        <div className="flex items-center gap-1">
+                          {GRADE_CONFIGS.map(({ grade, label, icon, activeClass, hoverClass }) => {
+                            const isActive = opp.userGrade === grade;
+                            const isLoading = gradingIds.has(opp.id);
+                            return (
+                              <button
+                                key={grade}
+                                title={label}
+                                disabled={isLoading}
+                                onClick={() => handleGrade(opp.id, grade)}
+                                className={`
+                                  p-1.5 rounded-md border transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+                                  ${isActive
+                                    ? activeClass
+                                    : `border-white/10 text-muted-foreground bg-transparent ${hoverClass}`
+                                  }
+                                `}
+                              >
+                                {isLoading && isActive ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : icon}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+
+                      {/* Actions */}
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           {opp.samUrl && (
