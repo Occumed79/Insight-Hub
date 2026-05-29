@@ -23,6 +23,8 @@ import { bidnetProvider } from "../providers/bidnet";
 import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { websearchProvider } from "../providers/websearch";
+import { grantsGovProvider } from "../providers/grantsGov";
+import { usaSpendingProvider } from "../providers/usaSpending";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -77,6 +79,46 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       providerErrors.push(err.message ?? String(err));
     }
     result.providerResults.push({ provider: "samGov", fetched, errors: providerErrors });
+    result.fetched += fetched;
+  }
+
+  // ── Grants.gov ───────────────────────────────────────────────────────────
+  // Free, no key. Federal grants/programs that require occupational health vendors.
+  if (requestedProviders.includes("grantsGov")) {
+    const providerErrors: string[] = [];
+    let fetched = 0;
+    try {
+      const fetchResult = await grantsGovProvider.fetch({
+        keywords: options.keywords,
+        dateRange: options.dateRange,
+      });
+      allRecords.push(...fetchResult.records);
+      fetched = fetchResult.records.length;
+      providerErrors.push(...fetchResult.errors);
+    } catch (err: any) {
+      providerErrors.push(err.message ?? String(err));
+    }
+    result.providerResults.push({ provider: "grantsGov", fetched, errors: providerErrors });
+    result.fetched += fetched;
+  }
+
+  // ── USASpending.gov ────────────────────────────────────────────────────────
+  // Free, no key. Expiring federal contracts by NAICS = re-compete pipeline.
+  if (requestedProviders.includes("usaSpending")) {
+    const providerErrors: string[] = [];
+    let fetched = 0;
+    try {
+      const fetchResult = await usaSpendingProvider.fetch({
+        keywords: options.keywords,
+        dateRange: options.dateRange,
+      });
+      allRecords.push(...fetchResult.records);
+      fetched = fetchResult.records.length;
+      providerErrors.push(...fetchResult.errors);
+    } catch (err: any) {
+      providerErrors.push(err.message ?? String(err));
+    }
+    result.providerResults.push({ provider: "usaSpending", fetched, errors: providerErrors });
     result.fetched += fetched;
   }
 
