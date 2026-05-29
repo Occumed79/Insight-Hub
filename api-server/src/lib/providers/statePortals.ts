@@ -28,45 +28,91 @@ export interface StatePortal {
 }
 
 export const STATE_PORTALS: StatePortal[] = [
-  // Tier 1 — National aggregators
-  { domain: "demandstar.com",           name: "DemandStar",                  state: "National", tier: 1 },
-  { domain: "govtribe.com",             name: "GovTribe",                    state: "National", tier: 1 },
-  { domain: "bidnetdirect.com",         name: "BidNet Direct (Public)",      state: "National", tier: 1 },
-  { domain: "periscopes2g.com",         name: "Periscope S2G",               state: "National", tier: 1 },
-  { domain: "publicpurchase.com",       name: "Public Purchase",             state: "National", tier: 1 },
-  { domain: "planetbids.com",           name: "PlanetBids",                  state: "National", tier: 1 },
-  { domain: "ionwave.net",              name: "IonWave eProcurement",        state: "National", tier: 1 },
+  // ── Tier 1 — National aggregators (hit every state/county/municipal entity) ──
+  { domain: "demandstar.com",            name: "DemandStar / OpenBids",        state: "National", tier: 1 },
+  { domain: "publicpurchase.com",        name: "Public Purchase",              state: "National", tier: 1 },
+  { domain: "planetbids.com",            name: "PlanetBids",                   state: "National", tier: 1 },
+  { domain: "bidnetdirect.com",          name: "BidNet Direct",                state: "National", tier: 1 },
+  { domain: "periscopes2g.com",          name: "Periscope S2G",                state: "National", tier: 1 },
+  { domain: "ionwave.net",               name: "IonWave eProcurement",         state: "National", tier: 1 },
+  { domain: "opengov.com",               name: "OpenGov Procurement",          state: "National", tier: 1 },
+  { domain: "bonfirehub.com",            name: "Bonfire (municipal RFPs)",     state: "National", tier: 1 },
+  { domain: "bidding.procurement.opengov.com", name: "OpenGov Bidding",        state: "National", tier: 1 },
+  { domain: "bidsync.com",               name: "BidSync",                      state: "National", tier: 1 },
+  { domain: "rfpdb.com",                 name: "RFP Database",                 state: "National", tier: 1 },
 
-  // Tier 2 — High-volume state portals
-  { domain: "caleprocure.ca.gov",       name: "California eProcure",         state: "CA", tier: 2 },
-  { domain: "txsmartbuy.gov",           name: "Texas SmartBuy",              state: "TX", tier: 2 },
+  // ── Tier 2 — State procurement portals ──
+  { domain: "caleprocure.ca.gov",        name: "California eProcure",          state: "CA", tier: 2 },
+  { domain: "txsmartbuy.gov",            name: "Texas SmartBuy",               state: "TX", tier: 2 },
   { domain: "myfloridamarketplace.myflorida.com", name: "Florida Marketplace", state: "FL", tier: 2 },
-  { domain: "emaryland.maryland.gov",   name: "eMaryland Marketplace",       state: "MD", tier: 2 },
-  { domain: "procurement.pa.gov",       name: "Pennsylvania eMarketplace",   state: "PA", tier: 2 },
-  { domain: "commerce.ohio.gov",        name: "Ohio Procurement",            state: "OH", tier: 2 },
-  { domain: "gears.illinois.gov",       name: "Illinois GEARS",              state: "IL", tier: 2 },
-  { domain: "gab.georgia.gov",          name: "Georgia Bids & Contracts",    state: "GA", tier: 2 },
-  { domain: "webs.wa.gov",              name: "Washington WEBS",             state: "WA", tier: 2 },
-  { domain: "bids.nc.gov",             name: "NC eProcurement",             state: "NC", tier: 2 },
+  { domain: "emaryland.maryland.gov",    name: "eMaryland Marketplace",        state: "MD", tier: 2 },
+  { domain: "procurement.pa.gov",        name: "Pennsylvania eMarketplace",    state: "PA", tier: 2 },
+  { domain: "procure.ohio.gov",          name: "Ohio Procure.Ohio",            state: "OH", tier: 2 },
+  { domain: "gears.illinois.gov",        name: "Illinois GEARS",               state: "IL", tier: 2 },
+  { domain: "doa.georgia.gov",           name: "Georgia Team Georgia Marketplace", state: "GA", tier: 2 },
+  { domain: "webs.wa.gov",               name: "Washington WEBS",              state: "WA", tier: 2 },
+  { domain: "bids.nc.gov",               name: "NC eProcurement",              state: "NC", tier: 2 },
+  { domain: "bids.az.gov",               name: "Arizona ProcureAZ",            state: "AZ", tier: 2 },
+  { domain: "michigan.gov",              name: "Michigan SIGMA",               state: "MI", tier: 2 },
+  { domain: "nj.gov",                    name: "New Jersey Purchase",          state: "NJ", tier: 2 },
+  { domain: "eva.virginia.gov",          name: "Virginia eVA",                 state: "VA", tier: 2 },
+  { domain: "tn.gov",                    name: "Tennessee Central Procurement", state: "TN", tier: 2 },
+  { domain: "vendor.colorado.gov",       name: "Colorado BIDS",                state: "CO", tier: 2 },
+  { domain: "procurement.nv.gov",        name: "Nevada Purchasing Division",   state: "NV", tier: 2 },
+  { domain: "Oregon.gov",                name: "Oregon Procurement",           state: "OR", tier: 2 },
+  { domain: "mn.gov",                    name: "Minnesota SWIFT",              state: "MN", tier: 2 },
+  { domain: "wi.gov",                    name: "Wisconsin DOA Procurement",    state: "WI", tier: 2 },
+  { domain: "mo.gov",                    name: "Missouri Office of Admin",     state: "MO", tier: 2 },
+  { domain: "mass.gov",                  name: "Massachusetts COMMBUYS",       state: "MA", tier: 2 },
+  { domain: "ct.gov",                    name: "Connecticut DAS Procurement",  state: "CT", tier: 2 },
+  { domain: "sc.gov",                    name: "South Carolina SciQuest",      state: "SC", tier: 2 },
 
-  // Tier 3 — Additional regional portals
-  { domain: "bids.az.gov",             name: "Arizona ProcureAZ",           state: "AZ", tier: 3 },
-  { domain: "bidexpress.com",           name: "Bid Express",                 state: "National", tier: 3 },
-  { domain: "co.colorado.gov",          name: "Colorado BIDS",               state: "CO", tier: 3 },
-  { domain: "michigan.gov",             name: "Michigan SIGMA",              state: "MI", tier: 3 },
-  { domain: "nj.gov",                   name: "New Jersey Division of Purchase", state: "NJ", tier: 3 },
-  { domain: "doa.virginia.gov",         name: "Virginia eVA",                state: "VA", tier: 3 },
-  { domain: "tn.gov",                   name: "Tennessee Central Procurement", state: "TN", tier: 3 },
+  // ── Tier 3 — Additional regional / county / municipal portals ──
+  { domain: "bidexpress.com",            name: "Bid Express",                  state: "National", tier: 3 },
+  { domain: "negometrix.com",            name: "Negometrix (municipal)",       state: "National", tier: 3 },
+  { domain: "esolutionsinc.net",         name: "eSolutions Gov Bids",          state: "National", tier: 3 },
+  { domain: "civicplus.com",             name: "CivicPlus Procurement",        state: "National", tier: 3 },
+  { domain: "bid4michigan.com",          name: "Bid4Michigan",                 state: "MI",       tier: 3 },
+  { domain: "lacontroller.org",          name: "LA County Bids",               state: "CA",       tier: 3 },
+  { domain: "purchasing.lacounty.gov",   name: "LA County Purchasing",         state: "CA",       tier: 3 },
+  { domain: "sco.ca.gov",               name: "California SCO Bids",          state: "CA",       tier: 3 },
+  { domain: "houstontx.gov",            name: "City of Houston Bids",         state: "TX",       tier: 3 },
+  { domain: "dallascityhall.com",        name: "Dallas City Hall Procurement", state: "TX",       tier: 3 },
+  { domain: "nyc.gov",                   name: "New York City PASSPort",       state: "NY",       tier: 3 },
+  { domain: "chicago.gov",               name: "City of Chicago Procurement",  state: "IL",       tier: 3 },
+  { domain: "phoenixoasis.com",          name: "Phoenix OASIS",                state: "AZ",       tier: 3 },
+  { domain: "sanjoseca.gov",             name: "San Jose eProcurement",        state: "CA",       tier: 3 },
 ];
 
 // ── Search query templates ────────────────────────────────────────────────────
 
+// These queries mirror the EXACT language procurement officers use in RFP titles.
+// Each query is designed to surface a distinct category of opportunity Occu-Med can bid on.
 const PORTAL_SEARCH_TERMS = [
-  `occupational health services RFP solicitation ${CURRENT_YEAR}`,
-  `pre-employment drug testing screening government contract ${CURRENT_YEAR}`,
-  `employee health wellness clinic services bid ${CURRENT_YEAR}`,
-  `occupational medicine DOT physical services procurement ${CURRENT_YEAR}`,
-  `workers compensation medical services contract ${CURRENT_YEAR}`,
+  // Core service line — most common RFP titles
+  `"occupational health" RFP OR "request for proposal" OR solicitation`,
+  `"drug testing" OR "drug screening" services RFP procurement`,
+  `"pre-employment" physical OR screening RFP OR bid`,
+  `"DOT physical" OR "DOT examination" services contract bid`,
+  `"employee health" services RFP OR solicitation OR "request for proposal"`,
+  `"medical surveillance" program services RFP bid`,
+  `"fit for duty" examination services solicitation`,
+  `"substance abuse" testing services RFP procurement`,
+  // Broader occupational medicine terms
+  `"occupational medicine" clinic services contract RFP`,
+  `"workers compensation" medical services RFP OR bid`,
+  `"workplace health" services contract solicitation`,
+  `"random drug testing" services RFP bid procurement`,
+  // Entity types that hire — add entity context to narrow to actual procurements
+  `county "occupational health" RFP OR bid solicitation ${CURRENT_YEAR}`,
+  `municipality "employee health" testing services contract ${CURRENT_YEAR}`,
+  `"school district" "drug testing" services RFP OR bid`,
+  `"transit authority" "drug testing" OR "DOT physical" services bid`,
+  `"police department" OR "fire department" "physical examination" services RFP`,
+  `"public works" "pre-employment" OR "occupational health" RFP services`,
+  // Private sector / NGO / hospital employers
+  `"occupational health" services vendor "request for proposal"`,
+  `"employee assistance program" EAP services RFP procurement`,
 ];
 
 /**
