@@ -707,6 +707,8 @@ export default function OpportunitiesDashboard() {
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { key: "sam_gov", label: "SAM.gov", desc: "Federal solicitations", stub: false },
+                    { key: "grantsGov", label: "Grants.gov", desc: "Federal grants & programs", stub: false },
+                    { key: "usaSpending", label: "USASpending", desc: "Expiring contracts / re-competes", stub: false },
                     { key: "serper", label: "Serper", desc: "Web search (Google)", stub: false },
                     { key: "tavily", label: "Tavily", desc: "Deep AI research", stub: false },
                     { key: "exa", label: "Exa", desc: "Semantic web search", stub: false },
