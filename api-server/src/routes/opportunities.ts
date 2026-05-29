@@ -161,12 +161,22 @@ router.post("/opportunities/fetch", async (req, res) => {
       })),
     });
   } catch (err: any) {
-    if (err.message === "SAM_API_KEY_NOT_CONFIGURED") {
-      return res.status(400).json({ error: "No data sources are configured. Please add API keys in Integrations." });
-    } else {
-      req.log.error(err);
-      return res.status(500).json({ error: "Failed to fetch from data sources", details: err.message });
+    req.log.error(err);
+    const msg: string = err?.message ?? String(err);
+    if (msg === "SAM_API_KEY_NOT_CONFIGURED" || msg.includes("SAM_API_KEY_NOT_CONFIGURED")) {
+      return res.status(400).json({ error: "SAM.gov API key not configured. Add it in Settings → Integrations." });
     }
+    if (msg.includes("quota") || msg.includes("throttled") || msg.includes("rate limit")) {
+      return res.status(429).json({ error: msg });
+    }
+    if (msg.includes("API key not configured") || msg.includes("not configured")) {
+      return res.status(400).json({ error: msg });
+    }
+    // Surface the real error detail so it shows in the UI
+    return res.status(500).json({
+      error: "Fetch failed: " + (msg.slice(0, 300) || "Unknown error"),
+      details: msg,
+    });
   }
 });
 
