@@ -187,6 +187,108 @@ paths:
                   success:
                     type: boolean
 
+  /opportunities/{id}/feedback:
+    get:
+      operationId: getOpportunityFeedback
+      tags: [opportunities]
+      summary: Get grade for an opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Feedback record (null if ungraded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feedback:
+                    $ref: "#/components/schemas/OpportunityFeedback"
+    post:
+      operationId: gradeOpportunity
+      tags: [opportunities]
+      summary: Submit or update a grade for an opportunity
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grade]
+              properties:
+                grade:
+                  type: string
+                  enum: [excellent, good, poor, spam]
+                notes:
+                  type: string
+      responses:
+        "200":
+          description: Grade submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  opportunityId:
+                    type: string
+                  grade:
+                    type: string
+        "400":
+          description: Invalid grade
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Opportunity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /opportunities/feedback/model-summary:
+    get:
+      operationId: getFeedbackModelSummary
+      tags: [opportunities]
+      summary: Get the current state of the learning model signal weights
+      responses:
+        "200":
+          description: Model summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSummary"
+
+  /opportunities/feedback/rescore:
+    post:
+      operationId: rescoreOpportunities
+      tags: [opportunities]
+      summary: Trigger a full re-score of all opportunities
+      responses:
+        "200":
+          description: Re-score complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
   /providers:
     get:
       operationId: listProviders
@@ -362,6 +464,15 @@ components:
           description: JSON array of tags
         notes:
           type: string
+        # Learning model fields
+        userConfidence:
+          type: number
+          description: Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history
+        userGrade:
+          type: string
+          enum: [excellent, good, poor, spam]
+          nullable: true
+          description: Your latest grade for this opportunity (null = ungraded)
         createdAt:
           type: string
           format: date-time
@@ -529,6 +640,68 @@ components:
           items:
             $ref: "#/components/schemas/Provider"
 
+    OpportunityFeedback:
+      type: object
+      properties:
+        id:
+          type: string
+        opportunityId:
+          type: string
+        grade:
+          type: string
+          enum: [excellent, good, poor, spam]
+        notes:
+          type: string
+        agency:
+          type: string
+        naicsCode:
+          type: string
+        providerName:
+          type: string
+        tags:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ModelSummarySignal:
+      type: object
+      properties:
+        key:
+          type: string
+        weight:
+          type: number
+
+    ModelSummary:
+      type: object
+      properties:
+        totalGrades:
+          type: integer
+          description: Total number of graded opportunities
+        topAgencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSummarySignal"
+        topNaics:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSummarySignal"
+        topProviders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSummarySignal"
+        topTags:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSummarySignal"
+        topKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSummarySignal"
+
     ApiError:
       type: object
       required: [error]
@@ -537,3 +710,4 @@ components:
           type: string
         details:
           type: string
+
