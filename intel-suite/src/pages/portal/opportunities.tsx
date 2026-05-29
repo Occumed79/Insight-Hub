@@ -14,10 +14,6 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
-  ThumbsUp,
-  ThumbsDown,
-  Star,
-  Ban,
   Brain
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -59,58 +55,15 @@ type FeedbackGrade = "excellent" | "good" | "poor" | "spam";
 interface GradeConfig {
   grade: FeedbackGrade;
   label: string;
-  icon: React.ReactNode;
-  activeClass: string;
-  hoverClass: string;
+  short: string;
 }
 
 const GRADE_CONFIGS: GradeConfig[] = [
-  {
-    grade: "excellent",
-    label: "Excellent fit",
-    icon: <Star className="w-3.5 h-3.5" />,
-    activeClass: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
-    hoverClass: "hover:bg-yellow-500/10 hover:text-yellow-400 hover:border-yellow-500/30",
-  },
-  {
-    grade: "good",
-    label: "Good fit",
-    icon: <ThumbsUp className="w-3.5 h-3.5" />,
-    activeClass: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-    hoverClass: "hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30",
-  },
-  {
-    grade: "poor",
-    label: "Poor fit",
-    icon: <ThumbsDown className="w-3.5 h-3.5" />,
-    activeClass: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-    hoverClass: "hover:bg-orange-500/10 hover:text-orange-400 hover:border-orange-500/30",
-  },
-  {
-    grade: "spam",
-    label: "Not relevant",
-    icon: <Ban className="w-3.5 h-3.5" />,
-    activeClass: "bg-red-500/20 text-red-400 border-red-500/40",
-    hoverClass: "hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30",
-  },
+  { grade: "excellent", label: "Excellent fit", short: "Excellent" },
+  { grade: "good",      label: "Good fit",      short: "Good"      },
+  { grade: "poor",      label: "Poor fit",      short: "Poor"      },
+  { grade: "spam",      label: "Not relevant",  short: "N/A"       },
 ];
-
-// Confidence score badge colour
-function getConfidenceColor(score: number | null | undefined): string {
-  if (score === null || score === undefined) return "text-muted-foreground";
-  if (score >= 80) return "text-yellow-400";
-  if (score >= 60) return "text-emerald-400";
-  if (score >= 40) return "text-white/70";
-  return "text-red-400/70";
-}
-
-function getConfidenceBg(score: number | null | undefined): string {
-  if (score === null || score === undefined) return "bg-white/5 border-white/10";
-  if (score >= 80) return "bg-yellow-500/10 border-yellow-500/20";
-  if (score >= 60) return "bg-emerald-500/10 border-emerald-500/20";
-  if (score >= 40) return "bg-white/5 border-white/10";
-  return "bg-red-500/10 border-red-500/20";
-}
 
 export default function OpportunitiesDashboard() {
   const [, setLocation] = useLocation();
@@ -635,9 +588,9 @@ export default function OpportunitiesDashboard() {
                         {opp.userConfidence !== null && opp.userConfidence !== undefined ? (
                           <Badge
                             variant="outline"
-                            className={`font-mono font-semibold text-xs ${getConfidenceBg(opp.userConfidence)} ${getConfidenceColor(opp.userConfidence)}`}
+                            className="font-mono font-medium text-xs bg-white/5 border-white/10 text-white/70"
                           >
-                            {Math.round(Number(opp.userConfidence))}
+                            {Math.round(Number(opp.userConfidence))}%
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
@@ -647,7 +600,7 @@ export default function OpportunitiesDashboard() {
                       {/* Grade buttons */}
                       <td className="p-4">
                         <div className="flex items-center gap-1">
-                          {GRADE_CONFIGS.map(({ grade, label, icon, activeClass, hoverClass }) => {
+                          {GRADE_CONFIGS.map(({ grade, label, short }) => {
                             const isActive = opp.userGrade === grade;
                             const isLoading = gradingIds.has(opp.id);
                             return (
@@ -657,16 +610,17 @@ export default function OpportunitiesDashboard() {
                                 disabled={isLoading}
                                 onClick={() => handleGrade(opp.id, grade)}
                                 className={`
-                                  p-1.5 rounded-md border transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+                                  px-2 py-1 rounded border text-xs transition-all duration-150
+                                  disabled:opacity-40 disabled:cursor-not-allowed
                                   ${isActive
-                                    ? activeClass
-                                    : `border-white/10 text-muted-foreground bg-transparent ${hoverClass}`
+                                    ? "bg-white/15 border-white/30 text-white font-medium"
+                                    : "border-white/10 text-muted-foreground bg-transparent hover:bg-white/5 hover:text-white/80 hover:border-white/20"
                                   }
                                 `}
                               >
-                                {isLoading && isActive ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : icon}
+                                {isLoading && isActive
+                                  ? <Loader2 className="w-3 h-3 animate-spin inline" />
+                                  : short}
                               </button>
                             );
                           })}
