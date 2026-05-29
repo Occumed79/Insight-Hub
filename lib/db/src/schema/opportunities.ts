@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, numeric, integer, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -40,6 +40,9 @@ export const opportunitiesTable = pgTable("opportunities", {
   sourceConfidence: text("source_confidence"), // high, medium, low
   tags: text("tags"), // JSON array stored as text
   notes: text("notes"),
+  // Learning model fields — updated by the feedback aggregation pipeline
+  userConfidence: numeric("user_confidence"),  // 0-100: model's prediction of your interest based on past grades
+  userGrade: text("user_grade"),               // your latest grade: excellent | good | poor | spam (null = ungraded)
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
