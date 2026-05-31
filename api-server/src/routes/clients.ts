@@ -208,6 +208,53 @@ router.get("/clients", async (req, res) => {
   }
 });
 
+// ── Create client ─────────────────────────────────────────────────────────────
+
+router.post("/clients", async (req, res) => {
+  try {
+    const { name, website, industry, headquarters } = req.body as {
+      name: string;
+      website?: string;
+      industry?: string;
+      headquarters?: string;
+    };
+
+    if (!name?.trim()) return res.status(400).json({ error: "Client name is required" });
+
+    const id = randomUUID();
+    const now = new Date();
+    const [client] = await db.insert(clientsTable).values({
+      id,
+      name: name.trim(),
+      website: website?.trim() || null,
+      industry: industry?.trim() || null,
+      headquarters: headquarters?.trim() || null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+
+    return res.status(201).json({ client });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to create client" });
+  }
+});
+
+// ── Delete client ──────────────────────────────────────────────────────────────
+
+router.delete("/clients/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.delete(clientBranchesTable).where(eq(clientBranchesTable.clientId, id));
+    const deleted = await db.delete(clientsTable).where(eq(clientsTable.id, id)).returning();
+    if (!deleted.length) return res.status(404).json({ error: "Client not found" });
+    return res.json({ success: true });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to delete client" });
+  }
+});
+
 // ── Get single client with branches ──────────────────────────────────────────
 
 router.get("/clients/:id", async (req, res) => {

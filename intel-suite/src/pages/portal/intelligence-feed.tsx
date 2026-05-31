@@ -125,6 +125,19 @@ function signalBadgeClass(type: string): string {
   return map[type] ?? map["other"]!;
 }
 
+function cleanSummary(summary: string | null): string | null {
+  if (!summary) return null;
+  const cleaned = summary
+    .split(/
+/)
+    .filter(line => !line.trim().startsWith("https://api.sam.gov"))
+    .join(" ")
+    .replace(/Solicitation #N\/A\.?\s*/gi, "")
+    .replace(/https?:\/\/api\.sam\.gov\S+/g, "")
+    .trim();
+  return cleaned.length > 10 ? cleaned : null;
+}
+
 function fmtDate(d: string | null) {
   if (!d) return null;
   try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
@@ -473,9 +486,9 @@ function IntelCard({ item, onFeedback, isMutating }: IntelCardProps) {
       </div>
 
       {/* Summary */}
-      {item.summary && (
+      {cleanSummary(item.summary) && (
         <p className="text-xs text-white/55 leading-relaxed line-clamp-3">
-          {item.summary}
+          {cleanSummary(item.summary)}
         </p>
       )}
 

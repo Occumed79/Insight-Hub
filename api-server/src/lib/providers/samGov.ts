@@ -169,7 +169,22 @@ export class SamGovProvider implements DataSourceProvider {
       responseDeadline: o.responseDeadLine ? new Date(o.responseDeadLine) : undefined,
       setAside: o.typeOfSetAsideDescription ?? o.typeOfSetAside,
       placeOfPerformance: place,
-      description: o.description,
+      // SAM.gov 'description' field is often just an API URL — strip it and use a real summary
+      description: (() => {
+        const d = o.description ?? "";
+        if (!d || d.startsWith("https://api.sam.gov")) {
+          // Build a meaningful description from available fields
+          const parts: string[] = [];
+          if (o.solicitationNumber) parts.push(`Solicitation: ${o.solicitationNumber}`);
+          if (o.typeOfSetAsideDescription) parts.push(`Set-aside: ${o.typeOfSetAsideDescription}`);
+          if (o.naicsCode) parts.push(`NAICS: ${o.naicsCode}`);
+          if (o.classificationCode) parts.push(`PSC: ${o.classificationCode}`);
+          if (o.award?.awardee?.name) parts.push(`Awardee: ${o.award.awardee.name}`);
+          if (o.officeAddress?.city) parts.push(`Location: ${o.officeAddress.city}, ${o.officeAddress.state}`);
+          return parts.length > 0 ? parts.join(" · ") : null;
+        }
+        return d;
+      })(),
       solicitationNumber: o.solicitationNumber,
       sourceUrl: o.uiLink,
       awardAmount,

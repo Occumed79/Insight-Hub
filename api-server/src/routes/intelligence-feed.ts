@@ -334,18 +334,31 @@ async function fetchUSASpendingExpiring(): Promise<[InsertIntelFeedItem[], strin
       const recipient = award["Recipient Name"] ?? "Unknown";
       const agency = award["Awarding Agency"] ?? "Federal";
       const amount = award["Award Amount"] ? `$${Number(award["Award Amount"]).toLocaleString()}` : "";
+      // Score before inserting
+      const usaScoreText = `${award["Description"] ?? ""} ${recipient} ${award["NAICS Code"] ?? ""}`.toLowerCase();
+      const usaScore = scoreByKeyword(usaScoreText);
+      if (usaScore <= 40) continue; // skip non-relevant
+
+      const desc = award["Description"] ?? award["Award ID"] ?? "Federal Contract";
+      const cleanTitle = desc.length > 80 ? desc.slice(0, 77) + "..." : desc;
+
       items.push({
         scope: "federal",
         stateCode: null,
         signalType: "expiring_contract",
         source: "usaspending",
         agency,
-        title: `Expiring Contract: ${award["Description"] ?? award["Award ID"]}`,
-        summary: `Incumbent: ${recipient}. Contract ending ${endDate}. Value: ${amount}. NAICS: ${award["NAICS Code"] ?? "N/A"}`,
+        title: `Expiring: ${cleanTitle}`,
+        summary: [
+          `Incumbent: ${recipient}`,
+          endDate ? `Expires: ${endDate}` : null,
+          amount ? `Value: ${amount}` : null,
+          award["NAICS Code"] ? `NAICS: ${award["NAICS Code"]}` : null,
+        ].filter(Boolean).join(" · "),
         sourceUrl: `https://www.usaspending.gov/award/${award["Award ID"]}`,
         publishedDate: safeDate(endDate),
         externalId: `usaspending::${award["Award ID"]}`,
-        relevanceScore: 75,
+        relevanceScore: usaScore,
         rawJson: JSON.stringify(award),
       });
     }
@@ -390,20 +403,45 @@ async function fetchSAMAwards(dateRange: number): Promise<[InsertIntelFeedItem[]
       return [items, errors];
     }
 
-    for (const o of (json.opportunitiesData ?? []).slice(0, 20)) {
+    for (const o of (json.opportunitiesData ?? []).slice(0, 25)) {
       const parts = (o.fullParentPathName ?? "").split(".");
+      const agency = parts[0]?.trim() ?? "Federal";
+      const rawTitle = o.title ?? "";
+      const naics = o.naicsCode ?? "";
+      const awardee = o.award?.awardee?.name ?? null;
+      const awardAmt = o.award?.amount ? `$${Number(o.award.amount).toLocaleString()}` : null;
+      const endDate = o.archiveDate ? `Archived: ${o.archiveDate}` : null;
+
+      // Score against Occu-Med relevance before including
+      const scoreText = `${rawTitle} ${agency} ${naics} ${o.fullParentPathName ?? ""}`.toLowerCase();
+      const relevanceScore = scoreByKeyword(scoreText);
+
+      // Only include items that score above base (40) — skip pure noise
+      if (relevanceScore <= 40) continue;
+
+      // Build a human-readable summary (NOT a raw API URL)
+      const summaryParts = [
+        awardee ? `Incumbent: ${awardee}` : null,
+        awardAmt ? `Award value: ${awardAmt}` : null,
+        naics ? `NAICS: ${naics}` : null,
+        endDate,
+      ].filter(Boolean);
+      const summary = summaryParts.length > 0
+        ? summaryParts.join(" · ")
+        : `Solicitation #${o.solicitationNumber ?? "N/A"}`;
+
       items.push({
         scope: "federal",
         stateCode: null,
         signalType: "expiring_contract",
         source: "sam_awards",
-        agency: parts[0]?.trim() ?? "Federal",
-        title: `Award: ${o.title}`,
-        summary: `Solicitation #${o.solicitationNumber ?? "N/A"}. ${o.description?.slice(0, 400) ?? ""}`,
+        agency,
+        title: `Re-Compete: ${rawTitle}`,
+        summary,
         sourceUrl: o.uiLink ?? null,
         publishedDate: safeDate(o.postedDate),
-        externalId: `sam_award::${o.noticeId ?? o.solicitationNumber ?? o.title}`,
-        relevanceScore: 70,
+        externalId: `sam_award::${o.noticeId ?? o.solicitationNumber ?? rawTitle}`,
+        relevanceScore,
         rawJson: JSON.stringify(o),
       });
     }
@@ -621,21 +659,38 @@ async function fetchStateIntel(stateCode: string, dateRange: number): Promise<[I
 
 // ── Scoring helper ────────────────────────────────────────────────────────────
 
+// Occu-Med core: occupational health, drug/alcohol testing, physicals, OSHA compliance
 const HIGH_KEYWORDS = [
-  "occupational health", "drug test", "physical exam", "dot physical",
-  "medical surveillance", "workers comp", "workplace health",
-  "rfp", "solicitation", "bid", "contract", "proposal",
+  "occupational health", "occupational medicine", "drug test", "drug testing",
+  "alcohol test", "substance abuse", "physical exam", "dot physical",
+  "pre-employment medical", "medical surveillance", "fit for duty",
+  "fitness for duty", "workers comp", "workers compensation",
+  "workplace health", "employee health", "health screening",
+  "medical evaluation", "breath alcohol", "urine drug screen",
 ];
 const MED_KEYWORDS = [
-  "osha", "safety", "health services", "employer", "screening",
-  "medical exam", "fitness for duty", "employee health",
+  "osha", "osha compliance", "osha 300", "industrial hygiene",
+  "health services", "employer services", "occupational", "screening",
+  "medical exam", "cdl physical", "random testing", "eap",
+  "employee assistance", "return to work", "injury management",
+  "621111", "621999", "621610", // NAICS codes for health services
+];
+// Hard exclusions — clearly irrelevant to Occu-Med
+const EXCLUDE_KEYWORDS = [
+  "propeller", "nut,self-locking", "cylinder assembly", "hub,propeller",
+  "tape,nuclear", "circuit card", "sensor,opaque", "sensor assy",
+  "elevator cable", "power supply", "fabric,collapsible", "geospatial",
+  "substation", "fuel system maintenance", "tire rod", "biohazardous waste",
+  "window washing", "drum,fabric", "mouse body composition",
 ];
 
 function scoreByKeyword(text: string): number {
   const t = text.toLowerCase();
-  let score = 40;
-  for (const kw of HIGH_KEYWORDS) { if (t.includes(kw)) score += 10; }
-  for (const kw of MED_KEYWORDS) { if (t.includes(kw)) score += 5; }
+  // Immediately exclude clearly irrelevant hardware/facility items
+  if (EXCLUDE_KEYWORDS.some(ex => t.includes(ex.toLowerCase()))) return 0;
+  let score = 20; // base — must earn relevance
+  for (const kw of HIGH_KEYWORDS) { if (t.includes(kw)) score += 15; }
+  for (const kw of MED_KEYWORDS)  { if (t.includes(kw)) score += 8;  }
   return Math.min(100, score);
 }
 

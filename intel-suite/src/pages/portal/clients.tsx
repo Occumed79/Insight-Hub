@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { CompanyLogo } from "@/components/company-logo";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Building2, Search, Globe, MapPin, RefreshCw, Sparkles,
+  Building2, Search, Globe, MapPin, RefreshCw, Sparkles, Plus,
   ChevronDown, ChevronUp, ExternalLink, X, Factory,
   FlaskConical, Warehouse, Truck, GraduationCap, Landmark,
   Briefcase, Server, TrendingUp, TrendingDown, Minus,
@@ -11,6 +11,14 @@ import {
   MessageSquare, Target, Linkedin, Trash2, Filter, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -1405,8 +1413,43 @@ export default function ClientsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch]         = useState("");
   const [trendFilter, setTrendFilter] = useState<string>("all");
-  const { data, isLoading } = useListClients();
+  const [isAddOpen, setIsAddOpen]   = useState(false);
+  const [addName, setAddName]       = useState("");
+  const [addWebsite, setAddWebsite] = useState("");
+  const [addIndustry, setAddIndustry] = useState("");
+  const [addHQ, setAddHQ]           = useState("");
+  const [addLoading, setAddLoading] = useState(false);
+  const { data, isLoading, refetch } = useListClients();
   const clients = data?.clients ?? [];
+  const { toast } = useToast();
+
+  const handleAddClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addName.trim()) return;
+    setAddLoading(true);
+    try {
+      const resp = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addName.trim(),
+          website: addWebsite.trim() || undefined,
+          industry: addIndustry.trim() || undefined,
+          headquarters: addHQ.trim() || undefined,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Failed to create client");
+      setIsAddOpen(false);
+      setAddName(""); setAddWebsite(""); setAddIndustry(""); setAddHQ("");
+      refetch();
+      toast({ title: "Client added", description: `${addName} added to your client list.` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Failed to add client", description: err.message });
+    } finally {
+      setAddLoading(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     let list = clients;
@@ -1445,6 +1488,44 @@ export default function ClientsPage() {
         </p>
       </div>
 
+      {/* Add Client Dialog */}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="glass-panel border border-white/10 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add New Client</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddClient} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <Label className="text-white/80 text-xs uppercase tracking-wider">Company Name *</Label>
+              <Input
+                value={addName} onChange={e => setAddName(e.target.value)}
+                placeholder="e.g. Amazon, Boeing, CACI International"
+                required autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-white/80 text-xs uppercase tracking-wider">Website</Label>
+              <Input value={addWebsite} onChange={e => setAddWebsite(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-white/80 text-xs uppercase tracking-wider">Industry</Label>
+              <Input value={addIndustry} onChange={e => setAddIndustry(e.target.value)} placeholder="e.g. Defense & Government Services" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-white/80 text-xs uppercase tracking-wider">Headquarters</Label>
+              <Input value={addHQ} onChange={e => setAddHQ(e.target.value)} placeholder="e.g. Arlington, VA" />
+            </div>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="ghost" onClick={() => setIsAddOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={addLoading || !addName.trim()}>
+                {addLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                Add Client
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Search & Filter */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
@@ -1452,6 +1533,10 @@ export default function ClientsPage() {
           <Input placeholder="Search clients..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           {search && <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white" onClick={() => setSearch("")}><X className="w-3.5 h-3.5" /></button>}
         </div>
+        <Button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 shrink-0">
+          <Plus className="w-4 h-4" />
+          Add Client
+        </Button>
         <div className="flex gap-2">
           {[
             { value: "all",         label: "All"          },
