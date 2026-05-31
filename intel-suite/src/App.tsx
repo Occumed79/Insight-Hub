@@ -11,6 +11,7 @@ import ProspectsPage from "@/pages/portal/prospects";
 import ProspectDetailPage from "@/pages/portal/prospect-detail";
 import FederalAgenciesPage from "@/pages/portal/federal-agencies";
 import StateAgenciesPage from "@/pages/portal/state-agencies";
+import IntelligenceFeedPage from "@/pages/portal/intelligence-feed";
 import SettingsPage from "@/pages/portal/settings";
 import { PortalLayout } from "@/components/portal-layout";
 import NotFound from "@/pages/not-found";
@@ -35,6 +36,7 @@ function PortalRouter() {
         <Route path="/portal/prospects/:id" component={ProspectDetailPage} />
         <Route path="/portal/federal-agencies" component={FederalAgenciesPage} />
         <Route path="/portal/state-agencies" component={StateAgenciesPage} />
+        <Route path="/portal/intelligence-feed" component={IntelligenceFeedPage} />
         <Route path="/portal/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>

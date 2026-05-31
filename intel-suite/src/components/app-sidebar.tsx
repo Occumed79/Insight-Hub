@@ -6,7 +6,8 @@ import {
   Plug,
   UserSearch,
   Landmark,
-  Map
+  Map,
+  Rss,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import occuMedLogo from "@/assets/occu-med-logo.png";
@@ -33,13 +34,13 @@ export function AppSidebar() {
   const isProspects = location.startsWith('/portal/prospects');
   const isFederalAgencies = location.startsWith('/portal/federal-agencies');
   const isStateAgencies = location.startsWith('/portal/state-agencies');
+  const isIntelFeed = location.startsWith('/portal/intelligence-feed');
   const isSettings = location.startsWith('/portal/settings');
 
   return (
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
       <SidebarHeader className="px-3 pt-5 pb-3">
         <Link href="/" className="block transition-opacity hover:opacity-85">
-          {/* Logo: fills the full sidebar width, no box constraint */}
           <img
             src={occuMedLogo}
             alt="Occu-Med"
@@ -79,6 +80,19 @@ export function AppSidebar() {
                   <Link href="/portal/opportunities" className="flex items-center gap-3">
                     <LayoutDashboard className="w-4 h-4" />
                     <span>Opportunities</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild 
+                  isActive={isIntelFeed}
+                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
+                >
+                  <Link href="/portal/intelligence-feed" className="flex items-center gap-3">
+                    <Rss className="w-4 h-4" />
+                    <span>Intelligence Feed</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
