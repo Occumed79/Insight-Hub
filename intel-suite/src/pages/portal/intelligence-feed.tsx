@@ -128,8 +128,7 @@ function signalBadgeClass(type: string): string {
 function cleanSummary(summary: string | null): string | null {
   if (!summary) return null;
   const cleaned = summary
-    .split(/
-/)
+    .split("\n")
     .filter(line => !line.trim().startsWith("https://api.sam.gov"))
     .join(" ")
     .replace(/Solicitation #N\/A\.?\s*/gi, "")
