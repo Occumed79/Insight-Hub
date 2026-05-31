@@ -308,7 +308,7 @@ async function fetchUSASpendingExpiring(): Promise<[InsertIntelFeedItem[], strin
 
     const body = {
       filters: {
-        time_period: [{ start_date: fmt(today), end_date: fmt(future), date_type: "last_modified_date" }],
+        time_period: [{ start_date: fmt(today), end_date: fmt(future) }],
         award_type_codes: ["A", "B", "C", "D"],
         naics_codes: ["621111", "621999", "621610", "561612", "611519", "621310", "621320", "621399", "621498", "621512"],
       },
