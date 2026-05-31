@@ -1,52 +1,53 @@
 /**
  * Startup migration — runs idempotent CREATE TABLE IF NOT EXISTS for any tables
  * that Drizzle push may not have applied yet. Safe to run on every boot.
+ * Non-fatal: if migration fails, server continues and routes handle errors gracefully.
  */
 
-import { pool } from "@workspace/db";
+import { sql } from "drizzle-orm";
+import { db } from "@workspace/db";
 import { logger } from "./logger";
 
 export async function runStartupMigrations(): Promise<void> {
-  const client = await pool.connect();
   try {
     logger.info("Running startup migrations…");
 
-    // ── Enums (CREATE TYPE IF NOT EXISTS not supported in older PG — use DO blocks) ──
+    // ── Enums (idempotent via DO $$ blocks) ──────────────────────────────────
 
-    await client.query(`
+    await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_signal_type AS ENUM (
           'regulatory_change','procurement_forecast','expiring_contract',
           'new_rulemaking','enforcement_action','budget_funding',
           'grant_program','industry_trend','state_procurement','other'
         );
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$
     `);
 
-    await client.query(`
+    await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_feedback AS ENUM ('saved','dismissed','new');
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$
     `);
 
-    await client.query(`
+    await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_source AS ENUM (
           'federal_register','regulations_gov','sam_awards','usaspending',
           'dol_osha','acquisition_gov','ecfr','state_serper','state_portal','other'
         );
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$
     `);
 
-    await client.query(`
+    await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_scope AS ENUM ('federal','state');
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$
     `);
 
     // ── intel_feed_items ─────────────────────────────────────────────────────
 
-    await client.query(`
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS intel_feed_items (
         id              TEXT PRIMARY KEY,
         scope           intel_scope        NOT NULL DEFAULT 'federal',
@@ -65,12 +66,12 @@ export async function runStartupMigrations(): Promise<void> {
         fetched_at      TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
         created_at      TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ        NOT NULL DEFAULT NOW()
-      );
+      )
     `);
 
     // ── intel_feed_signals ───────────────────────────────────────────────────
 
-    await client.query(`
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS intel_feed_signals (
         id               TEXT PRIMARY KEY,
         signal_type      intel_signal_type NOT NULL,
@@ -80,35 +81,35 @@ export async function runStartupMigrations(): Promise<void> {
         dismissed_count  INTEGER           NOT NULL DEFAULT 0,
         total_count      INTEGER           NOT NULL DEFAULT 0,
         updated_at       TIMESTAMPTZ       NOT NULL DEFAULT NOW()
-      );
+      )
     `);
 
     // ── Indexes ───────────────────────────────────────────────────────────────
 
-    await client.query(`
+    await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_intel_feed_scope_state
-        ON intel_feed_items (scope, state_code);
+        ON intel_feed_items (scope, state_code)
     `);
 
-    await client.query(`
+    await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_intel_feed_signal_type
-        ON intel_feed_items (signal_type);
+        ON intel_feed_items (signal_type)
     `);
 
-    await client.query(`
+    await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_intel_feed_feedback
-        ON intel_feed_items (feedback);
+        ON intel_feed_items (feedback)
     `);
 
-    await client.query(`
+    await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_intel_feed_published
-        ON intel_feed_items (published_date DESC NULLS LAST);
+        ON intel_feed_items (published_date DESC NULLS LAST)
     `);
 
     logger.info("Startup migrations complete.");
   } catch (err) {
-    logger.error({ err }, "Startup migration failed — continuing anyway");
-  } finally {
-    client.release();
+    // Non-fatal: log and continue. The server will still start.
+    // Individual route handlers return 500 if tables are missing.
+    logger.error({ err }, "Startup migration failed — server will continue");
   }
 }

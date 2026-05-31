@@ -16,17 +16,16 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Run idempotent migrations before accepting traffic
-runStartupMigrations().then(() => {
-  app.listen(port, (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
+// Start server first, then run migrations in background (non-blocking)
+app.listen(port, (err) => {
+  if (err) {
+    logger.error({ err }, "Error listening on port");
+    process.exit(1);
+  }
+  logger.info({ port }, "Server listening");
 
-    logger.info({ port }, "Server listening");
+  // Run migrations after server is up — non-fatal if they fail
+  runStartupMigrations().catch((err) => {
+    logger.error({ err }, "Unexpected error in startup migrations");
   });
-}).catch((err) => {
-  logger.error({ err }, "Fatal startup migration error");
-  process.exit(1);
 });
