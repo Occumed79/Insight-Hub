@@ -121,7 +121,7 @@ export class SamGovProvider implements DataSourceProvider {
     });
 
     const noMatchWarning = relevant.length === 0 && normalized.length > 0
-      ? [\`SAM.gov returned ${normalized.length} records but none matched Occu-Med service lines. Try more specific keywords.\`]
+      ? ["SAM.gov returned " + normalized.length + " records but none matched Occu-Med service lines. Try more specific keywords."]
       : [];
 
     return {
