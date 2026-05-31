@@ -181,35 +181,43 @@ router.post("/intel-feed/fetch", async (req, res) => {
     let created = 0, updated = 0;
 
     for (const item of items) {
-      const dedupKey = item.externalId ?? item.sourceUrl ?? item.title;
-      const id = makeId(item.scope ?? "federal", item.stateCode ?? null, dedupKey);
-      const existing = await db.select({ id: intelFeedItemsTable.id, feedback: intelFeedItemsTable.feedback })
-        .from(intelFeedItemsTable).where(eq(intelFeedItemsTable.id, id)).limit(1);
+      try {
+        const dedupKey = item.externalId ?? item.sourceUrl ?? item.title;
+        const id = makeId(item.scope ?? "federal", item.stateCode ?? null, dedupKey);
+        const existing = await db.select({ id: intelFeedItemsTable.id, feedback: intelFeedItemsTable.feedback })
+          .from(intelFeedItemsTable).where(eq(intelFeedItemsTable.id, id)).limit(1);
 
-      // Don't overwrite user feedback on re-fetch
-      const keepFeedback = existing[0]?.feedback ?? "new";
+        // Don't overwrite user feedback on re-fetch
+        const keepFeedback = existing[0]?.feedback ?? "new";
 
-      await db.insert(intelFeedItemsTable).values({
-        id, ...item, feedback: keepFeedback as any,
-        fetchedAt: now, createdAt: now, updatedAt: now,
-      }).onConflictDoUpdate({
-        target: intelFeedItemsTable.id,
-        set: {
-          title: item.title,
-          summary: item.summary ?? undefined,
-          agency: item.agency ?? undefined,
-          signalType: item.signalType ?? "other",
-          source: item.source ?? "other",
-          sourceUrl: item.sourceUrl ?? undefined,
-          publishedDate: item.publishedDate ?? undefined,
-          relevanceScore: item.relevanceScore ?? 50,
-          rawJson: item.rawJson ?? undefined,
-          fetchedAt: now,
-          updatedAt: now,
-        },
-      });
+        // Sanitize publishedDate — reject invalid Date objects before insert
+        const publishedDate = item.publishedDate instanceof Date && !isNaN(item.publishedDate.getTime())
+          ? item.publishedDate : null;
 
-      if (existing.length) updated++; else created++;
+        await db.insert(intelFeedItemsTable).values({
+          id, ...item, publishedDate, feedback: keepFeedback as any,
+          fetchedAt: now, createdAt: now, updatedAt: now,
+        }).onConflictDoUpdate({
+          target: intelFeedItemsTable.id,
+          set: {
+            title: item.title,
+            summary: item.summary ?? undefined,
+            agency: item.agency ?? undefined,
+            signalType: item.signalType ?? "other",
+            source: item.source ?? "other",
+            sourceUrl: item.sourceUrl ?? undefined,
+            publishedDate,
+            relevanceScore: item.relevanceScore ?? 50,
+            rawJson: item.rawJson ?? undefined,
+            fetchedAt: now,
+            updatedAt: now,
+          },
+        });
+
+        if (existing.length) updated++; else created++;
+      } catch (itemErr: any) {
+        errors.push(`Item insert failed [${item.externalId ?? item.title?.slice(0,40)}]: ${itemErr?.message}`);
+      }
     }
 
     return res.json({ fetched: items.length, created, updated, scope, stateCode, errors });
@@ -264,7 +272,7 @@ async function fetchFederalRegister(dateRange: number): Promise<[InsertIntelFeed
             title: doc.title,
             summary: doc.abstract?.slice(0, 600) ?? null,
             sourceUrl: doc.html_url ?? null,
-            publishedDate: doc.publication_date ? new Date(doc.publication_date) : null,
+            publishedDate: safeDate(doc.publication_date),
             externalId: `fr::${doc.document_number}`,
             relevanceScore: scoreByKeyword(doc.title + " " + (doc.abstract ?? "")),
             rawJson: JSON.stringify(doc),
@@ -335,7 +343,7 @@ async function fetchUSASpendingExpiring(): Promise<[InsertIntelFeedItem[], strin
         title: `Expiring Contract: ${award["Description"] ?? award["Award ID"]}`,
         summary: `Incumbent: ${recipient}. Contract ending ${endDate}. Value: ${amount}. NAICS: ${award["NAICS Code"] ?? "N/A"}`,
         sourceUrl: `https://www.usaspending.gov/award/${award["Award ID"]}`,
-        publishedDate: endDate ? new Date(endDate) : null,
+        publishedDate: safeDate(endDate),
         externalId: `usaspending::${award["Award ID"]}`,
         relevanceScore: 75,
         rawJson: JSON.stringify(award),
@@ -393,7 +401,7 @@ async function fetchSAMAwards(dateRange: number): Promise<[InsertIntelFeedItem[]
         title: `Award: ${o.title}`,
         summary: `Solicitation #${o.solicitationNumber ?? "N/A"}. ${o.description?.slice(0, 400) ?? ""}`,
         sourceUrl: o.uiLink ?? null,
-        publishedDate: o.postedDate ? new Date(o.postedDate) : null,
+        publishedDate: safeDate(o.postedDate),
         externalId: `sam_award::${o.noticeId ?? o.solicitationNumber ?? o.title}`,
         relevanceScore: 70,
         rawJson: JSON.stringify(o),
@@ -440,7 +448,7 @@ async function fetchFederalSerper(dateRange: number): Promise<[InsertIntelFeedIt
           title: r.title,
           summary: r.snippet?.slice(0, 500) ?? null,
           sourceUrl: r.link ?? null,
-          publishedDate: r.date ? new Date(r.date) : null,
+          publishedDate: safeDate(r.date),
           externalId: `serper_fed::${Buffer.from(r.link ?? r.title).toString("base64").slice(0, 32)}`,
           relevanceScore: scoreByKeyword(r.title + " " + (r.snippet ?? "")),
           rawJson: JSON.stringify(r),
@@ -598,7 +606,7 @@ async function fetchStateIntel(stateCode: string, dateRange: number): Promise<[I
             title: r.title,
             summary: r.snippet?.slice(0, 500) ?? null,
             sourceUrl: r.link ?? null,
-            publishedDate: r.date ? new Date(r.date) : new Date(),
+            publishedDate: safeDate(r.date) ?? new Date(),
             externalId: `state_news::${stateCode}::${Buffer.from(r.link ?? r.title).toString("base64").slice(0, 32)}`,
             relevanceScore: scoreByKeyword(r.title + " " + (r.snippet ?? "")),
             rawJson: JSON.stringify(r),
