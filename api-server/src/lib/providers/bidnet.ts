@@ -36,39 +36,42 @@ export class BidNetProvider implements DataSourceProvider {
   }
 
   /**
-   * Stub: BidNet fetch is not yet implemented.
-   * Once API endpoint structure is confirmed, implement the real HTTP call and
-   * map the response to NormalizedOpportunity[] using a normalize() method.
+   * BidNet fetch — optional future capability.
+   *
+   * Silently skips (returns empty records, no errors) when not configured so it
+   * never pollutes fetch results or logs with errors during normal operation.
+   * Once BIDNET_API_KEY and BIDNET_BASE_URL are set, this will activate.
+   *
+   * TODO: Replace the stub throw below with the real HTTP call once the API
+   * endpoint structure is confirmed with BidNet Direct support.
+   * Expected general pattern:
+   *   GET {BASE_URL}/bids/search?key={key}&keywords={...}&postedAfter={...}
+   *
+   * normalize(bidRecord): NormalizedOpportunity should map:
+   *   bidRecord.bidTitle -> title
+   *   bidRecord.agency -> agency
+   *   bidRecord.bidNumber -> solicitationNumber + externalId
+   *   bidRecord.openDate -> postedDate
+   *   bidRecord.closeDate -> responseDeadline
+   *   bidRecord.detailUrl -> sourceUrl
+   *   source: "bidnet"
    */
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
     const configured = await this.isConfigured();
 
+    // Graceful no-op: if not configured, silently return empty.
+    // This prevents stale API-key errors from flooding the fetch pipeline.
     if (!configured) {
-      const key = await this.getApiKey();
-      const url = await this.getBaseUrl();
-      const missing = [];
-      if (!key) missing.push("API key");
-      if (!url) missing.push("API base URL");
-      throw new Error(`BidNet is not configured. Missing: ${missing.join(", ")}.`);
+      return { records: [], total: 0, errors: [] };
     }
 
     // TODO: Replace with real BidNet API call once endpoint structure is confirmed.
-    // Expected general pattern:
-    //   GET {BASE_URL}/bids/search?key={key}&keywords={...}&postedAfter={...}
-    //
-    // normalize(bidRecord): NormalizedOpportunity should map:
-    //   bidRecord.bidTitle -> title
-    //   bidRecord.agency -> agency
-    //   bidRecord.bidNumber -> solicitationNumber + externalId
-    //   bidRecord.openDate -> postedDate
-    //   bidRecord.closeDate -> responseDeadline
-    //   bidRecord.detailUrl -> sourceUrl
-    //   source: "bidnet"
-
-    throw new Error(
-      "BidNet integration stub: API endpoint structure not yet confirmed. " +
-        "Please contact BidNet Direct support for programmatic API access details and update this provider."
-    );
+    // Returning empty for now even when configured — avoids throwing until implemented.
+    return {
+      records: [],
+      total: 0,
+      errors: ["BidNet API key is set but the endpoint integration is pending implementation."],
+    };
   }
 
   async getStatus(): Promise<ProviderStatus> {
@@ -76,19 +79,16 @@ export class BidNetProvider implements DataSourceProvider {
     const key = await this.getApiKey();
     const url = await this.getBaseUrl();
 
-    const missing = [];
-    if (!key) missing.push("API key");
-    if (!url) missing.push("API base URL");
+    if (!configured) {
+      // Not configured → not an error, just inactive (optional provider)
+      return { name: this.name, configured: false, healthy: false, errorMessage: undefined };
+    }
 
     return {
       name: this.name,
       configured,
       healthy: false,
-      errorMessage: configured
-        ? "API endpoint structure pending confirmation. Contact BidNet Direct support."
-        : missing.length > 0
-        ? `Missing: ${missing.join(", ")}`
-        : undefined,
+      errorMessage: "API key set — endpoint integration pending implementation.",
     };
   }
 }

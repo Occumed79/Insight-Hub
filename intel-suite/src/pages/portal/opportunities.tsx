@@ -86,7 +86,7 @@ export default function OpportunitiesDashboard() {
   // Fetch form state
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
-  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "serper", "tavily", "statePortals"]);
+  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "serper", "tavily", "statePortals"]);  // bidnet excluded from defaults — optional future provider
 
   // Import form state
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -385,8 +385,11 @@ export default function OpportunitiesDashboard() {
               : p.status?.configured
                 ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]"
                 : "bg-white/20";
+            const stubTitle = p.name === "bidnet"
+              ? "Optional — set BIDNET_API_KEY to enable when ready"
+              : "Pending API access — contact provider support";
             return (
-              <div key={p.name} className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap" title={isStub ? "Pending API access — contact provider support" : p.status?.configured ? "Active" : "Not configured"}>
+              <div key={p.name} className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap" title={isStub ? stubTitle : p.status?.configured ? "Active" : "Not configured"}>
                 <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
                 <span className={isStub ? "text-white/40" : "text-white/80"}>{p.displayName}</span>
                 {isStub && <Clock className="w-2.5 h-2.5 text-amber-500/50" />}
@@ -725,7 +728,7 @@ export default function OpportunitiesDashboard() {
                     { key: "websearch", label: "WebSearch API", desc: "Broad web coverage", stub: false },
                     { key: "minimax", label: "Minimax AI", desc: "AI scoring ensemble", stub: false },
                     { key: "tango", label: "Tango", desc: "Pending API access", stub: true },
-                    { key: "bidnet", label: "BidNet Direct", desc: "Pending API access", stub: true },
+                    { key: "bidnet", label: "BidNet Direct", desc: "Optional — enable with API key", stub: true },
                   ].map(({ key, label, desc, stub }) => {
                     const checked = fetchProviders.includes(key);
                     return (

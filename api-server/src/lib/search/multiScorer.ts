@@ -45,7 +45,7 @@ const FINAL_PASS_SCORE = 50;        // final averaged score must be >= this
 export async function scoreWithMultipleAIs(
   title: string,
   description: string,
-  mode: ScoringMode = "union"
+  mode: ScoringMode = "majority"
 ): Promise<MultiScorerResult> {
   const [geminiResult, groqResult, openrouterResult, minimaxResult] = await Promise.allSettled([
     geminiProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
@@ -164,6 +164,14 @@ export async function extractWithMultipleAIs(
       return { isOpportunity: false, reason: (anyResult as {reason?: string}).reason ?? "Not an opportunity" };
     }
     return null;
+  }
+
+  // Majority mode: require at least 2 scorers to agree, OR Gemini alone (highest trust scorer).
+  // This prevents a single low-confidence scorer from letting noise through.
+  const geminiVoted = geminiResult.status === "fulfilled" && geminiResult.value?.isOpportunity;
+  if (results.length < 2 && !geminiVoted) {
+    // Only 1 non-Gemini scorer agreed — not enough confidence, reject
+    return { isOpportunity: false, reason: "Only 1 scorer agreed (majority threshold not met)" };
   }
 
   // Pick best result: highest relevanceScore wins; merge fields from others if missing

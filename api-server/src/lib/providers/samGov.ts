@@ -112,18 +112,22 @@ export class SamGovProvider implements DataSourceProvider {
 
     const normalized = opps.map((o) => this.normalize(o));
 
-    // Filter to only include opportunities relevant to Occu-Med's service lines
+    // Filter to only include opportunities relevant to Occu-Med's service lines.
+    // NOTE: We do NOT fall back to all results — returning irrelevant records
+    // poisons the feedback model and degrades scoring quality.
     const relevant = normalized.filter((opp) => {
       const text = `${opp.title} ${opp.description ?? ""} ${opp.naicsCode ?? ""}`.toLowerCase();
       return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term));
     });
 
+    const noMatchWarning = relevant.length === 0 && normalized.length > 0
+      ? [\`SAM.gov returned ${normalized.length} records but none matched Occu-Med service lines. Try more specific keywords.\`]
+      : [];
+
     return {
-      records: relevant.length > 0 ? relevant : normalized, // fallback to all if nothing matches
+      records: relevant,
       total: json.totalRecords ?? opps.length,
-      errors: relevant.length === 0 && normalized.length > 0
-        ? ["Note: no results matched Occu-Med service lines — returning all results as fallback"]
-        : [],
+      errors: noMatchWarning,
     };
   }
 

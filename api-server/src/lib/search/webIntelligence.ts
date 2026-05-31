@@ -30,6 +30,7 @@ import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { websearchProvider } from "../providers/websearch";
 import type { NormalizedOpportunity } from "../providers/types";
+import { buildSignalWeights } from "../learning/feedbackModel";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
@@ -345,11 +346,41 @@ export async function webIntelligenceFetch(options: {
     ];
   }
 
+  // ── Load feedback signal weights to enrich Gemini query generation ──────────
+  // Pull top positively-weighted agencies and keywords from user grades so the
+  // pipeline searches harder for the types of opportunities that have proven relevant.
+  let feedbackHints = "";
+  try {
+    const weights = await buildSignalWeights();
+    if (weights.totalGrades >= 3) {
+      const topAgencies = Object.entries(weights.agencies)
+        .filter(([, w]) => w > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([k]) => k);
+      const topKeywords = Object.entries(weights.keywords)
+        .filter(([, w]) => w > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([k]) => k);
+      if (topAgencies.length > 0 || topKeywords.length > 0) {
+        feedbackHints = [
+          topAgencies.length > 0 ? `High-value agencies from past feedback: ${topAgencies.join(", ")}.` : "",
+          topKeywords.length > 0 ? `High-signal keywords from past feedback: ${topKeywords.join(", ")}.` : "",
+        ].filter(Boolean).join(" ");
+      }
+    }
+  } catch {
+    // Non-critical — continue without hints
+  }
+
   // Use Gemini to generate additional targeted Serper queries if configured
   let geminiQueries: { query: string; type?: "search" | "news"; tbs?: string }[] = [];
   if (useGemini) {
     try {
-      const generated = await geminiProvider.generateSearchQueries(options.keywords);
+      // Pass feedback hints to Gemini so it biases queries toward proven signal
+      const keywordsWithHints = [options.keywords, feedbackHints].filter(Boolean).join(". ") || undefined;
+      const generated = await geminiProvider.generateSearchQueries(keywordsWithHints);
       // Wrap generated queries with type annotation and add negative terms
       geminiQueries = generated.map((q) => ({
         query: `${q} -awarded -"contract award" -"award notice"`,
