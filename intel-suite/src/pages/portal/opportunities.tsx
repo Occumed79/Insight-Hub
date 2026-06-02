@@ -100,6 +100,7 @@ export default function OpportunitiesDashboard() {
   const [isFetchOpen, setIsFetchOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
@@ -224,6 +225,26 @@ export default function OpportunitiesDashboard() {
     }
   };
 
+  const handlePurgeJunk = async () => {
+    if (!confirm("This will scan all records in the database and permanently delete any that don't match Occu-Med service lines. Continue?")) return;
+    setIsPurging(true);
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const resp = await fetch(`${baseUrl}/api/opportunities/purge-junk`, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Purge failed");
+      queryClient.invalidateQueries({ queryKey: getListOpportunitiesQueryKey() });
+      toast({
+        title: "🧹 Junk Purged",
+        description: `Scanned ${data.scanned} records. Deleted ${data.deleted} junk entries. Kept ${data.kept} valid opportunities.`,
+      });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Purge Failed", description: err.message });
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   const toggleFetchProvider = (key: string) => {
     setFetchProviders((prev) => prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]);
   };
@@ -328,6 +349,10 @@ export default function OpportunitiesDashboard() {
           <Button variant="outline" className="bg-background/50 backdrop-blur-md border-white/10 hover:bg-white/5 hover:text-white" onClick={handleEnrich} disabled={isEnriching} title="Backfill missing Agency, Due Date, and Value by extracting full page content">
             {isEnriching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
             {isEnriching ? "Enriching..." : "Re-enrich"}
+          </Button>
+          <Button variant="outline" className="bg-red-500/10 border-red-500/25 text-red-300 hover:bg-red-500/20 hover:text-red-200 backdrop-blur-md" onClick={handlePurgeJunk} disabled={isPurging} title="Permanently delete all records that don't match Occu-Med service lines">
+            {isPurging ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <span className="mr-2 text-sm">🧹</span>}
+            {isPurging ? "Purging..." : "Purge Junk"}
           </Button>
           <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" onClick={handleOpenFetch}>
             <DownloadCloud className="w-4 h-4 mr-2" /> Fetch Intelligence
