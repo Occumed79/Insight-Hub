@@ -1,22 +1,5 @@
-/**
- * Web Intelligence Pipeline
- *
- * Orchestrates Serper + Exa + Tavily + Gemini (+ FireCrawl for full-page content)
- * to discover ACTIVE, OPEN RFP/solicitation opportunities from the web.
- *
- * Pipeline:
- * 1. Gemini generates targeted search queries (falls back to built-in defaults)
- * 2. Serper (Google) + Exa (neural) + Tavily search in parallel
- * 3. Deduplicate by URL; block known non-procurement domains
- * 4. Keyword pre-filter: must contain strong procurement signals
- * 5. FireCrawl enrichment: fetch full page content for top candidates (if configured)
- * 6. Gemini analyzes each candidate with full content, extracts structured data
- * 7. Hard reject: expired deadlines, relevance below threshold, award announcements
- * 8. Fallback: if Gemini unavailable, save pre-filtered results as low-confidence
- */
-
 import { createHash } from "crypto";
-import { geminiProvider, OCCUMED_DEFAULT_QUERIES } from "../providers/gemini";
+import { geminiProvider } from "../providers/gemini";
 import { serperProvider } from "../providers/serper";
 import type { SerperSearchResult } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
@@ -30,146 +13,75 @@ import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { websearchProvider } from "../providers/websearch";
 import type { NormalizedOpportunity } from "../providers/types";
+import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 const NOW = new Date();
 
-// Minimum Gemini relevance score to include (0-100). Raised to 75 for quality control.
-const MIN_RELEVANCE_SCORE = 75;
-
-// Gemini concurrency per batch
 const GEMINI_BATCH_SIZE = 3;
 const GEMINI_BATCH_DELAY_MS = 500;
-
-// Max candidates to send to FireCrawl for full-page enrichment (cost/latency control)
 const FIRECRAWL_MAX_URLS = 10;
 
-/**
- * Search queries designed to surface ACTIVE, OPEN procurement opportunities.
- * Strategies:
- *  - Direct procurement portal targeting (demandstar, govwin, publicpurchase)
- *  - Strong procurement signal phrases ("request for proposal", "response due")
- *  - Explicit date enforcement (current year in query)
- *  - Negative terms baked in ("-awarded -award -contract award")
- */
+type SearchCandidateProvider = "serper" | "tavily" | "exa" | "you" | "langsearch" | "websearch";
+
 const OCCUMED_WEB_QUERIES: { query: string; type?: "search" | "news"; tbs?: string }[] = [
-  // Portal-targeted searches — these sites only list active bids
   { query: `site:demandstar.com "occupational health" OR "drug testing" OR "medical examination"`, type: "search" },
   { query: `site:bidsync.com "occupational health" OR "drug screening" OR "occupational medicine"`, type: "search" },
   { query: `site:publicpurchase.com "occupational health" OR "employee health"`, type: "search" },
-  // Strong procurement language + current year + no award language
   { query: `"request for proposal" "occupational health services" deadline ${CURRENT_YEAR} -awarded -award`, type: "search" },
   { query: `"request for proposal" "drug testing" OR "drug screening" government ${CURRENT_YEAR} response due -award`, type: "search" },
-  // News mode — finds RFPs issued in the last 30 days
   { query: `"occupational health" OR "occupational medicine" RFP solicitation government issued ${CURRENT_YEAR}`, type: "news", tbs: "qdr:m" },
   { query: `"pre-employment" OR "drug testing" OR "DOT physical" "request for proposal" government ${CURRENT_YEAR}`, type: "news", tbs: "qdr:m" },
-  // NAICS-targeted government search
   { query: `NAICS 621111 OR NAICS 621999 "occupational health" solicitation RFP ${CURRENT_YEAR} active`, type: "search" },
-  // Broader procurement search with deadline language
   { query: `"solicitation" "occupational medicine" OR "occupational health" "due date" ${CURRENT_YEAR} OR ${NEXT_YEAR}`, type: "search" },
   { query: `"invitation to bid" OR "sources sought" "occupational health" OR "employee health" government ${CURRENT_YEAR}`, type: "search" },
 ];
 
-/**
- * Exa neural search queries — Exa understands intent rather than keywords,
- * so these are written more naturally.
- */
 const EXA_QUERIES = [
   `active government RFP for occupational health services ${CURRENT_YEAR}`,
   `open solicitation drug testing pre-employment physical services government ${CURRENT_YEAR}`,
   `government contract opportunity occupational medicine DOT physical ${CURRENT_YEAR}`,
 ];
 
-/**
- * Tavily queries — deep research mode to surface current procurement intelligence.
- */
 const TAVILY_QUERIES = [
   `occupational health services government RFP solicitation open ${CURRENT_YEAR}`,
   `pre-employment drug testing government contract opportunity active ${CURRENT_YEAR}`,
 ];
 
-/**
- * Domains to block — news aggregators, general content sites, LinkedIn, Wikipedia,
- * and other non-procurement sources that flood Google results.
- */
 const BLOCKED_DOMAINS = [
-  // Social media
   "linkedin.com", "facebook.com", "twitter.com", "instagram.com", "x.com",
   "reddit.com", "youtube.com", "tiktok.com",
-  // Reference / encyclopedias
   "wikipedia.org", "britannica.com",
-  // Government reference (NOT procurement)
-  "govinfo.gov",          // regulations/FR, not active bids
-  "federalregister.gov",  // rules, not bids
-  "usaspending.gov",      // awarded contracts — NOT open bids
-  "fpds.gov",             // contract awards
-  "regulations.gov",      // regulations
-  "gao.gov",              // audit reports
-  "opm.gov",              // federal HR
-  // News / media
+  "govinfo.gov", "federalregister.gov", "usaspending.gov", "fpds.gov", "regulations.gov", "gao.gov", "opm.gov",
   "bloomberg.com", "reuters.com", "wsj.com", "nytimes.com", "washingtonpost.com",
   "forbes.com", "inc.com", "businesswire.com", "prnewswire.com", "businessinsider.com",
   "apnews.com", "cnbc.com", "cnn.com", "foxbusiness.com", "politico.com",
-  "govexec.com", "nextgov.com", "federalnewsnetwork.com", // govt news — not bids
-  // Job boards
-  "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com",
-  "careerbuilder.com", "simplyhired.com", "usajobs.gov", "jobs.mil",
-  // Consumer health
+  "govexec.com", "nextgov.com", "federalnewsnetwork.com",
+  "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com", "careerbuilder.com", "simplyhired.com", "usajobs.gov", "jobs.mil",
   "yelp.com", "healthgrades.com", "webmd.com", "healthline.com",
-  // Document/sharing
   "scribd.com", "slideshare.net", "issuu.com",
-  // Vendor marketing (not actual bids)
   "gartner.com", "capterra.com", "g2.com",
 ];
 
-/**
- * Strong procurement pre-filter. Candidate must match at least one of these
- * in its title + URL + snippet. Terms are deliberately more specific than before
- * to cut out news/blog content.
- */
 const RFP_KEYWORDS = [
-  "rfp",
-  "request for proposal",
-  "request for proposals",
-  "solicitation",
-  "invitation to bid",
-  "invitation for bid",
-  "itb",
-  "rfq",
-  "request for quotation",
-  "bid opportunity",
-  "bid notice",
-  "sources sought",
-  "pre-solicitation",
-  "response due",
-  "proposals due",
-  "submission deadline",
-  "bids due",
-  "seeking proposals",
-  "contract opportunity",
-  "procurement notice",
+  "rfp", "request for proposal", "request for proposals", "solicitation", "invitation to bid", "invitation for bid",
+  "itb", "rfq", "request for quotation", "bid opportunity", "bid notice", "sources sought", "pre-solicitation",
+  "response due", "proposals due", "submission deadline", "bids due", "seeking proposals", "contract opportunity",
+  "procurement notice", "request for information", "rfi", "notice of intent", "sealed bids", "vendor registration",
 ];
 
-/**
- * Title/snippet signals that indicate this is NOT an active opportunity.
- * Hard-reject anything matching these.
- */
+const SERVICE_KEYWORDS = [
+  "occupational health", "occupational medicine", "drug testing", "drug screening", "dot physical", "physical exam",
+  "pre-employment", "employee health", "medical examination", "medical exam", "fitness for duty", "vaccination",
+  "immunization", "respirator", "pulmonary function", "audiogram", "hearing test", "titer", "tb testing",
+  "laboratory testing", "x-ray", "ekg", "clinic services", "medical screening",
+];
+
 const REJECT_SIGNALS = [
-  "contract awarded",
-  "contract award",
-  "award notice",
-  "award announcement",
-  "awarded to",
-  "selected vendor",
-  "task order award",
-  "mod to contract",
-  "contract modification",
-  "job description",
-  "job posting",
-  "we are hiring",
-  "career opportunity",
+  "contract awarded", "contract award", "award notice", "award announcement", "awarded to", "selected vendor",
+  "task order award", "mod to contract", "contract modification", "job description", "job posting", "we are hiring", "career opportunity",
 ];
 
 export interface WebIntelligenceResult {
@@ -179,9 +91,13 @@ export interface WebIntelligenceResult {
     exaResults: number;
     tavilyResults: number;
     statePortalResults: number;
+    youResults: number;
+    langsearchResults: number;
+    websearchResults: number;
     totalCandidates: number;
     preFiltered: number;
     firecrawlEnriched: number;
+    jinaEnriched: number;
     extracted: number;
     rejected: number;
     expiredRejected: number;
@@ -193,9 +109,10 @@ export interface WebIntelligenceResult {
 interface Candidate {
   title: string;
   url: string;
-  content: string; // snippet initially, replaced by full markdown if FireCrawl enriches it
-  sourceProvider: "serper" | "tavily" | "exa";
+  content: string;
+  sourceProvider: SearchCandidateProvider;
   firecrawlEnriched?: boolean;
+  jinaEnriched?: boolean;
 }
 
 function isBlockedDomain(url: string): boolean {
@@ -209,48 +126,16 @@ function isBlockedDomain(url: string): boolean {
 
 function isRfpCandidate(candidate: Candidate): boolean {
   const text = `${candidate.title} ${candidate.url} ${candidate.content}`.toLowerCase();
-  // Hard reject award announcements and job postings up front
   if (REJECT_SIGNALS.some((s) => text.includes(s))) return false;
-  // Must match at least one strong procurement keyword
-  return RFP_KEYWORDS.some((kw) => text.includes(kw));
+  const hasProcurementSignal = RFP_KEYWORDS.some((kw) => text.includes(kw));
+  const hasServiceSignal = SERVICE_KEYWORDS.some((kw) => text.includes(kw));
+  return hasProcurementSignal && hasServiceSignal;
 }
 
 function isExpiredDeadline(deadline: Date | undefined | null): boolean {
   if (!deadline) return false;
-  // Reject if deadline is in the past (with 1-day grace period)
   const oneDayAgo = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
   return deadline < oneDayAgo;
-}
-
-function candidateToFallbackOpportunity(candidate: Candidate): NormalizedOpportunity {
-  const urlHash = createHash("sha256").update(candidate.url).digest("hex").slice(0, 20);
-  const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(
-    candidate.content,
-    candidate.title
-  );
-
-  // Don't save expired fallbacks either
-  if (isExpiredDeadline(deadline)) return null as unknown as NormalizedOpportunity;
-
-  return {
-    externalId: `web-${urlHash}`,
-    title: candidate.title,
-    agency: agencyHint ?? "Unknown",
-    type: "Solicitation",
-    status: "active" as const,
-    postedDate: new Date(),
-    responseDeadline: deadline,
-    estimatedValue: estimatedValue,
-    description: candidate.content.slice(0, 500),
-    sourceUrl: candidate.url,
-    source: candidate.sourceProvider,
-    rawData: {
-      url: candidate.url,
-      fallback: true,
-      extractedFrom: candidate.sourceProvider,
-      firecrawlEnriched: candidate.firecrawlEnriched ?? false,
-    },
-  };
 }
 
 async function runInBatches<T, R>(
@@ -268,19 +153,21 @@ async function runInBatches<T, R>(
         try {
           return await fn(item);
         } catch (err: any) {
-          if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED") && onQuotaExceeded) {
-            onQuotaExceeded();
-          }
+          if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED") && onQuotaExceeded) onQuotaExceeded();
           throw err;
         }
       })
     );
     results.push(...batchResults);
-    if (i + batchSize < items.length) {
-      await new Promise((res) => setTimeout(res, delayMs));
-    }
+    if (i + batchSize < items.length) await new Promise((res) => setTimeout(res, delayMs));
   }
   return results;
+}
+
+function addCandidate(candidates: Candidate[], seen: Set<string>, candidate: Candidate) {
+  if (!candidate.url || seen.has(candidate.url) || isBlockedDomain(candidate.url)) return;
+  seen.add(candidate.url);
+  candidates.push(candidate);
 }
 
 export async function webIntelligenceFetch(options: {
@@ -303,89 +190,63 @@ export async function webIntelligenceFetch(options: {
     exaResults: 0,
     tavilyResults: 0,
     statePortalResults: 0,
+    youResults: 0,
+    langsearchResults: 0,
+    websearchResults: 0,
     totalCandidates: 0,
     preFiltered: 0,
     firecrawlEnriched: 0,
+    jinaEnriched: 0,
     extracted: 0,
     rejected: 0,
     expiredRejected: 0,
     geminiRateLimited: false,
   };
 
-  const useSerper = options.useSerper !== false;
-  const useTavily = options.useTavily !== false;
-  const useGemini = options.useGemini !== false;
+  const useSerper = options.useSerper === true;
+  const useTavily = options.useTavily === true;
+  const useGemini = options.useGemini === true;
   const useStatePortals = options.useStatePortals === true;
-  const useExa = options.useExa !== false;
-  const useFirecrawl = options.useFirecrawl !== false;
+  const useExa = options.useExa === true;
+  const useFirecrawl = options.useFirecrawl === true;
   const useYou = options.useYou === true;
   const useLangsearch = options.useLangsearch === true;
   const useWebsearch = options.useWebsearch === true;
 
-  // ── 1. Generate custom queries if Gemini is available ──────────────────────
-  let serperQueries = OCCUMED_WEB_QUERIES;
+  let serperQueries = [...OCCUMED_WEB_QUERIES];
   let exaQueries = [...EXA_QUERIES];
   let tavilyQueries = [...TAVILY_QUERIES];
 
-  // If user supplied keywords, inject them into all query lists
   if (options.keywords?.trim()) {
     const kw = options.keywords.trim();
-    const kwQ = `"${kw}" "request for proposal" OR solicitation OR "bid opportunity" government ${CURRENT_YEAR} -awarded`;
+    const kwQ = `(${kw}) ("request for proposal" OR solicitation OR "bid opportunity" OR RFQ OR RFP) ("occupational health" OR "drug testing" OR "medical examination" OR "employee health") government ${CURRENT_YEAR} -awarded -"contract award"`;
     serperQueries = [
       { query: kwQ, type: "search" as const },
       { query: kwQ, type: "news" as const, tbs: "qdr:m" },
       ...serperQueries,
     ];
-    exaQueries = [
-      `active government RFP for ${kw} services ${CURRENT_YEAR}`,
-      ...exaQueries,
-    ];
-    tavilyQueries = [
-      `${kw} government contract RFP solicitation open ${CURRENT_YEAR}`,
-      ...tavilyQueries,
-    ];
+    exaQueries = [`active open government procurement opportunity for ${kw} occupational health medical screening drug testing services ${CURRENT_YEAR}`, ...exaQueries];
+    tavilyQueries = [`${kw} occupational health drug testing medical screening government RFP solicitation open ${CURRENT_YEAR}`, ...tavilyQueries];
   }
 
-  // ── Load feedback signal weights to enrich Gemini query generation ──────────
-  // Pull top positively-weighted agencies and keywords from user grades so the
-  // pipeline searches harder for the types of opportunities that have proven relevant.
   let feedbackHints = "";
   try {
     const weights = await buildSignalWeights();
     if (weights.totalGrades >= 3) {
-      const topAgencies = Object.entries(weights.agencies)
-        .filter(([, w]) => w > 0)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([k]) => k);
-      const topKeywords = Object.entries(weights.keywords)
-        .filter(([, w]) => w > 0)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 8)
-        .map(([k]) => k);
-      if (topAgencies.length > 0 || topKeywords.length > 0) {
-        feedbackHints = [
-          topAgencies.length > 0 ? `High-value agencies from past feedback: ${topAgencies.join(", ")}.` : "",
-          topKeywords.length > 0 ? `High-signal keywords from past feedback: ${topKeywords.join(", ")}.` : "",
-        ].filter(Boolean).join(" ");
-      }
+      const topAgencies = Object.entries(weights.agencies).filter(([, w]) => w > 0).sort(([, a], [, b]) => b - a).slice(0, 5).map(([k]) => k);
+      const topKeywords = Object.entries(weights.keywords).filter(([, w]) => w > 0).sort(([, a], [, b]) => b - a).slice(0, 8).map(([k]) => k);
+      feedbackHints = [
+        topAgencies.length ? `High-value agencies from past feedback: ${topAgencies.join(", ")}.` : "",
+        topKeywords.length ? `High-signal keywords from past feedback: ${topKeywords.join(", ")}.` : "",
+      ].filter(Boolean).join(" ");
     }
-  } catch {
-    // Non-critical — continue without hints
-  }
+  } catch {}
 
-  // Use Gemini to generate additional targeted Serper queries if configured
-  let geminiQueries: { query: string; type?: "search" | "news"; tbs?: string }[] = [];
   if (useGemini) {
     try {
-      // Pass feedback hints to Gemini so it biases queries toward proven signal
       const keywordsWithHints = [options.keywords, feedbackHints].filter(Boolean).join(". ") || undefined;
       const generated = await geminiProvider.generateSearchQueries(keywordsWithHints);
-      // Wrap generated queries with type annotation and add negative terms
-      geminiQueries = generated.map((q) => ({
-        query: `${q} -awarded -"contract award" -"award notice"`,
-        type: "search" as const,
-      }));
+      serperQueries.push(...generated.map((q) => ({ query: `${q} -awarded -"contract award" -"award notice"`, type: "search" as const })));
     } catch (err: any) {
       if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
         stats.geminiRateLimited = true;
@@ -396,169 +257,77 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  const allSerperQueries = [...serperQueries, ...geminiQueries];
-
-  // ── 2. Fetch from Serper, Exa, Tavily, and State Portals in parallel ───────
   const [serperRaw, exaRaw, tavilyRaw, statePortalRaw, youRaw, langsearchRaw, websearchRaw] = await Promise.all([
     useSerper
-      ? Promise.allSettled(
-          allSerperQueries.map((q) =>
-            serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [] as SerperSearchResult[])
-          )
-        ).then((results) =>
-          results.flatMap((r) => (r.status === "fulfilled" ? r.value : []))
-        ).catch((err: any) => {
-          errors.push(`Serper: ${err.message}`);
-          return [];
-        })
+      ? Promise.allSettled(serperQueries.map((q) => serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [] as SerperSearchResult[])))
+          .then((results) => results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])))
+          .catch((err: any) => { errors.push(`Serper: ${err.message}`); return []; })
       : Promise.resolve([]),
-
     useExa
-      ? exaProvider.isConfigured().then(async (configured) => {
-          if (!configured) return [];
-          return exaProvider.searchMultiple(exaQueries, 10).catch((err: any) => {
-            errors.push(`Exa: ${err.message}`);
-            return [];
-          });
-        })
+      ? exaProvider.isConfigured().then((configured) => configured ? exaProvider.searchMultiple(exaQueries, 10).catch((err: any) => { errors.push(`Exa: ${err.message}`); return []; }) : [])
       : Promise.resolve([]),
-
     useTavily
-      ? tavilyProvider.researchMultiple(tavilyQueries, 5).catch((err: any) => {
-          errors.push(`Tavily: ${err.message}`);
-          return [];
-        })
+      ? tavilyProvider.researchMultiple(tavilyQueries, 5).catch((err: any) => { errors.push(`Tavily: ${err.message}`); return []; })
       : Promise.resolve([]),
-
     useStatePortals
-      ? statePortalsProvider.search({ keywords: options.keywords }).catch((err: any) => {
-          errors.push(`State Portals: ${err.message}`);
-          return [];
-        })
+      ? statePortalsProvider.search({ keywords: options.keywords }).catch((err: any) => { errors.push(`State Portals: ${err.message}`); return []; })
       : Promise.resolve([]),
-
     useYou
-      ? youProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
-          errors.push(`You.com: ${err.message}`);
-          return [];
-        })
+      ? youProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`You.com: ${err.message}`); return []; })
       : Promise.resolve([]),
-
     useLangsearch
-      ? langsearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
-          errors.push(`Langsearch: ${err.message}`);
-          return [];
-        })
+      ? langsearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`Langsearch: ${err.message}`); return []; })
       : Promise.resolve([]),
-
     useWebsearch
-      ? websearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => {
-          errors.push(`WebSearch: ${err.message}`);
-          return [];
-        })
+      ? websearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`WebSearch: ${err.message}`); return []; })
       : Promise.resolve([]),
   ]);
 
   stats.serperResults = serperRaw.length;
   stats.exaResults = exaRaw.length;
   stats.tavilyResults = tavilyRaw.length;
-  // Additional provider raw counts logged but not in stats struct (to avoid schema change)
-  if (youRaw.length) errors.push(`You.com: ${youRaw.length} raw results`);
-  if (langsearchRaw.length) errors.push(`Langsearch: ${langsearchRaw.length} raw results`);
-  if (websearchRaw.length) errors.push(`WebSearch: ${websearchRaw.length} raw results`);
+  stats.youResults = youRaw.length;
+  stats.langsearchResults = langsearchRaw.length;
+  stats.websearchResults = websearchRaw.length;
 
   const statePortalOpportunities = statePortalsProvider.toOpportunities(statePortalRaw);
   stats.statePortalResults = statePortalOpportunities.length;
 
-  // ── 3. Deduplicate by URL; block non-procurement domains ───────────────────
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
+  for (const opp of statePortalOpportunities) if (opp.sourceUrl) seen.add(opp.sourceUrl);
 
-  for (const opp of statePortalOpportunities) {
-    if (opp.sourceUrl) seen.add(opp.sourceUrl);
-  }
-
-  for (const r of serperRaw) {
-    if (!r.link || seen.has(r.link) || isBlockedDomain(r.link)) continue;
-    seen.add(r.link);
-    candidates.push({ title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper" });
-  }
-
+  for (const r of serperRaw) addCandidate(candidates, seen, { title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper" });
   for (const r of exaRaw) {
     const url = r.url ?? "";
-    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
-    seen.add(url);
-    const content = (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "";
-    candidates.push({ title: r.title ?? "", url, content, sourceProvider: "exa" });
+    addCandidate(candidates, seen, { title: r.title ?? "", url, content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "", sourceProvider: "exa" });
   }
+  for (const r of tavilyRaw) addCandidate(candidates, seen, { title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
 
-  for (const r of tavilyRaw) {
-    if (!r.url || seen.has(r.url) || isBlockedDomain(r.url)) continue;
-    seen.add(r.url);
-    candidates.push({ title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
-  }
-
-  // Add You.com results to candidates
-  for (const r of youRaw as any[]) {
-    const url = r.url ?? r.sourceUrl ?? "";
-    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
-    seen.add(url);
-    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "you" });
-  }
-
-  // Add Langsearch results to candidates
-  for (const r of langsearchRaw as any[]) {
-    const url = r.url ?? r.sourceUrl ?? "";
-    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
-    seen.add(url);
-    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "langsearch" });
-  }
-
-  // Add WebSearch results to candidates
-  for (const r of websearchRaw as any[]) {
-    const url = r.url ?? r.sourceUrl ?? "";
-    if (!url || seen.has(url) || isBlockedDomain(url)) continue;
-    seen.add(url);
-    candidates.push({ title: r.title ?? "", url, content: r.description ?? r.snippet ?? "", sourceProvider: "websearch" });
-  }
+  for (const r of youRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.description ?? "", sourceProvider: "you" });
+  for (const r of langsearchRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.content ?? "", sourceProvider: "langsearch" });
+  for (const r of websearchRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.content ?? "", sourceProvider: "websearch" });
 
   stats.totalCandidates = candidates.length;
-
-  // ── 4. Keyword pre-filter ──────────────────────────────────────────────────
   const filtered = candidates.filter(isRfpCandidate);
   stats.preFiltered = filtered.length;
   stats.rejected = candidates.length - filtered.length;
 
-  if (filtered.length === 0) {
-    return { opportunities: statePortalOpportunities, stats, errors };
-  }
+  if (filtered.length === 0) return { opportunities: statePortalOpportunities, stats, errors };
 
-  // ── 5. Full-page enrichment (FireCrawl primary, Jina fallback) ─────────────
   const enrichedCandidates = [...filtered];
-
-  // Track which URLs still need enrichment after FireCrawl
-  const needsJinaEnrichment: typeof filtered = [];
 
   if (useFirecrawl) {
     const fcConfigured = await firecrawlProvider.isConfigured();
     if (fcConfigured) {
-      // Only enrich candidates that have short content (snippets), not already-full content
-      const toEnrich = filtered
-        .filter((c) => c.content.length < 800) // short snippets only
-        .slice(0, FIRECRAWL_MAX_URLS);
-
+      const toEnrich = filtered.filter((c) => c.content.length < 800).slice(0, FIRECRAWL_MAX_URLS);
       if (toEnrich.length > 0) {
-        const urls = toEnrich.map((c) => c.url);
         try {
-          const scraped = await firecrawlProvider.scrapeMany(urls);
+          const scraped = await firecrawlProvider.scrapeMany(toEnrich.map((c) => c.url));
           for (const result of scraped) {
             const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
             if (idx >= 0 && result.markdown) {
-              enrichedCandidates[idx] = {
-                ...enrichedCandidates[idx],
-                content: result.markdown.slice(0, 4000),
-                firecrawlEnriched: true,
-              };
+              enrichedCandidates[idx] = { ...enrichedCandidates[idx], content: result.markdown.slice(0, 4000), firecrawlEnriched: true };
               stats.firecrawlEnriched++;
             }
           }
@@ -569,27 +338,17 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  // ── 5b. Jina enrichment for candidates still lacking full content ──────────
-  //    Runs on candidates that FireCrawl didn't enrich (short content, no FC key, etc.)
   const jinaConfigured = await jinaProvider.isConfigured();
   if (jinaConfigured) {
-    const stillShort = enrichedCandidates.filter(
-      (c) => !c.firecrawlEnriched && c.content.length < 600
-    );
+    const stillShort = enrichedCandidates.filter((c) => !c.firecrawlEnriched && c.content.length < 600);
     if (stillShort.length > 0) {
       try {
-        const jinaResults = await jinaProvider.extractUrls(
-          stillShort.map((c) => c.url),
-          4,     // concurrency
-          5000   // max chars per page
-        );
+        const jinaResults = await jinaProvider.extractUrls(stillShort.map((c) => c.url), 4, 5000);
         for (const [url, text] of jinaResults) {
           const idx = enrichedCandidates.findIndex((c) => c.url === url);
           if (idx >= 0 && text.length > 200) {
-            enrichedCandidates[idx] = {
-              ...enrichedCandidates[idx],
-              content: text,
-            };
+            enrichedCandidates[idx] = { ...enrichedCandidates[idx], content: text, jinaEnriched: true };
+            stats.jinaEnriched++;
           }
         }
       } catch (err: any) {
@@ -598,15 +357,8 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  // Previously we'd bail here if Gemini was unavailable.
-  // Now we have Groq + OpenRouter as fallbacks, so we always proceed.
-  if (stats.geminiRateLimited) {
-    errors.push("Gemini rate limited — falling back to Groq + OpenRouter for scoring.");
-  }
+  if (stats.geminiRateLimited) errors.push("Gemini rate limited — falling back to other available scorers.");
 
-  // ── 6. Multi-AI extraction (Gemini + Groq + OpenRouter in parallel) ─────────
-  //    Union mode: if ANY scorer says it's an opportunity, we keep it.
-  //    Each scorer's vote is stored in rawData for UI transparency.
   const opportunities: NormalizedOpportunity[] = [];
   let geminiQuotaHit = false;
 
@@ -616,36 +368,25 @@ export async function webIntelligenceFetch(options: {
       GEMINI_BATCH_SIZE,
       GEMINI_BATCH_DELAY_MS,
       async (candidate) => {
-        // Use multi-scorer: Gemini + Groq run in parallel, union mode
-        const extraction = await extractWithMultipleAIs(
-          candidate.title,
-          candidate.url,
-          candidate.content
-        );
-
+        const extraction = await extractWithMultipleAIs(candidate.title, candidate.url, candidate.content);
         if (!extraction || !extraction.isOpportunity) {
           stats.rejected++;
           return null;
         }
 
-        // ── 7a. Expired deadline hard reject ────────────────────────────────
         const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
         const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
-
         if (isExpiredDeadline(validDeadline)) {
           stats.expiredRejected++;
           stats.rejected++;
           return null;
         }
-
-        // ── 7b. Relevance threshold (lowered: union mode means any scorer passed already) ──
         if ((extraction.relevanceScore ?? 0) < 45) {
           stats.rejected++;
           return null;
         }
 
         const urlHash = createHash("sha256").update(candidate.url).digest("hex").slice(0, 20);
-
         return {
           externalId: `web-${urlHash}`,
           title: extraction.title ?? candidate.title,
@@ -658,15 +399,16 @@ export async function webIntelligenceFetch(options: {
           placeOfPerformance: extraction.location ?? undefined,
           estimatedValue: extraction.estimatedValue ?? undefined,
           sourceUrl: candidate.url,
-          source: candidate.sourceProvider,
+          source: candidate.sourceProvider as ProviderName,
           rawData: {
             url: candidate.url,
             relevanceScore: extraction.relevanceScore,
             relevanceReason: extraction.relevanceReason,
-            winnerScorer: (extraction as {winnerScorer?: string}).winnerScorer,
-            scorerVotes: (extraction as {scorerVotes?: unknown}).scorerVotes,
+            winnerScorer: (extraction as { winnerScorer?: string }).winnerScorer,
+            scorerVotes: (extraction as { scorerVotes?: unknown }).scorerVotes,
             extractedFrom: candidate.sourceProvider,
             firecrawlEnriched: candidate.firecrawlEnriched ?? false,
+            jinaEnriched: candidate.jinaEnriched ?? false,
           },
         } as NormalizedOpportunity;
       },
@@ -686,16 +428,12 @@ export async function webIntelligenceFetch(options: {
     if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
       stats.geminiRateLimited = true;
       errors.push("Gemini quota reached mid-run — remaining candidates discarded to avoid low-quality entries.");
-      // Do NOT save remaining candidates as fallback — they produce garbage results.
     } else {
       errors.push(`Web intelligence error: ${err.message}`);
     }
   }
 
-  if (geminiQuotaHit) {
-    errors.push("Gemini quota hit — remaining unprocessed candidates discarded (not saved as low-confidence).");
-    // Intentionally not saving fallback results — quality control.
-  }
+  if (geminiQuotaHit) errors.push("Gemini quota hit — remaining unprocessed candidates discarded.");
 
   return { opportunities: [...statePortalOpportunities, ...opportunities], stats, errors };
 }
