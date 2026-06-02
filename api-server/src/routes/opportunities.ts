@@ -332,6 +332,30 @@ router.post("/opportunities/import", upload.single("file"), async (req, res) => 
   }
 });
 
+// POST /opportunities/purge-junk — delete all DB records that fail the quality filter
+// Run this once after deploy to clean up old junk already in the database.
+router.post("/opportunities/purge-junk", async (req, res) => {
+  try {
+    const allRows = await db.select().from(opportunitiesTable).limit(5000);
+    const toDelete = allRows.filter((opp) => !shouldShowOpportunity(opp));
+    let deleted = 0;
+    for (const opp of toDelete) {
+      await db.delete(opportunitiesTable).where(eq(opportunitiesTable.id, opp.id));
+      deleted++;
+    }
+    return res.json({
+      ok: true,
+      scanned: allRows.length,
+      deleted,
+      kept: allRows.length - deleted,
+      message: `Purged ${deleted} junk records from the database.`,
+    });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Purge failed" });
+  }
+});
+
 router.get("/opportunities/:id", async (req, res) => {
   try {
     const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
