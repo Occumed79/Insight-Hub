@@ -14,88 +14,89 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 
+// ── Hard-reject: ANY match → discard immediately ──────────────────────────────
+// Expanded significantly to block all the junk categories that keep slipping through.
 const HARD_REJECT_SIGNALS = [
-  "ambulance",
-  "emergency medical services",
-  " ems ",
-  "paramedic",
-  "emt ",
-  "lvn",
-  "lpn",
-  "registered nurse",
-  " rn ",
-  "nursing services",
-  "nurse staffing",
-  "medical staffing",
-  "staff augmentation",
-  "temporary staffing",
-  "needed",
-  "job posting",
-  "job opening",
-  "career opportunity",
-  "now hiring",
-  "hiring",
-  "blanket purchase agreement",
-  "regional medical consultant",
-  "medical consultant",
-  "disability adjudication",
-  "social security disability",
-  "pharmacy",
-  "pharmaceutical",
-  "marijuana",
-  "cannabis",
-  "phlebotomist",
-  "perfusion",
-  "ray tech",
-  "x-ray tech",
-  "radiology technologist",
-  "dental assistant",
-  "mental health therapy",
-  "behavioral health treatment",
-  "substance abuse treatment",
-  "health insurance",
-  "health benefits",
-  "claims administration",
-  "claims data",
-  "medical claims",
-  "childrens mental health",
-  "children's mental health",
-  "seaborn",
-  "contract awarded",
-  "award notice",
-  "awarded to",
-  "selected vendor",
-  "notice of award",
-  "bid tabulation",
+  // Emergency / EMS
+  "ambulance", "emergency medical services", " ems ", "paramedic", "emt ", "first responder",
+  // Nursing / staffing noise
+  "lvn", "lpn", "registered nurse", " rn ", "nursing services", "nurse staffing",
+  "medical staffing", "staff augmentation", "temporary staffing", "per diem staff",
+  "locum", "travel nurse",
+  // Job postings (not contracts)
+  "job posting", "job opening", "career opportunity", "now hiring", " hiring ",
+  "position available", "employment opportunity", "job advertisement", "job vacancy",
+  "we are looking for", "apply now", "submit resume", "send resume",
+  // Blanket / consulting noise
+  "blanket purchase agreement", "regional medical consultant", "medical consultant",
+  "disability adjudication", "disability determination", "social security disability",
+  "independent medical examination", "ime panel",
+  // Pharmacy / dispensing / lab
+  "pharmacy", "pharmaceutical", "marijuana", "cannabis", "dispensary",
+  "phlebotomist", "perfusion", "ray tech", "x-ray tech", "radiology technologist",
+  "mri tech", "ct tech", "sonographer", "ultrasound technologist",
+  "dental assistant", "dental hygienist", "dental care",
+  // Behavioral / mental health
+  "mental health therapy", "behavioral health treatment", "substance abuse treatment",
+  "addiction treatment", "detox program", "psychiatric", "psychotherapy",
+  "counseling services", "crisis intervention", "suicide prevention",
+  "childrens mental health", "children's mental health",
+  // Insurance / claims / benefits admin
+  "health insurance", "health benefits", "claims administration", "claims data",
+  "medical claims", "insurance enrollment", "benefits administration",
+  "cobra administration", "hmo", "health plan",
+  // Already awarded / closed
+  "contract awarded", "award notice", "awarded to", "selected vendor",
+  "notice of award", "bid tabulation", "intent to award", "sole source award",
+  "contract modification", "delivery order", "task order modification",
+  // Nutrition / food / non-occ-health
+  "nutrition program", "food service", "meal delivery", "wic program",
+  "school lunch", "head start nutrition",
+  // IT / software (not medical)
+  "electronic health record", "ehr implementation", "emr system", "hospital information",
+  "telehealth platform", "telemedicine software",
+  // Misc junk
+  "seaborn", "needed", "veterinary", "animal health", "pest control",
+  "janitorial", "landscaping", "construction",
 ];
 
+// ── Must have at least ONE of these to pass ───────────────────────────────────
+// Tightened to Occu-Med's actual service lines only.
 const OCCUMED_SERVICE_SIGNALS = [
-  "occupational health",
-  "occupational medicine",
-  "drug testing",
-  "drug screening",
-  "dot physical",
-  "dot examination",
-  "pre-employment physical",
-  "pre employment physical",
-  "employee health services",
-  "medical surveillance",
-  "fit for duty",
-  "fitness for duty",
-  "substance abuse testing",
-  "random drug testing",
-  "medical examination services",
-  "medical screening",
-  "respirator fit",
-  "pulmonary function",
-  "audiogram",
-  "hearing test",
-  "vaccination",
-  "immunization",
-  "titer",
-  "tb test",
-  "tuberculosis testing",
-  "deployment medical",
+  // Core occupational health
+  "occupational health", "occupational medicine", "occupational health services",
+  "occupational medical", "occ health", "occmed",
+  // Drug & alcohol testing
+  "drug testing", "drug screening", "drug test", "alcohol testing",
+  "dot drug", "dot alcohol", "substance abuse testing", "random drug testing",
+  "urine drug screen", "hair follicle test", "breath alcohol",
+  // Physical examinations
+  "dot physical", "dot examination", "dot medical", "fmcsa physical",
+  "pre-employment physical", "pre employment physical", "pre-placement physical",
+  "annual physical", "periodic medical", "medical fitness",
+  "return to work physical", "return to duty physical",
+  // Employee health programs
+  "employee health services", "employee health program", "workplace health",
+  "workforce health", "worker health screening",
+  // Surveillance & monitoring
+  "medical surveillance", "health surveillance", "biological monitoring",
+  "bloodborne pathogen", "hazmat medical", "hazardous material medical",
+  // Fitness for duty
+  "fit for duty", "fitness for duty", "work capacity evaluation",
+  "functional capacity", "work hardening",
+  // Respiratory / pulmonary
+  "respirator fit", "respirator fit test", "fit testing", "pulmonary function",
+  "spirometry", "pfft", "quantitative fit",
+  // Hearing / audiometry
+  "audiogram", "audiometric", "hearing conservation", "hearing test",
+  "noise-induced hearing",
+  // Immunization / preventive
+  "vaccination", "immunization", "flu shot", "influenza vaccination",
+  "titer", "tb test", "tuberculosis testing", "ppd test", "quantiferon",
+  "covid testing", "respirator medical evaluation",
+  // Military / government specific
+  "deployment medical", "pre-deployment", "periodic health assessment",
+  "separation physical", "military physical", "pha exam",
 ];
 
 function normalizeForQuality(value: string): string {
@@ -126,13 +127,29 @@ function shouldShowOpportunity(opp: any): boolean {
   ].filter(Boolean).join(" ");
   const text = normalizeForQuality(raw);
 
+  // Reject untitled / suspiciously short titles
+  const title = (opp.title ?? "").trim();
+  if (title.length < 10) return false;
+
+  // Reject stale-year-only records (old archived RFPs from past years)
   if (hasStaleYearOnly(raw)) return false;
+
+  // Hard reject — any match on these = instant discard
   if (hasSignal(text, HARD_REJECT_SIGNALS)) return false;
 
-  // For active opportunity review, only show items that clearly match Occu-Med service lines.
-  // This prevents generic healthcare, ambulance, staffing, pharmacy, claims, and disability-consultant noise.
-  return hasSignal(text, OCCUMED_SERVICE_SIGNALS);
+  // Must match at least one Occu-Med service signal
+  if (!hasSignal(text, OCCUMED_SERVICE_SIGNALS)) return false;
+
+  // Extra: reject if title alone contains obvious job-ad language
+  const titleNorm = normalizeForQuality(title);
+  const JOB_TITLE_SIGNALS = [" wanted", " needed", "apply ", "we are hiring", "position ", "vacancy"];
+  if (JOB_TITLE_SIGNALS.some(s => titleNorm.includes(s))) return false;
+
+  return true;
 }
+
+// Exported so unifiedSearch can use it at write time (prevents junk from ever entering DB)
+export { shouldShowOpportunity };
 
 async function archiveExpiredOpportunities(): Promise<void> {
   try {
