@@ -2,11 +2,138 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, ilike, and, or, sql, isNull, lt } from "drizzle-orm";
+import { unifiedFetch } from "../lib/search/unifiedSearch";
+import { importFromCsv } from "../lib/csv-service";
+import { tavilyProvider } from "../lib/providers/tavily";
+import { extractMetadataFromText } from "../lib/search/heuristicExtract";
+import multer from "multer";
 
-/**
- * Auto-archive any "active" opportunities whose response deadline has passed.
- * Runs silently before list/fetch responses so stale data is never shown.
- */
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const CURRENT_YEAR = new Date().getFullYear();
+const NEXT_YEAR = CURRENT_YEAR + 1;
+
+const HARD_REJECT_SIGNALS = [
+  "ambulance",
+  "emergency medical services",
+  " ems ",
+  "paramedic",
+  "emt ",
+  "lvn",
+  "lpn",
+  "registered nurse",
+  " rn ",
+  "nursing services",
+  "nurse staffing",
+  "medical staffing",
+  "staff augmentation",
+  "temporary staffing",
+  "needed",
+  "job posting",
+  "job opening",
+  "career opportunity",
+  "now hiring",
+  "hiring",
+  "blanket purchase agreement",
+  "regional medical consultant",
+  "medical consultant",
+  "disability adjudication",
+  "social security disability",
+  "pharmacy",
+  "pharmaceutical",
+  "marijuana",
+  "cannabis",
+  "phlebotomist",
+  "perfusion",
+  "ray tech",
+  "x-ray tech",
+  "radiology technologist",
+  "dental assistant",
+  "mental health therapy",
+  "behavioral health treatment",
+  "substance abuse treatment",
+  "health insurance",
+  "health benefits",
+  "claims administration",
+  "claims data",
+  "medical claims",
+  "childrens mental health",
+  "children's mental health",
+  "seaborn",
+  "contract awarded",
+  "award notice",
+  "awarded to",
+  "selected vendor",
+  "notice of award",
+  "bid tabulation",
+];
+
+const OCCUMED_SERVICE_SIGNALS = [
+  "occupational health",
+  "occupational medicine",
+  "drug testing",
+  "drug screening",
+  "dot physical",
+  "dot examination",
+  "pre-employment physical",
+  "pre employment physical",
+  "employee health services",
+  "medical surveillance",
+  "fit for duty",
+  "fitness for duty",
+  "substance abuse testing",
+  "random drug testing",
+  "medical examination services",
+  "medical screening",
+  "respirator fit",
+  "pulmonary function",
+  "audiogram",
+  "hearing test",
+  "vaccination",
+  "immunization",
+  "titer",
+  "tb test",
+  "tuberculosis testing",
+  "deployment medical",
+];
+
+function normalizeForQuality(value: string): string {
+  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+}
+
+function hasSignal(text: string, signals: string[]): boolean {
+  return signals.some((signal) => text.includes(normalizeForQuality(signal)));
+}
+
+function hasStaleYearOnly(raw: string): boolean {
+  const years = Array.from(raw.matchAll(/\b20\d{2}\b/g)).map((m) => Number(m[0]));
+  if (years.length === 0) return false;
+  const hasCurrentOrFuture = years.some((year) => year >= CURRENT_YEAR && year <= NEXT_YEAR + 1);
+  const hasOld = years.some((year) => year < CURRENT_YEAR);
+  return hasOld && !hasCurrentOrFuture;
+}
+
+function shouldShowOpportunity(opp: any): boolean {
+  const raw = [
+    opp.title,
+    opp.description,
+    opp.agency,
+    opp.providerName,
+    opp.source,
+    opp.solicitationNumber,
+    opp.samUrl,
+  ].filter(Boolean).join(" ");
+  const text = normalizeForQuality(raw);
+
+  if (hasStaleYearOnly(raw)) return false;
+  if (hasSignal(text, HARD_REJECT_SIGNALS)) return false;
+
+  // For active opportunity review, only show items that clearly match Occu-Med service lines.
+  // This prevents generic healthcare, ambulance, staffing, pharmacy, claims, and disability-consultant noise.
+  return hasSignal(text, OCCUMED_SERVICE_SIGNALS);
+}
+
 async function archiveExpiredOpportunities(): Promise<void> {
   try {
     await db
@@ -22,18 +149,20 @@ async function archiveExpiredOpportunities(): Promise<void> {
     // Non-critical — don't fail the request if this errors
   }
 }
-import { unifiedFetch } from "../lib/search/unifiedSearch";
-import { importFromCsv } from "../lib/csv-service";
-import { tavilyProvider } from "../lib/providers/tavily";
-import { extractMetadataFromText } from "../lib/search/heuristicExtract";
-import multer from "multer";
 
-const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+function mapOpportunity(opp: any) {
+  return {
+    ...opp,
+    awardAmount: opp.awardAmount ? parseFloat(opp.awardAmount) : undefined,
+    estimatedValue: opp.estimatedValue ? parseFloat(opp.estimatedValue) : undefined,
+    ceilingValue: opp.ceilingValue ? parseFloat(opp.ceilingValue) : undefined,
+    floorValue: opp.floorValue ? parseFloat(opp.floorValue) : undefined,
+    relevanceScore: opp.relevanceScore ? parseFloat(opp.relevanceScore) : undefined,
+  };
+}
 
 router.get("/opportunities", async (req, res) => {
   try {
-    // Silently archive anything whose deadline has already passed before returning results
     await archiveExpiredOpportunities();
 
     const { search, status, type, naicsCode, agency, source, page = "1", limit = "50" } = req.query as Record<string, string>;
@@ -42,7 +171,7 @@ router.get("/opportunities", async (req, res) => {
     const limitNum = Math.min(200, parseInt(limit) || 50);
     const offset = (pageNum - 1) * limitNum;
 
-    const conditions = [];
+    const conditions: any[] = [];
 
     if (search?.trim()) {
       const term = `%${search.trim()}%`;
@@ -72,29 +201,26 @@ router.get("/opportunities", async (req, res) => {
       conditions.push(ilike(opportunitiesTable.agency, `%${agency}%`));
     }
 
-    // Filter by provider name (source column)
     if (source) {
       conditions.push(ilike(opportunitiesTable.providerName, source));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [data, countResult] = await Promise.all([
-      db.select().from(opportunitiesTable).where(where).limit(limitNum).offset(offset).orderBy(sql`${opportunitiesTable.postedDate} desc`),
-      db.select({ count: sql<number>`count(*)` }).from(opportunitiesTable).where(where),
-    ]);
+    // Pull a larger window, quality-filter it in the API, then paginate the clean set.
+    // This immediately hides bad historical records already saved in Neon without requiring manual cleanup.
+    const rawRows = await db
+      .select()
+      .from(opportunitiesTable)
+      .where(where)
+      .limit(1000)
+      .orderBy(sql`${opportunitiesTable.postedDate} desc`);
 
-    const total = Number(countResult[0]?.count ?? 0);
-    const mapped = data.map((opp) => ({
-      ...opp,
-      awardAmount: opp.awardAmount ? parseFloat(opp.awardAmount) : undefined,
-      estimatedValue: opp.estimatedValue ? parseFloat(opp.estimatedValue) : undefined,
-      ceilingValue: opp.ceilingValue ? parseFloat(opp.ceilingValue) : undefined,
-      floorValue: opp.floorValue ? parseFloat(opp.floorValue) : undefined,
-      relevanceScore: opp.relevanceScore ? parseFloat(opp.relevanceScore) : undefined,
-    }));
+    const filteredRows = rawRows.filter(shouldShowOpportunity);
+    const data = filteredRows.slice(offset, offset + limitNum);
+    const mapped = data.map(mapOpportunity);
 
-    return res.json({ data: mapped, total, page: pageNum, limit: limitNum });
+    return res.json({ data: mapped, total: filteredRows.length, page: pageNum, limit: limitNum });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to fetch opportunities" });
@@ -109,7 +235,6 @@ router.post("/opportunities/fetch", async (req, res) => {
       providers?: string[];
     };
 
-    // Map provider names from API format to internal ProviderName format
     const providerNameMap: Record<string, string> = {
       sam_gov: "samGov",
       grantsGov: "grantsGov",
@@ -136,13 +261,9 @@ router.post("/opportunities/fetch", async (req, res) => {
       websearch: "websearch",
     };
 
-    let resolvedProviders: string[];
-    if (providers && providers.length > 0) {
-      resolvedProviders = providers.map((p) => providerNameMap[p] || p);
-    } else {
-      // Default: try all direct-source providers
-      resolvedProviders = ["samGov"];
-    }
+    const resolvedProviders = providers && providers.length > 0
+      ? providers.map((p) => providerNameMap[p] || p)
+      : ["samGov"];
 
     const result = await unifiedFetch({
       keywords,
@@ -150,7 +271,6 @@ router.post("/opportunities/fetch", async (req, res) => {
       providers: resolvedProviders as any,
     });
 
-    // Immediately archive anything that slipped through with a past deadline
     await archiveExpiredOpportunities();
 
     return res.json({
@@ -176,7 +296,6 @@ router.post("/opportunities/fetch", async (req, res) => {
     if (msg.includes("API key not configured") || msg.includes("not configured")) {
       return res.status(400).json({ error: msg });
     }
-    // Surface the real error detail so it shows in the UI
     return res.status(500).json({
       error: "Fetch failed: " + (msg.slice(0, 300) || "Unknown error"),
       details: msg,
@@ -186,9 +305,7 @@ router.post("/opportunities/fetch", async (req, res) => {
 
 router.post("/opportunities/import", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const csvContent = req.file.buffer.toString("utf-8");
     const result = await importFromCsv(csvContent);
     return res.json(result);
@@ -201,18 +318,8 @@ router.post("/opportunities/import", upload.single("file"), async (req, res) => 
 router.get("/opportunities/:id", async (req, res) => {
   try {
     const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
-    if (rows.length === 0) {
-      return res.status(404).json({ error: "Opportunity not found" });
-    }
-    const opp = rows[0];
-    return res.json({
-      ...opp,
-      awardAmount: opp.awardAmount ? parseFloat(opp.awardAmount) : undefined,
-      estimatedValue: opp.estimatedValue ? parseFloat(opp.estimatedValue) : undefined,
-      ceilingValue: opp.ceilingValue ? parseFloat(opp.ceilingValue) : undefined,
-      floorValue: opp.floorValue ? parseFloat(opp.floorValue) : undefined,
-      relevanceScore: opp.relevanceScore ? parseFloat(opp.relevanceScore) : undefined,
-    });
+    if (rows.length === 0) return res.status(404).json({ error: "Opportunity not found" });
+    return res.json(mapOpportunity(rows[0]));
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to get opportunity" });
@@ -229,25 +336,12 @@ router.delete("/opportunities/:id", async (req, res) => {
   }
 });
 
-/**
- * POST /opportunities/enrich
- * Backfill missing Agency, Due Date, and Value fields on existing records.
- *
- * Strategy:
- *  1. Agency — apply heuristic extractor to title + description immediately (free).
- *  2. Deadline + Value — fetch full page content via Tavily Extract for records
- *     that have a URL, then run heuristic extraction on the richer text.
- *
- * Returns { enriched, agencyUpdated, deadlineUpdated, valueUpdated, errors }
- */
 router.post("/opportunities/enrich", async (req, res) => {
   const BATCH_SIZE = 5;
   const MAX_RECORDS = 100;
-
   const stats = { enriched: 0, agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };
 
   try {
-    // ── 1. Load all records missing any enriched field ────────────────────────
     const records = await db
       .select({
         id: opportunitiesTable.id,
@@ -268,32 +362,22 @@ router.post("/opportunities/enrich", async (req, res) => {
       )
       .limit(MAX_RECORDS);
 
-    // ── 2. Agency backfill from title + description (no API needed) ───────────
     for (const rec of records) {
       const { agencyHint } = extractMetadataFromText(rec.description ?? "", rec.title);
       if (agencyHint && rec.agency === "Unknown") {
-        await db
-          .update(opportunitiesTable)
-          .set({ agency: agencyHint, updatedAt: new Date() })
-          .where(eq(opportunitiesTable.id, rec.id));
+        await db.update(opportunitiesTable).set({ agency: agencyHint, updatedAt: new Date() }).where(eq(opportunitiesTable.id, rec.id));
         stats.agencyUpdated++;
       }
     }
 
-    // ── 3. Deadline + Value via Tavily Extract ────────────────────────────────
-    const needsEnrich = records.filter(
-      (r) => r.samUrl && (!r.responseDeadline || !r.estimatedValue)
-    );
-
+    const needsEnrich = records.filter((r) => r.samUrl && (!r.responseDeadline || !r.estimatedValue));
     const isTavilyAvailable = await tavilyProvider.isConfigured();
     if (!isTavilyAvailable) {
       stats.errors.push("Tavily not configured — date/value enrichment skipped");
     } else {
-      // Process in batches of BATCH_SIZE
       for (let i = 0; i < needsEnrich.length; i += BATCH_SIZE) {
         const batch = needsEnrich.slice(i, i + BATCH_SIZE);
         const urls = batch.map((r) => r.samUrl!);
-
         let extracted: { url: string; rawContent: string }[] = [];
         try {
           extracted = await tavilyProvider.extractContent(urls);
@@ -305,42 +389,26 @@ router.post("/opportunities/enrich", async (req, res) => {
         for (const result of extracted) {
           const rec = batch.find((r) => r.samUrl === result.url);
           if (!rec) continue;
-
-          const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(
-            result.rawContent.slice(0, 4000),
-            rec.title
-          );
-
+          const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(result.rawContent.slice(0, 4000), rec.title);
           const updates: Record<string, unknown> = { updatedAt: new Date() };
           if (!rec.responseDeadline && deadline) {
             updates.responseDeadline = deadline;
             stats.deadlineUpdated++;
-            // Auto-archive if the found deadline is already past
-            if (deadline < new Date()) {
-              updates.status = "archived";
-            }
+            if (deadline < new Date()) updates.status = "archived";
           }
           if (!rec.estimatedValue && estimatedValue != null) {
             updates.estimatedValue = String(estimatedValue);
             stats.valueUpdated++;
           }
-          if (rec.agency === "Unknown" && agencyHint) {
-            updates.agency = agencyHint;
-          }
+          if (rec.agency === "Unknown" && agencyHint) updates.agency = agencyHint;
 
           if (Object.keys(updates).length > 1) {
-            await db
-              .update(opportunitiesTable)
-              .set(updates)
-              .where(eq(opportunitiesTable.id, rec.id));
+            await db.update(opportunitiesTable).set(updates).where(eq(opportunitiesTable.id, rec.id));
             stats.enriched++;
           }
         }
 
-        // Small delay between batches
-        if (i + BATCH_SIZE < needsEnrich.length) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
+        if (i + BATCH_SIZE < needsEnrich.length) await new Promise((resolve) => setTimeout(resolve, 300));
       }
     }
 
