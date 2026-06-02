@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina";
+export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "websearch";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -18,7 +18,7 @@ export interface ProviderDefinition {
   docsUrl?: string;
   signupUrl?: string;
   capabilities: string[];
-  status?: "live" | "partial" | "not_configured" | "coming_soon";
+  status?: "live" | "partial" | "not_configured" | "coming_soon" | "active";
   notes?: string;
 }
 
@@ -517,8 +517,10 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
 
   jina: {
     name: "jina",
-    label: "Jina AI Reader",
+    displayName: "Jina AI Reader",
     description: "Converts any URL into clean markdown content for AI analysis. Complements FireCrawl for web content extraction.",
+    category: "search",
+    useCase: "web_discovery",
     requiredFields: [
       {
         key: "apiKey",
@@ -540,6 +542,94 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ],
     status: "active",
   },
+
+  minimax: {
+    name: "minimax",
+    displayName: "Minimax AI",
+    description: "Additional AI scorer/extractor used in the opportunity intelligence ensemble.",
+    category: "ai",
+    useCase: "hybrid",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "Your Minimax API key",
+        description: "Available from Minimax",
+        dbKey: "minimaxApiKey",
+        envKey: "MINIMAX_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    capabilities: ["Opportunity extraction", "Relevance scoring", "AI ensemble backup"],
+    status: "partial",
+  },
+
+  you: {
+    name: "you",
+    displayName: "You.com",
+    description: "AI-powered web search provider for finding procurement and opportunity leads.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "Your You.com API key",
+        description: "Available from You.com API dashboard",
+        dbKey: "youApiKey",
+        envKey: "YOU_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    capabilities: ["Web search", "Procurement lead discovery", "Opportunity candidate sourcing"],
+    status: "partial",
+  },
+
+  langsearch: {
+    name: "langsearch",
+    displayName: "Langsearch",
+    description: "LLM-native web search provider for procurement discovery.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "Your Langsearch API key",
+        description: "Available from Langsearch",
+        dbKey: "langsearchApiKey",
+        envKey: "LANGSEARCH_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    capabilities: ["Web search", "Procurement lead discovery", "Opportunity candidate sourcing"],
+    status: "partial",
+  },
+
+  websearch: {
+    name: "websearch",
+    displayName: "WebSearch API",
+    description: "Broad web search provider for procurement and bid discovery.",
+    category: "search",
+    useCase: "web_discovery",
+    requiredFields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        type: "secret",
+        placeholder: "Your WebSearch API key",
+        description: "Available from provider dashboard",
+        dbKey: "websearchApiKey",
+        envKey: "WEBSEARCH_API_KEY",
+      },
+    ],
+    optionalFields: [],
+    capabilities: ["Web search", "Procurement lead discovery", "Opportunity candidate sourcing"],
+    status: "partial",
+  },
 };
 
 /**
@@ -558,4 +648,3 @@ export async function resolveCredential(dbKey: string, envKey?: string): Promise
 
   return null;
 }
-
