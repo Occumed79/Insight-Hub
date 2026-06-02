@@ -1,27 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
-import {
-  ArrowRight,
-  Search,
-  Users,
-  Target,
-  UserSearch,
-  Landmark,
-  Map,
-  Network,
-  TrendingUp,
-  ExternalLink,
-  Link2,
-  X,
-  Check,
-} from "lucide-react";
+import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2, X, Check } from "lucide-react";
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
 import occuMedLogoSrc from "@/assets/occu-med-logo.png";
-
 const LOGO_URL = occuMedLogoSrc;
+
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
 function getStoredLinks(): { outreach: string; relationship: string; hiringTrends: string } {
@@ -30,59 +16,6 @@ function getStoredLinks(): { outreach: string; relationship: string; hiringTrend
   } catch {
     return { outreach: "", relationship: "", hiringTrends: "" };
   }
-}
-
-interface PortalCardProps {
-  href?: string;
-  externalHref?: string;
-  imgUrl: string;
-  alt: string;
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  delay: number;
-}
-
-function PortalCard({ href, externalHref, imgUrl, alt, icon, title, desc, delay }: PortalCardProps) {
-  const content = (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.55, delay, ease: "easeOut" }}
-      className="group relative rounded-2xl border border-white/15 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/40 transition-all duration-300 overflow-hidden shadow-2xl shadow-black/20 min-h-[345px] flex flex-col"
-    >
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-primary/10 via-transparent to-blue-500/10" />
-      <div className="relative p-5 flex flex-col h-full">
-        <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/20 mb-5 aspect-[16/9]">
-          <img src={imgUrl} alt={alt} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-background/30 to-transparent" />
-        </div>
-
-        <div className="relative flex items-start justify-between gap-3 mt-auto">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
-                {icon}
-              </div>
-              <h2 className="text-lg font-semibold text-white tracking-tight">{title}</h2>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">{desc}</p>
-          </div>
-          <ArrowRight className="w-5 h-5 text-primary/60 shrink-0 mt-1 transition-transform duration-300 group-hover:translate-x-1" />
-        </div>
-      </div>
-    </motion.div>
-  );
-
-  if (externalHref) {
-    return (
-      <a href={externalHref} target="_blank" rel="noreferrer" className="block">
-        {content}
-      </a>
-    );
-  }
-
-  return href ? <Link href={href}>{content}</Link> : content;
 }
 
 export default function Home() {
@@ -104,126 +37,87 @@ export default function Home() {
     setTimeout(() => setLinksOpen(false), 700);
   }
 
-  const mainCards: PortalCardProps[] = [
+  const extraCards = [
     {
-      href: "/portal/opportunities",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
-      alt: "Opportunity Intelligence",
-      icon: <Search className="w-5 h-5 text-primary" />,
-      title: "Opportunity Intelligence",
-      desc: "Discover, track, and analyze contracting opportunities from SAM.gov, web intelligence sources, and configured procurement networks.",
-      delay: 0.1,
-    },
-    {
-      href: "/portal/clients",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
-      alt: "Client Intelligence",
-      icon: <Users className="w-5 h-5 text-primary" />,
-      title: "Client Intelligence",
-      desc: "Track client profiles, needs, patterns, priorities, decision-makers, and strategic insights.",
-      delay: 0.2,
-    },
-    {
-      href: "/portal/competitors",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
-      alt: "Competitor Intelligence",
-      icon: <Target className="w-5 h-5 text-primary" />,
-      title: "Competitor Intelligence",
-      desc: "Monitor competitors, capabilities, contract activity, positioning, and market threats.",
-      delay: 0.3,
-    },
-    {
-      href: "/portal/prospects",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
-      alt: "Prospect Intelligence",
-      icon: <UserSearch className="w-5 h-5 text-primary" />,
-      title: "Prospect Intelligence",
-      desc: "Identify and track prospective employers, accounts, and organizations for business development.",
-      delay: 0.4,
-    },
-    {
-      href: "/portal/federal-agencies",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/e2e3572a9_5ad3d8f9-d805-4fc2-8cb7-a8614edc9c0fcopy.png",
-      alt: "Federal Agencies",
-      icon: <Landmark className="w-5 h-5 text-primary" />,
-      title: "Federal Agencies",
-      desc: "Monitor federal agency health programs, contract vehicles, and procurement activity across DoD, VA, and civilian agencies.",
-      delay: 0.5,
-    },
-    {
-      href: "/portal/state-agencies",
-      imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/02588225c_783f5460-1289-4bbd-a0ac-a9316906a45e.png",
-      alt: "State Agencies",
-      icon: <Map className="w-5 h-5 text-primary" />,
-      title: "State Agencies",
-      desc: "Track state-level health program procurement, workers' compensation, occupational health, and public agency opportunities.",
-      delay: 0.6,
-    },
-  ];
-
-  const extraCards: PortalCardProps[] = [
-    {
-      externalHref: links.outreach || undefined,
+      key: "outreach",
       imgUrl: outreachGalaxyButton,
       alt: "Outreach Intelligence",
-      icon: <Network className="w-5 h-5 text-primary" />,
+      icon: <Network className="w-5 h-5 text-primary-foreground" />,
       title: "Outreach Intelligence",
       desc: "Look up employee contacts, org charts, and decision-makers across client and prospect organizations to power targeted outreach.",
       delay: 0.7,
+      link: links.outreach,
     },
     {
-      externalHref: links.relationship || undefined,
+      key: "relationship",
       imgUrl: relationshipPlanetButton,
       alt: "Relationship Intelligence",
-      icon: <Users className="w-5 h-5 text-primary" />,
+      icon: <Users className="w-5 h-5 text-primary-foreground" />,
       title: "Relationship Intelligence",
       desc: "Unified view of clients and prospects — relationship status, tiers, branches, contacts, and opportunity signals in one place.",
       delay: 0.8,
+      link: links.relationship,
     },
     {
-      externalHref: links.hiringTrends || undefined,
+      key: "hiringTrends",
       imgUrl: hiringCompassButton,
       alt: "Hiring Trend Intelligence",
-      icon: <TrendingUp className="w-5 h-5 text-primary" />,
+      icon: <TrendingUp className="w-5 h-5 text-primary-foreground" />,
       title: "Hiring Trend Intelligence",
       desc: "Track hiring velocity, open roles, and workforce expansion signals across client and prospect organizations to identify needs early.",
       delay: 0.9,
+      link: links.hiringTrends,
     },
   ];
 
   return (
-    <div className="min-h-screen w-full bg-background relative overflow-hidden p-5 md:p-8">
+    <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
+      {/* Animated glowing orbs background */}
       <style>{`
-        @keyframes home-orb1 { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(70px,120px) scale(1.12); } 100% { transform: translate(0,0) scale(1); } }
-        @keyframes home-orb2 { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(-80px,-120px) scale(1.16); } 100% { transform: translate(0,0) scale(1); } }
-        @keyframes home-pulse { 0%,100% { opacity:.50; transform: scale(1); } 50% { opacity:.85; transform: scale(1.16); } }
+        @keyframes home-orb1 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          25%  { transform: translate(70px, 90px) scale(1.13); }
+          50%  { transform: translate(20px, 160px) scale(0.90); }
+          75%  { transform: translate(-50px, 70px) scale(1.07); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes home-orb2 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          25%  { transform: translate(-90px, -70px) scale(1.18); }
+          50%  { transform: translate(-40px, -130px) scale(0.87); }
+          75%  { transform: translate(60px, -60px) scale(1.09); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes home-orb3 {
+          0%   { transform: translate(0px, 0px) scale(1); }
+          33%  { transform: translate(110px, -90px) scale(1.22); }
+          66%  { transform: translate(-70px, 70px) scale(0.84); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes home-pulse {
+          0%, 100% { opacity: 0.55; transform: scale(1); }
+          50%       { opacity: 0.90; transform: scale(1.18); }
+        }
       `}</style>
-
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 bg-background" />
-        <div style={{ position: "absolute", top: "-12%", left: "-8%", width: "650px", height: "650px", borderRadius: "50%", background: "radial-gradient(circle at center, rgba(56,182,255,0.48) 0%, rgba(56,182,255,0.22) 35%, transparent 70%)", filter: "blur(42px)", animation: "home-orb1 24s ease-in-out infinite" }} />
-        <div style={{ position: "absolute", bottom: "-10%", right: "-6%", width: "750px", height: "750px", borderRadius: "50%", background: "radial-gradient(circle at center, rgba(30,140,255,0.54) 0%, rgba(80,200,255,0.24) 35%, transparent 70%)", filter: "blur(46px)", animation: "home-orb2 30s ease-in-out infinite", animationDelay: "-11s" }} />
-        <div style={{ position: "absolute", top: "8%", right: "8%", width: "300px", height: "300px", borderRadius: "50%", background: "radial-gradient(circle at center, rgba(100,220,255,0.58) 0%, rgba(56,182,255,0.22) 40%, transparent 70%)", filter: "blur(28px)", animation: "home-pulse 10s ease-in-out infinite", animationDelay: "-3s" }} />
+        <div style={{position:"absolute",top:"-12%",left:"-8%",width:"650px",height:"650px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(56,182,255,0.60) 0%, rgba(56,182,255,0.28) 35%, transparent 70%)",filter:"blur(40px)",animation:"home-orb1 22s ease-in-out infinite"}} />
+        <div style={{position:"absolute",bottom:"-10%",right:"-6%",width:"750px",height:"750px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,140,255,0.65) 0%, rgba(80,200,255,0.30) 35%, transparent 70%)",filter:"blur(45px)",animation:"home-orb2 28s ease-in-out infinite",animationDelay:"-11s"}} />
+        <div style={{position:"absolute",top:"28%",right:"12%",width:"480px",height:"480px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(0,200,220,0.50) 0%, rgba(56,182,255,0.22) 40%, transparent 70%)",filter:"blur(35px)",animation:"home-orb3 17s ease-in-out infinite",animationDelay:"-6s"}} />
+        <div style={{position:"absolute",top:"5%",right:"8%",width:"300px",height:"300px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.75) 0%, rgba(56,182,255,0.35) 40%, transparent 70%)",filter:"blur(25px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s"}} />
+        <div style={{position:"absolute",bottom:"12%",left:"6%",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.55) 0%, rgba(56,182,255,0.25) 40%, transparent 70%)",filter:"blur(30px)",animation:"home-pulse 14s ease-in-out infinite",animationDelay:"-8s"}} />
       </div>
 
-      <header className="relative z-20 w-full max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center">
-          <img
-            src={LOGO_URL}
-            alt="Occu-Med"
-            className="w-[138px] sm:w-[150px] md:w-[164px] h-auto object-contain opacity-95"
-            style={{ filter: "drop-shadow(0 0 16px rgba(255,255,255,0.20))" }}
-          />
-        </div>
-        <button
-          onClick={openLinks}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-white/[0.04] text-white/35 hover:text-white/70 hover:border-white/20 hover:bg-white/[0.07] transition-all text-[11px] font-medium"
-        >
-          <Link2 className="w-3 h-3" />
-          Links
-        </button>
-      </header>
+      {/* Subtle Links button — top right */}
+      <button
+        onClick={openLinks}
+        className="absolute top-5 right-5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-transparent/[0.04] text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-transparent/[0.07] transition-all text-[11px] font-medium"
+      >
+        <Link2 className="w-3 h-3" />
+        Links
+      </button>
 
+      {/* Links modal */}
       <AnimatePresence>
         {linksOpen && (
           <motion.div
@@ -239,7 +133,7 @@ export default function Home() {
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.15 }}
               className="bg-[#0a1220] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
@@ -256,22 +150,25 @@ export default function Home() {
                   { key: "outreach" as const, label: "Outreach Intelligence", placeholder: "https://employee-lookup1.onrender.com" },
                   { key: "relationship" as const, label: "Relationship Intelligence", placeholder: "https://your-render-url.onrender.com" },
                   { key: "hiringTrends" as const, label: "Hiring Trend Intelligence", placeholder: "https://your-render-url.onrender.com" },
-                ].map((field) => (
+                ].map(field => (
                   <div key={field.key}>
                     <label className="block text-[11px] text-white/40 mb-1.5 font-medium">{field.label}</label>
                     <input
                       type="url"
                       value={draft[field.key]}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      onChange={e => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
                       placeholder={field.placeholder}
-                      className="w-full text-xs bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white/70 placeholder-white/20 focus:outline-none focus:border-primary/40 transition-colors"
+                      className="w-full text-xs bg-transparent/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white/70 placeholder-white/20 focus:outline-none focus:border-primary/40 transition-colors"
                     />
                   </div>
                 ))}
               </div>
 
               <div className="flex gap-2 mt-5">
-                <button onClick={saveLinks} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/30 transition-colors">
+                <button
+                  onClick={saveLinks}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/30 transition-colors"
+                >
                   {saved ? <Check className="w-4 h-4" /> : null}
                   {saved ? "Saved!" : "Save Links"}
                 </button>
@@ -284,32 +181,189 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      <main className="relative z-10 w-full max-w-7xl mx-auto pt-16 md:pt-20 pb-10">
-        <motion.section
-          initial={{ opacity: 0, y: -16 }}
+      <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.65, ease: "easeOut" }}
-          className="text-center mb-14 md:mb-16"
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="text-center mb-16"
         >
+          <div className="inline-flex items-center justify-center mb-5">
+            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "190px", height: "auto", objectFit: "contain", display: "block", filter: "drop-shadow(0 0 18px rgba(255,255,255,0.22))" }} />
+          </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto font-light leading-relaxed">
+          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto font-light leading-relaxed">
             The strategic intelligence command center for Occu-Med — surfacing contracting opportunities, tracking client relationships, and mapping the competitive landscape.
           </p>
-        </motion.section>
+        </motion.div>
 
-        <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {[...mainCards, ...extraCards].map((card) => (
-            <PortalCard key={card.title} {...card} />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+          {[
+            {
+              href: "/portal/opportunities",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
+              alt: "Opportunity Intelligence",
+              icon: <Search className="w-5 h-5 text-primary-foreground" />,
+              title: "Opportunity Intelligence",
+              desc: "Discover, track, and analyze contracting opportunities from SAM.gov, web intelligence sources, and configured procurement networks.",
+              delay: 0.1,
+            },
+            {
+              href: "/portal/clients",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
+              alt: "Client Intelligence",
+              icon: <Users className="w-5 h-5 text-primary-foreground" />,
+              title: "Client Intelligence",
+              desc: "Track client profiles, needs, patterns, priorities, decision-makers, and strategic insights.",
+              delay: 0.2,
+            },
+            {
+              href: "/portal/competitors",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
+              alt: "Competitor Intelligence",
+              icon: <Target className="w-5 h-5 text-primary-foreground" />,
+              title: "Competitor Intelligence",
+              desc: "Monitor competitors, capabilities, contract activity, positioning, and market threats.",
+              delay: 0.3,
+            },
+            {
+              href: "/portal/prospects",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
+              alt: "Prospect Intelligence",
+              icon: <UserSearch className="w-5 h-5 text-primary-foreground" />,
+              title: "Prospect Intelligence",
+              desc: "Identify and track prospective employers, accounts, and organizations for business development.",
+              delay: 0.4,
+            },
+            {
+              href: "/portal/federal-agencies",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/e2e3572a9_5ad3d8f9-d805-4fc2-8cb7-a8614edc9c0fcopy.png",
+              alt: "Federal Agencies",
+              icon: <Landmark className="w-5 h-5 text-primary-foreground" />,
+              title: "Federal Agencies",
+              desc: "Monitor federal agency health programs, contract vehicles, and procurement activity across DoD, VA, and civilian agencies.",
+              delay: 0.5,
+            },
+            {
+              href: "/portal/state-agencies",
+              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/02588225c_783f5460-1289-4bbd-a0ac-a9316906a45e.png",
+              alt: "State Agencies",
+              icon: <Map className="w-5 h-5 text-primary-foreground" />,
+              title: "State Agencies",
+              desc: "Track state-level health program procurement, workers' compensation contracts, and occupational health RFPs across all 50 states.",
+              delay: 0.6,
+            },
+          ].map((card) => (
+            <motion.div
+              key={card.href}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: card.delay }}
+            >
+              <Link href={card.href} className="block h-full">
+                <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                    <img
+                      src={card.imgUrl}
+                      alt={card.alt}
+                      className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                    <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                      {card.icon}
+                    </div>
+                  </div>
+                  <div className="px-5 pb-6">
+                    <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
+                      {card.title}
+                      <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                    </h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed">
+                      {card.desc}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            </motion.div>
           ))}
-        </section>
 
-        <div className="mt-8 flex items-center justify-center text-xs text-white/25 gap-2">
-          <ExternalLink className="w-3 h-3" />
-          <span>Use Links to connect external intelligence tools.</span>
+          {/* 3 new external portal cards — identical structure */}
+          {extraCards.map((card) => (
+            <motion.div
+              key={card.key}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: card.delay }}
+            >
+              {card.link ? (
+                <a href={card.link} target="_blank" rel="noopener noreferrer" className="block h-full">
+                  <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                      <img
+                        src={card.imgUrl}
+                        alt={card.alt}
+                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                        {card.icon}
+                      </div>
+                      <div className="absolute top-4 right-4 glass-panel rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <ExternalLink className="w-3 h-3 text-primary-foreground/70" />
+                      </div>
+                    </div>
+                    <div className="px-5 pb-6">
+                      <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
+                        {card.title}
+                        <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                      </h3>
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        {card.desc}
+                      </p>
+                    </div>
+                  </div>
+                </a>
+              ) : (
+                <div onClick={openLinks} className="block h-full cursor-pointer">
+                  <div className="h-full glass-card rounded-3xl p-1 group relative overflow-hidden opacity-70 hover:opacity-90 transition-opacity">
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                      <img
+                        src={card.imgUrl}
+                        alt={card.alt}
+                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700 grayscale opacity-60"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                        {card.icon}
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[11px] text-white/50 bg-black/40 rounded-full px-3 py-1 border border-white/10">
+                          Add link →
+                        </span>
+                      </div>
+                    </div>
+                    <div className="px-5 pb-6">
+                      <h3 className="text-xl font-display font-semibold text-white/60 mb-2 flex items-center justify-between">
+                        {card.title}
+                        <Link2 className="w-4 h-4 text-white/20" />
+                      </h3>
+                      <p className="text-muted-foreground/60 text-sm leading-relaxed">
+                        {card.desc}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          ))}
+
         </div>
-      </main>
+      </div>
     </div>
   );
 }
