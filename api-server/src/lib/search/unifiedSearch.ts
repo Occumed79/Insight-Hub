@@ -26,6 +26,7 @@ import { websearchProvider } from "../providers/websearch";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
 import { normalizedToDbRecord } from "./normalization";
+import { shouldShowOpportunity } from "../../routes/opportunities";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
 import type { NormalizedOpportunity } from "../providers/types";
@@ -227,7 +228,22 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   });
 
   // ── Persist to DB ──────────────────────────────────────────────────────────
-  for (const { opportunity } of scored) {
+  // Quality-filter at write time: prevents junk from ever entering the database.
+  const qualityFiltered = scored.filter(({ opportunity }) => {
+    const proxy = {
+      title: opportunity.title,
+      description: opportunity.description,
+      agency: opportunity.agency,
+      providerName: opportunity.source,
+      source: opportunity.source,
+      solicitationNumber: opportunity.externalId,
+      samUrl: opportunity.sourceUrl,
+    };
+    return shouldShowOpportunity(proxy);
+  });
+  result.skipped += scored.length - qualityFiltered.length;
+
+  for (const { opportunity } of qualityFiltered) {
     const externalId = opportunity.externalId;
 
     if (externalId) {
