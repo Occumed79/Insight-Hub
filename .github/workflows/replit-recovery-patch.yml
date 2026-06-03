@@ -13,11 +13,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply remaining recovery edits
+      - name: Apply idempotent recovery cleanup
         run: |
           python - <<'PY'
           from pathlib import Path
-          edits = {
+          import re
+
+          def save(path, text):
+              Path(path).write_text(text)
+
+          p = Path('api-server/src/routes/intelligence-feed.ts')
+          text = p.read_text()
+          safe_fn = '''function safeDate(value: string | number | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+'''
+          text = re.sub(r'function safeDate\(value: string \| number \| Date \| null \| undefined\): Date \| null \{\n  if \(!value\) return null;\n  const d = value instanceof Date \? value : new Date\(value\);\n  return Number\.isNaN\(d\.getTime\(\)\) \? null : d;\n\}\n\n', '', text)
+          text = text.replace('function makeId(scope: string, stateCode: string | null, externalId: string): string {', safe_fn + 'function makeId(scope: string, stateCode: string | null, externalId: string): string {', 1)
+          text = text.replace('let items: InsertIntelFeedItem[] = [];', 'let items: Omit<InsertIntelFeedItem, "id">[] = [];')
+          text = text.replace('id, ...item, publishedDate, feedback: keepFeedback as any,', '...item, id, publishedDate, feedback: keepFeedback as any,')
+          text = text.replace('Promise<[InsertIntelFeedItem[], string[]>]', 'Promise<[Omit<InsertIntelFeedItem, "id">[], string[]]>')
+          text = text.replace('const items: InsertIntelFeedItem[] = [];', 'const items: Omit<InsertIntelFeedItem, "id">[] = [];')
+          save(p, text)
+
+          simple_edits = {
             'api-server/src/lib/providers/usaSpending.ts': [
               ('source: "usa_spending" as any,', 'source: "usaSpending",'),
               ('providerName: "USASpending.gov",\n', ''),
@@ -31,13 +53,6 @@ jobs:
               ('  placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };\n  description?: string;', '  placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };\n  officeAddress?: { city?: string; state?: string };\n  description?: string;'),
               ('return null;\n      })(),', 'return undefined;\n      })(),'),
             ],
-            'api-server/src/routes/intelligence-feed.ts': [
-              ('function makeId(scope: string, stateCode: string | null, externalId: string): string {', 'function safeDate(value: string | number | Date | null | undefined): Date | null {\n  if (!value) return null;\n  const d = value instanceof Date ? value : new Date(value);\n  return Number.isNaN(d.getTime()) ? null : d;\n}\n\nfunction makeId(scope: string, stateCode: string | null, externalId: string): string {'),
-              ('let items: InsertIntelFeedItem[] = [];', 'let items: Omit<InsertIntelFeedItem, "id">[] = [];'),
-              ('id, ...item, publishedDate, feedback: keepFeedback as any,', '...item, id, publishedDate, feedback: keepFeedback as any,'),
-              ('Promise<[InsertIntelFeedItem[], string[]>]', 'Promise<[Omit<InsertIntelFeedItem, "id">[], string[]]>'),
-              ('const items: InsertIntelFeedItem[] = [];', 'const items: Omit<InsertIntelFeedItem, "id">[] = [];'),
-            ],
             'intel-suite/src/pages/portal/clients.tsx': [
               ('branchName: p._branchName,', 'branchName: (p as any)._branchName,'),
             ],
@@ -47,12 +62,12 @@ jobs:
               ('function DetailPanel({ prospect, onClose, onResearch, researching }: {\n  prospect: Prospect;\n  onClose: () => void;\n  onResearch: () => void;\n  researching: boolean;\n}) {', 'function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {\n  prospect: Prospect;\n  onClose: () => void;\n  onResearch: () => void;\n  researching: boolean;\n  onUpdate?: (updated: Prospect) => void;\n}) {'),
             ],
           }
-          for file, reps in edits.items():
+          for file, edits in simple_edits.items():
               p = Path(file)
               text = p.read_text()
-              for a,b in reps:
-                  text = text.replace(a,b)
-              p.write_text(text)
+              for old, new in edits:
+                  text = text.replace(old, new)
+              save(p, text)
           PY
       - name: Commit changes
         run: |
@@ -60,5 +75,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add api-server intel-suite lib .github/workflows/replit-recovery-patch.yml
           git diff --cached --quiet && exit 0
-          git commit -m "Apply remaining Replit recovery fixes"
+          git commit -m "Clean duplicate recovery helpers"
           git push
