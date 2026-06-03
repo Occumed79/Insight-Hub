@@ -211,7 +211,7 @@ function ProspectCard({
 
   async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
-    const newStatus = e.target.value;
+    const newStatus = e.target.value as Prospect["status"];
     setSavingStatus(true);
     try {
       const updated = await patchProspect(prospect.id, { status: newStatus });
@@ -221,7 +221,7 @@ function ProspectCard({
 
   async function handleTierChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
-    const newTier = e.target.value;
+    const newTier = e.target.value as Prospect["tier"];
     setSavingTier(true);
     try {
       const updated = await patchProspect(prospect.id, { tier: newTier });
@@ -402,7 +402,7 @@ function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {
 
   async function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
-    const newStatus = e.target.value;
+    const newStatus = e.target.value as Prospect["status"];
     setSavingStatus(true);
     try {
       const updated = await patchProspect(prospect.id, { status: newStatus });
@@ -412,7 +412,7 @@ function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {
 
   async function handleTierChange(e: React.ChangeEvent<HTMLSelectElement>) {
     e.stopPropagation();
-    const newTier = e.target.value;
+    const newTier = e.target.value as Prospect["tier"];
     setSavingTier(true);
     try {
       const updated = await patchProspect(prospect.id, { tier: newTier });

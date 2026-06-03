@@ -14,6 +14,7 @@ import StateAgenciesPage from "@/pages/portal/state-agencies";
 import IntelligenceFeedPage from "@/pages/portal/intelligence-feed";
 import SettingsPage from "@/pages/portal/settings";
 import { PortalLayout } from "@/components/portal-layout";
+import { ErrorBoundary } from "@/components/error-boundary";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -58,12 +59,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="dark"> {/* Force dark mode for this premium aesthetic */}
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </div>
+        <ErrorBoundary>
+          <div className="dark"> {/* Force dark mode for this premium aesthetic */}
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </div>
+        </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>
   );

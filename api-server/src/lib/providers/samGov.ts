@@ -199,7 +199,7 @@ export class SamGovProvider implements DataSourceProvider {
           if (o.classificationCode) parts.push(`PSC: ${o.classificationCode}`);
           if (o.award?.awardee?.name) parts.push(`Awardee: ${o.award.awardee.name}`);
           if (o.officeAddress?.city) parts.push(`Location: ${o.officeAddress.city}, ${o.officeAddress.state}`);
-          return parts.length > 0 ? parts.join(" · ") : null;
+          return parts.length > 0 ? parts.join(" · ") : undefined;
         }
         return d;
       })(),

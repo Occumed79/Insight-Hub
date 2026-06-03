@@ -220,6 +220,10 @@ export type ListOpportunitiesParams = {
    * Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
    */
   source?: string;
+  /** Only return results posted within this many days (freshness window). */
+  dateRange?: number;
+  /** When true, exclude results flagged stale or with an unknown date. */
+  freshOnly?: boolean;
   page?: number;
   limit?: number;
 };

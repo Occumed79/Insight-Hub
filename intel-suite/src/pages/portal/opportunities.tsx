@@ -94,6 +94,7 @@ export default function OpportunitiesDashboard() {
   const [status, setStatus] = useState<"all" | "active" | "archived">("active");
   const [type, setType] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -116,6 +117,7 @@ export default function OpportunitiesDashboard() {
     status: status !== "all" ? status as any : undefined,
     type: type !== "all" ? type : undefined,
     source: sourceFilter !== "all" ? sourceFilter : undefined,
+    dateRange: dateFilter !== "all" ? Number(dateFilter) : undefined,
     page,
     limit: PAGE_SIZE,
   });
@@ -453,6 +455,16 @@ export default function OpportunitiesDashboard() {
               <SelectItem value="Sources Sought">Sources Sought</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={dateFilter} onValueChange={(v) => { setDateFilter(v); setPage(1); }}>
+            <SelectTrigger className="w-[150px] bg-background/50 border-white/10 text-white"><div className="flex items-center gap-2"><Clock className="w-3 h-3 text-muted-foreground" /><SelectValue placeholder="Date" /></div></SelectTrigger>
+            <SelectContent className="bg-popover border-white/10">
+              <SelectItem value="all">Any Date</SelectItem>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="90">Last 90 days</SelectItem>
+              <SelectItem value="365">Last year</SelectItem>
+            </SelectContent>
+          </Select>
 
         </div>
       </div>
@@ -474,6 +486,13 @@ export default function OpportunitiesDashboard() {
                 const confidence = opp.userConfidence !== null && opp.userConfidence !== undefined ? Math.round(Number(opp.userConfidence)) : null;
                 const urgent = opp.responseDeadline && new Date(opp.responseDeadline).getTime() - new Date().getTime() < 14 * 24 * 60 * 60 * 1000;
                 const isGrading = gradingIds.has(opp.id);
+                const rel = opp.relevance ?? null;
+                const relScore = rel?.score ?? (typeof opp.relevanceScore === "number" ? Math.round(opp.relevanceScore) : null);
+                const relTone = relScore == null ? "" : relScore >= 75
+                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
+                  : relScore >= 50
+                    ? "bg-sky-500/10 text-sky-300 border-sky-500/25"
+                    : "bg-amber-500/10 text-amber-300 border-amber-500/25";
 
                 return (
                   <motion.article
@@ -485,7 +504,14 @@ export default function OpportunitiesDashboard() {
                     className="group relative min-h-[310px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-4 shadow-lg shadow-black/10"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-wrap gap-2">{getSourceBadge(opp.source, opp.providerName)}</div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {getSourceBadge(opp.source, opp.providerName)}
+                        {relScore != null && (
+                          <Badge variant="outline" className={`${relTone} font-semibold tabular-nums`} title="Occu-Med relevance score">
+                            {relScore}% match
+                          </Badge>
+                        )}
+                      </div>
                       <Badge variant="outline" className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-muted-foreground border-white/10"}>{opp.status}</Badge>
                     </div>
 
@@ -496,6 +522,22 @@ export default function OpportunitiesDashboard() {
                       <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
                         {opp.description ? stripMarkdown(opp.description).slice(0, 240) : "No description available."}
                       </p>
+                      {(rel?.reasons?.length || rel?.stale || rel?.dateUnknown) && (
+                        <div className="flex flex-col gap-1 pt-0.5">
+                          {rel?.reasons?.length > 0 && (
+                            <div className="flex items-start gap-1 text-[10px] text-muted-foreground/90 leading-snug">
+                              <Sparkles className="w-3 h-3 mt-px shrink-0 text-primary/60" />
+                              <span className="line-clamp-2">{rel.reasons.slice(0, 2).join(" · ")}</span>
+                            </div>
+                          )}
+                          {(rel?.stale || rel?.dateUnknown) && (
+                            <div className="flex items-center gap-1 text-[10px] text-amber-300/90">
+                              <AlertCircle className="w-3 h-3 shrink-0" />
+                              {rel?.dateUnknown ? "Date unknown" : "May be a stale/older result"}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
@@ -512,6 +554,12 @@ export default function OpportunitiesDashboard() {
                       <div className="rounded-xl border border-white/10 bg-black/15 p-2">
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Value</div>
                         <div className="mt-1 text-white/85">{formatCurrency(opp.estimatedValue || opp.awardAmount)}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Posted</div>
+                        <div className="mt-1 text-white/85">
+                          {rel?.dateUnknown ? <span className="text-amber-300/80">Unknown</span> : (opp.postedDate ? format(new Date(opp.postedDate), "MMM d, yyyy") : "—")}
+                        </div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-black/15 p-2">
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</div>

@@ -1045,7 +1045,7 @@ function HiringIntelPanel({ clientId, branches }: { clientId: string; branches: 
   const filtered = useMemo(() => {
     return classified.filter(p => {
       const matchSearch = !searchTerm || p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p._branchName as string || "").toLowerCase().includes(searchTerm.toLowerCase());
+        ((p as any)._branchName as string || "").toLowerCase().includes(searchTerm.toLowerCase());
       const matchRel = filterRelevance === "all" || p._cat?.relevance === filterRelevance || (!p._cat && filterRelevance === "low");
       return matchSearch && matchRel;
     });

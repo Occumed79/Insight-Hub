@@ -62,6 +62,16 @@ paths:
             type: string
             description: Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
         - in: query
+          name: dateRange
+          schema:
+            type: integer
+            description: Only return results posted within this many days (freshness window).
+        - in: query
+          name: freshOnly
+          schema:
+            type: boolean
+            description: When true, exclude results flagged stale or with an unknown date.
+        - in: query
           name: page
           schema:
             type: integer
@@ -460,8 +470,12 @@ components:
           enum: [high, medium, low]
           description: Confidence level of the source data
         tags:
-          type: string
-          description: JSON array of tags
+          type: array
+          items:
+            type: string
+          description: Quality/category tags (e.g. date-unknown, stale, category name)
+        relevance:
+          $ref: "#/components/schemas/RelevanceView"
         notes:
           type: string
         # Learning model fields
@@ -479,6 +493,37 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    RelevanceView:
+      type: object
+      description: Transparent relevance summary used by the UI to explain ranking.
+      required: [score, reasons, dateUnknown, stale, confidence]
+      properties:
+        score:
+          type: number
+          description: Relevance/fit score (0-100)
+        reasons:
+          type: array
+          items:
+            type: string
+          description: Human-readable reasons this result matched (or was ranked down)
+        category:
+          type: string
+          nullable: true
+          description: Detected Occu-Med service category
+        dateUnknown:
+          type: boolean
+          description: True when no reliable publication date was detected
+        stale:
+          type: boolean
+          description: True when the result appears to be from a past/historical period
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        postedDate:
+          type: string
+          format: date-time
+          nullable: true
 
     OpportunitiesResponse:
       type: object

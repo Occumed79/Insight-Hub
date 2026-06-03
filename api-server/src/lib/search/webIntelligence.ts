@@ -9,6 +9,12 @@ import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
 import { jinaProvider } from "../providers/jina";
 import { extractWithMultipleAIs } from "./multiScorer";
+import {
+  classifyResult,
+  isBlockedDomain as isBlockedDomainShared,
+  isRfpCandidate as isRfpCandidateShared,
+  type RelevanceResult,
+} from "./relevance";
 import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { websearchProvider } from "../providers/websearch";
@@ -50,39 +56,8 @@ const TAVILY_QUERIES = [
   `pre-employment drug testing government contract opportunity active ${CURRENT_YEAR}`,
 ];
 
-const BLOCKED_DOMAINS = [
-  "linkedin.com", "facebook.com", "twitter.com", "instagram.com", "x.com",
-  "reddit.com", "youtube.com", "tiktok.com",
-  "wikipedia.org", "britannica.com",
-  "govinfo.gov", "federalregister.gov", "usaspending.gov", "fpds.gov", "regulations.gov", "gao.gov", "opm.gov",
-  "bloomberg.com", "reuters.com", "wsj.com", "nytimes.com", "washingtonpost.com",
-  "forbes.com", "inc.com", "businesswire.com", "prnewswire.com", "businessinsider.com",
-  "apnews.com", "cnbc.com", "cnn.com", "foxbusiness.com", "politico.com",
-  "govexec.com", "nextgov.com", "federalnewsnetwork.com",
-  "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com", "careerbuilder.com", "simplyhired.com", "usajobs.gov", "jobs.mil",
-  "yelp.com", "healthgrades.com", "webmd.com", "healthline.com",
-  "scribd.com", "slideshare.net", "issuu.com",
-  "gartner.com", "capterra.com", "g2.com",
-];
-
-const RFP_KEYWORDS = [
-  "rfp", "request for proposal", "request for proposals", "solicitation", "invitation to bid", "invitation for bid",
-  "itb", "rfq", "request for quotation", "bid opportunity", "bid notice", "sources sought", "pre-solicitation",
-  "response due", "proposals due", "submission deadline", "bids due", "seeking proposals", "contract opportunity",
-  "procurement notice", "request for information", "rfi", "notice of intent", "sealed bids", "vendor registration",
-];
-
-const SERVICE_KEYWORDS = [
-  "occupational health", "occupational medicine", "drug testing", "drug screening", "dot physical", "physical exam",
-  "pre-employment", "employee health", "medical examination", "medical exam", "fitness for duty", "vaccination",
-  "immunization", "respirator", "pulmonary function", "audiogram", "hearing test", "titer", "tb testing",
-  "laboratory testing", "x-ray", "ekg", "clinic services", "medical screening",
-];
-
-const REJECT_SIGNALS = [
-  "contract awarded", "contract award", "award notice", "award announcement", "awarded to", "selected vendor",
-  "task order award", "mod to contract", "contract modification", "job description", "job posting", "we are hiring", "career opportunity",
-];
+// Domain blocklist, procurement/service signals, and the RFP pre-filter now live
+// in ./relevance (single source of truth shared with the read-time list filter).
 
 export interface WebIntelligenceResult {
   opportunities: NormalizedOpportunity[];
@@ -99,6 +74,8 @@ export interface WebIntelligenceResult {
     firecrawlEnriched: number;
     jinaEnriched: number;
     extracted: number;
+    /** Records kept via deterministic heuristic fallback when AI was unavailable. */
+    heuristicExtracted: number;
     rejected: number;
     expiredRejected: number;
     geminiRateLimited: boolean;
@@ -111,25 +88,77 @@ interface Candidate {
   url: string;
   content: string;
   sourceProvider: SearchCandidateProvider;
+  /** Raw publication/last-updated date string from the source, if provided. */
+  dateRaw?: string;
   firecrawlEnriched?: boolean;
   jinaEnriched?: boolean;
 }
 
-function isBlockedDomain(url: string): boolean {
-  try {
-    const hostname = new URL(url).hostname.replace("www.", "");
-    return BLOCKED_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`));
-  } catch {
-    return false;
-  }
+function isRfpCandidate(candidate: Candidate): boolean {
+  return isRfpCandidateShared(candidate.title, candidate.content, candidate.url);
 }
 
-function isRfpCandidate(candidate: Candidate): boolean {
-  const text = `${candidate.title} ${candidate.url} ${candidate.content}`.toLowerCase();
-  if (REJECT_SIGNALS.some((s) => text.includes(s))) return false;
-  const hasProcurementSignal = RFP_KEYWORDS.some((kw) => text.includes(kw));
-  const hasServiceSignal = SERVICE_KEYWORDS.some((kw) => text.includes(kw));
-  return hasProcurementSignal && hasServiceSignal;
+/**
+ * Build a NormalizedOpportunity from a web candidate, attaching the transparent
+ * relevance score, reasons, parsed publication date, and quality tags that the
+ * UI surfaces. Used by both the AI-confirmed and heuristic-fallback paths.
+ */
+function buildWebOpportunity(
+  candidate: Candidate,
+  fields: {
+    title: string;
+    agency: string;
+    description?: string;
+    deadline?: Date;
+    location?: string;
+    estimatedValue?: number;
+    relevanceScore: number;
+    relevanceReason: string;
+    cls: RelevanceResult;
+    fallback: boolean;
+    extra?: Record<string, unknown>;
+  }
+): NormalizedOpportunity {
+  const { cls } = fields;
+  const urlHash = createHash("sha256").update(candidate.url).digest("hex").slice(0, 20);
+  const dateUnknown = cls.publishedDate == null;
+
+  const tags: string[] = [];
+  if (cls.category) tags.push(cls.category);
+  if (dateUnknown) tags.push("date-unknown");
+  if (cls.stale) tags.push("stale");
+  if (fields.fallback) tags.push("ai-pending");
+
+  return {
+    externalId: `web-${urlHash}`,
+    title: fields.title,
+    agency: fields.agency,
+    type: "Solicitation",
+    status: "active",
+    // Real detected publication date when available; otherwise flagged date-unknown.
+    postedDate: cls.publishedDate ?? new Date(),
+    responseDeadline: fields.deadline,
+    description: fields.description,
+    placeOfPerformance: fields.location,
+    estimatedValue: fields.estimatedValue,
+    sourceUrl: candidate.url,
+    source: candidate.sourceProvider as ProviderName,
+    rawData: {
+      url: candidate.url,
+      relevanceScore: fields.relevanceScore,
+      relevanceReason: fields.relevanceReason,
+      relevanceReasons: cls.reasons,
+      category: cls.category,
+      dateUnknown,
+      stale: cls.stale,
+      tags,
+      fallback: fields.fallback,
+      extractedFrom: candidate.sourceProvider,
+      firecrawlEnriched: candidate.firecrawlEnriched ?? false,
+      jinaEnriched: candidate.jinaEnriched ?? false,
+      ...(fields.extra ?? {}),
+    },
+  };
 }
 
 function isExpiredDeadline(deadline: Date | undefined | null): boolean {
@@ -165,7 +194,7 @@ async function runInBatches<T, R>(
 }
 
 function addCandidate(candidates: Candidate[], seen: Set<string>, candidate: Candidate) {
-  if (!candidate.url || seen.has(candidate.url) || isBlockedDomain(candidate.url)) return;
+  if (!candidate.url || seen.has(candidate.url) || isBlockedDomainShared(candidate.url)) return;
   seen.add(candidate.url);
   candidates.push(candidate);
 }
@@ -198,6 +227,7 @@ export async function webIntelligenceFetch(options: {
     firecrawlEnriched: 0,
     jinaEnriched: 0,
     extracted: 0,
+    heuristicExtracted: 0,
     rejected: 0,
     expiredRejected: 0,
     geminiRateLimited: false,
@@ -297,12 +327,12 @@ export async function webIntelligenceFetch(options: {
   const candidates: Candidate[] = [];
   for (const opp of statePortalOpportunities) if (opp.sourceUrl) seen.add(opp.sourceUrl);
 
-  for (const r of serperRaw) addCandidate(candidates, seen, { title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper" });
+  for (const r of serperRaw) addCandidate(candidates, seen, { title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper", dateRaw: r.date });
   for (const r of exaRaw) {
     const url = r.url ?? "";
-    addCandidate(candidates, seen, { title: r.title ?? "", url, content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "", sourceProvider: "exa" });
+    addCandidate(candidates, seen, { title: r.title ?? "", url, content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "", sourceProvider: "exa", dateRaw: r.publishedDate });
   }
-  for (const r of tavilyRaw) addCandidate(candidates, seen, { title: r.title, url: r.url, content: r.content, sourceProvider: "tavily" });
+  for (const r of tavilyRaw) addCandidate(candidates, seen, { title: r.title, url: r.url, content: r.content, sourceProvider: "tavily", dateRaw: r.publishedDate });
 
   for (const r of youRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.description ?? "", sourceProvider: "you" });
   for (const r of langsearchRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.content ?? "", sourceProvider: "langsearch" });
@@ -369,48 +399,93 @@ export async function webIntelligenceFetch(options: {
       GEMINI_BATCH_DELAY_MS,
       async (candidate) => {
         const extraction = await extractWithMultipleAIs(candidate.title, candidate.url, candidate.content);
-        if (!extraction || !extraction.isOpportunity) {
+
+        // Branch A: AI explicitly judged this NOT an opportunity → respect it.
+        if (extraction && !extraction.isOpportunity) {
           stats.rejected++;
           return null;
         }
 
-        const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
-        const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
-        if (isExpiredDeadline(validDeadline)) {
+        // Branch B: AI confirmed an opportunity → use its structured extraction.
+        if (extraction && extraction.isOpportunity) {
+          const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
+          const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
+          if (isExpiredDeadline(validDeadline)) {
+            stats.expiredRejected++;
+            stats.rejected++;
+            return null;
+          }
+          if ((extraction.relevanceScore ?? 0) < 45) {
+            stats.rejected++;
+            return null;
+          }
+
+          const cls = classifyResult({
+            title: extraction.title ?? candidate.title,
+            snippet: candidate.content,
+            description: extraction.description,
+            url: candidate.url,
+            date: candidate.dateRaw,
+            deadlineInFuture: !!validDeadline,
+            keywords: options.keywords,
+          });
+          // Safety net: even if an AI accepted it, drop obvious job-board / off-topic junk.
+          if (cls.rejected) {
+            stats.rejected++;
+            return null;
+          }
+
+          const opp = buildWebOpportunity(candidate, {
+            title: extraction.title ?? candidate.title,
+            agency: extraction.agency ?? cls.category ?? "Unknown Organization",
+            description: extraction.description,
+            deadline: validDeadline,
+            location: extraction.location ?? undefined,
+            estimatedValue: extraction.estimatedValue ?? undefined,
+            relevanceScore: extraction.relevanceScore ?? cls.score,
+            relevanceReason: extraction.relevanceReason ?? cls.reasons.join("; "),
+            cls,
+            fallback: false,
+            extra: {
+              winnerScorer: (extraction as { winnerScorer?: string }).winnerScorer,
+              scorerVotes: (extraction as { scorerVotes?: unknown }).scorerVotes,
+            },
+          });
+          return { opp, heuristic: false };
+        }
+
+        // Branch C: AI unavailable (null) → deterministic heuristic fallback so we
+        // don't silently drop everything when keys are missing / rate-limited.
+        const cls = classifyResult({
+          title: candidate.title,
+          snippet: candidate.content,
+          url: candidate.url,
+          date: candidate.dateRaw,
+          keywords: options.keywords,
+        });
+        if (cls.rejected || cls.score < 50) {
+          stats.rejected++;
+          return null;
+        }
+        const meta = extractMetadataFromText(candidate.content, candidate.title);
+        if (isExpiredDeadline(meta.deadline)) {
           stats.expiredRejected++;
           stats.rejected++;
           return null;
         }
-        if ((extraction.relevanceScore ?? 0) < 45) {
-          stats.rejected++;
-          return null;
-        }
-
-        const urlHash = createHash("sha256").update(candidate.url).digest("hex").slice(0, 20);
-        return {
-          externalId: `web-${urlHash}`,
-          title: extraction.title ?? candidate.title,
-          agency: extraction.agency ?? "Unknown Organization",
-          type: "Solicitation",
-          status: "active" as const,
-          postedDate: new Date(),
-          responseDeadline: validDeadline,
-          description: extraction.description,
-          placeOfPerformance: extraction.location ?? undefined,
-          estimatedValue: extraction.estimatedValue ?? undefined,
-          sourceUrl: candidate.url,
-          source: candidate.sourceProvider as ProviderName,
-          rawData: {
-            url: candidate.url,
-            relevanceScore: extraction.relevanceScore,
-            relevanceReason: extraction.relevanceReason,
-            winnerScorer: (extraction as { winnerScorer?: string }).winnerScorer,
-            scorerVotes: (extraction as { scorerVotes?: unknown }).scorerVotes,
-            extractedFrom: candidate.sourceProvider,
-            firecrawlEnriched: candidate.firecrawlEnriched ?? false,
-            jinaEnriched: candidate.jinaEnriched ?? false,
-          },
-        } as NormalizedOpportunity;
+        const opp = buildWebOpportunity(candidate, {
+          title: candidate.title,
+          agency: meta.agencyHint ?? cls.category ?? "Unknown Organization",
+          description: candidate.content.slice(0, 600) || undefined,
+          deadline: meta.deadline,
+          location: undefined,
+          estimatedValue: meta.estimatedValue,
+          relevanceScore: cls.score,
+          relevanceReason: cls.reasons.join("; "),
+          cls,
+          fallback: true,
+        });
+        return { opp, heuristic: true };
       },
       () => {
         geminiQuotaHit = true;
@@ -420,8 +495,9 @@ export async function webIntelligenceFetch(options: {
 
     for (const r of extractionResults) {
       if (r) {
-        opportunities.push(r);
+        opportunities.push(r.opp);
         stats.extracted++;
+        if (r.heuristic) stats.heuristicExtracted++;
       }
     }
   } catch (err: any) {
