@@ -295,6 +295,36 @@ export default function OpportunitiesDashboard() {
 
   const getSourceBadge = (source: string | null | undefined, name: string | null | undefined) => {
     const rawName = name || source || "manual";
+    // Normalize providerName keys to display labels
+    const providerLabelMap: Record<string, string> = {
+      statePortals: "State Portals",
+      samGov: "SAM.gov",
+      sam_gov: "SAM.gov",
+      serper: "Serper",
+      tavily: "Tavily",
+      gemini: "Gemini",
+      exa: "Exa",
+      firecrawl: "Firecrawl",
+      manual: "Manual",
+    };
+    if (providerLabelMap[rawName]) {
+      const colorMap: Record<string, string> = {
+        statePortals: "bg-blue-500/10 text-blue-300 border-blue-500/20",
+        samGov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+        sam_gov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+        serper: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+        tavily: "bg-pink-500/10 text-pink-300 border-pink-500/20",
+        gemini: "bg-purple-500/10 text-purple-300 border-purple-500/20",
+        exa: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
+        firecrawl: "bg-orange-500/10 text-orange-300 border-orange-500/20",
+        manual: "bg-slate-500/10 text-slate-300 border-slate-500/20",
+      };
+      return (
+        <Badge className={\`text-[10px] font-medium border \${colorMap[rawName] ?? "bg-slate-500/10 text-slate-300 border-slate-500/20"}\`}>
+          {providerLabelMap[rawName]}
+        </Badge>
+      );
+    }
     const displayNames: Record<string, string> = {
       sam_gov: "SAM.gov",
       samGov: "SAM.gov",
