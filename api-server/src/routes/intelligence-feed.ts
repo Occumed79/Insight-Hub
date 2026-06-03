@@ -29,6 +29,12 @@ function safeDate(value: string | number | Date | null | undefined): Date | null
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function safeDate(value: string | number | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function makeId(scope: string, stateCode: string | null, externalId: string): string {
   const hash = createHash("sha256")
     .update(`${scope}::${stateCode ?? "federal"}::${externalId}`)
