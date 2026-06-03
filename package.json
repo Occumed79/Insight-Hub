@@ -9,7 +9,7 @@
     "start:prod": "node --enable-source-maps ./api-server/dist/index.mjs",
     "db:push": "pnpm --filter @workspace/db run push",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./api-server\" --filter \"./intel-suite\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
   "devDependencies": {
