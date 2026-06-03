@@ -98,30 +98,45 @@ export class SamGovProvider implements DataSourceProvider {
 
     const opps = json.opportunitiesData ?? [];
 
+    // Broad Occu-Med relevance terms — intentionally loose here.
+    // The write-time quality filter in unifiedSearch handles strict rejection.
+    // Being too strict here causes SAM.gov to return 0 records even when good ones exist.
     const OCCUMED_RELEVANT_TERMS = [
-      "occupational health", "occupational medicine", "drug test", "drug screen",
-      "pre-employment", "pre employment", "physical exam", "medical exam",
-      "dot physical", "fit for duty", "employee health", "workplace health",
-      "wellness", "pulmonary", "audiometric", "audiometry", "spirometry",
-      "respiratory protection", "eap ", "employee assistance",
-      "health screening", "biometric", "vaccination", "immunization",
-      "substance abuse", "mro ", "medical review officer", "breath alcohol",
-      "random testing", "post-accident", "return to duty",
+      // Core service lines
+      "occupational health", "occupational medicine", "occupational medical",
+      "occ health", "occmed",
+      // Drug & alcohol
+      "drug test", "drug screen", "alcohol test", "substance abuse",
+      "dot drug", "mro ", "medical review officer", "breath alcohol",
+      "random test", "post-accident", "return to duty", "return-to-duty",
+      // Physicals & exams
+      "physical exam", "medical exam", "dot physical", "dot examination",
+      "pre-employment", "pre employment", "pre-placement",
+      "fitness for duty", "fit for duty", "work capacity",
+      // Surveillance & monitoring
+      "medical surveillance", "health surveillance", "employee health",
+      "workplace health", "worker health", "health screening",
+      "biometric", "biological monitoring",
+      // Specific tests
+      "audiometric", "audiogram", "hearing conservation", "pulmonary function",
+      "spirometry", "respirator fit", "fit test",
+      "vaccination", "immunization", "tb test", "tuberculosis",
+      // NAICS codes — exact match on any of these is a strong signal
       "621111", "621999", "621512", "621310",
     ];
 
     const normalized = opps.map((o) => this.normalize(o));
 
-    // Filter to only include opportunities relevant to Occu-Med's service lines.
-    // NOTE: We do NOT fall back to all results — returning irrelevant records
-    // poisons the feedback model and degrades scoring quality.
+    // Loose pre-filter: pass anything that has at least one signal in title or NAICS.
+    // The write-time filter in unifiedSearch applies the strict rejection logic.
     const relevant = normalized.filter((opp) => {
-      const text = `${opp.title} ${opp.description ?? ""} ${opp.naicsCode ?? ""}`.toLowerCase();
-      return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term));
+      const text = `${opp.title} ${opp.naicsCode ?? ""}`.toLowerCase();
+      const desc = (opp.description ?? "").toLowerCase();
+      return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term) || desc.includes(term));
     });
 
     const noMatchWarning = relevant.length === 0 && normalized.length > 0
-      ? ["SAM.gov returned " + normalized.length + " records but none matched Occu-Med service lines. Try more specific keywords."]
+      ? ["SAM.gov returned " + normalized.length + " records but none matched. The API may be returning unrelated results for this keyword — try 'occupational health' or 'drug testing'."]
       : [];
 
     return {
