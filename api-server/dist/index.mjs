@@ -73781,10 +73781,29 @@ var SamGovProvider = class {
       throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
     }
     const opps = json3.opportunitiesData ?? [];
+    const OCCUMED_SAM_TERMS = [
+      "occupational health","occupational medicine","occupational medical","occ health",
+      "drug test","drug screen","alcohol test","substance abuse","mro ","medical review officer",
+      "breath alcohol","random test","post-accident","return to duty",
+      "physical exam","medical exam","dot physical","dot examination","fmcsa physical",
+      "pre-employment","pre employment","pre-placement","fitness for duty","fit for duty",
+      "employee health","workplace health","worker health","health screening","medical surveillance",
+      "audiometric","audiogram","hearing conservation","pulmonary function","spirometry",
+      "respirator fit","fit test","vaccination","immunization","tb test","tuberculosis",
+      "621111","621999","621512","621310"
+    ];
+    const normalizedOpps = opps.map((o) => this.normalize(o));
+    const relevant = normalizedOpps.filter((opp) => {
+      const text = (opp.title + " " + (opp.description ?? "") + " " + (opp.naicsCode ?? "")).toLowerCase();
+      return OCCUMED_SAM_TERMS.some((term) => text.includes(term));
+    });
+    const noMatchWarning = relevant.length === 0 && normalizedOpps.length > 0
+      ? ["SAM.gov returned " + normalizedOpps.length + " records but none matched Occu-Med service lines. Try \'occupational health\' or \'drug testing\'."]
+      : [];
     return {
-      records: opps.map((o) => this.normalize(o)),
+      records: relevant,
       total: json3.totalRecords ?? opps.length,
-      errors: []
+      errors: noMatchWarning
     };
   }
   async getStatus() {
@@ -75421,7 +75440,39 @@ async function unifiedFetch(options = {}) {
     keywords: options.keywords ? options.keywords.split(/[\s,]+/).filter(Boolean) : [],
     naicsCodes: ["621111", "621999", "621512", "621310"]
   });
-  for (const { opportunity } of scored) {
+  const HARD_REJECT_INLINE = [
+    "ambulance","emergency medical services"," ems ","paramedic","emt ","lvn","lpn",
+    "registered nurse"," rn ","nursing services","nurse staffing","medical staffing",
+    "staff augmentation","temporary staffing","locum","travel nurse",
+    "job posting","job opening","now hiring"," hiring ","employment opportunity",
+    "submit resume","disability adjudication","social security disability",
+    "pharmacy","pharmaceutical","marijuana","cannabis","phlebotomist",
+    "radiology technologist","dental assistant","dental hygienist","dental care",
+    "mental health therapy","behavioral health treatment","addiction treatment",
+    "health insurance","health benefits","claims administration","medical claims",
+    "contract awarded","award notice","awarded to","selected vendor","notice of award",
+    "bid tabulation","electronic health record","ehr implementation","emr system",
+    "veterinary","animal health","janitorial","construction"
+  ];
+  const OCCUMED_PASS_INLINE = [
+    "occupational health","occupational medicine","drug test","drug screen",
+    "dot physical","dot examination","pre-employment","pre employment","fitness for duty",
+    "fit for duty","employee health","workplace health","medical surveillance",
+    "audiogram","audiometric","hearing conservation","pulmonary function","spirometry",
+    "respirator fit","fit test","vaccination","immunization","tb test","tuberculosis",
+    "substance abuse testing","random drug","medical review officer","breath alcohol",
+    "return to duty","deployment medical","military physical"
+  ];
+  function inlNorm(s) { return " " + s.toLowerCase().replace(/[^a-z0-9]+/g, " ") + " "; }
+  const qualityFiltered = scored.filter(({ opportunity }) => {
+    const raw = [opportunity.title, opportunity.description, opportunity.agency].filter(Boolean).join(" ");
+    const text = inlNorm(raw);
+    if (!OCCUMED_PASS_INLINE.some(s => text.includes(inlNorm(s).trim()))) return false;
+    if (HARD_REJECT_INLINE.some(s => text.includes(inlNorm(s).trim()))) return false;
+    return true;
+  });
+  result.skipped += scored.length - qualityFiltered.length;
+  for (const { opportunity } of qualityFiltered) {
     const externalId = opportunity.externalId;
     if (externalId) {
       const existing = await db.select({ id: opportunitiesTable.id }).from(opportunitiesTable).where(eq(opportunitiesTable.noticeId, externalId));
