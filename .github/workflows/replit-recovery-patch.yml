@@ -1,0 +1,64 @@
+name: Replit Recovery Patch
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply remaining recovery edits
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          edits = {
+            'api-server/src/lib/providers/usaSpending.ts': [
+              ('source: "usa_spending" as any,', 'source: "usaSpending",'),
+              ('providerName: "USASpending.gov",\n', ''),
+            ],
+            'api-server/src/lib/providers/websearch.ts': [
+              ('description: item.snippet ?? item.description ?? "",', 'description: item.snippet ?? (item as any).description ?? "",'),
+            ],
+            'api-server/src/lib/providers/samGov.ts': [
+              ('  naicsCode?: string;\n  postedDate?: string;', '  naicsCode?: string;\n  classificationCode?: string;\n  postedDate?: string;'),
+              ('  responseDeadLine?: string;\n  typeOfSetAside?: string;', '  responseDeadLine?: string;\n  archiveDate?: string;\n  typeOfSetAside?: string;'),
+              ('  placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };\n  description?: string;', '  placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };\n  officeAddress?: { city?: string; state?: string };\n  description?: string;'),
+              ('return null;\n      })(),', 'return undefined;\n      })(),'),
+            ],
+            'api-server/src/routes/intelligence-feed.ts': [
+              ('function makeId(scope: string, stateCode: string | null, externalId: string): string {', 'function safeDate(value: string | number | Date | null | undefined): Date | null {\n  if (!value) return null;\n  const d = value instanceof Date ? value : new Date(value);\n  return Number.isNaN(d.getTime()) ? null : d;\n}\n\nfunction makeId(scope: string, stateCode: string | null, externalId: string): string {'),
+              ('let items: InsertIntelFeedItem[] = [];', 'let items: Omit<InsertIntelFeedItem, "id">[] = [];'),
+              ('id, ...item, publishedDate, feedback: keepFeedback as any,', '...item, id, publishedDate, feedback: keepFeedback as any,'),
+              ('Promise<[InsertIntelFeedItem[], string[]>]', 'Promise<[Omit<InsertIntelFeedItem, "id">[], string[]]>'),
+              ('const items: InsertIntelFeedItem[] = [];', 'const items: Omit<InsertIntelFeedItem, "id">[] = [];'),
+            ],
+            'intel-suite/src/pages/portal/clients.tsx': [
+              ('branchName: p._branchName,', 'branchName: (p as any)._branchName,'),
+            ],
+            'intel-suite/src/pages/portal/prospects.tsx': [
+              ('status: newStatus,', 'status: newStatus as Prospect["status"],'),
+              ('tier: newTier,', 'tier: newTier as Prospect["tier"],'),
+              ('function DetailPanel({ prospect, onClose, onResearch, researching }: {\n  prospect: Prospect;\n  onClose: () => void;\n  onResearch: () => void;\n  researching: boolean;\n}) {', 'function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {\n  prospect: Prospect;\n  onClose: () => void;\n  onResearch: () => void;\n  researching: boolean;\n  onUpdate?: (updated: Prospect) => void;\n}) {'),
+            ],
+          }
+          for file, reps in edits.items():
+              p = Path(file)
+              text = p.read_text()
+              for a,b in reps:
+                  text = text.replace(a,b)
+              p.write_text(text)
+          PY
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server intel-suite lib .github/workflows/replit-recovery-patch.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Apply remaining Replit recovery fixes"
+          git push
