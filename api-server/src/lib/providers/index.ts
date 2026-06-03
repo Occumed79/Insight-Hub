@@ -32,6 +32,12 @@ import { browseAiProvider } from "./browseAi";
 import { browserUseProvider } from "./browserUse";
 import { olostepProvider } from "./olostep";
 import { clodProvider } from "./clod";
+import { minimaxProvider } from "./minimax";
+import { youProvider } from "./you";
+import { langsearchProvider } from "./langsearch";
+import { websearchProvider } from "./websearch";
+import { grantsGovProvider } from "./grantsGov";
+import { usaSpendingProvider } from "./usaSpending";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -55,6 +61,12 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   browserUse: browserUseProvider,
   olostep: olostepProvider,
   clod: clodProvider,
+  minimax: minimaxProvider,
+  you: youProvider,
+  langsearch: langsearchProvider,
+  websearch: websearchProvider,
+  grantsGov: grantsGovProvider,
+  usaSpending: usaSpendingProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {
