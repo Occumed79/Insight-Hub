@@ -17,6 +17,7 @@ export interface NormalizedOpportunity {
   responseDeadline?: Date;
   setAside?: string;
   placeOfPerformance?: string;
+  location?: string;
   description?: string;
   solicitationNumber?: string;
   sourceUrl?: string;
@@ -24,6 +25,7 @@ export interface NormalizedOpportunity {
   awardAmount?: number;
   awardee?: string;
   source: ProviderName;
+  providerName?: string;
   rawData?: Record<string, unknown>;
 }
 
