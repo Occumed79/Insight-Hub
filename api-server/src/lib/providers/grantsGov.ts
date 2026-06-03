@@ -155,8 +155,7 @@ export class GrantsGovProvider implements DataSourceProvider {
       solicitationNumber: hit.opportunity_number,
       sourceUrl: url,
       estimatedValue: hit.estimated_total_program_funding,
-      source: "grants_gov" as any,
-      providerName: "Grants.gov",
+      source: "grantsGov",
       rawData: hit as Record<string, unknown>,
     };
   }
