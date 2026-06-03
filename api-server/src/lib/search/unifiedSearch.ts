@@ -26,7 +26,6 @@ import { websearchProvider } from "../providers/websearch";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
 import { normalizedToDbRecord } from "./normalization";
-import { shouldShowOpportunity } from "../../routes/opportunities";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
 import type { NormalizedOpportunity } from "../providers/types";
@@ -228,18 +227,62 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   });
 
   // ── Persist to DB ──────────────────────────────────────────────────────────
-  // Quality-filter at write time: prevents junk from ever entering the database.
+  // Inline quality filter — checks title+description against Occu-Med service signals.
+  // Kept inline (not imported) to avoid circular deps and field-mapping bugs.
+  const HARD_REJECT = [
+    "ambulance","emergency medical services"," ems ","paramedic","emt ","first responder",
+    "lvn","lpn","registered nurse"," rn ","nursing services","nurse staffing",
+    "medical staffing","staff augmentation","temporary staffing","locum","travel nurse",
+    "job posting","job opening","career opportunity","now hiring"," hiring ",
+    "position available","employment opportunity","submit resume","send resume",
+    "blanket purchase agreement","disability adjudication","disability determination",
+    "social security disability","independent medical examination",
+    "pharmacy","pharmaceutical","marijuana","cannabis",
+    "phlebotomist","radiology technologist","mri tech","ct tech","sonographer",
+    "dental assistant","dental hygienist","dental care",
+    "mental health therapy","behavioral health treatment","substance abuse treatment",
+    "addiction treatment","psychiatric","psychotherapy",
+    "health insurance","health benefits","claims administration","medical claims",
+    "insurance enrollment","benefits administration",
+    "contract awarded","award notice","awarded to","selected vendor",
+    "notice of award","bid tabulation","intent to award","sole source award",
+    "nutrition program","food service","meal delivery","wic program",
+    "electronic health record","ehr implementation","emr system",
+    "telehealth platform","telemedicine software",
+    "veterinary","animal health","pest control","janitorial","landscaping","construction",
+  ];
+  const OCCUMED_SIGNALS = [
+    "occupational health","occupational medicine","occupational medical","occ health","occmed",
+    "drug testing","drug screening","drug test","alcohol testing",
+    "dot drug","dot alcohol","substance abuse testing","random drug testing",
+    "urine drug screen","breath alcohol",
+    "dot physical","dot examination","dot medical","fmcsa physical",
+    "pre-employment physical","pre employment physical","pre-placement physical",
+    "annual physical","periodic medical","medical fitness",
+    "return to work physical","return to duty physical",
+    "employee health services","employee health program","workplace health","workforce health",
+    "worker health screening","medical surveillance","health surveillance",
+    "biological monitoring","bloodborne pathogen","hazmat medical",
+    "fit for duty","fitness for duty","work capacity evaluation","functional capacity",
+    "respirator fit","fit testing","pulmonary function","spirometry",
+    "audiogram","audiometric","hearing conservation","hearing test",
+    "vaccination","immunization","flu shot","influenza vaccination",
+    "titer","tb test","tuberculosis testing","ppd test","quantiferon",
+    "covid testing","respirator medical evaluation",
+    "deployment medical","pre-deployment","periodic health assessment",
+    "separation physical","military physical","pha exam",
+  ];
+  function inlineNorm(s: string): string { return " " + s.toLowerCase().replace(/[^a-z0-9]+/g, " ") + " "; }
+  function inlineHas(text: string, signals: string[]): boolean { return signals.some(s => text.includes(inlineNorm(s).trim()) || text.includes(s.toLowerCase())); }
+
   const qualityFiltered = scored.filter(({ opportunity }) => {
-    const proxy = {
-      title: opportunity.title,
-      description: opportunity.description,
-      agency: opportunity.agency,
-      providerName: opportunity.source,
-      source: opportunity.source,
-      solicitationNumber: opportunity.externalId,
-      samUrl: opportunity.sourceUrl,
-    };
-    return shouldShowOpportunity(proxy);
+    const raw = [opportunity.title, opportunity.description, opportunity.agency].filter(Boolean).join(" ");
+    const text = inlineNorm(raw);
+    // Must have at least one Occu-Med signal
+    if (!inlineHas(text, OCCUMED_SIGNALS)) return false;
+    // Must NOT have hard-reject signals
+    if (inlineHas(text, HARD_REJECT)) return false;
+    return true;
   });
   result.skipped += scored.length - qualityFiltered.length;
 
