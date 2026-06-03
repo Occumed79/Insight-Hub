@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, pgEnum, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -80,11 +80,11 @@ export const intelFeedSignalsTable = pgTable("intel_feed_signals", {
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 export const insertIntelFeedItemSchema = createInsertSchema(intelFeedItemsTable).omit({
+  id: true,
   createdAt: true,
   updatedAt: true,
   fetchedAt: true,
 });
-
 export const selectIntelFeedItemSchema = createSelectSchema(intelFeedItemsTable);
 
 export type InsertIntelFeedItem = z.infer<typeof insertIntelFeedItemSchema>;
