@@ -320,7 +320,7 @@ export default function OpportunitiesDashboard() {
         manual: "bg-slate-500/10 text-slate-300 border-slate-500/20",
       };
       return (
-        <Badge className={\`text-[10px] font-medium border \${colorMap[rawName] ?? "bg-slate-500/10 text-slate-300 border-slate-500/20"}\`}>
+        <Badge className={"text-[10px] font-medium border " + (colorMap[rawName] ?? "bg-slate-500/10 text-slate-300 border-slate-500/20")}>
           {providerLabelMap[rawName]}
         </Badge>
       );
