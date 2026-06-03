@@ -383,11 +383,12 @@ function ProspectCard({
 }
 
 // ── Detail Panel ──────────────────────────────────────────────────────────────
-function DetailPanel({ prospect, onClose, onResearch, researching }: {
+function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {
   prospect: Prospect;
   onClose: () => void;
   onResearch: () => void;
   researching: boolean;
+  onUpdate?: (updated: Prospect) => void;
 }) {
   const naics: string[] = prospect.naicsCodes ? JSON.parse(prospect.naicsCodes) : [];
   const signals: any[] = prospect.opportunitySignals ? JSON.parse(prospect.opportunitySignals) : [];

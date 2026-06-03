@@ -231,9 +231,8 @@ export class USASpendingProvider implements DataSourceProvider {
 
 Incumbent: ${recipient || "Unknown"}. Contract expiring ${endDateStr ?? "TBD"} — potential re-compete opportunity.`
         : `Incumbent: ${recipient || "Unknown"}. Contract expiring ${endDateStr ?? "TBD"}.`,
-      source: "usa_spending" as any,
-      providerName: "USASpending.gov",
-      awardAmount: amount ? parseFloat(String(amount)) : undefined,
+      source: "usaSpending",
+            awardAmount: amount ? parseFloat(String(amount)) : undefined,
       awardee: recipient || undefined,
       rawData: award as Record<string, unknown>,
     };

@@ -23,6 +23,12 @@ const router = Router();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function safeDate(value: string | number | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function makeId(scope: string, stateCode: string | null, externalId: string): string {
   const hash = createHash("sha256")
     .update(`${scope}::${stateCode ?? "federal"}::${externalId}`)
@@ -161,7 +167,7 @@ router.post("/intel-feed/fetch", async (req, res) => {
   };
 
   try {
-    let items: InsertIntelFeedItem[] = [];
+    let items: Omit<InsertIntelFeedItem, "id">[] = [];
     const errors: string[] = [];
 
     if (scope === "federal") {
@@ -195,7 +201,7 @@ router.post("/intel-feed/fetch", async (req, res) => {
           ? item.publishedDate : null;
 
         await db.insert(intelFeedItemsTable).values({
-          id, ...item, publishedDate, feedback: keepFeedback as any,
+          ...item, id, publishedDate, feedback: keepFeedback as any,
           fetchedAt: now, createdAt: now, updatedAt: now,
         }).onConflictDoUpdate({
           target: intelFeedItemsTable.id,
@@ -234,7 +240,7 @@ router.post("/intel-feed/fetch", async (req, res) => {
 // ── Federal Register ──────────────────────────────────────────────────────────
 
 async function fetchFederalRegister(dateRange: number): Promise<[InsertIntelFeedItem[], string[]]> {
-  const items: InsertIntelFeedItem[] = [];
+  const items: Omit<InsertIntelFeedItem, "id">[] = [];
   const errors: string[] = [];
   try {
     const from = new Date();
@@ -298,7 +304,7 @@ function mapFRTypeToSignal(type: string): IntelSignalType {
 // ── USA Spending — expiring contracts ─────────────────────────────────────────
 
 async function fetchUSASpendingExpiring(): Promise<[InsertIntelFeedItem[], string[]]> {
-  const items: InsertIntelFeedItem[] = [];
+  const items: Omit<InsertIntelFeedItem, "id">[] = [];
   const errors: string[] = [];
   try {
     const today = new Date();
@@ -371,7 +377,7 @@ async function fetchUSASpendingExpiring(): Promise<[InsertIntelFeedItem[], strin
 // ── SAM.gov Contract Awards (re-compete intel) ────────────────────────────────
 
 async function fetchSAMAwards(dateRange: number): Promise<[InsertIntelFeedItem[], string[]]> {
-  const items: InsertIntelFeedItem[] = [];
+  const items: Omit<InsertIntelFeedItem, "id">[] = [];
   const errors: string[] = [];
   const apiKey = process.env.SAM_GOV_API_KEY;
   if (!apiKey) return [items, ["SAM_GOV_API_KEY not configured"]];
@@ -454,7 +460,7 @@ async function fetchSAMAwards(dateRange: number): Promise<[InsertIntelFeedItem[]
 // ── Federal Serper (regulations, enforcement, trends) ─────────────────────────
 
 async function fetchFederalSerper(dateRange: number): Promise<[InsertIntelFeedItem[], string[]]> {
-  const items: InsertIntelFeedItem[] = [];
+  const items: Omit<InsertIntelFeedItem, "id">[] = [];
   const errors: string[] = [];
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) return [items, ["SERPER_API_KEY not configured"]];
@@ -554,7 +560,7 @@ const STATE_PROCUREMENT_URLS: Record<string, string> = {
 };
 
 async function fetchStateIntel(stateCode: string, dateRange: number): Promise<[InsertIntelFeedItem[], string[]]> {
-  const items: InsertIntelFeedItem[] = [];
+  const items: Omit<InsertIntelFeedItem, "id">[] = [];
   const errors: string[] = [];
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) return [items, ["SERPER_API_KEY not configured"]];

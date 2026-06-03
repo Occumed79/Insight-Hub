@@ -15,11 +15,14 @@ interface SamOpportunity {
   baseType?: string;
   active?: string;
   naicsCode?: string;
+  classificationCode?: string;
   postedDate?: string;
   responseDeadLine?: string;
+  archiveDate?: string;
   typeOfSetAside?: string;
   typeOfSetAsideDescription?: string;
   placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };
+  officeAddress?: { city?: string; state?: string };
   description?: string;
   uiLink?: string;
   award?: { amount?: number | string; awardee?: { name?: string } };

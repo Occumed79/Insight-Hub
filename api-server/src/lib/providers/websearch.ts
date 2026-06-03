@@ -63,7 +63,7 @@ export class WebsearchProvider implements DataSourceProvider {
           records.push({
             id: `websearch-${Buffer.from(item.url).toString("base64").slice(0, 16)}`,
             title: item.title,
-            description: item.snippet ?? item.description ?? "",
+            description: item.snippet ?? (item as any).description ?? "",
             url: item.url,
             source: "websearch" as const,
             providerName: "WebSearch API",
