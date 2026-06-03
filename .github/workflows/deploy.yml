@@ -1,6 +1,7 @@
 name: Deploy to Render
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,7 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render Deploy
-        run: |
-          curl -X POST "$RENDER_DEPLOY_HOOK_URL"
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL is not set. Skipping Render deploy hook."
+            exit 0
+          fi
+          if ! echo "$RENDER_DEPLOY_HOOK_URL" | grep -Eq '^https://api\.render\.com/deploy/'; then
+            echo "RENDER_DEPLOY_HOOK_URL is not a valid Render deploy hook URL. Skipping Render deploy hook."
+            exit 0
+          fi
+          curl --fail --silent --show-error -X POST "$RENDER_DEPLOY_HOOK_URL"
