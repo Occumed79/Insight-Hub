@@ -393,18 +393,40 @@ export default function OpportunitiesDashboard() {
       <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold whitespace-nowrap">Active Sources:</span>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setSourceFilter("all"); setPage(1); }}
+            className={"flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap border transition-all " + (sourceFilter === "all" ? "bg-primary/20 border-primary/40 text-primary font-bold" : "bg-white/5 border-white/10 text-white/60 hover:text-white/90 hover:bg-white/10")}
+          >
+            All
+          </button>
           {providersData?.providers.map((p) => {
             const isStub = p.name === "tango" || p.name === "bidnet";
             const dotClass = isStub ? "bg-amber-500/40 border border-amber-500/40" : p.status?.configured ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" : "bg-white/20";
+            const providerKey = p.name === "sam_gov" ? "samGov" : p.name;
+            const isSelected = sourceFilter === providerKey;
             return (
-              <div key={p.name} className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap" title={isStub ? "Pending direct API wiring" : p.status?.configured ? "Configured" : "Not configured"}>
-                <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-                <span className={isStub ? "text-white/40" : "text-white/80"}>{p.displayName}</span>
+              <button
+                key={p.name}
+                disabled={isStub}
+                onClick={() => { if (!isStub) { setSourceFilter(isSelected ? "all" : providerKey); setPage(1); } }}
+                className={"flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap border transition-all " + (isStub ? "opacity-40 cursor-not-allowed bg-white/5 border-white/10" : isSelected ? "bg-primary/20 border-primary/40 text-primary font-bold cursor-pointer" : "bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer")}
+                title={isStub ? "Pending direct API wiring" : p.status?.configured ? "Click to filter by " + p.displayName : "Not configured"}
+              >
+                <div className={"w-1.5 h-1.5 rounded-full " + dotClass} />
+                <span className={isStub ? "text-white/40" : isSelected ? "" : "text-white/80"}>{p.displayName}</span>
                 {isStub && <Clock className="w-2.5 h-2.5 text-amber-500/50" />}
-              </div>
+              </button>
             );
           })}
         </div>
+        {sourceFilter !== "all" && (
+          <button
+            onClick={() => { setSourceFilter("all"); setPage(1); }}
+            className="ml-auto text-[10px] text-muted-foreground hover:text-white transition-colors whitespace-nowrap flex items-center gap-1 shrink-0"
+          >
+            ✕ Clear filter
+          </button>
+        )}
       </div>
 
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center">
@@ -431,20 +453,7 @@ export default function OpportunitiesDashboard() {
               <SelectItem value="Sources Sought">Sources Sought</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-[150px] bg-background/50 border-white/10 text-white"><SelectValue placeholder="All Sources" /></SelectTrigger>
-            <SelectContent className="bg-popover border-white/10">
-              <SelectItem value="all">All Sources</SelectItem>
-              <SelectItem value="statePortals">State Portals</SelectItem>
-              <SelectItem value="samGov">SAM.gov</SelectItem>
-              <SelectItem value="serper">Serper</SelectItem>
-              <SelectItem value="tavily">Tavily</SelectItem>
-              <SelectItem value="gemini">Gemini</SelectItem>
-              <SelectItem value="exa">Exa</SelectItem>
-              <SelectItem value="firecrawl">Firecrawl</SelectItem>
-              <SelectItem value="websearch">WebSearch</SelectItem>
-            </SelectContent>
-          </Select>
+
         </div>
       </div>
 
