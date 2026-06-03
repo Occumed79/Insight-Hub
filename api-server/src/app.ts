@@ -8,6 +8,12 @@ import { logger } from "./lib/logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+(globalThis as any).safeDate = (value: string | number | Date | null | undefined): Date | null => {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 const app: Express = express();
 
 app.use(
