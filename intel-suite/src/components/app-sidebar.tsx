@@ -40,12 +40,11 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
       <SidebarHeader className="px-3 pt-5 pb-3">
-        <Link href="/" className="block transition-opacity hover:opacity-85">
+        <Link href="/" className="flex flex-col items-center transition-opacity hover:opacity-85">
           <img
             src={occuMedLogo}
             alt="Occu-Med"
-            className="w-full h-auto object-contain drop-shadow-[0_0_18px_rgba(255,255,255,0.35)]"
-            style={{ minHeight: "80px", maxHeight: "140px" }}
+            className="h-14 w-auto max-w-full object-contain drop-shadow-[0_0_14px_rgba(255,255,255,0.25)]"
           />
           <span className="block text-[9px] text-muted-foreground uppercase tracking-widest text-center mt-2">Insight Hub</span>
         </Link>

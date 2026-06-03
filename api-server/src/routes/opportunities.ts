@@ -6,6 +6,7 @@ import { unifiedFetch } from "../lib/search/unifiedSearch";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
+import { classifyResult } from "../lib/search/relevance";
 import multer from "multer";
 
 const router = Router();
@@ -167,6 +168,58 @@ async function archiveExpiredOpportunities(): Promise<void> {
   }
 }
 
+function parseTags(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the transparent relevance view shown in the UI: a 0-100 score, the
+ * human-readable reasons it matched, the detected/`unknown` date, and quality
+ * warnings (stale / low-confidence). Uses stored values when present (web rows
+ * scored at write time) and falls back to live classification for older rows.
+ */
+function buildRelevanceView(opp: any) {
+  const cls = classifyResult({
+    title: opp.title,
+    snippet: opp.description,
+    url: opp.samUrl,
+    date: opp.postedDate,
+    allowHistorical: true,
+  });
+
+  const tags = parseTags(opp.tags);
+  const storedScore = opp.relevanceScore != null ? parseFloat(opp.relevanceScore) : NaN;
+  const score = Number.isFinite(storedScore) ? Math.round(storedScore) : cls.score;
+
+  const storedReasons = typeof opp.notes === "string"
+    ? opp.notes.split(/;|·/).map((s: string) => s.trim()).filter(Boolean)
+    : [];
+  const reasons = (storedReasons.length ? storedReasons : cls.reasons).slice(0, 4);
+
+  const dateUnknown = tags.includes("date-unknown");
+  const stale = tags.includes("stale") || cls.stale;
+  const confidence: "high" | "medium" | "low" =
+    opp.sourceConfidence === "high" || opp.sourceConfidence === "medium" || opp.sourceConfidence === "low"
+      ? opp.sourceConfidence
+      : score >= 75 ? "high" : score >= 50 ? "medium" : "low";
+
+  return {
+    score,
+    reasons,
+    category: cls.category,
+    dateUnknown,
+    stale,
+    confidence,
+    postedDate: dateUnknown ? null : opp.postedDate,
+  };
+}
+
 function mapOpportunity(opp: any) {
   return {
     ...opp,
@@ -175,6 +228,8 @@ function mapOpportunity(opp: any) {
     ceilingValue: opp.ceilingValue ? parseFloat(opp.ceilingValue) : undefined,
     floorValue: opp.floorValue ? parseFloat(opp.floorValue) : undefined,
     relevanceScore: opp.relevanceScore ? parseFloat(opp.relevanceScore) : undefined,
+    tags: parseTags(opp.tags),
+    relevance: buildRelevanceView(opp),
   };
 }
 
@@ -182,11 +237,19 @@ router.get("/opportunities", async (req, res) => {
   try {
     await archiveExpiredOpportunities();
 
-    const { search, status, type, naicsCode, agency, source, page = "1", limit = "50" } = req.query as Record<string, string>;
+    const { search, status, type, naicsCode, agency, source, dateRange, freshOnly, page = "1", limit = "50" } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(200, parseInt(limit) || 50);
     const offset = (pageNum - 1) * limitNum;
+
+    // Date window: how many days back to consider "current". Reaches the DB-level
+    // postedDate filter so the frontend date control actually constrains results.
+    const days = dateRange != null ? parseInt(dateRange) : NaN;
+    const dateCutoff = Number.isFinite(days) && days > 0
+      ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      : null;
+    const onlyFresh = freshOnly === "true" || freshOnly === "1";
 
     const conditions: any[] = [];
 
@@ -222,6 +285,10 @@ router.get("/opportunities", async (req, res) => {
       conditions.push(ilike(opportunitiesTable.providerName, source));
     }
 
+    if (dateCutoff) {
+      conditions.push(sql`${opportunitiesTable.postedDate} >= ${dateCutoff}`);
+    }
+
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     // Pull a larger window, quality-filter it in the API, then paginate the clean set.
@@ -233,11 +300,25 @@ router.get("/opportunities", async (req, res) => {
       .limit(1000)
       .orderBy(sql`${opportunitiesTable.postedDate} desc`);
 
-    const filteredRows = rawRows.filter(shouldShowOpportunity);
-    const data = filteredRows.slice(offset, offset + limitNum);
-    const mapped = data.map(mapOpportunity);
+    let mappedAll = rawRows.filter(shouldShowOpportunity).map(mapOpportunity);
 
-    return res.json({ data: mapped, total: filteredRows.length, page: pageNum, limit: limitNum });
+    // Drop results flagged stale / date-unknown when the caller wants only fresh.
+    if (onlyFresh) {
+      mappedAll = mappedAll.filter((o) => !o.relevance.stale && !o.relevance.dateUnknown);
+    }
+
+    // Rank by transparent relevance score, then by recency. Records with an
+    // unknown date never sort above clearly-dated ones at the same score.
+    mappedAll.sort((a, b) => {
+      if (b.relevance.score !== a.relevance.score) return b.relevance.score - a.relevance.score;
+      const at = a.relevance.dateUnknown ? 0 : new Date(a.postedDate).getTime();
+      const bt = b.relevance.dateUnknown ? 0 : new Date(b.postedDate).getTime();
+      return bt - at;
+    });
+
+    const data = mappedAll.slice(offset, offset + limitNum);
+
+    return res.json({ data, total: mappedAll.length, page: pageNum, limit: limitNum });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to fetch opportunities" });

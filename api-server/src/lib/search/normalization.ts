@@ -21,6 +21,7 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
   const relevanceScore = rawData.relevanceScore as number | undefined;
   const relevanceReason = rawData.relevanceReason as string | undefined;
   const isFallback = rawData.fallback === true;
+  const tagList = Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [];
 
   // Auto-archive if the deadline has already passed
   const deadline = record.responseDeadline ?? null;
@@ -61,9 +62,9 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
       : relevanceScore != null
         ? relevanceScore >= 75 ? "high" : relevanceScore >= 50 ? "medium" : "low"
         : null,
-    tags: null,
+    tags: tagList.length > 0 ? JSON.stringify(tagList) : null,
     notes: isFallback
-      ? "Web discovery — AI analysis pending (rate limited). Review source URL for details."
+      ? `Web discovery — AI analysis pending (rate limited). ${relevanceReason ?? ""}`.trim()
       : relevanceReason ?? null,
   };
 }
