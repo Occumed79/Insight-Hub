@@ -435,13 +435,13 @@ export default function OpportunitiesDashboard() {
             <SelectTrigger className="w-[150px] bg-background/50 border-white/10 text-white"><SelectValue placeholder="All Sources" /></SelectTrigger>
             <SelectContent className="bg-popover border-white/10">
               <SelectItem value="all">All Sources</SelectItem>
-              <SelectItem value="sam_gov">SAM.gov</SelectItem>
               <SelectItem value="statePortals">State Portals</SelectItem>
+              <SelectItem value="samGov">SAM.gov</SelectItem>
               <SelectItem value="serper">Serper</SelectItem>
               <SelectItem value="tavily">Tavily</SelectItem>
+              <SelectItem value="gemini">Gemini</SelectItem>
               <SelectItem value="exa">Exa</SelectItem>
-              <SelectItem value="you">You.com</SelectItem>
-              <SelectItem value="langsearch">Langsearch</SelectItem>
+              <SelectItem value="firecrawl">Firecrawl</SelectItem>
               <SelectItem value="websearch">WebSearch</SelectItem>
             </SelectContent>
           </Select>
