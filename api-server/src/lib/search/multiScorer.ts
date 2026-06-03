@@ -33,7 +33,7 @@ export interface MultiScorerResult {
   winnerScorer: string;     // which scorer gave the highest score
 }
 
-const ORG_CONTEXT = `${OCCUMED_PROFILE.name}: ${OCCUMED_PROFILE.services.slice(0, 6).join(", ")}. Serves ${OCCUMED_PROFILE.clientTypes.slice(0, 4).join(", ")}.`;
+const ORG_CONTEXT = `${OCCUMED_PROFILE.company}: ${OCCUMED_PROFILE.services.slice(0, 6).join(", ")}. Serves ${OCCUMED_PROFILE.clientTypes.slice(0, 4).join(", ")}.`;
 
 const MIN_INDIVIDUAL_SCORE = 55;   // a scorer's score must be >= this to "vote yes"
 const FINAL_PASS_SCORE = 50;        // final averaged score must be >= this
