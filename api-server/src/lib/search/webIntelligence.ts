@@ -8,7 +8,7 @@ import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
 import { jinaProvider } from "../providers/jina";
-import { extractWithMultipleAIs } from "./multiScorer";
+import { extractOpportunitiesBatch } from "./aiExtract";
 import {
   classifyResult,
   isBlockedDomain as isBlockedDomainShared,
@@ -26,9 +26,15 @@ const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 const NOW = new Date();
 
-const GEMINI_BATCH_SIZE = 3;
-const GEMINI_BATCH_DELAY_MS = 500;
 const FIRECRAWL_MAX_URLS = 10;
+
+// Result-quantity controls (PR B). Serper/Exa bill per call (not per result for
+// Serper), so raising `num` is the cheapest way to deepen each query; page 2 is
+// pulled only for the highest-value keyword-driven Serper queries.
+const SERPER_RESULTS_PER_QUERY = 30;
+const SERPER_DEEP_PAGES = 2;
+const EXA_RESULTS_PER_QUERY = 20;
+const TAVILY_RESULTS_PER_QUERY = 10;
 
 type SearchCandidateProvider = "serper" | "tavily" | "exa" | "you" | "langsearch" | "websearch";
 
@@ -43,17 +49,33 @@ const OCCUMED_WEB_QUERIES: { query: string; type?: "search" | "news"; tbs?: stri
   { query: `NAICS 621111 OR NAICS 621999 "occupational health" solicitation RFP ${CURRENT_YEAR} active`, type: "search" },
   { query: `"solicitation" "occupational medicine" OR "occupational health" "due date" ${CURRENT_YEAR} OR ${NEXT_YEAR}`, type: "search" },
   { query: `"invitation to bid" OR "sources sought" "occupational health" OR "employee health" government ${CURRENT_YEAR}`, type: "search" },
+  // Defense primes / staffing partners that subcontract occupational-health & deployment-medical work.
+  { query: `("LOGCAP" OR "AFCAP" OR "V2X" OR "Amentum" OR "KBR" OR "Fluor" OR "PAE" OR "Acuity" OR "QTC" OR "Leidos") ("occupational health" OR "medical screening" OR "deployment medical") subcontract OR teaming ${CURRENT_YEAR}`, type: "search" },
+  { query: `("WorkCare" OR "Concentra" OR "International SOS") ("occupational health" OR "medical examination" OR "provider network") subcontract OR partner ${CURRENT_YEAR}`, type: "search" },
+  { query: `"deployment medical" OR "medical clearance" OR "CONUS replacement center" OR "OCONUS" contractor screening solicitation ${CURRENT_YEAR}`, type: "search" },
+  // Agencies that buy occupational-health services directly.
+  { query: `("Department of Veterans Affairs" OR "Defense Logistics Agency" OR "Indian Health Service" OR "Department of Energy") ("occupational health" OR "medical examination" OR "drug testing") RFP OR solicitation ${CURRENT_YEAR}`, type: "search" },
+  // Service-line synonyms that keyword search otherwise misses.
+  { query: `"sources sought" OR "RFI" ("medical surveillance" OR "audiogram" OR "respirator clearance" OR "pulmonary function" OR "audiometric") government ${CURRENT_YEAR}`, type: "search" },
+  { query: `site:sam.gov ("occupational health" OR "medical examination" OR "drug testing" OR "pre-employment physical") solicitation ${CURRENT_YEAR}`, type: "search" },
+  { query: `("provider network" OR "clinic network") ("occupational health" OR "employee health") RFP OR procurement ${CURRENT_YEAR}`, type: "search" },
+  { query: `("pre-employment physical" OR "fit for duty" OR "DOT physical") contract solicitation government ${CURRENT_YEAR} -awarded`, type: "news", tbs: "qdr:m" },
 ];
 
 const EXA_QUERIES = [
   `active government RFP for occupational health services ${CURRENT_YEAR}`,
   `open solicitation drug testing pre-employment physical services government ${CURRENT_YEAR}`,
   `government contract opportunity occupational medicine DOT physical ${CURRENT_YEAR}`,
+  `LOGCAP V2X Amentum KBR subcontractor occupational health deployment medical screening ${CURRENT_YEAR}`,
+  `defense contractor deployment medical clearance pre-employment physical RFP ${CURRENT_YEAR}`,
+  `provider network clinic occupational health employee health government procurement ${CURRENT_YEAR}`,
 ];
 
 const TAVILY_QUERIES = [
   `occupational health services government RFP solicitation open ${CURRENT_YEAR}`,
   `pre-employment drug testing government contract opportunity active ${CURRENT_YEAR}`,
+  `defense contractor deployment medical screening occupational health subcontract opportunity ${CURRENT_YEAR}`,
+  `provider network occupational health pre-employment physical government RFP ${CURRENT_YEAR}`,
 ];
 
 // Domain blocklist, procurement/service signals, and the RFP pre-filter now live
@@ -79,6 +101,10 @@ export interface WebIntelligenceResult {
     rejected: number;
     expiredRejected: number;
     geminiRateLimited: boolean;
+    /** Candidates served from the AI extraction cache (no API call spent). */
+    aiCacheHits: number;
+    /** AI providers that produced at least one batched extraction this run. */
+    aiScorers: string[];
   };
   errors: string[];
 }
@@ -167,32 +193,6 @@ function isExpiredDeadline(deadline: Date | undefined | null): boolean {
   return deadline < oneDayAgo;
 }
 
-async function runInBatches<T, R>(
-  items: T[],
-  batchSize: number,
-  delayMs: number,
-  fn: (item: T) => Promise<R | null>,
-  onQuotaExceeded?: () => void
-): Promise<(R | null)[]> {
-  const results: (R | null)[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map(async (item) => {
-        try {
-          return await fn(item);
-        } catch (err: any) {
-          if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED") && onQuotaExceeded) onQuotaExceeded();
-          throw err;
-        }
-      })
-    );
-    results.push(...batchResults);
-    if (i + batchSize < items.length) await new Promise((res) => setTimeout(res, delayMs));
-  }
-  return results;
-}
-
 function addCandidate(candidates: Candidate[], seen: Set<string>, candidate: Candidate) {
   if (!candidate.url || seen.has(candidate.url) || isBlockedDomainShared(candidate.url)) return;
   seen.add(candidate.url);
@@ -231,6 +231,8 @@ export async function webIntelligenceFetch(options: {
     rejected: 0,
     expiredRejected: 0,
     geminiRateLimited: false,
+    aiCacheHits: 0,
+    aiScorers: [] as string[],
   };
 
   const useSerper = options.useSerper === true;
@@ -243,7 +245,8 @@ export async function webIntelligenceFetch(options: {
   const useLangsearch = options.useLangsearch === true;
   const useWebsearch = options.useWebsearch === true;
 
-  let serperQueries = [...OCCUMED_WEB_QUERIES];
+  type SerperQuery = { query: string; type?: "search" | "news"; tbs?: string; deep?: boolean };
+  let serperQueries: SerperQuery[] = [...OCCUMED_WEB_QUERIES];
   let exaQueries = [...EXA_QUERIES];
   let tavilyQueries = [...TAVILY_QUERIES];
 
@@ -251,7 +254,8 @@ export async function webIntelligenceFetch(options: {
     const kw = options.keywords.trim();
     const kwQ = `(${kw}) ("request for proposal" OR solicitation OR "bid opportunity" OR RFQ OR RFP) ("occupational health" OR "drug testing" OR "medical examination" OR "employee health") government ${CURRENT_YEAR} -awarded -"contract award"`;
     serperQueries = [
-      { query: kwQ, type: "search" as const },
+      // Keyword-driven queries get extra depth (page 2) since they're most on-target.
+      { query: kwQ, type: "search" as const, deep: true },
       { query: kwQ, type: "news" as const, tbs: "qdr:m" },
       ...serperQueries,
     ];
@@ -289,15 +293,25 @@ export async function webIntelligenceFetch(options: {
 
   const [serperRaw, exaRaw, tavilyRaw, statePortalRaw, youRaw, langsearchRaw, websearchRaw] = await Promise.all([
     useSerper
-      ? Promise.allSettled(serperQueries.map((q) => serperProvider.search(q.query, 10, { type: q.type, tbs: q.tbs }).catch(() => [] as SerperSearchResult[])))
+      ? Promise.allSettled(
+          serperQueries.flatMap((q) => {
+            // Page 1 for every query; additional pages only for `deep` keyword queries.
+            const pages = q.deep ? SERPER_DEEP_PAGES : 1;
+            return Array.from({ length: pages }, (_, i) =>
+              serperProvider
+                .search(q.query, SERPER_RESULTS_PER_QUERY, { type: q.type, tbs: q.tbs, page: i + 1 })
+                .catch(() => [] as SerperSearchResult[])
+            );
+          })
+        )
           .then((results) => results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])))
           .catch((err: any) => { errors.push(`Serper: ${err.message}`); return []; })
       : Promise.resolve([]),
     useExa
-      ? exaProvider.isConfigured().then((configured) => configured ? exaProvider.searchMultiple(exaQueries, 10).catch((err: any) => { errors.push(`Exa: ${err.message}`); return []; }) : [])
+      ? exaProvider.isConfigured().then((configured) => configured ? exaProvider.searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY).catch((err: any) => { errors.push(`Exa: ${err.message}`); return []; }) : [])
       : Promise.resolve([]),
     useTavily
-      ? tavilyProvider.researchMultiple(tavilyQueries, 5).catch((err: any) => { errors.push(`Tavily: ${err.message}`); return []; })
+      ? tavilyProvider.researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY).catch((err: any) => { errors.push(`Tavily: ${err.message}`); return []; })
       : Promise.resolve([]),
     useStatePortals
       ? statePortalsProvider.search({ keywords: options.keywords }).catch((err: any) => { errors.push(`State Portals: ${err.message}`); return []; })
@@ -390,126 +404,113 @@ export async function webIntelligenceFetch(options: {
   if (stats.geminiRateLimited) errors.push("Gemini rate limited — falling back to other available scorers.");
 
   const opportunities: NormalizedOpportunity[] = [];
-  let geminiQuotaHit = false;
 
   try {
-    const extractionResults = await runInBatches(
-      enrichedCandidates,
-      GEMINI_BATCH_SIZE,
-      GEMINI_BATCH_DELAY_MS,
-      async (candidate) => {
-        const extraction = await extractWithMultipleAIs(candidate.title, candidate.url, candidate.content);
+    // Batched AI extraction (round-robin across Gemini → Groq → OpenRouter →
+    // Minimax, memoized by URL) instead of one 3-provider call per candidate.
+    const { extractions, rateLimited, usedScorers, cacheHits } = await extractOpportunitiesBatch(
+      enrichedCandidates.map((c) => ({ title: c.title, url: c.url, content: c.content }))
+    );
+    if (rateLimited) stats.geminiRateLimited = true;
+    stats.aiCacheHits = cacheHits;
+    stats.aiScorers = usedScorers;
 
-        // Branch A: AI explicitly judged this NOT an opportunity → respect it.
-        if (extraction && !extraction.isOpportunity) {
-          stats.rejected++;
-          return null;
-        }
+    enrichedCandidates.forEach((candidate, idx) => {
+      const extraction = extractions[idx];
 
-        // Branch B: AI confirmed an opportunity → use its structured extraction.
-        if (extraction && extraction.isOpportunity) {
-          const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
-          const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
-          if (isExpiredDeadline(validDeadline)) {
-            stats.expiredRejected++;
-            stats.rejected++;
-            return null;
-          }
-          if ((extraction.relevanceScore ?? 0) < 45) {
-            stats.rejected++;
-            return null;
-          }
+      // Branch A: AI explicitly judged this NOT an opportunity → respect it.
+      if (extraction && !extraction.isOpportunity) {
+        stats.rejected++;
+        return;
+      }
 
-          const cls = classifyResult({
-            title: extraction.title ?? candidate.title,
-            snippet: candidate.content,
-            description: extraction.description,
-            url: candidate.url,
-            date: candidate.dateRaw,
-            deadlineInFuture: !!validDeadline,
-            keywords: options.keywords,
-          });
-          // Safety net: even if an AI accepted it, drop obvious job-board / off-topic junk.
-          if (cls.rejected) {
-            stats.rejected++;
-            return null;
-          }
-
-          const opp = buildWebOpportunity(candidate, {
-            title: extraction.title ?? candidate.title,
-            agency: extraction.agency ?? cls.category ?? "Unknown Organization",
-            description: extraction.description,
-            deadline: validDeadline,
-            location: extraction.location ?? undefined,
-            estimatedValue: extraction.estimatedValue ?? undefined,
-            relevanceScore: extraction.relevanceScore ?? cls.score,
-            relevanceReason: extraction.relevanceReason ?? cls.reasons.join("; "),
-            cls,
-            fallback: false,
-            extra: {
-              winnerScorer: (extraction as { winnerScorer?: string }).winnerScorer,
-              scorerVotes: (extraction as { scorerVotes?: unknown }).scorerVotes,
-            },
-          });
-          return { opp, heuristic: false };
-        }
-
-        // Branch C: AI unavailable (null) → deterministic heuristic fallback so we
-        // don't silently drop everything when keys are missing / rate-limited.
-        const cls = classifyResult({
-          title: candidate.title,
-          snippet: candidate.content,
-          url: candidate.url,
-          date: candidate.dateRaw,
-          keywords: options.keywords,
-        });
-        if (cls.rejected || cls.score < 50) {
-          stats.rejected++;
-          return null;
-        }
-        const meta = extractMetadataFromText(candidate.content, candidate.title);
-        if (isExpiredDeadline(meta.deadline)) {
+      // Branch B: AI confirmed an opportunity → use its structured extraction.
+      if (extraction && extraction.isOpportunity) {
+        const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
+        const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
+        if (isExpiredDeadline(validDeadline)) {
           stats.expiredRejected++;
           stats.rejected++;
-          return null;
+          return;
         }
-        const opp = buildWebOpportunity(candidate, {
-          title: candidate.title,
-          agency: meta.agencyHint ?? cls.category ?? "Unknown Organization",
-          description: candidate.content.slice(0, 600) || undefined,
-          deadline: meta.deadline,
-          location: undefined,
-          estimatedValue: meta.estimatedValue,
-          relevanceScore: cls.score,
-          relevanceReason: cls.reasons.join("; "),
-          cls,
-          fallback: true,
+        if ((extraction.relevanceScore ?? 0) < 45) {
+          stats.rejected++;
+          return;
+        }
+
+        const cls = classifyResult({
+          title: extraction.title ?? candidate.title,
+          snippet: candidate.content,
+          description: extraction.description,
+          url: candidate.url,
+          date: candidate.dateRaw,
+          deadlineInFuture: !!validDeadline,
+          keywords: options.keywords,
         });
-        return { opp, heuristic: true };
-      },
-      () => {
-        geminiQuotaHit = true;
-        stats.geminiRateLimited = true;
-      }
-    );
+        // Safety net: even if an AI accepted it, drop obvious job-board / off-topic junk.
+        if (cls.rejected) {
+          stats.rejected++;
+          return;
+        }
 
-    for (const r of extractionResults) {
-      if (r) {
-        opportunities.push(r.opp);
+        const opp = buildWebOpportunity(candidate, {
+          title: extraction.title ?? candidate.title,
+          agency: extraction.agency ?? cls.category ?? "Unknown Organization",
+          description: extraction.description,
+          deadline: validDeadline,
+          location: extraction.location ?? undefined,
+          estimatedValue: extraction.estimatedValue ?? undefined,
+          relevanceScore: extraction.relevanceScore ?? cls.score,
+          relevanceReason: extraction.relevanceReason ?? cls.reasons.join("; "),
+          cls,
+          fallback: false,
+          extra: {
+            winnerScorer: extraction.winnerScorer,
+          },
+        });
+        opportunities.push(opp);
         stats.extracted++;
-        if (r.heuristic) stats.heuristicExtracted++;
+        return;
       }
-    }
-  } catch (err: any) {
-    if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
-      stats.geminiRateLimited = true;
-      errors.push("Gemini quota reached mid-run — remaining candidates discarded to avoid low-quality entries.");
-    } else {
-      errors.push(`Web intelligence error: ${err.message}`);
-    }
-  }
 
-  if (geminiQuotaHit) errors.push("Gemini quota hit — remaining unprocessed candidates discarded.");
+      // Branch C: AI unavailable (null) → deterministic heuristic fallback so we
+      // don't silently drop everything when keys are missing / rate-limited.
+      const cls = classifyResult({
+        title: candidate.title,
+        snippet: candidate.content,
+        url: candidate.url,
+        date: candidate.dateRaw,
+        keywords: options.keywords,
+      });
+      if (cls.rejected || cls.score < 50) {
+        stats.rejected++;
+        return;
+      }
+      const meta = extractMetadataFromText(candidate.content, candidate.title);
+      if (isExpiredDeadline(meta.deadline)) {
+        stats.expiredRejected++;
+        stats.rejected++;
+        return;
+      }
+      const opp = buildWebOpportunity(candidate, {
+        title: candidate.title,
+        agency: meta.agencyHint ?? cls.category ?? "Unknown Organization",
+        description: candidate.content.slice(0, 600) || undefined,
+        deadline: meta.deadline,
+        location: undefined,
+        estimatedValue: meta.estimatedValue,
+        relevanceScore: cls.score,
+        relevanceReason: cls.reasons.join("; "),
+        cls,
+        fallback: true,
+      });
+      opportunities.push(opp);
+      stats.extracted++;
+      stats.heuristicExtracted++;
+    });
+  } catch (err: any) {
+    errors.push(`Web intelligence error: ${err.message}`);
+  }
 
   return { opportunities: [...statePortalOpportunities, ...opportunities], stats, errors };
 }

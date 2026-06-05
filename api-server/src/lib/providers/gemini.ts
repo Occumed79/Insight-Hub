@@ -117,6 +117,17 @@ export class GeminiProvider implements DataSourceProvider {
   }
 
   /**
+   * Uniform text-completion entrypoint (mirrors Groq/OpenRouter/Minimax) so Gemini
+   * can participate in the shared round-robin AI runner. Throws
+   * "GEMINI_QUOTA_EXCEEDED: ..." on 429 so callers can fail over to another provider.
+   */
+  async complete(prompt: string, maxTokens = 512): Promise<string> {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("Gemini API key not configured.");
+    return callGemini(apiKey, prompt, maxTokens);
+  }
+
+  /**
    * Use Gemini to generate targeted search queries for Occu-Med opportunity discovery.
    * Falls back to OCCUMED_DEFAULT_QUERIES if Gemini is unavailable.
    */
