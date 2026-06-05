@@ -48,7 +48,7 @@ export class SerperProvider implements DataSourceProvider {
   async search(
     query: string,
     num: number = 10,
-    options: { type?: "search" | "news"; tbs?: string } = {}
+    options: { type?: "search" | "news"; tbs?: string; page?: number } = {}
   ): Promise<SerperSearchResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Serper API key not configured.");
@@ -57,6 +57,8 @@ export class SerperProvider implements DataSourceProvider {
 
     const body: Record<string, unknown> = { q: query, num };
     if (options.tbs) body["tbs"] = options.tbs;
+    // Serper paginates via a 1-based `page` field; omit for page 1.
+    if (options.page && options.page > 1) body["page"] = options.page;
 
     const response = await fetch(`${SERPER_BASE}${endpoint}`, {
       method: "POST",
