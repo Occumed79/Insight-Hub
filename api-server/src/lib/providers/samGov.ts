@@ -45,45 +45,44 @@ export class SamGovProvider implements DataSourceProvider {
     return !!key;
   }
 
-  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+  // Occu-Med relevant NAICS codes:
+  // 621111 - Offices of Physicians (except Mental Health)
+  // 621999 - All Other Miscellaneous Ambulatory Health Care Services
+  // 621512 - Diagnostic Imaging Centers
+  // 621310 - Offices of Chiropractors (DOT/physical exams)
+  // 561320 - Temporary Help Services (staffed health programs)
+  // 923120 - Administration of Public Health Programs
+  private static readonly OCCUMED_NAICS = ["621111", "621999", "621512", "621310", "561320", "923120"];
 
-    const baseUrl = await this.getBaseUrl();
-    const dateRange = options.dateRange ?? 30;
-    const today = new Date();
-    const fromDate = new Date(today);
-    fromDate.setDate(today.getDate() - dateRange);
+  // Occu-Med relevant PSC (Product Service Codes):
+  // Q201 - General health care services      Q301 - Laboratory testing
+  // Q501 - Medical (other)                    G004 - Medical/health social services
+  private static readonly OCCUMED_PSC = ["Q201", "Q301", "Q501"];
 
-    const fmt = (d: Date) =>
-      `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+  private static fmtDate(d: Date): string {
+    return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+  }
 
-    // Occu-Med relevant NAICS codes:
-    // 621111 - Offices of Physicians (except Mental Health)
-    // 621999 - All Other Miscellaneous Ambulatory Health Care Services
-    // 621512 - Diagnostic Imaging Centers
-    // 621310 - Offices of Chiropractors (DOT/physical exams)
-    // 561320 - Temporary Help Services (staffed health programs)
-    // 923120 - Administration of Public Health Programs
-    const OCCUMED_NAICS = ["621111", "621999", "621512", "621310", "561320", "923120"];
-
-    // Occu-Med default keywords to search when no custom keywords provided
-    const DEFAULT_KEYWORDS = "occupational health";
-
+  /**
+   * Run a single SAM.gov query with the given extra params (keywords, ncode, or
+   * ccode) and return the relevance-filtered normalized records. Throws on quota.
+   */
+  private async runQuery(
+    apiKey: string,
+    baseUrl: string,
+    extra: Record<string, string>,
+    fromDate: Date,
+    today: Date,
+    limit: number
+  ): Promise<NormalizedOpportunity[]> {
     const params = new URLSearchParams({
       api_key: apiKey,
-      postedFrom: fmt(fromDate),
-      postedTo: fmt(today),
-      limit: String(options.limit ?? 100),
-      offset: String(options.offset ?? 0),
+      postedFrom: SamGovProvider.fmtDate(fromDate),
+      postedTo: SamGovProvider.fmtDate(today),
+      limit: String(limit),
+      offset: "0",
+      ...extra,
     });
-
-    // Always search with Occu-Med relevant keywords for better signal
-    const searchKeywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
-    params.set("keywords", searchKeywords);
-
-    // Note: we do NOT filter by typeOfNotice here because SAM.gov returns "o,p,k,r" format
-    // differently across API versions. Post-fetch relevance filtering handles quality instead.
 
     const response = await fetch(`${baseUrl}?${params}`);
     if (!response.ok) {
@@ -99,7 +98,56 @@ export class SamGovProvider implements DataSourceProvider {
       throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
     }
 
-    const opps = json.opportunitiesData ?? [];
+    return (json.opportunitiesData ?? []).map((o) => this.normalize(o));
+  }
+
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+
+    const baseUrl = await this.getBaseUrl();
+    const dateRange = options.dateRange ?? 30;
+    const today = new Date();
+    const fromDate = new Date(today);
+    fromDate.setDate(today.getDate() - dateRange);
+    const limit = options.limit ?? 100;
+
+    // Occu-Med default keywords to search when no custom keywords provided
+    const DEFAULT_KEYWORDS = "occupational health";
+    const searchKeywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
+
+    // Note: we do NOT filter by typeOfNotice here because SAM.gov returns "o,p,k,r" format
+    // differently across API versions. Post-fetch relevance filtering handles quality instead.
+
+    // Primary keyword pull — throws on quota so the caller surfaces the message.
+    const normalized = await this.runQuery(apiKey, baseUrl, { keywords: searchKeywords }, fromDate, today, limit);
+
+    // NAICS/PSC-targeted pulls (PR B): structured codes surface solicitations that
+    // keyword search misses (and come with real dates/values). Bounded to keep
+    // daily quota in check; failures degrade gracefully into warnings.
+    const targetedErrors: string[] = [];
+    const seen = new Set(normalized.map((o) => o.externalId).filter(Boolean));
+    const targetedQueries: Record<string, string>[] = [
+      ...SamGovProvider.OCCUMED_NAICS.map((ncode) => ({ ncode })),
+      ...SamGovProvider.OCCUMED_PSC.map((ccode) => ({ ccode })),
+    ];
+    const targetedResults = await Promise.allSettled(
+      targetedQueries.map((extra) => this.runQuery(apiKey, baseUrl, extra, fromDate, today, limit))
+    );
+    for (const r of targetedResults) {
+      if (r.status === "fulfilled") {
+        for (const opp of r.value) {
+          if (opp.externalId && seen.has(opp.externalId)) continue;
+          if (opp.externalId) seen.add(opp.externalId);
+          normalized.push(opp);
+        }
+      } else {
+        const msg = r.reason?.message ?? String(r.reason);
+        if (!targetedErrors.includes(msg)) targetedErrors.push(msg);
+      }
+    }
+
+    const opps = normalized;
 
     // Broad Occu-Med relevance terms — intentionally loose here.
     // The write-time quality filter in unifiedSearch handles strict rejection.
@@ -128,24 +176,22 @@ export class SamGovProvider implements DataSourceProvider {
       "621111", "621999", "621512", "621310",
     ];
 
-    const normalized = opps.map((o) => this.normalize(o));
-
     // Loose pre-filter: pass anything that has at least one signal in title or NAICS.
     // The write-time filter in unifiedSearch applies the strict rejection logic.
-    const relevant = normalized.filter((opp) => {
+    const relevant = opps.filter((opp) => {
       const text = `${opp.title} ${opp.naicsCode ?? ""}`.toLowerCase();
       const desc = (opp.description ?? "").toLowerCase();
       return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term) || desc.includes(term));
     });
 
-    const noMatchWarning = relevant.length === 0 && normalized.length > 0
-      ? ["SAM.gov returned " + normalized.length + " records but none matched. The API may be returning unrelated results for this keyword — try 'occupational health' or 'drug testing'."]
+    const noMatchWarning = relevant.length === 0 && opps.length > 0
+      ? ["SAM.gov returned " + opps.length + " records but none matched. The API may be returning unrelated results for this keyword — try 'occupational health' or 'drug testing'."]
       : [];
 
     return {
       records: relevant,
-      total: json.totalRecords ?? opps.length,
-      errors: noMatchWarning,
+      total: opps.length,
+      errors: [...noMatchWarning, ...targetedErrors],
     };
   }
 
