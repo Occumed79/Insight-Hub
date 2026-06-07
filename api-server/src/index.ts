@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
+import { startScheduledIngestion } from "./lib/search/scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -28,4 +29,7 @@ app.listen(port, (err) => {
   runStartupMigrations().catch((err) => {
     logger.error({ err }, "Unexpected error in startup migrations");
   });
+
+  // Start background ingestion (opt-in via ENABLE_SCHEDULED_INGESTION=true)
+  startScheduledIngestion();
 });

@@ -105,7 +105,9 @@ export default function OpportunitiesDashboard() {
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
-  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "serper", "tavily", "statePortals"]);
+  // grantsGov + usaSpending are free (no key) and fully implemented — enable them by
+  // default so a stock fetch pulls federal grants and expiring/re-compete contracts too.
+  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "statePortals"]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
 
