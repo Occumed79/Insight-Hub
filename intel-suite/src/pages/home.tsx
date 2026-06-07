@@ -5,7 +5,7 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
-import occuMedLogoSrc from "@/assets/occu-med-logo.png";
+import occuMedLogoSrc from "@/assets/occu-med-logo-mark.png";
 const LOGO_URL = occuMedLogoSrc;
 
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
@@ -76,36 +76,36 @@ export default function Home() {
       <style>{`
         @keyframes home-orb1 {
           0%   { transform: translate(0px, 0px) scale(1); }
-          25%  { transform: translate(70px, 90px) scale(1.13); }
-          50%  { transform: translate(20px, 160px) scale(0.90); }
-          75%  { transform: translate(-50px, 70px) scale(1.07); }
+          25%  { transform: translate(160px, 170px) scale(1.16); }
+          50%  { transform: translate(60px, 300px) scale(0.88); }
+          75%  { transform: translate(-120px, 150px) scale(1.10); }
           100% { transform: translate(0px, 0px) scale(1); }
         }
         @keyframes home-orb2 {
           0%   { transform: translate(0px, 0px) scale(1); }
-          25%  { transform: translate(-90px, -70px) scale(1.18); }
-          50%  { transform: translate(-40px, -130px) scale(0.87); }
-          75%  { transform: translate(60px, -60px) scale(1.09); }
+          25%  { transform: translate(-200px, -150px) scale(1.20); }
+          50%  { transform: translate(-90px, -280px) scale(0.85); }
+          75%  { transform: translate(140px, -120px) scale(1.12); }
           100% { transform: translate(0px, 0px) scale(1); }
         }
         @keyframes home-orb3 {
           0%   { transform: translate(0px, 0px) scale(1); }
-          33%  { transform: translate(110px, -90px) scale(1.22); }
-          66%  { transform: translate(-70px, 70px) scale(0.84); }
+          33%  { transform: translate(240px, -180px) scale(1.25); }
+          66%  { transform: translate(-160px, 150px) scale(0.82); }
           100% { transform: translate(0px, 0px) scale(1); }
         }
         @keyframes home-pulse {
-          0%, 100% { opacity: 0.55; transform: scale(1); }
-          50%       { opacity: 0.90; transform: scale(1.18); }
+          0%, 100% { opacity: 0.70; transform: scale(1); }
+          50%       { opacity: 1; transform: scale(1.22); }
         }
       `}</style>
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 bg-background" />
-        <div style={{position:"absolute",top:"-12%",left:"-8%",width:"650px",height:"650px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(56,182,255,0.60) 0%, rgba(56,182,255,0.28) 35%, transparent 70%)",filter:"blur(40px)",animation:"home-orb1 22s ease-in-out infinite"}} />
-        <div style={{position:"absolute",bottom:"-10%",right:"-6%",width:"750px",height:"750px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,140,255,0.65) 0%, rgba(80,200,255,0.30) 35%, transparent 70%)",filter:"blur(45px)",animation:"home-orb2 28s ease-in-out infinite",animationDelay:"-11s"}} />
-        <div style={{position:"absolute",top:"28%",right:"12%",width:"480px",height:"480px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(0,200,220,0.50) 0%, rgba(56,182,255,0.22) 40%, transparent 70%)",filter:"blur(35px)",animation:"home-orb3 17s ease-in-out infinite",animationDelay:"-6s"}} />
-        <div style={{position:"absolute",top:"5%",right:"8%",width:"300px",height:"300px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.75) 0%, rgba(56,182,255,0.35) 40%, transparent 70%)",filter:"blur(25px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s"}} />
-        <div style={{position:"absolute",bottom:"12%",left:"6%",width:"380px",height:"380px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.55) 0%, rgba(56,182,255,0.25) 40%, transparent 70%)",filter:"blur(30px)",animation:"home-pulse 14s ease-in-out infinite",animationDelay:"-8s"}} />
+        <div style={{position:"absolute",top:"-12%",left:"-8%",width:"650px",height:"650px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(56,182,255,0.80) 0%, rgba(56,182,255,0.40) 35%, transparent 70%)",filter:"blur(36px)",animation:"home-orb1 18s ease-in-out infinite",willChange:"transform"}} />
+        <div style={{position:"absolute",bottom:"-10%",right:"-6%",width:"750px",height:"750px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,140,255,0.82) 0%, rgba(80,200,255,0.42) 35%, transparent 70%)",filter:"blur(40px)",animation:"home-orb2 22s ease-in-out infinite",animationDelay:"-11s",willChange:"transform"}} />
+        <div style={{position:"absolute",top:"28%",right:"12%",width:"480px",height:"480px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(0,200,220,0.68) 0%, rgba(56,182,255,0.32) 40%, transparent 70%)",filter:"blur(32px)",animation:"home-orb3 14s ease-in-out infinite",animationDelay:"-6s",willChange:"transform"}} />
+        <div style={{position:"absolute",top:"5%",right:"8%",width:"320px",height:"320px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.90) 0%, rgba(56,182,255,0.45) 40%, transparent 70%)",filter:"blur(22px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s",willChange:"transform, opacity"}} />
+        <div style={{position:"absolute",bottom:"12%",left:"6%",width:"400px",height:"400px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.72) 0%, rgba(56,182,255,0.34) 40%, transparent 70%)",filter:"blur(26px)",animation:"home-pulse 13s ease-in-out infinite",animationDelay:"-8s",willChange:"transform, opacity"}} />
       </div>
 
       {/* Subtle Links button — top right */}
@@ -189,7 +189,7 @@ export default function Home() {
           className="text-center mb-16"
         >
           <div className="inline-flex items-center justify-center mb-5">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "240px", height: "auto", objectFit: "contain", display: "block", filter: "drop-shadow(0 0 18px rgba(255,255,255,0.22))" }} />
+            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "230px", height: "auto", objectFit: "contain", display: "block", filter: "drop-shadow(0 0 18px rgba(255,255,255,0.22))" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
