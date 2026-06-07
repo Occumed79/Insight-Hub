@@ -485,10 +485,19 @@ export default function OpportunitiesDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
               {opportunities.map((opp: any, i: number) => {
                 const href = getOpportunityUrl(opp);
-                const confidence = opp.userConfidence !== null && opp.userConfidence !== undefined ? Math.round(Number(opp.userConfidence)) : null;
                 const urgent = opp.responseDeadline && new Date(opp.responseDeadline).getTime() - new Date().getTime() < 14 * 24 * 60 * 60 * 1000;
                 const isGrading = gradingIds.has(opp.id);
                 const rel = opp.relevance ?? null;
+                // Per-card confidence band derived from the actual relevance score
+                // (always meaningful), not the feedback model's flat/null userConfidence.
+                const relConfidence: "high" | "medium" | "low" | null = rel?.confidence ?? null;
+                const confTone = relConfidence === "high"
+                  ? "text-emerald-300"
+                  : relConfidence === "medium"
+                    ? "text-sky-300"
+                    : relConfidence === "low"
+                      ? "text-amber-300"
+                      : "text-white/85";
                 const relScore = rel?.score ?? (typeof opp.relevanceScore === "number" ? Math.round(opp.relevanceScore) : null);
                 const relTone = relScore == null ? "" : relScore >= 75
                   ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
@@ -565,8 +574,8 @@ export default function OpportunitiesDashboard() {
                       </div>
                       <div className="rounded-xl border border-white/10 bg-black/15 p-2">
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</div>
-                        <div className="mt-1 flex items-center gap-1 text-white/85">
-                          <Brain className="w-3 h-3 text-primary/70" /> {confidence !== null ? `${confidence}%` : "—"}
+                        <div className={`mt-1 flex items-center gap-1 capitalize ${confTone}`}>
+                          <Brain className="w-3 h-3 text-primary/70" /> {relConfidence ?? "—"}
                         </div>
                       </div>
                     </div>
