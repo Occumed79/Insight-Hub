@@ -7,6 +7,7 @@ import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
+import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
 import multer from "multer";
 
 const router = Router();
@@ -14,6 +15,20 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
+
+// Max points the feedback-learned signal (userConfidence, 0-100, neutral 50)
+// can add to or subtract from a result's ranking score. 0 when no grades exist.
+const FEEDBACK_RANK_WEIGHT = 15;
+
+// Convert a stored userConfidence (0-100, neutral 50) into a ranking delta
+// in [-FEEDBACK_RANK_WEIGHT, +FEEDBACK_RANK_WEIGHT]. Null/neutral → 0 (no-op).
+function feedbackAdjustment(userConfidence: unknown): number {
+  const uc = typeof userConfidence === "string" ? parseFloat(userConfidence)
+    : typeof userConfidence === "number" ? userConfidence : NaN;
+  if (!Number.isFinite(uc)) return 0;
+  const delta = ((uc - 50) / 50) * FEEDBACK_RANK_WEIGHT;
+  return Math.max(-FEEDBACK_RANK_WEIGHT, Math.min(FEEDBACK_RANK_WEIGHT, delta));
+}
 
 // ── Hard-reject: ANY match → discard immediately ──────────────────────────────
 // Expanded significantly to block all the junk categories that keep slipping through.
@@ -200,7 +215,18 @@ function buildRelevanceView(opp: any) {
   const storedReasons = typeof opp.notes === "string"
     ? opp.notes.split(/;|·/).map((s: string) => s.trim()).filter(Boolean)
     : [];
-  const reasons = (storedReasons.length ? storedReasons : cls.reasons).slice(0, 4);
+  const baseReasons = storedReasons.length ? storedReasons : cls.reasons;
+
+  // Feedback-learned signal (from graded opportunities) folded into ranking.
+  const feedbackScore = typeof opp.userConfidence === "string" && opp.userConfidence.trim() !== ""
+    ? Math.round(parseFloat(opp.userConfidence))
+    : null;
+  const feedbackAdj = feedbackAdjustment(opp.userConfidence);
+  const feedbackReasons: string[] = [];
+  if (feedbackAdj >= 5) feedbackReasons.push("Matches your feedback preferences");
+  else if (feedbackAdj <= -5) feedbackReasons.push("Down-ranked by your feedback");
+
+  const reasons = [...feedbackReasons, ...baseReasons].slice(0, 4);
 
   const dateUnknown = tags.includes("date-unknown");
   const stale = tags.includes("stale") || cls.stale;
@@ -216,6 +242,9 @@ function buildRelevanceView(opp: any) {
     dateUnknown,
     stale,
     confidence,
+    feedbackScore,
+    feedbackAdj,
+    semanticSimilarity: null as number | null,
     postedDate: dateUnknown ? null : opp.postedDate,
   };
 }
@@ -307,14 +336,39 @@ router.get("/opportunities", async (req, res) => {
       mappedAll = mappedAll.filter((o) => !o.relevance.stale && !o.relevance.dateUnknown);
     }
 
-    // Rank by transparent relevance score, then by recency. Records with an
-    // unknown date never sort above clearly-dated ones at the same score.
+    // Rank by transparent relevance score blended with the feedback-learned
+    // signal, then by recency. Records with an unknown date never sort above
+    // clearly-dated ones at the same score. feedbackAdj is 0 when no grades exist,
+    // so ranking is unchanged until the user starts grading results.
+    const rankBase = (o: any) => o.relevance.score + (o.relevance.feedbackAdj ?? 0);
     mappedAll.sort((a, b) => {
-      if (b.relevance.score !== a.relevance.score) return b.relevance.score - a.relevance.score;
+      const diff = rankBase(b) - rankBase(a);
+      if (diff !== 0) return diff;
       const at = a.relevance.dateUnknown ? 0 : new Date(a.postedDate).getTime();
       const bt = b.relevance.dateUnknown ? 0 : new Date(b.postedDate).getTime();
       return bt - at;
     });
+
+    // Optional semantic re-rank of the top slice by embedding similarity to an
+    // ideal Occu-Med profile (opt-in via ENABLE_SEMANTIC_RERANK + Jina key).
+    // Falls back to the order above on any failure.
+    if (isSemanticRerankEnabled() && mappedAll.length > 0) {
+      try {
+        const reranked = await semanticRerank(
+          mappedAll.map((o) => ({
+            item: o,
+            baseScore: rankBase(o),
+            text: `${o.title ?? ""}. ${o.description ?? ""}`.trim(),
+          }))
+        );
+        mappedAll = reranked.map((r) => {
+          if (r.similarity != null) r.item.relevance.semanticSimilarity = Math.round(r.similarity * 100);
+          return r.item;
+        });
+      } catch (err) {
+        req.log.error(err, "semantic rerank failed; using base ranking");
+      }
+    }
 
     const data = mappedAll.slice(offset, offset + limitNum);
 

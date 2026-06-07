@@ -12,6 +12,8 @@ import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderSta
 import { resolveCredential } from "../config/providerConfig";
 
 const JINA_READER_BASE = "https://r.jina.ai/";
+const JINA_EMBEDDINGS_URL = "https://api.jina.ai/v1/embeddings";
+const JINA_EMBEDDING_MODEL = "jina-embeddings-v3";
 
 export class JinaProvider implements DataSourceProvider {
   readonly name = "jina" as const;
@@ -71,6 +73,51 @@ export class JinaProvider implements DataSourceProvider {
 
       const text = await response.text();
       return text.slice(0, maxLength);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Embed one or more texts with Jina's embeddings API (jina-embeddings-v3).
+   * Returns one vector per input (aligned by index), or null if unavailable.
+   * Used for semantic re-ranking of opportunities against an ideal profile.
+   */
+  async embed(texts: string[], task: "retrieval.query" | "retrieval.passage" = "retrieval.passage"): Promise<number[][] | null> {
+    const apiKey = await this.getApiKey();
+    if (!apiKey || texts.length === 0) return null;
+
+    try {
+      const response = await fetch(JINA_EMBEDDINGS_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: JINA_EMBEDDING_MODEL,
+          task,
+          input: texts.map((t) => t.slice(0, 2000)),
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (!response.ok) return null;
+
+      const json = (await response.json()) as { data?: { index: number; embedding: number[] }[] };
+      const data = json.data;
+      if (!data?.length) return null;
+
+      // Re-order defensively by the API-provided index so vectors align to inputs.
+      const out: (number[] | undefined)[] = new Array(texts.length).fill(undefined);
+      for (const item of data) {
+        if (item.index >= 0 && item.index < texts.length && Array.isArray(item.embedding)) {
+          out[item.index] = item.embedding;
+        }
+      }
+      if (out.some((v) => v === undefined)) return null;
+      return out as number[][];
     } catch {
       return null;
     }
