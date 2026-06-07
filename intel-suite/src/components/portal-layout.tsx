@@ -7,22 +7,22 @@ const GlowBackground = () => (
     <style>{`
       @keyframes orb1 {
         0%   { transform: translate(0px, 0px) scale(1); }
-        25%  { transform: translate(60px, 80px) scale(1.12); }
-        50%  { transform: translate(20px, 140px) scale(0.92); }
-        75%  { transform: translate(-40px, 60px) scale(1.06); }
+        25%  { transform: translate(160px, 180px) scale(1.18); }
+        50%  { transform: translate(60px, 300px) scale(0.85); }
+        75%  { transform: translate(-120px, 140px) scale(1.1); }
         100% { transform: translate(0px, 0px) scale(1); }
       }
       @keyframes orb2 {
         0%   { transform: translate(0px, 0px) scale(1); }
-        25%  { transform: translate(-80px, -60px) scale(1.15); }
-        50%  { transform: translate(-30px, -120px) scale(0.88); }
-        75%  { transform: translate(50px, -50px) scale(1.08); }
+        25%  { transform: translate(-200px, -150px) scale(1.22); }
+        50%  { transform: translate(-80px, -280px) scale(0.82); }
+        75%  { transform: translate(140px, -120px) scale(1.12); }
         100% { transform: translate(0px, 0px) scale(1); }
       }
       @keyframes orb3 {
         0%   { transform: translate(0px, 0px) scale(1); }
-        33%  { transform: translate(100px, -80px) scale(1.2); }
-        66%  { transform: translate(-60px, 60px) scale(0.85); }
+        33%  { transform: translate(240px, -200px) scale(1.28); }
+        66%  { transform: translate(-160px, 160px) scale(0.8); }
         100% { transform: translate(0px, 0px) scale(1); }
       }
       @keyframes orb-pulse {
@@ -49,7 +49,8 @@ const GlowBackground = () => (
         borderRadius: "50%",
         background: "radial-gradient(circle at center, rgba(56,182,255,0.55) 0%, rgba(56,182,255,0.25) 35%, transparent 70%)",
         filter: "blur(40px)",
-        animation: "orb1 20s ease-in-out infinite",
+        animation: "orb1 18s ease-in-out infinite",
+        willChange: "transform",
       }} />
 
       {/* Vivid cyan orb — bottom right */}
@@ -62,8 +63,9 @@ const GlowBackground = () => (
         borderRadius: "50%",
         background: "radial-gradient(circle at center, rgba(30,140,255,0.60) 0%, rgba(80,200,255,0.28) 35%, transparent 70%)",
         filter: "blur(45px)",
-        animation: "orb2 26s ease-in-out infinite",
+        animation: "orb2 22s ease-in-out infinite",
         animationDelay: "-10s",
+        willChange: "transform",
       }} />
 
       {/* Accent teal orb — center */}
@@ -76,8 +78,9 @@ const GlowBackground = () => (
         borderRadius: "50%",
         background: "radial-gradient(circle at center, rgba(0,200,220,0.45) 0%, rgba(56,182,255,0.20) 40%, transparent 70%)",
         filter: "blur(35px)",
-        animation: "orb3 16s ease-in-out infinite",
+        animation: "orb3 14s ease-in-out infinite",
         animationDelay: "-6s",
+        willChange: "transform",
       }} />
 
       {/* Small intense sparkle — top right */}
@@ -92,6 +95,7 @@ const GlowBackground = () => (
         filter: "blur(25px)",
         animation: "orb-pulse 8s ease-in-out infinite",
         animationDelay: "-3s",
+        willChange: "transform, opacity",
       }} />
 
       {/* Bottom left warm fill */}
@@ -106,6 +110,7 @@ const GlowBackground = () => (
         filter: "blur(30px)",
         animation: "orb-pulse 13s ease-in-out infinite",
         animationDelay: "-7s",
+        willChange: "transform, opacity",
       }} />
     </div>
   </>
