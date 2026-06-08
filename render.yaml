@@ -49,6 +49,55 @@ services:
         sync: false
       - key: CLOD_MODEL
         sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: FAL_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_HOST
+        sync: false
+      - key: PINECONE_NAMESPACE
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_COLLECTION
+        sync: false
+      - key: CLOUDFLARE_WORKER_API
+        sync: false
+      - key: MONGO_DB_API
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      - key: STATE_PROCUREMENT_SOURCES_ENABLED
+        sync: false
+      - key: COUNTY_PROCUREMENT_SOURCES_ENABLED
+        sync: false
+      - key: ENABLE_SEMANTIC_RERANK
+        sync: false
+      - key: FEDERAL_REGISTER_API_BASE
+        sync: false
+      - key: UNIVERSITY_BID_SOURCES_ENABLED
+        sync: false
+      - key: CITY_PROCUREMENT_SOURCES_ENABLED
+        sync: false
+      - key: MUNICIPAL_PROCUREMENT_SOURCES_ENABLED
+        sync: false
+      - key: LOCAL_GOV_BID_SOURCES_ENABLED
+        sync: false
+
 
 databases:
   - name: insight-hub-db

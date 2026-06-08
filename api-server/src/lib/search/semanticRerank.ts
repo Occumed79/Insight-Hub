@@ -2,23 +2,21 @@
  * Semantic Re-Ranking
  *
  * Re-orders the top slice of already-relevance-ranked opportunities by neural
- * embedding similarity to an "ideal Occu-Med opportunity" profile, blended with
- * the existing keyword/heuristic score. This catches on-topic results whose
- * wording doesn't literally contain the keyword list.
+ * relevance. Cohere rerank is used first when configured; otherwise embedding
+ * similarity falls back across Jina, Voyage, and Hugging Face.
  *
  * Opt-in and bounded:
- *   - Disabled unless ENABLE_SEMANTIC_RERANK=true and Jina is configured.
- *   - Only the top `topN` candidates are embedded (one batched Jina call), so
- *     cost/latency are capped regardless of result-set size.
- *   - The ideal-profile embedding is computed once and cached in-memory.
- *   - Any failure (no key, API error, length mismatch) falls back to the
- *     original order — ranking never breaks.
+ *   - Disabled unless ENABLE_SEMANTIC_RERANK=true.
+ *   - Only the top `topN` candidates are scored, so cost/latency are capped.
+ *   - Any failure falls back to the original order — ranking never breaks.
  */
 
-import { jinaProvider } from "../providers/jina";
+import { envFlag } from "../config/env";
+import { cohereProvider } from "../providers/cohere";
+import { embedTexts } from "./embeddings";
 
 // Describes the kind of opportunity Occu-Med wants to find. Used as the query
-// vector that candidate opportunities are scored against.
+// profile that candidate opportunities are scored against.
 const IDEAL_PROFILE = [
   "Open government request for proposal or solicitation for occupational health services,",
   "medical screening, drug and alcohol testing, DOT physicals, pre-employment physical exams,",
@@ -30,10 +28,10 @@ const IDEAL_PROFILE = [
 const SEMANTIC_BLEND = 25; // max points the semantic component can add to a score
 const DEFAULT_TOP_N = 80;
 
-let cachedProfile: number[] | null = null;
+let cachedProfileByProvider = new Map<string, number[]>();
 
 export function isSemanticRerankEnabled(): boolean {
-  return process.env["ENABLE_SEMANTIC_RERANK"] === "true";
+  return envFlag("ENABLE_SEMANTIC_RERANK", false);
 }
 
 function cosine(a: number[], b: number[]): number {
@@ -50,12 +48,17 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-async function getProfileEmbedding(): Promise<number[] | null> {
-  if (cachedProfile) return cachedProfile;
-  const vecs = await jinaProvider.embed([IDEAL_PROFILE], "retrieval.query");
-  if (!vecs?.[0]) return null;
-  cachedProfile = vecs[0];
-  return cachedProfile;
+async function getProfileEmbedding(candidateProvider?: string): Promise<{ provider: string; vector: number[] } | null> {
+  if (candidateProvider) {
+    const cached = cachedProfileByProvider.get(candidateProvider);
+    if (cached) return { provider: candidateProvider, vector: cached };
+  }
+
+  const result = await embedTexts([IDEAL_PROFILE], "query");
+  if (!result?.vectors[0]) return null;
+
+  cachedProfileByProvider.set(result.provider, result.vectors[0]);
+  return { provider: result.provider, vector: result.vectors[0] };
 }
 
 export interface SemanticRerankItem<T> {
@@ -71,12 +74,12 @@ export interface SemanticRerankResult<T> {
   baseScore: number;
   /** Blended score: baseScore + semantic component (0..SEMANTIC_BLEND). */
   rankScore: number;
-  /** Cosine similarity to the ideal profile, 0..1 (null if not scored). */
+  /** Similarity/relevance to the ideal profile, 0..1 (null if not scored). */
   similarity: number | null;
 }
 
 /**
- * Re-rank `items` (already sorted best-first) by blending semantic similarity
+ * Re-rank `items` (already sorted best-first) by blending semantic relevance
  * into the top `topN`. Returns every item with a computed `rankScore`, sorted
  * best-first. On any failure, returns items in their original order with
  * rankScore = baseScore and similarity = null.
@@ -90,17 +93,33 @@ export async function semanticRerank<T>(
 
   if (!isSemanticRerankEnabled() || items.length === 0) return passthrough();
 
-  const profile = await getProfileEmbedding();
-  if (!profile) return passthrough();
-
   const head = items.slice(0, topN);
   const tail = items.slice(topN);
 
-  const vectors = await jinaProvider.embed(head.map((h) => h.text), "retrieval.passage");
-  if (!vectors || vectors.length !== head.length) return passthrough();
+  const cohereScores = await cohereProvider.rerank(IDEAL_PROFILE, head.map((h) => h.text), head.length);
+  if (cohereScores?.length) {
+    const byIndex = new Map(cohereScores.map((score) => [score.index, score.relevanceScore]));
+    const rerankedHead: SemanticRerankResult<T>[] = head.map((h, i) => {
+      const relevance = Math.max(0, Math.min(1, byIndex.get(i) ?? 0));
+      return {
+        item: h.item,
+        baseScore: h.baseScore,
+        rankScore: h.baseScore + relevance * SEMANTIC_BLEND,
+        similarity: relevance,
+      };
+    });
+    rerankedHead.sort((a, b) => b.rankScore - a.rankScore);
+    return [...rerankedHead, ...tail.map((t) => ({ item: t.item, baseScore: t.baseScore, rankScore: t.baseScore, similarity: null }))];
+  }
+
+  const candidateEmbeddings = await embedTexts(head.map((h) => h.text), "document");
+  if (!candidateEmbeddings || candidateEmbeddings.vectors.length !== head.length) return passthrough();
+
+  const profile = await getProfileEmbedding(candidateEmbeddings.provider);
+  if (!profile || profile.provider !== candidateEmbeddings.provider) return passthrough();
 
   const rerankedHead: SemanticRerankResult<T>[] = head.map((h, i) => {
-    const sim = cosine(profile, vectors[i]); // ~ -1..1, typically 0..1 here
+    const sim = cosine(profile.vector, candidateEmbeddings.vectors[i]); // ~ -1..1, typically 0..1 here
     const clamped = Math.max(0, Math.min(1, sim));
     return {
       item: h.item,

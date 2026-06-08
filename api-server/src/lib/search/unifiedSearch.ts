@@ -1,15 +1,9 @@
 /**
  * Unified Fetch Pipeline
  *
- * Aggregates opportunity records from all configured providers:
- *   - SAM.gov    → direct federal solicitations
- *   - Serper     → Google web search for RFPs on the open web
- *   - Tavily     → Deep AI research for procurement leads
- *   - Gemini     → Query generation + structured extraction from web results
- *   - Tango      → Direct source (stub — awaiting API endpoint confirmation)
- *   - BidNet     → State & local bids (stub — awaiting API access details)
- *
- * All results are normalized, deduplicated, scored, and persisted to the DB.
+ * Aggregates opportunity records from all configured providers, normalizes,
+ * deduplicates, scores, persists to the DB, and optionally writes vectors to
+ * Qdrant/Pinecone for future similarity retrieval.
  */
 
 import { db } from "@workspace/db";
@@ -20,15 +14,14 @@ import { randomUUID } from "crypto";
 import { samGovProvider } from "../providers/samGov";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
-import { youProvider } from "../providers/you";
-import { langsearchProvider } from "../providers/langsearch";
-import { websearchProvider } from "../providers/websearch";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
+import { federalRegisterProvider } from "../providers/federalRegister";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
 import { passesQualityFilter, hostFromUrl } from "./relevance";
+import { indexOpportunities } from "./vectorIndex";
 import type { NormalizedOpportunity } from "../providers/types";
 
 export interface UnifiedFetchOptions {
@@ -63,74 +56,38 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
 
   const allRecords: NormalizedOpportunity[] = [];
 
-  // ── SAM.gov ───────────────────────────────────────────────────────────────
-  if (requestedProviders.includes("samGov")) {
+  const runProvider = async (name: string, provider: { fetch: (options: any) => Promise<{ records: NormalizedOpportunity[]; errors?: string[] }> }) => {
+    if (!requestedProviders.includes(name)) return;
     const providerErrors: string[] = [];
     let fetched = 0;
     try {
-      const fetchResult = await samGovProvider.fetch({
+      const fetchResult = await provider.fetch({
         keywords: options.keywords,
         dateRange: options.dateRange,
         limit: 100,
       });
       allRecords.push(...fetchResult.records);
       fetched = fetchResult.records.length;
-      providerErrors.push(...fetchResult.errors);
+      providerErrors.push(...(fetchResult.errors ?? []));
     } catch (err: any) {
       providerErrors.push(err.message ?? String(err));
     }
-    result.providerResults.push({ provider: "samGov", fetched, errors: providerErrors });
+    result.providerResults.push({ provider: name, fetched, errors: providerErrors });
     result.fetched += fetched;
-  }
+  };
 
-  // ── Grants.gov ───────────────────────────────────────────────────────────
-  // Free, no key. Federal grants/programs that require occupational health vendors.
-  if (requestedProviders.includes("grantsGov")) {
-    const providerErrors: string[] = [];
-    let fetched = 0;
-    try {
-      const fetchResult = await grantsGovProvider.fetch({
-        keywords: options.keywords,
-        dateRange: options.dateRange,
-      });
-      allRecords.push(...fetchResult.records);
-      fetched = fetchResult.records.length;
-      providerErrors.push(...fetchResult.errors);
-    } catch (err: any) {
-      providerErrors.push(err.message ?? String(err));
-    }
-    result.providerResults.push({ provider: "grantsGov", fetched, errors: providerErrors });
-    result.fetched += fetched;
-  }
-
-  // ── USASpending.gov ────────────────────────────────────────────────────────
-  // Free, no key. Expiring federal contracts by NAICS = re-compete pipeline.
-  if (requestedProviders.includes("usaSpending")) {
-    const providerErrors: string[] = [];
-    let fetched = 0;
-    try {
-      const fetchResult = await usaSpendingProvider.fetch({
-        keywords: options.keywords,
-        dateRange: options.dateRange,
-      });
-      allRecords.push(...fetchResult.records);
-      fetched = fetchResult.records.length;
-      providerErrors.push(...fetchResult.errors);
-    } catch (err: any) {
-      providerErrors.push(err.message ?? String(err));
-    }
-    result.providerResults.push({ provider: "usaSpending", fetched, errors: providerErrors });
-    result.fetched += fetched;
-  }
+  // ── Public/direct sources ──────────────────────────────────────────────────
+  await runProvider("samGov", samGovProvider);
+  await runProvider("grantsGov", grantsGovProvider);
+  await runProvider("usaSpending", usaSpendingProvider);
+  await runProvider("federalRegister", federalRegisterProvider);
 
   // ── Direct Stub Providers (Tango, BidNet) ────────────────────────────────
   // These are scaffolded but not yet operational pending API access details.
-  // We call them so errors surface correctly instead of silently doing nothing.
-  const directStubs: Array<{ name: string; provider: typeof tangoProvider | typeof bidnetProvider }> = [
+  for (const { name, provider } of [
     { name: "tango", provider: tangoProvider },
     { name: "bidnet", provider: bidnetProvider },
-  ];
-  for (const { name, provider } of directStubs) {
+  ]) {
     if (!requestedProviders.includes(name)) continue;
     try {
       const fetchResult = await provider.fetch({
@@ -146,7 +103,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   }
 
   // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax"];
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -160,7 +117,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const useLangsearch = requestedProviders.includes("langsearch");
     const useWebsearch = requestedProviders.includes("websearch");
     const useGroqFetch = requestedProviders.includes("groq");
-    const useOpenrouterFetch = requestedProviders.includes("openrouter");
+    const useOpenrouterFetch = requestedProviders.includes("openrouter") || requestedProviders.includes("cerebras") || requestedProviders.includes("deepseek") || requestedProviders.includes("mistral") || requestedProviders.includes("nvidia");
 
     try {
       const webResult = await webIntelligenceFetch({
@@ -181,35 +138,12 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       allRecords.push(...webResult.opportunities);
 
       const { stats, errors } = webResult;
-
-      // Report per-provider stats
-      if (useSerper) {
-        result.providerResults.push({
-          provider: "serper",
-          fetched: stats.serperResults,
-          errors: errors.filter((e) => e.startsWith("Serper")),
-        });
-      }
-      if (useTavily) {
-        result.providerResults.push({
-          provider: "tavily",
-          fetched: stats.tavilyResults,
-          errors: errors.filter((e) => e.startsWith("Tavily")),
-        });
-      }
-      if (useGemini) {
-        result.providerResults.push({
-          provider: "gemini",
-          fetched: stats.extracted,
-          errors: errors.filter((e) => e.startsWith("Gemini")),
-        });
-      }
-      if (useStatePortals) {
-        result.providerResults.push({
-          provider: "statePortals",
-          fetched: stats.statePortalResults,
-          errors: errors.filter((e) => e.startsWith("State Portals")),
-        });
+      if (useSerper) result.providerResults.push({ provider: "serper", fetched: stats.serperResults, errors: errors.filter((e) => e.startsWith("Serper")) });
+      if (useTavily) result.providerResults.push({ provider: "tavily", fetched: stats.tavilyResults, errors: errors.filter((e) => e.startsWith("Tavily")) });
+      if (useGemini) result.providerResults.push({ provider: "gemini", fetched: stats.extracted, errors: errors.filter((e) => e.startsWith("Gemini")) });
+      if (useStatePortals) result.providerResults.push({ provider: "statePortals", fetched: stats.statePortalResults, errors: errors.filter((e) => e.startsWith("State Portals")) });
+      for (const aiName of ["cerebras", "deepseek", "mistral", "nvidia"]) {
+        if (requestedProviders.includes(aiName)) result.providerResults.push({ provider: aiName, fetched: stats.extracted, errors: errors.filter((e) => e.includes(aiName)) });
       }
 
       result.fetched += webResult.opportunities.length;
@@ -228,7 +162,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   });
 
   // ── Quality filter (shared with the read-time list filter) ──────────────────
-  // Drops job/careers spam and off-topic results; requires Occu-Med relevance.
   const qualityFiltered = scored.filter(({ opportunity }) =>
     passesQualityFilter({
       title: opportunity.title,
@@ -239,8 +172,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   result.skipped += scored.length - qualityFiltered.length;
 
   // ── Cross-provider deduplication ────────────────────────────────────────────
-  // Collapse the same opportunity surfaced by multiple providers, keyed by
-  // notice id, solicitation number, canonical URL, or normalized title+agency.
   const seenKeys = new Set<string>();
   const deduped = qualityFiltered.filter(({ opportunity }) => {
     const keys = dedupeKeys(opportunity);
@@ -252,6 +183,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     return true;
   });
 
+  const persistedForIndex: NormalizedOpportunity[] = [];
   for (const { opportunity } of deduped) {
     const externalId = opportunity.externalId;
 
@@ -268,6 +200,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
           .set({ ...dbRecord, updatedAt: new Date() })
           .where(eq(opportunitiesTable.id, existing[0].id));
         result.updated++;
+        persistedForIndex.push(opportunity);
         continue;
       }
     }
@@ -280,16 +213,27 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       updatedAt: new Date(),
     });
     result.created++;
+    persistedForIndex.push(opportunity);
+  }
+
+  const vectorStats = await indexOpportunities(persistedForIndex);
+  if (vectorStats.errors.length > 0) {
+    result.providerResults.push({
+      provider: vectorStats.vectorStore ?? "vectorIndex",
+      fetched: vectorStats.indexed,
+      errors: vectorStats.errors,
+    });
+  } else if (vectorStats.indexed > 0) {
+    result.providerResults.push({
+      provider: `${vectorStats.vectorStore}:${vectorStats.provider}`,
+      fetched: vectorStats.indexed,
+      errors: [],
+    });
   }
 
   return result;
 }
 
-/**
- * Build the set of identity keys used to collapse duplicate opportunities across
- * providers: notice id, solicitation/RFP number, canonical URL, and a normalized
- * title+agency fingerprint.
- */
 function dedupeKeys(opp: NormalizedOpportunity): string[] {
   const keys: string[] = [];
   if (opp.externalId) keys.push(`id:${opp.externalId.toLowerCase()}`);

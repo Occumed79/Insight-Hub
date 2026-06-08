@@ -15,6 +15,15 @@ export * from "./browseAi";
 export * from "./browserUse";
 export * from "./olostep";
 export * from "./clod";
+export * from "./openAiCompatible";
+export * from "./cohere";
+export * from "./voyage";
+export * from "./huggingFace";
+export * from "./qdrant";
+export * from "./pinecone";
+export * from "./federalRegister";
+export * from "./cloudflareWorker";
+export * from "./configOnly";
 
 import { samGovProvider } from "./samGov";
 import { geminiProvider } from "./gemini";
@@ -38,12 +47,18 @@ import { langsearchProvider } from "./langsearch";
 import { websearchProvider } from "./websearch";
 import { grantsGovProvider } from "./grantsGov";
 import { usaSpendingProvider } from "./usaSpending";
+import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "./openAiCompatible";
+import { cohereProvider } from "./cohere";
+import { voyageProvider } from "./voyage";
+import { huggingFaceProvider } from "./huggingFace";
+import { qdrantProvider } from "./qdrant";
+import { pineconeProvider } from "./pinecone";
+import { federalRegisterProvider } from "./federalRegister";
+import { cloudflareWorkerProvider } from "./cloudflareWorker";
+import { falProvider, mongoDbProvider } from "./configOnly";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
-/**
- * Central registry of all data source providers.
- */
 export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   gemini: geminiProvider,
@@ -67,6 +82,19 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   websearch: websearchProvider,
   grantsGov: grantsGovProvider,
   usaSpending: usaSpendingProvider,
+  cerebras: cerebrasProvider,
+  cohere: cohereProvider,
+  deepseek: deepseekProvider,
+  fal: falProvider,
+  mistral: mistralProvider,
+  nvidia: nvidiaProvider,
+  pinecone: pineconeProvider,
+  qdrant: qdrantProvider,
+  cloudflareWorker: cloudflareWorkerProvider,
+  mongoDb: mongoDbProvider,
+  voyage: voyageProvider,
+  huggingFace: huggingFaceProvider,
+  federalRegister: federalRegisterProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {
