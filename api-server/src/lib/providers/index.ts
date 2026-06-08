@@ -16,6 +16,13 @@ export * from "./browserUse";
 export * from "./olostep";
 export * from "./clod";
 export * from "./openAiCompatible";
+export * from "./cohere";
+export * from "./voyage";
+export * from "./huggingFace";
+export * from "./qdrant";
+export * from "./pinecone";
+export * from "./federalRegister";
+export * from "./cloudflareWorker";
 export * from "./configOnly";
 
 import { samGovProvider } from "./samGov";
@@ -41,23 +48,17 @@ import { websearchProvider } from "./websearch";
 import { grantsGovProvider } from "./grantsGov";
 import { usaSpendingProvider } from "./usaSpending";
 import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "./openAiCompatible";
-import {
-  cloudflareWorkerProvider,
-  cohereProvider,
-  falProvider,
-  federalRegisterProvider,
-  huggingFaceProvider,
-  mongoDbProvider,
-  pineconeProvider,
-  qdrantProvider,
-  voyageProvider,
-} from "./configOnly";
+import { cohereProvider } from "./cohere";
+import { voyageProvider } from "./voyage";
+import { huggingFaceProvider } from "./huggingFace";
+import { qdrantProvider } from "./qdrant";
+import { pineconeProvider } from "./pinecone";
+import { federalRegisterProvider } from "./federalRegister";
+import { cloudflareWorkerProvider } from "./cloudflareWorker";
+import { falProvider, mongoDbProvider } from "./configOnly";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
-/**
- * Central registry of all data source providers.
- */
 export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   gemini: geminiProvider,
