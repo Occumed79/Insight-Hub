@@ -18,7 +18,6 @@ import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
 import { federalRegisterProvider } from "../providers/federalRegister";
 import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
-import { mongoDbProvider } from "../providers/mongoDb";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -217,13 +216,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     });
     result.created++;
     persistedForIndex.push(opportunity);
-  }
-
-  const mongoArchive = await mongoDbProvider.archiveOpportunities(persistedForIndex);
-  if (mongoArchive && !mongoArchive.ok) {
-    result.providerResults.push({ provider: "mongoDb", fetched: 0, errors: [mongoArchive.error ?? "MongoDB archive failed"] });
-  } else if (mongoArchive?.ok && persistedForIndex.length > 0) {
-    result.providerResults.push({ provider: "mongoDb", fetched: persistedForIndex.length, errors: [] });
   }
 
   const vectorStats = await indexOpportunities(persistedForIndex);
