@@ -53,7 +53,11 @@ export class CohereProvider implements DataSourceProvider {
         signal: AbortSignal.timeout(20000),
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn(`[Cohere rerank] HTTP ${response.status}: ${body.slice(0, 200)}`);
+        return null;
+      }
 
       const json = (await response.json()) as {
         results?: { index?: number; relevance_score?: number }[];
@@ -66,7 +70,8 @@ export class CohereProvider implements DataSourceProvider {
           index: result.index as number,
           relevanceScore: typeof result.relevance_score === "number" ? result.relevance_score : 0,
         }));
-    } catch {
+    } catch (err) {
+      console.warn(`[Cohere rerank] ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }

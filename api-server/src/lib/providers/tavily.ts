@@ -65,7 +65,9 @@ export class TavilyProvider implements DataSourceProvider {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(`Tavily API error ${response.status}: ${body.slice(0, 200)}`);
+      const msg = `Tavily API error ${response.status}: ${body.slice(0, 200)}`;
+      console.warn(`[Tavily research] ${msg}`);
+      throw new Error(msg);
     }
 
     const json = (await response.json()) as {
