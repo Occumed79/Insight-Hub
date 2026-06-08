@@ -63,9 +63,15 @@ services:
         sync: false
       - key: PINECONE_API_KEY
         sync: false
+      - key: PINECONE_INDEX_HOST
+        sync: false
+      - key: PINECONE_NAMESPACE
+        sync: false
       - key: QDRANT_API_KEY
         sync: false
       - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_COLLECTION
         sync: false
       - key: CLOUDFLARE_WORKER_API
         sync: false
