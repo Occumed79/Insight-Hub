@@ -36,15 +36,5 @@ export class ConfigOnlyProvider implements DataSourceProvider {
   }
 }
 
-export const cohereProvider = new ConfigOnlyProvider("cohere", [{ dbKey: "cohereApiKey", envKey: "COHERE_API_KEY" }]);
 export const falProvider = new ConfigOnlyProvider("fal", [{ dbKey: "falApiKey", envKey: "FAL_API_KEY" }]);
-export const pineconeProvider = new ConfigOnlyProvider("pinecone", [{ dbKey: "pineconeApiKey", envKey: "PINECONE_API_KEY" }]);
-export const qdrantProvider = new ConfigOnlyProvider("qdrant", [
-  { dbKey: "qdrantUrl", envKey: "QDRANT_URL" },
-  { dbKey: "qdrantApiKey", envKey: "QDRANT_API_KEY" },
-]);
-export const cloudflareWorkerProvider = new ConfigOnlyProvider("cloudflareWorker", [{ dbKey: "cloudflareWorkerApi", envKey: "CLOUDFLARE_WORKER_API" }]);
 export const mongoDbProvider = new ConfigOnlyProvider("mongoDb", [{ dbKey: "mongoDbApi", envKey: "MONGO_DB_API" }]);
-export const voyageProvider = new ConfigOnlyProvider("voyage", [{ dbKey: "voyageApiKey", envKey: "VOYAGE_API_KEY" }]);
-export const huggingFaceProvider = new ConfigOnlyProvider("huggingFace", [{ dbKey: "huggingFaceApiKey", envKey: "HUGGINGFACE_API_KEY" }]);
-export const federalRegisterProvider = new ConfigOnlyProvider("federalRegister", []);
