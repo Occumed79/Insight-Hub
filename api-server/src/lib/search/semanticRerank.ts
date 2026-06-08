@@ -16,6 +16,7 @@
  */
 
 import { jinaProvider } from "../providers/jina";
+import { envFlag } from "../config/env";
 
 // Describes the kind of opportunity Occu-Med wants to find. Used as the query
 // vector that candidate opportunities are scored against.
@@ -33,7 +34,7 @@ const DEFAULT_TOP_N = 80;
 let cachedProfile: number[] | null = null;
 
 export function isSemanticRerankEnabled(): boolean {
-  return process.env["ENABLE_SEMANTIC_RERANK"] === "true";
+  return envFlag("ENABLE_SEMANTIC_RERANK", false);
 }
 
 function cosine(a: number[], b: number[]): number {
