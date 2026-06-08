@@ -1,31 +1,36 @@
 services:
   - type: web
     name: insight-hub
-    runtime: node
-    region: oregon
-    plan: starter
-    buildCommand: pnpm install && pnpm run build:prod
-    startCommand: pnpm run start:prod
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/db run db:generate && pnpm --filter insight-hub-api run build && pnpm --filter intel-suite run build
+    startCommand: pnpm --filter insight-hub-api run start
+    autoDeploy: true
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: "3000"
-      - key: BASE_PATH
-        value: /
+      - key: NODE_VERSION
+        value: 20.20.2
+      - key: PNPM_VERSION
+        value: 9.15.9
       - key: DATABASE_URL
-        fromDatabase:
-          name: insight-hub-db
-          property: connectionString
-      - key: SAM_GOV_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGIN
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      - key: SAM_GOV_API_KEY
+        sync: false
+      - key: SAM_GOV_BASE_URL
         sync: false
       - key: SERPER_API_KEY
         sync: false
       - key: TAVILY_API_KEY
-        sync: false
-      - key: FIRECRAWL_API_KEY
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
@@ -37,13 +42,17 @@ services:
         sync: false
       - key: EXA_API_KEY
         sync: false
-      - key: BROWSE_AI_API_KEY
+      - key: FIRECRAWL_API_KEY
         sync: false
-      - key: BROWSE_AI_ROBOT_ID
+      - key: JINA_API_KEY
         sync: false
-      - key: BROWSER_USE_API_KEY
+      - key: MINIMAX_API_KEY
         sync: false
-      - key: OLOSTEP_API_KEY
+      - key: TANGO_API_KEY
+        sync: false
+      - key: BIDNET_API_KEY
+        sync: false
+      - key: BIDNET_BASE_URL
         sync: false
       - key: CLOD_API_KEY
         sync: false
@@ -75,8 +84,6 @@ services:
         sync: false
       - key: CLOUDFLARE_WORKER_API
         sync: false
-      - key: MONGO_DB_API
-        sync: false
       - key: VOYAGE_API_KEY
         sync: false
       - key: HUGGINGFACE_API_KEY
@@ -97,11 +104,3 @@ services:
         sync: false
       - key: LOCAL_GOV_BID_SOURCES_ENABLED
         sync: false
-
-
-databases:
-  - name: insight-hub-db
-    region: oregon
-    plan: starter
-    databaseName: insighthub
-    user: insighthub
