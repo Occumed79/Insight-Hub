@@ -15,6 +15,8 @@ export * from "./browseAi";
 export * from "./browserUse";
 export * from "./olostep";
 export * from "./clod";
+export * from "./openAiCompatible";
+export * from "./configOnly";
 
 import { samGovProvider } from "./samGov";
 import { geminiProvider } from "./gemini";
@@ -38,6 +40,18 @@ import { langsearchProvider } from "./langsearch";
 import { websearchProvider } from "./websearch";
 import { grantsGovProvider } from "./grantsGov";
 import { usaSpendingProvider } from "./usaSpending";
+import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "./openAiCompatible";
+import {
+  cloudflareWorkerProvider,
+  cohereProvider,
+  falProvider,
+  federalRegisterProvider,
+  huggingFaceProvider,
+  mongoDbProvider,
+  pineconeProvider,
+  qdrantProvider,
+  voyageProvider,
+} from "./configOnly";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -67,6 +81,19 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   websearch: websearchProvider,
   grantsGov: grantsGovProvider,
   usaSpending: usaSpendingProvider,
+  cerebras: cerebrasProvider,
+  cohere: cohereProvider,
+  deepseek: deepseekProvider,
+  fal: falProvider,
+  mistral: mistralProvider,
+  nvidia: nvidiaProvider,
+  pinecone: pineconeProvider,
+  qdrant: qdrantProvider,
+  cloudflareWorker: cloudflareWorkerProvider,
+  mongoDb: mongoDbProvider,
+  voyage: voyageProvider,
+  huggingFace: huggingFaceProvider,
+  federalRegister: federalRegisterProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {
