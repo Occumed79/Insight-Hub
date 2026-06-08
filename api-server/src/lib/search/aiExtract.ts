@@ -20,6 +20,7 @@ import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
 import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "../providers/openAiCompatible";
+import { clodProvider } from "../providers/clod";
 
 export interface AiExtraction {
   isOpportunity: boolean;
@@ -66,6 +67,7 @@ const PROVIDER_ORDER: AiTextProvider[] = [
   deepseekProvider,
   mistralProvider,
   nvidiaProvider,
+  clodProvider,
 ];
 
 /** How many candidates to analyze in a single AI prompt. */
