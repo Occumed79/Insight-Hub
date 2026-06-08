@@ -135,20 +135,24 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
   grantsGov: provider("grantsGov", "Grants.gov", "primary", "direct_source", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
   usaSpending: provider("usaSpending", "USASpending.gov", "primary", "direct_source", [], ["Expiring contract discovery", "Re-compete intelligence", "Incumbent tracking"], "live", "Public federal spending database — no API key required."),
 
-  cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "partial"),
-  cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Reranking", "Classification", "Embeddings"], "partial"),
-  deepseek: provider("deepseek", "DeepSeek", "ai", "hybrid", [secretField("deepseekApiKey", "DEEPSEEK_API_KEY")], ["AI extraction", "Reasoning", "Scoring failover"], "partial"),
+  cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "active"),
+  cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Semantic reranking", "Opportunity relevance scoring"], "active"),
+  deepseek: provider("deepseek", "DeepSeek", "ai", "hybrid", [secretField("deepseekApiKey", "DEEPSEEK_API_KEY")], ["AI extraction", "Reasoning", "Scoring failover"], "active"),
   fal: provider("fal", "Fal.ai", "ai", "research_analysis", [secretField("falApiKey", "FAL_API_KEY")], ["Media/model utility workflows"], "partial"),
-  mistral: provider("mistral", "Mistral", "ai", "hybrid", [secretField("mistralApiKey", "MISTRAL_API_KEY")], ["AI extraction", "Structured generation", "Scoring failover"], "partial"),
-  nvidia: provider("nvidia", "NVIDIA NIM", "ai", "hybrid", [secretField("nvidiaApiKey", "NVIDIA_API_KEY")], ["AI extraction", "Open model inference", "Scoring failover"], "partial"),
-  pinecone: provider("pinecone", "Pinecone", "search", "research_analysis", [secretField("pineconeApiKey", "PINECONE_API_KEY")], ["Vector storage", "Similarity search", "Future retrieval memory"], "partial"),
-  qdrant: {
-    ...provider("qdrant", "Qdrant", "search", "research_analysis", [{ key: "url", label: "Qdrant URL", type: "url", placeholder: "https://your-cluster.qdrant.io", dbKey: "qdrantUrl", envKey: "QDRANT_URL" }, secretField("qdrantApiKey", "QDRANT_API_KEY")], ["Vector storage", "Similarity search", "Future retrieval memory"], "partial"),
+  mistral: provider("mistral", "Mistral", "ai", "hybrid", [secretField("mistralApiKey", "MISTRAL_API_KEY")], ["AI extraction", "Structured generation", "Scoring failover"], "active"),
+  nvidia: provider("nvidia", "NVIDIA NIM", "ai", "hybrid", [secretField("nvidiaApiKey", "NVIDIA_API_KEY")], ["AI extraction", "Open model inference", "Scoring failover"], "active"),
+  pinecone: {
+    ...provider("pinecone", "Pinecone", "search", "research_analysis", [secretField("pineconeApiKey", "PINECONE_API_KEY"), { key: "indexHost", label: "Index Host", type: "url", placeholder: "https://your-index.svc.region.pinecone.io", dbKey: "pineconeIndexHost", envKey: "PINECONE_INDEX_HOST" }], ["Vector storage", "Similarity search", "Opportunity retrieval memory"], "active"),
+    optionalFields: [{ key: "namespace", label: "Namespace", type: "text", placeholder: "opportunities", dbKey: "pineconeNamespace", envKey: "PINECONE_NAMESPACE" }],
   },
-  cloudflareWorker: provider("cloudflareWorker", "Cloudflare Worker API", "search", "web_discovery", [secretField("cloudflareWorkerApi", "CLOUDFLARE_WORKER_API", "Worker API URL / Token")], ["Edge helper endpoint", "Crawler/proxy utility"], "partial"),
+  qdrant: {
+    ...provider("qdrant", "Qdrant", "search", "research_analysis", [{ key: "url", label: "Qdrant URL", type: "url", placeholder: "https://your-cluster.qdrant.io", dbKey: "qdrantUrl", envKey: "QDRANT_URL" }, secretField("qdrantApiKey", "QDRANT_API_KEY")], ["Vector storage", "Similarity search", "Opportunity retrieval memory"], "active"),
+    optionalFields: [{ key: "collection", label: "Collection", type: "text", placeholder: "insight_hub_opportunities", dbKey: "qdrantCollection", envKey: "QDRANT_COLLECTION" }],
+  },
+  cloudflareWorker: provider("cloudflareWorker", "Cloudflare Worker API", "search", "web_discovery", [secretField("cloudflareWorkerApi", "CLOUDFLARE_WORKER_API", "Worker API URL")], ["Edge extraction endpoint", "Crawler/proxy utility"], "active"),
   mongoDb: provider("mongoDb", "MongoDB API", "search", "research_analysis", [secretField("mongoDbApi", "MONGO_DB_API", "MongoDB API Key / URL")], ["External document store", "Future enrichment cache"], "partial"),
-  voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Future reranking"], "partial"),
-  huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Model inference", "Embeddings", "Future classifier support"], "partial"),
+  voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Vector indexing fallback"], "active"),
+  huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Embeddings", "Model inference", "Vector indexing fallback"], "active"),
   federalRegister: provider("federalRegister", "Federal Register", "primary", "direct_source", [], ["Federal notices", "Rulemaking signals", "Agency activity monitoring"], "live", "Public Federal Register API configured through FEDERAL_REGISTER_API_BASE."),
 };
 
