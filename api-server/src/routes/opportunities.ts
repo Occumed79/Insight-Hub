@@ -408,9 +408,16 @@ router.post("/opportunities/fetch", async (req, res) => {
       olostep: "olostep",
       browseAi: "browseAi",
       browserUse: "browserUse",
+      clod: "clod",
+      cloudflareWorker: "cloudflareWorker",
+      cerebras: "cerebras",
+      deepseek: "deepseek",
+      mistral: "mistral",
+      nvidia: "nvidia",
       you: "you",
       langsearch: "langsearch",
       websearch: "websearch",
+      federalRegister: "federalRegister",
     };
 
     const resolvedProviders = providers && providers.length > 0

@@ -18,6 +18,8 @@ import {
 import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { websearchProvider } from "../providers/websearch";
+import { olostepProvider } from "../providers/olostep";
+import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
@@ -95,6 +97,8 @@ export interface WebIntelligenceResult {
     preFiltered: number;
     firecrawlEnriched: number;
     jinaEnriched: number;
+    olostepEnriched: number;
+    cfWorkerEnriched: number;
     extracted: number;
     /** Records kept via deterministic heuristic fallback when AI was unavailable. */
     heuristicExtracted: number;
@@ -226,6 +230,8 @@ export async function webIntelligenceFetch(options: {
     preFiltered: 0,
     firecrawlEnriched: 0,
     jinaEnriched: 0,
+    olostepEnriched: 0,
+    cfWorkerEnriched: 0,
     extracted: 0,
     heuristicExtracted: 0,
     rejected: 0,
@@ -398,6 +404,57 @@ export async function webIntelligenceFetch(options: {
       } catch (err: any) {
         errors.push(`Jina enrichment: ${err.message}`);
       }
+    }
+  }
+
+  // ── Olostep enrichment fallback (residential proxy scraping) ────────────
+  const olostepConfigured = await olostepProvider.isConfigured();
+  if (olostepConfigured) {
+    const stillShort = enrichedCandidates.filter(
+      (c) => !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600
+    ).slice(0, 8);
+    if (stillShort.length > 0) {
+      try {
+        const scraped = await olostepProvider.scrapeMany(stillShort.map((c) => c.url));
+        for (const result of scraped) {
+          const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
+          if (idx >= 0 && (result.markdown_content ?? result.text_content ?? "").length > 200) {
+            enrichedCandidates[idx] = {
+              ...enrichedCandidates[idx],
+              content: (result.markdown_content ?? result.text_content ?? "").slice(0, 4000),
+            };
+            stats.olostepEnriched++;
+          }
+        }
+      } catch (err: any) {
+        errors.push(`Olostep enrichment: ${err.message}`);
+      }
+    }
+  }
+
+  // ── Cloudflare Worker enrichment fallback ──────────────────────────────
+  const cfConfigured = await cloudflareWorkerProvider.isConfigured();
+  if (cfConfigured) {
+    const stillShort = enrichedCandidates.filter(
+      (c) => !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600
+    ).slice(0, 6);
+    if (stillShort.length > 0) {
+      const settled = await Promise.allSettled(
+        stillShort.map((c) => cloudflareWorkerProvider.extractUrl(c.url))
+      );
+      settled.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value && r.value.length > 200) {
+          const url = stillShort[i].url;
+          const idx = enrichedCandidates.findIndex((c) => c.url === url);
+          if (idx >= 0) {
+            enrichedCandidates[idx] = {
+              ...enrichedCandidates[idx],
+              content: r.value.slice(0, 4000),
+            };
+            stats.cfWorkerEnriched++;
+          }
+        }
+      });
     }
   }
 

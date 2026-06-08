@@ -103,7 +103,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   }
 
   // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker"];
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker", "clod", "olostep"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -117,7 +117,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const useLangsearch = requestedProviders.includes("langsearch");
     const useWebsearch = requestedProviders.includes("websearch");
     const useGroqFetch = requestedProviders.includes("groq");
-    const useOpenrouterFetch = requestedProviders.includes("openrouter") || requestedProviders.includes("cerebras") || requestedProviders.includes("deepseek") || requestedProviders.includes("mistral") || requestedProviders.includes("nvidia");
+    const useOpenrouterFetch = requestedProviders.includes("openrouter") || requestedProviders.includes("cerebras") || requestedProviders.includes("deepseek") || requestedProviders.includes("mistral") || requestedProviders.includes("nvidia") || requestedProviders.includes("clod");
 
     try {
       const webResult = await webIntelligenceFetch({
@@ -142,7 +142,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       if (useTavily) result.providerResults.push({ provider: "tavily", fetched: stats.tavilyResults, errors: errors.filter((e) => e.startsWith("Tavily")) });
       if (useGemini) result.providerResults.push({ provider: "gemini", fetched: stats.extracted, errors: errors.filter((e) => e.startsWith("Gemini")) });
       if (useStatePortals) result.providerResults.push({ provider: "statePortals", fetched: stats.statePortalResults, errors: errors.filter((e) => e.startsWith("State Portals")) });
-      for (const aiName of ["cerebras", "deepseek", "mistral", "nvidia"]) {
+      for (const aiName of ["cerebras", "deepseek", "mistral", "nvidia", "clod"]) {
         if (requestedProviders.includes(aiName)) result.providerResults.push({ provider: aiName, fetched: stats.extracted, errors: errors.filter((e) => e.includes(aiName)) });
       }
 
