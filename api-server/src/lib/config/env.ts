@@ -40,7 +40,6 @@ export const env = {
 
   // Infrastructure connectors
   CLOUDFLARE_WORKER_API: process.env.CLOUDFLARE_WORKER_API,
-  MONGO_DB_API: process.env.MONGO_DB_API,
 
   // Procurement source feature flags
   STATE_PROCUREMENT_SOURCES_ENABLED: process.env.STATE_PROCUREMENT_SOURCES_ENABLED,
