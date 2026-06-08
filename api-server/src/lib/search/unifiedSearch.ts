@@ -17,6 +17,8 @@ import { bidnetProvider } from "../providers/bidnet";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
 import { federalRegisterProvider } from "../providers/federalRegister";
+import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
+import { mongoDbProvider } from "../providers/mongoDb";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -81,6 +83,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("usaSpending", usaSpendingProvider);
   await runProvider("federalRegister", federalRegisterProvider);
+  await runProvider("cloudflareWorker", cloudflareWorkerProvider);
 
   // ── Direct Stub Providers (Tango, BidNet) ────────────────────────────────
   // These are scaffolded but not yet operational pending API access details.
@@ -103,7 +106,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   }
 
   // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker"];
+  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -214,6 +217,13 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     });
     result.created++;
     persistedForIndex.push(opportunity);
+  }
+
+  const mongoArchive = await mongoDbProvider.archiveOpportunities(persistedForIndex);
+  if (mongoArchive && !mongoArchive.ok) {
+    result.providerResults.push({ provider: "mongoDb", fetched: 0, errors: [mongoArchive.error ?? "MongoDB archive failed"] });
+  } else if (mongoArchive?.ok && persistedForIndex.length > 0) {
+    result.providerResults.push({ provider: "mongoDb", fetched: persistedForIndex.length, errors: [] });
   }
 
   const vectorStats = await indexOpportunities(persistedForIndex);
