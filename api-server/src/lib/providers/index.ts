@@ -23,6 +23,7 @@ export * from "./qdrant";
 export * from "./pinecone";
 export * from "./federalRegister";
 export * from "./cloudflareWorker";
+export * from "./fal";
 export * from "./configOnly";
 
 import { samGovProvider } from "./samGov";
@@ -55,7 +56,7 @@ import { qdrantProvider } from "./qdrant";
 import { pineconeProvider } from "./pinecone";
 import { federalRegisterProvider } from "./federalRegister";
 import { cloudflareWorkerProvider } from "./cloudflareWorker";
-import { falProvider, mongoDbProvider } from "./configOnly";
+import { falProvider } from "./fal";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -91,7 +92,6 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   pinecone: pineconeProvider,
   qdrant: qdrantProvider,
   cloudflareWorker: cloudflareWorkerProvider,
-  mongoDb: mongoDbProvider,
   voyage: voyageProvider,
   huggingFace: huggingFaceProvider,
   federalRegister: federalRegisterProvider,
