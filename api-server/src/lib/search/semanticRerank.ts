@@ -96,7 +96,12 @@ export async function semanticRerank<T>(
   const head = items.slice(0, topN);
   const tail = items.slice(topN);
 
-  const cohereScores = await cohereProvider.rerank(IDEAL_PROFILE, head.map((h) => h.text), head.length);
+  const cohereConfigured = await cohereProvider.isConfigured();
+  const cohereScores = cohereConfigured
+    ? await cohereProvider.rerank(IDEAL_PROFILE, head.map((h) => h.text), head.length)
+    : null;
+  if (!cohereConfigured) console.warn("[semanticRerank] Cohere not configured (COHERE_API_KEY missing); trying embeddings.");
+  else if (!cohereScores?.length) console.warn("[semanticRerank] Cohere rerank returned no scores (check server logs for HTTP status); trying embeddings.");
   if (cohereScores?.length) {
     const byIndex = new Map(cohereScores.map((score) => [score.index, score.relevanceScore]));
     const rerankedHead: SemanticRerankResult<T>[] = head.map((h, i) => {
@@ -113,7 +118,10 @@ export async function semanticRerank<T>(
   }
 
   const candidateEmbeddings = await embedTexts(head.map((h) => h.text), "document");
-  if (!candidateEmbeddings || candidateEmbeddings.vectors.length !== head.length) return passthrough();
+  if (!candidateEmbeddings || candidateEmbeddings.vectors.length !== head.length) {
+    console.warn("[semanticRerank] Embedding fallback also failed — all 3 providers (Jina/Voyage/HuggingFace) returned no vectors. Falling back to base ranking.");
+    return passthrough();
+  }
 
   const profile = await getProfileEmbedding(candidateEmbeddings.provider);
   if (!profile || profile.provider !== candidateEmbeddings.provider) return passthrough();

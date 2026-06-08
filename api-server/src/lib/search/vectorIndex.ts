@@ -33,8 +33,11 @@ export async function indexOpportunities(opportunities: NormalizedOpportunity[])
 
   const embeddingResult = await embedTexts(opportunities.map(opportunityVectorText), "document");
   if (!embeddingResult) {
-    stats.errors.push("No embedding provider available — vector index skipped");
+    stats.errors.push("No embedding provider available — vector index skipped. All 3 providers (Jina/Voyage/HuggingFace) failed — check Render server logs for [Jina embed] / [Voyage embed] / [HuggingFace embed] HTTP error details.");
     return stats;
+  }
+  if (embeddingResult.errors?.length) {
+    stats.errors.push(...embeddingResult.errors);
   }
 
   stats.provider = embeddingResult.provider;

@@ -297,16 +297,18 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
+  // Track per-query Serper failures so they appear in the response instead of vanishing.
+  let serperQueryFailures = 0;
+  let serperLastError = "";
   const [serperRaw, exaRaw, tavilyRaw, statePortalRaw, youRaw, langsearchRaw, websearchRaw] = await Promise.all([
     useSerper
       ? Promise.allSettled(
           serperQueries.flatMap((q) => {
-            // Page 1 for every query; additional pages only for `deep` keyword queries.
             const pages = q.deep ? SERPER_DEEP_PAGES : 1;
             return Array.from({ length: pages }, (_, i) =>
               serperProvider
                 .search(q.query, SERPER_RESULTS_PER_QUERY, { type: q.type, tbs: q.tbs, page: i + 1 })
-                .catch(() => [] as SerperSearchResult[])
+                .catch((err: any) => { serperQueryFailures++; serperLastError = err.message ?? String(err); return [] as SerperSearchResult[]; })
             );
           })
         )
@@ -339,6 +341,16 @@ export async function webIntelligenceFetch(options: {
   stats.youResults = youRaw.length;
   stats.langsearchResults = langsearchRaw.length;
   stats.websearchResults = websearchRaw.length;
+
+  // Surface per-query Serper failures (they were previously silently swallowed).
+  if (serperQueryFailures > 0) {
+    errors.push(`Serper: ${serperQueryFailures} query(ies) failed — ${serperLastError}`);
+  } else if (useSerper && serperRaw.length === 0) {
+    errors.push("Serper: 0 results across all queries (API key may be invalid or quota exhausted — no HTTP error was thrown)");
+  }
+  if (useTavily && tavilyRaw.length === 0) {
+    errors.push("Tavily: 0 results across all queries (API key may be invalid or quota exhausted — check server logs)");
+  }
 
   const statePortalOpportunities = statePortalsProvider.toOpportunities(statePortalRaw);
   stats.statePortalResults = statePortalOpportunities.length;

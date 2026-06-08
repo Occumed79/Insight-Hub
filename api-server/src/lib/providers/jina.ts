@@ -103,7 +103,11 @@ export class JinaProvider implements DataSourceProvider {
         signal: AbortSignal.timeout(20000),
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn(`[Jina embed] HTTP ${response.status}: ${body.slice(0, 200)}`);
+        return null;
+      }
 
       const json = (await response.json()) as { data?: { index: number; embedding: number[] }[] };
       const data = json.data;
@@ -118,7 +122,8 @@ export class JinaProvider implements DataSourceProvider {
       }
       if (out.some((v) => v === undefined)) return null;
       return out as number[][];
-    } catch {
+    } catch (err) {
+      console.warn(`[Jina embed] ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }

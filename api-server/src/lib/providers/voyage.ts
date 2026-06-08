@@ -43,7 +43,11 @@ export class VoyageProvider implements DataSourceProvider {
         signal: AbortSignal.timeout(20000),
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn(`[Voyage embed] HTTP ${response.status}: ${body.slice(0, 200)}`);
+        return null;
+      }
       const json = (await response.json()) as { data?: { index?: number; embedding?: number[] }[] };
       const data = json.data;
       if (!data?.length) return null;
@@ -56,7 +60,8 @@ export class VoyageProvider implements DataSourceProvider {
       }
       if (out.some((embedding) => embedding === undefined)) return null;
       return out as number[][];
-    } catch {
+    } catch (err) {
+      console.warn(`[Voyage embed] ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }

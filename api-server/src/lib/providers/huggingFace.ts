@@ -63,11 +63,16 @@ export class HuggingFaceProvider implements DataSourceProvider {
           body: JSON.stringify({ inputs: text.slice(0, 4000), options: { wait_for_model: true } }),
           signal: AbortSignal.timeout(30000),
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          console.warn(`[HuggingFace embed] HTTP ${response.status}: ${body.slice(0, 200)}`);
+          return null;
+        }
         const vector = meanPool(await response.json());
         if (!vector) return null;
         vectors.push(vector);
-      } catch {
+      } catch (err) {
+        console.warn(`[HuggingFace embed] ${err instanceof Error ? err.message : err}`);
         return null;
       }
     }
