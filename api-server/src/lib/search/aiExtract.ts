@@ -9,9 +9,9 @@
  *                     JSON array, cutting AI calls by ~CHUNK_SIZE x.
  *  2. Caching       — extractions are memoized by URL hash so re-runs of the same
  *                     opportunity don't re-spend quota.
- *  3. Round-robin   — a single ordered set of providers (Gemini → Groq →
- *                     OpenRouter → Minimax) is tried per chunk; on a rate limit or
- *                     failure we fail over to the next provider instead of giving up.
+ *  3. Round-robin   — a single ordered set of providers is tried per chunk; on a
+ *                     rate limit or failure we fail over to the next configured
+ *                     provider instead of giving up.
  */
 
 import { createHash } from "crypto";
@@ -19,6 +19,7 @@ import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
+import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "../providers/openAiCompatible";
 
 export interface AiExtraction {
   isOpportunity: boolean;
@@ -49,7 +50,7 @@ export interface BatchExtractResult {
   cacheHits: number;
 }
 
-/** Minimal text-completion surface shared by all four AI providers. */
+/** Minimal text-completion surface shared by all AI providers. */
 interface AiTextProvider {
   name: string;
   isConfigured(): Promise<boolean>;
@@ -61,6 +62,10 @@ const PROVIDER_ORDER: AiTextProvider[] = [
   groqProvider,
   openrouterProvider,
   minimaxProvider,
+  cerebrasProvider,
+  deepseekProvider,
+  mistralProvider,
+  nvidiaProvider,
 ];
 
 /** How many candidates to analyze in a single AI prompt. */
