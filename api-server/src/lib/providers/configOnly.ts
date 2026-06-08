@@ -35,6 +35,3 @@ export class ConfigOnlyProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 }
-
-export const falProvider = new ConfigOnlyProvider("fal", [{ dbKey: "falApiKey", envKey: "FAL_API_KEY" }]);
-export const mongoDbProvider = new ConfigOnlyProvider("mongoDb", [{ dbKey: "mongoDbApi", envKey: "MONGO_DB_API" }]);
