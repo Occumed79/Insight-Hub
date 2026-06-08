@@ -1,9 +1,43 @@
-import { env } from "./env";
 import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "gemini" | "serper" | "tavily" | "tango" | "bidnet" | "statePortals" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "websearch" | "grantsGov" | "usaSpending";
+export type ProviderName =
+  | "samGov"
+  | "gemini"
+  | "serper"
+  | "tavily"
+  | "tango"
+  | "bidnet"
+  | "statePortals"
+  | "firecrawl"
+  | "openrouter"
+  | "groq"
+  | "exa"
+  | "browseAi"
+  | "browserUse"
+  | "olostep"
+  | "clod"
+  | "jina"
+  | "minimax"
+  | "you"
+  | "langsearch"
+  | "websearch"
+  | "grantsGov"
+  | "usaSpending"
+  | "cerebras"
+  | "cohere"
+  | "deepseek"
+  | "fal"
+  | "mistral"
+  | "nvidia"
+  | "pinecone"
+  | "qdrant"
+  | "cloudflareWorker"
+  | "mongoDb"
+  | "voyage"
+  | "huggingFace"
+  | "federalRegister";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -72,7 +106,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["State and local bids"], "partial"),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "BidNet API base URL", dbKey: "bidnetBaseUrl", envKey: "BIDNET_BASE_URL" }],
   },
-  statePortals: provider("statePortals", "State Portals", "procurement", "web_discovery", [], ["State procurement portal search"], "live"),
+  statePortals: provider("statePortals", "State / Local Procurement Sources", "procurement", "web_discovery", [], ["State procurement portals", "County bid sources", "City and municipal portals", "University bid portals"], "live", "Curated public procurement portal discovery controlled by Render feature flags."),
   firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),
   openrouter: {
     ...provider("openrouter", "OpenRouter", "ai", "hybrid", [secretField("openrouterApiKey", "OPENROUTER_API_KEY")], ["AI model routing", "Extraction", "Scoring"], "partial"),
@@ -93,13 +127,29 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     ...provider("clod", "CLōD AI", "ai", "hybrid", [secretField("clodApiKey", "CLOD_API_KEY", "API Key (JWT)")], ["AI extraction", "Scoring"], "partial"),
     optionalFields: [{ key: "model", label: "Model ID", type: "text", placeholder: "CLōD model", dbKey: "clodModel", envKey: "CLOD_MODEL" }],
   },
-  jina: provider("jina", "Jina AI Reader", "search", "web_discovery", [secretField("jinaApiKey", "JINA_API_KEY")], ["URL to markdown", "Content enrichment"], "active"),
+  jina: provider("jina", "Jina AI Reader", "search", "web_discovery", [secretField("jinaApiKey", "JINA_API_KEY")], ["URL to markdown", "Content enrichment", "Embeddings for semantic rerank"], "active"),
   minimax: provider("minimax", "Minimax AI", "ai", "hybrid", [secretField("minimaxApiKey", "MINIMAX_API_KEY")], ["Opportunity extraction", "Relevance scoring"], "partial"),
   you: provider("you", "You.com", "search", "web_discovery", [secretField("youApiKey", "YOU_API_KEY")], ["Web search", "Opportunity sourcing"], "partial"),
   langsearch: provider("langsearch", "Langsearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing"], "partial"),
   websearch: provider("websearch", "WebSearch API", "search", "web_discovery", [secretField("websearchApiKey", "WEBSEARCH_API_KEY")], ["Broad web search", "Opportunity sourcing"], "partial"),
   grantsGov: provider("grantsGov", "Grants.gov", "primary", "direct_source", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
   usaSpending: provider("usaSpending", "USASpending.gov", "primary", "direct_source", [], ["Expiring contract discovery", "Re-compete intelligence", "Incumbent tracking"], "live", "Public federal spending database — no API key required."),
+
+  cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "partial"),
+  cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Reranking", "Classification", "Embeddings"], "partial"),
+  deepseek: provider("deepseek", "DeepSeek", "ai", "hybrid", [secretField("deepseekApiKey", "DEEPSEEK_API_KEY")], ["AI extraction", "Reasoning", "Scoring failover"], "partial"),
+  fal: provider("fal", "Fal.ai", "ai", "research_analysis", [secretField("falApiKey", "FAL_API_KEY")], ["Media/model utility workflows"], "partial"),
+  mistral: provider("mistral", "Mistral", "ai", "hybrid", [secretField("mistralApiKey", "MISTRAL_API_KEY")], ["AI extraction", "Structured generation", "Scoring failover"], "partial"),
+  nvidia: provider("nvidia", "NVIDIA NIM", "ai", "hybrid", [secretField("nvidiaApiKey", "NVIDIA_API_KEY")], ["AI extraction", "Open model inference", "Scoring failover"], "partial"),
+  pinecone: provider("pinecone", "Pinecone", "search", "research_analysis", [secretField("pineconeApiKey", "PINECONE_API_KEY")], ["Vector storage", "Similarity search", "Future retrieval memory"], "partial"),
+  qdrant: {
+    ...provider("qdrant", "Qdrant", "search", "research_analysis", [{ key: "url", label: "Qdrant URL", type: "url", placeholder: "https://your-cluster.qdrant.io", dbKey: "qdrantUrl", envKey: "QDRANT_URL" }, secretField("qdrantApiKey", "QDRANT_API_KEY")], ["Vector storage", "Similarity search", "Future retrieval memory"], "partial"),
+  },
+  cloudflareWorker: provider("cloudflareWorker", "Cloudflare Worker API", "search", "web_discovery", [secretField("cloudflareWorkerApi", "CLOUDFLARE_WORKER_API", "Worker API URL / Token")], ["Edge helper endpoint", "Crawler/proxy utility"], "partial"),
+  mongoDb: provider("mongoDb", "MongoDB API", "search", "research_analysis", [secretField("mongoDbApi", "MONGO_DB_API", "MongoDB API Key / URL")], ["External document store", "Future enrichment cache"], "partial"),
+  voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Future reranking"], "partial"),
+  huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Model inference", "Embeddings", "Future classifier support"], "partial"),
+  federalRegister: provider("federalRegister", "Federal Register", "primary", "direct_source", [], ["Federal notices", "Rulemaking signals", "Agency activity monitoring"], "live", "Public Federal Register API configured through FEDERAL_REGISTER_API_BASE."),
 };
 
 export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
