@@ -432,6 +432,8 @@ router.post("/opportunities/fetch", async (req, res) => {
 
     await archiveExpiredOpportunities();
 
+    const allErrors = (result.providerResults ?? []).flatMap((pr: any) => (pr.errors ?? []).map((e: string) => `[${pr.provider}] ${e}`));
+
     return res.json({
       fetched: result.fetched,
       created: result.created,
@@ -442,6 +444,7 @@ router.post("/opportunities/fetch", async (req, res) => {
         fetched: pr.fetched,
         errors: pr.errors ?? [],
       })),
+      diagnostics: allErrors.length > 0 ? allErrors : undefined,
     });
   } catch (err: any) {
     req.log.error(err);
