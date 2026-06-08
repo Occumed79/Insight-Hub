@@ -32,8 +32,11 @@ export const env = {
 
   // Vector search / storage backends
   PINECONE_API_KEY: process.env.PINECONE_API_KEY,
+  PINECONE_INDEX_HOST: process.env.PINECONE_INDEX_HOST,
+  PINECONE_NAMESPACE: process.env.PINECONE_NAMESPACE,
   QDRANT_API_KEY: process.env.QDRANT_API_KEY,
   QDRANT_URL: process.env.QDRANT_URL,
+  QDRANT_COLLECTION: process.env.QDRANT_COLLECTION,
 
   // Infrastructure connectors
   CLOUDFLARE_WORKER_API: process.env.CLOUDFLARE_WORKER_API,
