@@ -138,7 +138,7 @@ function PreviewCard({ source }: PreviewCardProps) {
     const timer = setTimeout(() => {
       setTimedOut(true);
       setLoading(false);
-    }, 10_000);
+    }, 20_000);
     return () => clearTimeout(timer);
   }, [key]);
 
@@ -196,7 +196,7 @@ function PreviewCard({ source }: PreviewCardProps) {
       </div>
 
       {/* Preview area */}
-      <div className="relative w-full" style={{ height: "500px" }}>
+      <div className="relative w-full" style={{ height: "600px" }}>
         {loading && !timedOut && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40 z-10">
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -205,29 +205,30 @@ function PreviewCard({ source }: PreviewCardProps) {
         )}
 
         {timedOut && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-20 p-6 text-center">
-            <AlertTriangle className="w-8 h-8 text-amber-400 mb-3" />
-            <p className="text-sm font-medium text-white mb-1">
-              This site may block embedded previews.
-            </p>
-            <p className="text-xs text-muted-foreground mb-4">
-              Open in a new tab to view this source.
-            </p>
-            <a
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Open in new tab
-            </a>
-            <button
-              onClick={handleReload}
-              className="mt-3 text-xs text-muted-foreground hover:text-white underline transition-colors"
-            >
-              Retry preview
-            </button>
+          <div className="absolute inset-x-0 bottom-0 z-20 p-3 text-center bg-background/90 border-t border-white/10 backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <p className="text-xs font-medium text-white">
+                Preview blocked or slow — this site may not allow embedding.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs font-medium transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open in new tab
+              </a>
+              <button
+                onClick={handleReload}
+                className="text-xs text-muted-foreground hover:text-white underline transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
 
@@ -236,7 +237,8 @@ function PreviewCard({ source }: PreviewCardProps) {
           src={source.url}
           title={`${source.name} preview`}
           className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-top-navigation-by-user-activation"
+          referrerPolicy="no-referrer"
           loading="lazy"
           onLoad={handleLoad}
         />
@@ -328,7 +330,7 @@ export default function LiveSourceWall() {
       </div>
 
       {/* Responsive grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredSources.map((s) => (
           <PreviewCard key={s.name} source={s} />
         ))}
