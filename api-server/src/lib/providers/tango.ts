@@ -1,21 +1,48 @@
 /**
  * Tango Provider (Procurement Intelligence)
  *
- * Status: STUB — Architecture in place, but cannot be fully activated yet.
- *
- * To activate:
- * 1. Obtain a Tango API key from your Tango account representative.
- * 2. Confirm the exact REST API base URL and authentication method (Bearer token, query param, etc.).
- * 3. Provide the endpoint structure for opportunity/bid search.
- * 4. Set TANGO_API_KEY in your environment or Settings.
- *
- * NOTE: Tango's programmatic API details are not publicly documented.
- * This stub is intentionally conservative — it will not make any requests
- * until the exact endpoint structure is confirmed.
+ * Uses the Tango by MakeGov REST API:
+ *   Base URL: https://tango.makegov.com/api/  (override via TANGO_BASE_URL)
+ *   Auth:     X-API-KEY header
+ *   Endpoint: GET /opportunities/
+ *   Docs:     https://docs.makegov.com/api-reference/opportunities/
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+
+const TANGO_DEFAULT_BASE = "https://tango.makegov.com/api/";
+
+interface TangoOpportunity {
+  opportunity_id: string;
+  title?: string;
+  active?: boolean;
+  first_notice_date?: string;
+  last_notice_date?: string;
+  response_deadline?: string;
+  naics_code?: string;
+  psc_code?: string;
+  office?: {
+    agency_name?: string;
+    department_name?: string;
+  } | null;
+  place_of_performance?: {
+    city?: string;
+    state?: string;
+    country?: string;
+  } | null;
+  sam_url?: string;
+  set_aside?: string;
+  solicitation_number?: string;
+  description?: string;
+}
+
+interface TangoListResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: TangoOpportunity[];
+}
 
 export class TangoProvider implements DataSourceProvider {
   readonly name = "tango" as const;
@@ -24,29 +51,91 @@ export class TangoProvider implements DataSourceProvider {
     return resolveCredential("tangoApiKey", "TANGO_API_KEY");
   }
 
+  private async getBaseUrl(): Promise<string> {
+    const custom = await resolveCredential("tangoBaseUrl", "TANGO_BASE_URL");
+    return custom || TANGO_DEFAULT_BASE;
+  }
+
   async isConfigured(): Promise<boolean> {
     return !!(await this.getApiKey());
   }
 
-  /**
-   * Stub: Tango fetch is not yet implemented.
-   * Once the API endpoint structure is confirmed, implement the real HTTP call here.
-   */
-  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    const configured = await this.isConfigured();
-    if (!configured) {
-      throw new Error("Tango API key not configured.");
+  private static fmtDate(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  private normalize(o: TangoOpportunity): NormalizedOpportunity {
+    const placeParts: string[] = [];
+    const pop = o.place_of_performance;
+    if (pop) {
+      if (pop.city) placeParts.push(pop.city);
+      if (pop.state) placeParts.push(pop.state);
+      if (pop.country && pop.country !== "United States" && pop.country !== "USA") placeParts.push(pop.country);
     }
 
-    // TODO: Replace with real Tango API call once endpoint structure is confirmed.
-    // Expected shape:
-    //   GET {TANGO_BASE_URL}/opportunities?apiKey={key}&keywords={...}&fromDate={...}
-    // Return type should be mapped to NormalizedOpportunity[] using a normalize() method.
+    return {
+      externalId: o.opportunity_id,
+      title: o.title || "Untitled Opportunity",
+      agency: o.office?.agency_name || "Unknown Agency",
+      subAgency: o.office?.department_name || undefined,
+      type: o.set_aside || "Unknown",
+      status: o.active ? "active" : "archived",
+      naicsCode: o.naics_code || undefined,
+      postedDate: o.first_notice_date ? new Date(o.first_notice_date) : new Date(),
+      responseDeadline: o.response_deadline ? new Date(o.response_deadline) : undefined,
+      setAside: o.set_aside || undefined,
+      placeOfPerformance: placeParts.length > 0 ? placeParts.join(", ") : undefined,
+      description: o.description || undefined,
+      solicitationNumber: o.solicitation_number || undefined,
+      sourceUrl: o.sam_url || undefined,
+      source: this.name,
+      rawData: o as unknown as Record<string, unknown>,
+    };
+  }
 
-    throw new Error(
-      "Tango integration stub: API endpoint structure not yet confirmed. " +
-        "Please contact Tango support for programmatic API access details and update this provider."
-    );
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) {
+      throw new Error("Tango API key not configured. Set TANGO_API_KEY in environment or Settings.");
+    }
+
+    const baseUrl = await this.getBaseUrl();
+    const today = new Date();
+    const dateRange = options.dateRange ?? 30;
+    const fromDate = new Date(today);
+    fromDate.setDate(today.getDate() - dateRange);
+    const limit = options.limit ?? 50;
+
+    const params = new URLSearchParams({
+      first_notice_date_after: TangoProvider.fmtDate(fromDate),
+      first_notice_date_before: TangoProvider.fmtDate(today),
+      limit: String(limit),
+      page: "1",
+      ordering: "-first_notice_date",
+    });
+
+    if (options.keywords?.trim()) {
+      params.set("search", options.keywords.trim());
+    }
+
+    const url = `${baseUrl}opportunities/?${params}`;
+    const response = await fetch(url, {
+      headers: { "X-API-KEY": apiKey },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Tango API error ${response.status}: ${text.slice(0, 200)}`);
+    }
+
+    const json = (await response.json()) as TangoListResponse;
+    const records = (json.results ?? []).map((o) => this.normalize(o));
+
+    return {
+      records,
+      total: json.count ?? records.length,
+      errors: [],
+    };
   }
 
   async getStatus(): Promise<ProviderStatus> {
@@ -54,10 +143,7 @@ export class TangoProvider implements DataSourceProvider {
     return {
       name: this.name,
       configured,
-      healthy: false,
-      errorMessage: configured
-        ? "API endpoint structure pending confirmation. Contact Tango support."
-        : undefined,
+      healthy: configured,
     };
   }
 }

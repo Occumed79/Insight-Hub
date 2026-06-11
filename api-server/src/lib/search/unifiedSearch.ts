@@ -81,24 +81,21 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("usaSpending", usaSpendingProvider);
   await runProvider("federalRegister", federalRegisterProvider);
+  await runProvider("tango", tangoProvider);
 
-  // ── Direct Stub Providers (Tango, BidNet) ────────────────────────────────
+  // ── Direct Stub Providers (BidNet) ───────────────────────────────────────
   // These are scaffolded but not yet operational pending API access details.
-  for (const { name, provider } of [
-    { name: "tango", provider: tangoProvider },
-    { name: "bidnet", provider: bidnetProvider },
-  ]) {
-    if (!requestedProviders.includes(name)) continue;
+  if (requestedProviders.includes("bidnet")) {
     try {
-      const fetchResult = await provider.fetch({
+      const fetchResult = await bidnetProvider.fetch({
         keywords: options.keywords,
         dateRange: options.dateRange,
       });
       allRecords.push(...fetchResult.records);
       result.fetched += fetchResult.records.length;
-      result.providerResults.push({ provider: name, fetched: fetchResult.records.length, errors: fetchResult.errors ?? [] });
+      result.providerResults.push({ provider: "bidnet", fetched: fetchResult.records.length, errors: fetchResult.errors ?? [] });
     } catch (err: any) {
-      result.providerResults.push({ provider: name, fetched: 0, errors: [err.message ?? String(err)] });
+      result.providerResults.push({ provider: "bidnet", fetched: 0, errors: [err.message ?? String(err)] });
     }
   }
 

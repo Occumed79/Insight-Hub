@@ -82,7 +82,7 @@ const FETCH_PROVIDER_OPTIONS = [
   { key: "langsearch", label: "Langsearch", desc: "LLM search", stub: false },
   { key: "websearch", label: "WebSearch", desc: "Broad web search", stub: false },
   { key: "minimax", label: "Minimax AI", desc: "AI scoring", stub: false },
-  { key: "tango", label: "Tango", desc: "Pending API access", stub: true },
+  { key: "tango", label: "Tango", desc: "Federal procurement opportunities", stub: false },
   { key: "bidnet", label: "BidNet", desc: "Pending direct API", stub: true },
 ];
 
@@ -404,7 +404,7 @@ export default function OpportunitiesDashboard() {
             All
           </button>
           {providersData?.providers.map((p) => {
-            const isStub = p.name === "tango" || p.name === "bidnet";
+            const isStub = p.name === "bidnet";
             const dotClass = isStub ? "bg-amber-500/40 border border-amber-500/40" : p.status?.configured ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" : "bg-white/20";
             const providerKey = p.name === "sam_gov" ? "samGov" : p.name;
             const isSelected = sourceFilter === providerKey;

@@ -55,6 +55,7 @@ export const env = {
 
   // Tango Procurement Intelligence
   TANGO_API_KEY: process.env.TANGO_API_KEY,
+  TANGO_BASE_URL: process.env.TANGO_BASE_URL,
 
   // BidNet Direct
   BIDNET_API_KEY: process.env.BIDNET_API_KEY,
