@@ -214,7 +214,7 @@ function ProspectCard({
     const newStatus = e.target.value as Prospect["status"];
     setSavingStatus(true);
     try {
-      const updated = await patchProspect(prospect.id, { status: newStatus });
+      const updated = await patchProspect(prospect.id, { status: newStatus as Prospect["status"] });
       onUpdate?.(updated);
     } catch { /* noop */ } finally { setSavingStatus(false); }
   }
@@ -224,7 +224,7 @@ function ProspectCard({
     const newTier = e.target.value as Prospect["tier"];
     setSavingTier(true);
     try {
-      const updated = await patchProspect(prospect.id, { tier: newTier });
+      const updated = await patchProspect(prospect.id, { tier: newTier as Prospect["tier"] });
       onUpdate?.(updated);
     } catch { /* noop */ } finally { setSavingTier(false); }
   }
@@ -405,7 +405,7 @@ function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {
     const newStatus = e.target.value as Prospect["status"];
     setSavingStatus(true);
     try {
-      const updated = await patchProspect(prospect.id, { status: newStatus });
+      const updated = await patchProspect(prospect.id, { status: newStatus as Prospect["status"] });
       onUpdate?.(updated);
     } catch { /* noop */ } finally { setSavingStatus(false); }
   }
@@ -415,7 +415,7 @@ function DetailPanel({ prospect, onClose, onResearch, researching, onUpdate }: {
     const newTier = e.target.value as Prospect["tier"];
     setSavingTier(true);
     try {
-      const updated = await patchProspect(prospect.id, { tier: newTier });
+      const updated = await patchProspect(prospect.id, { tier: newTier as Prospect["tier"] });
       onUpdate?.(updated);
     } catch { /* noop */ } finally { setSavingTier(false); }
   }

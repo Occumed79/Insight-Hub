@@ -1014,7 +1014,7 @@ function classifyPost(title: string): typeof ROLE_CATEGORIES[0] | null {
 
 // ── HiringIntelPanel ─────────────────────────────────────────────────────────
 function HiringIntelPanel({ clientId, branches }: { clientId: string; branches: ClientBranch[] }) {
-  const [allPosts, setAllPosts] = useState<BranchHiringPost[]>([]);
+  const [allPosts, setAllPosts] = useState<(BranchHiringPost & { _branchName: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRelevance, setFilterRelevance] = useState<string>("all");
@@ -1022,7 +1022,7 @@ function HiringIntelPanel({ clientId, branches }: { clientId: string; branches: 
   useEffect(() => {
     async function loadAllPosts() {
       setLoading(true);
-      const results: BranchHiringPost[] = [];
+      const results: (BranchHiringPost & { _branchName: string })[] = [];
       for (const branch of branches.filter(b => Number(b.postingCount || 0) > 0)) {
         try {
           const res = await fetch(`/api/clients/${clientId}/branches/${branch.id}/hiring`);
