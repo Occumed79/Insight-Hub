@@ -111,6 +111,13 @@ export default function OpportunitiesDashboard() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
 
+  // ── Fast Local Search state (POST /api/search) ────────────────────────────
+  const [localSearchQuery, setLocalSearchQuery] = useState("");
+  const [localSearchResults, setLocalSearchResults] = useState<any[]>([]);
+  const [isLocalSearching, setIsLocalSearching] = useState(false);
+  const [localSearchError, setLocalSearchError] = useState<string | null>(null);
+  const [showLocalSearchResults, setShowLocalSearchResults] = useState(false);
+
   const { data: settings } = useGetSettings();
   const { data: providersData } = useListProviders();
 
@@ -251,6 +258,41 @@ export default function OpportunitiesDashboard() {
 
   const toggleFetchProvider = (key: string) => {
     setFetchProviders((prev) => prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]);
+  };
+
+  // ── Fast Local Search handler (POST /api/search) ──────────────────────────
+  const handleLocalSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!localSearchQuery.trim()) return;
+    setIsLocalSearching(true);
+    setLocalSearchError(null);
+    setShowLocalSearchResults(true);
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const resp = await fetch(`${baseUrl}/api/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: localSearchQuery.trim(), limit: 50 }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || "Search failed");
+      }
+      const data = await resp.json();
+      setLocalSearchResults(data.results ?? []);
+    } catch (err: any) {
+      setLocalSearchError(err.message);
+      setLocalSearchResults([]);
+    } finally {
+      setIsLocalSearching(false);
+    }
+  };
+
+  const handleClearLocalSearch = () => {
+    setLocalSearchQuery("");
+    setLocalSearchResults([]);
+    setLocalSearchError(null);
+    setShowLocalSearchResults(false);
   };
 
   const handleFetchSubmit = (e: React.FormEvent) => {
@@ -433,6 +475,39 @@ export default function OpportunitiesDashboard() {
         )}
       </div>
 
+      {/* ── Fast Local Search (POST /api/search) ─────────────────────────── */}
+      <form onSubmit={handleLocalSearch} className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Smart search across all stored opportunities..."
+            className="pl-9 bg-background/50 border-white/10 focus-visible:ring-primary/50 text-white"
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+          <Button
+            type="submit"
+            disabled={isLocalSearching || !localSearchQuery.trim()}
+            className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20"
+          >
+            {isLocalSearching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+            {isLocalSearching ? "Searching..." : "Search"}
+          </Button>
+          {showLocalSearchResults && (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/10 bg-transparent hover:bg-white/5 text-white/80"
+              onClick={handleClearLocalSearch}
+            >
+              ✕ Clear
+            </Button>
+          )}
+        </div>
+      </form>
+
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -472,7 +547,105 @@ export default function OpportunitiesDashboard() {
       </div>
 
       <div className="glass-panel rounded-2xl border border-white/10 p-4">
-        {isLoadingOpps ? (
+        {showLocalSearchResults ? (
+          <>
+            {isLocalSearching ? (
+              <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>
+            ) : localSearchError ? (
+              <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center">
+                <AlertCircle className="w-12 h-12 mb-4 text-destructive/50" />
+                <h3 className="text-lg font-medium text-white mb-2">Search failed</h3>
+                <p className="max-w-sm text-sm">{localSearchError}</p>
+              </div>
+            ) : localSearchResults.length === 0 ? (
+              <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center">
+                <AlertCircle className="w-12 h-12 mb-4 opacity-25" />
+                <h3 className="text-lg font-medium text-white mb-2">No matches found</h3>
+                <p className="max-w-sm text-sm">Try a different query or broaden your search terms.</p>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-4 px-1">
+                  <h3 className="text-sm font-medium text-white/80">
+                    {localSearchResults.length} result{localSearchResults.length !== 1 ? "s" : ""} from local search
+                  </h3>
+                </div>
+                <AnimatePresence>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                    {localSearchResults.map((opp: any, i: number) => {
+                      const href = opp.sourceUrl || null;
+                      const urgent = opp.responseDeadline && new Date(opp.responseDeadline).getTime() - new Date().getTime() < 14 * 24 * 60 * 60 * 1000;
+                      return (
+                        <motion.article
+                          key={opp.id}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ delay: Math.min(i * 0.025, 0.25) }}
+                          className="group relative min-h-[280px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex flex-wrap gap-2 items-center">
+                              {getSourceBadge(opp.source, opp.providerName)}
+                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 font-semibold tabular-nums text-[10px]">
+                                {opp.matchScore} pts
+                              </Badge>
+                            </div>
+                            <Badge variant="outline" className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-muted-foreground border-white/10"}>
+                              {opp.status}
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-2 flex-1">
+                            <h3 className="text-sm font-semibold leading-snug text-white line-clamp-3 group-hover:text-primary transition-colors">
+                              {opp.title}
+                            </h3>
+                            {opp.matchReasons?.length > 0 && (
+                              <div className="flex items-start gap-1 text-[10px] text-primary/70 leading-snug">
+                                <Sparkles className="w-3 h-3 mt-px shrink-0" />
+                                <span className="line-clamp-2">{opp.matchReasons.slice(0, 3).join(" · ")}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Agency</div>
+                              <div className="mt-1 text-white/85 line-clamp-1">{opp.agency === "Unknown" ? (extractAgencyHint(opp.title) ?? "—") : (opp.agency ?? "—")}</div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Due</div>
+                              <div className={`mt-1 ${urgent ? "text-amber-300 font-medium" : "text-white/85"}`}>
+                                {opp.responseDeadline ? format(new Date(opp.responseDeadline), "MMM d, yyyy") : "—"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Location</div>
+                              <div className="mt-1 text-white/85 line-clamp-1">{opp.placeOfPerformance || "—"}</div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Posted</div>
+                              <div className="mt-1 text-white/85">{opp.postedDate ? format(new Date(opp.postedDate), "MMM d, yyyy") : "—"}</div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <div className="text-[10px] text-muted-foreground">{opp.naicsCode ? `NAICS: ${opp.naicsCode}` : ""}</div>
+                            {href && (
+                              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10 hover:text-white" asChild>
+                                <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-4 h-4" /></a>
+                              </Button>
+                            )}
+                          </div>
+                        </motion.article>
+                      );
+                    })}
+                  </div>
+                </AnimatePresence>
+              </div>
+            )}
+          </>
+        ) : isLoadingOpps ? (
           <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>
         ) : opportunities.length === 0 ? (
           <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center">
