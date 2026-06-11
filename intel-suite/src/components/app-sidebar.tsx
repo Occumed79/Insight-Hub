@@ -8,7 +8,7 @@ import {
   Landmark,
   Map,
   Rss,
-  Newspaper,
+  LayoutGrid,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import occuMedLogo from "@/assets/occu-med-logo.png";
@@ -36,7 +36,7 @@ export function AppSidebar() {
   const isFederalAgencies = location.startsWith('/portal/federal-agencies');
   const isStateAgencies = location.startsWith('/portal/state-agencies');
   const isIntelFeed = location.startsWith('/portal/intelligence-feed');
-  const isContractorNewsroom = location.startsWith('/portal/contractor-newsroom');
+  const isSourceWall = location.startsWith('/portal/source-wall');
   const isSettings = location.startsWith('/portal/settings');
 
   return (
@@ -101,12 +101,12 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild 
-                  isActive={isContractorNewsroom}
+                  isActive={isSourceWall}
                   className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
                 >
-                  <Link href="/portal/contractor-newsroom" className="flex items-center gap-3">
-                    <Newspaper className="w-4 h-4" />
-                    <span>Contractor Newsroom</span>
+                  <Link href="/portal/source-wall" className="flex items-center gap-3">
+                    <LayoutGrid className="w-4 h-4" />
+                    <span>Live Source Wall</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
