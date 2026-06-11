@@ -2,8 +2,9 @@ name: Replit Recovery Patch
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+  # Disabled automatic trigger to prevent repeated modifications
+  # push:
+  #   branches: [main]
 
 permissions:
   contents: write
