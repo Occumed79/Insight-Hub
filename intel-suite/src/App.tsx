@@ -12,7 +12,7 @@ import ProspectDetailPage from "@/pages/portal/prospect-detail";
 import FederalAgenciesPage from "@/pages/portal/federal-agencies";
 import StateAgenciesPage from "@/pages/portal/state-agencies";
 import IntelligenceFeedPage from "@/pages/portal/intelligence-feed";
-import LiveSourceWall from "@/pages/portal/contractor-newsroom";
+import SourceIntelligenceMonitor from "@/pages/portal/contractor-newsroom";
 import SettingsPage from "@/pages/portal/settings";
 import { PortalLayout } from "@/components/portal-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -39,7 +39,7 @@ function PortalRouter() {
         <Route path="/portal/federal-agencies" component={FederalAgenciesPage} />
         <Route path="/portal/state-agencies" component={StateAgenciesPage} />
         <Route path="/portal/intelligence-feed" component={IntelligenceFeedPage} />
-        <Route path="/portal/source-wall" component={LiveSourceWall} />
+        <Route path="/portal/source-wall" component={SourceIntelligenceMonitor} />
         <Route path="/portal/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>

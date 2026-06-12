@@ -106,6 +106,70 @@ export async function runStartupMigrations(): Promise<void> {
         ON intel_feed_items (published_date DESC NULLS LAST)
     `);
 
+    // ── source_monitor_items ─────────────────────────────────────────────────
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS source_monitor_items (
+        id              TEXT PRIMARY KEY,
+        source_id       TEXT NOT NULL,
+        source_name     TEXT NOT NULL,
+        category        TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        summary         TEXT,
+        item_url        TEXT,
+        source_url      TEXT NOT NULL,
+        published_date  TIMESTAMPTZ,
+        scrape_status   TEXT NOT NULL DEFAULT 'success',
+        error_message   TEXT,
+        raw_json        TEXT,
+        scraped_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_items_source_id
+        ON source_monitor_items (source_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_items_category
+        ON source_monitor_items (category)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_items_scraped_at
+        ON source_monitor_items (scraped_at DESC)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_items_item_url
+        ON source_monitor_items (item_url)
+    `);
+
+    // ── source_monitor_runs ──────────────────────────────────────────────────
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS source_monitor_runs (
+        id              TEXT PRIMARY KEY,
+        source_id       TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'success',
+        items_found     INTEGER NOT NULL DEFAULT 0,
+        items_created   INTEGER NOT NULL DEFAULT 0,
+        items_updated   INTEGER NOT NULL DEFAULT 0,
+        error_message   TEXT,
+        started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at    TIMESTAMPTZ
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_runs_source_id
+        ON source_monitor_runs (source_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_runs_started_at
+        ON source_monitor_runs (started_at DESC)
+    `);
+
     logger.info("Startup migrations complete.");
   } catch (err) {
     // Non-fatal: log and continue. The server will still start.

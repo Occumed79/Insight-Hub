@@ -106,7 +106,7 @@ export function AppSidebar() {
                 >
                   <Link href="/portal/source-wall" className="flex items-center gap-3">
                     <LayoutGrid className="w-4 h-4" />
-                    <span>Live Source Wall</span>
+                    <span>Source Intelligence Monitor</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

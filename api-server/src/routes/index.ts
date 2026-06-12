@@ -13,6 +13,7 @@ import clientContactsRouter from "./client-contacts";
 import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
+import sourceMonitorRouter from "./source-monitor";
 import searchRouter from "./search";
 
 const router: IRouter = Router();
@@ -31,6 +32,7 @@ router.use(clientContactsRouter);
 router.use(federalIntelRouter);
 router.use(stateAgenciesRouter);
 router.use(intelligenceFeedRouter);
+router.use(sourceMonitorRouter);
 router.use(searchRouter);
 
 export default router;
