@@ -317,14 +317,6 @@ export const clientDossiers: ClientDossier[] = [
   },
 ];
 
-export function getDossier(clientId: string, clientName?: string): ClientDossier | undefined {
-  const byId = clientDossiers.find((d) => d.clientId === clientId);
-  if (byId) return byId;
-
-  if (!clientName) return undefined;
-  const normalized = clientName.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return clientDossiers.find((d) => {
-    const dossierNormalized = d.clientName.toLowerCase().replace(/[^a-z0-9]/g, "");
-    return dossierNormalized.includes(normalized) || normalized.includes(dossierNormalized);
-  });
+export function getDossier(clientId: string): ClientDossier | undefined {
+  return clientDossiers.find((d) => d.clientId === clientId);
 }

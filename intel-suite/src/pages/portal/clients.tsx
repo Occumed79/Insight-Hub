@@ -1278,7 +1278,7 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
     return <div className="text-center py-16 text-muted-foreground">Client not found.</div>;
   }
 
-  const dossier = getDossier(clientId, client?.name);
+  const dossier = getDossier(clientId);
 
   const tabs: { id: IntelTab; label: string; icon: React.ElementType }[] = [
     { id: "contacts",   label: "Org Structure",     icon: Users       },
@@ -1401,7 +1401,7 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
 function ClientCard({ client, onClick }: { client: Client; onClick: () => void }) {
   const trendConfig = TREND_CONFIG[client.overallHiringTrend || "unknown"] || TREND_CONFIG.unknown;
   const TrendIcon = trendConfig.icon;
-  const hasDossier = !!getDossier(client.id, client.name);
+  const hasDossier = !!getDossier(client.id);
 
   return (
     <motion.div layout whileHover={{ y: -2 }} className="glass-card rounded-xl p-4 cursor-pointer border border-white/5 hover:border-white/15 transition-all" onClick={onClick}>
