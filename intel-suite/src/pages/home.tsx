@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2, X, Check } from "lucide-react";
+import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2 } from "lucide-react";
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
@@ -11,66 +10,13 @@ const LOGO_URL = occuMedLogoSrc;
 type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
 type PortalLinks = Record<PortalLinkKey, string>;
 
-const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
-
 const SHARED_PORTAL_LINKS: PortalLinks = {
   outreach: import.meta.env.VITE_OUTREACH_PORTAL_URL ?? "",
   relationship: import.meta.env.VITE_RELATIONSHIP_PORTAL_URL ?? "",
   hiringTrends: import.meta.env.VITE_HIRING_TRENDS_PORTAL_URL ?? "",
 };
 
-function normalizeLinks(value: Partial<PortalLinks> = {}): PortalLinks {
-  return {
-    outreach: typeof value.outreach === "string" ? value.outreach.trim() : "",
-    relationship: typeof value.relationship === "string" ? value.relationship.trim() : "",
-    hiringTrends: typeof value.hiringTrends === "string" ? value.hiringTrends.trim() : "",
-  };
-}
-
-function getStoredLinkOverrides(): PortalLinks {
-  try {
-    return normalizeLinks(JSON.parse(localStorage.getItem(LINKS_STORAGE_KEY) || "{}"));
-  } catch {
-    return normalizeLinks();
-  }
-}
-
-function resolvePortalLinks(overrides: Partial<PortalLinks> = getStoredLinkOverrides()): PortalLinks {
-  const normalizedOverrides = normalizeLinks(overrides);
-
-  return {
-    outreach: normalizedOverrides.outreach || SHARED_PORTAL_LINKS.outreach,
-    relationship: normalizedOverrides.relationship || SHARED_PORTAL_LINKS.relationship,
-    hiringTrends: normalizedOverrides.hiringTrends || SHARED_PORTAL_LINKS.hiringTrends,
-  };
-}
-
 export default function Home() {
-  const [linksOpen, setLinksOpen] = useState(false);
-  const [links, setLinks] = useState(resolvePortalLinks);
-  const [draft, setDraft] = useState(resolvePortalLinks);
-  const [saved, setSaved] = useState(false);
-
-  function openLinks() {
-    setDraft(resolvePortalLinks());
-    setLinksOpen(true);
-    setSaved(false);
-  }
-
-  function saveLinks() {
-    localStorage.setItem(LINKS_STORAGE_KEY, JSON.stringify(draft));
-    setLinks(resolvePortalLinks(draft));
-    setSaved(true);
-    setTimeout(() => setLinksOpen(false), 700);
-  }
-
-  function resetLinksToSharedDefaults() {
-    localStorage.removeItem(LINKS_STORAGE_KEY);
-    setDraft(SHARED_PORTAL_LINKS);
-    setLinks(SHARED_PORTAL_LINKS);
-    setSaved(false);
-  }
-
   const extraCards = [
     {
       key: "outreach",
@@ -80,7 +26,7 @@ export default function Home() {
       title: "Outreach Intelligence",
       desc: "Look up employee contacts, org charts, and decision-makers across client and prospect organizations to power targeted outreach.",
       delay: 0.7,
-      link: links.outreach,
+      link: SHARED_PORTAL_LINKS.outreach,
     },
     {
       key: "relationship",
@@ -90,7 +36,7 @@ export default function Home() {
       title: "Relationship Intelligence",
       desc: "Unified view of clients and prospects — relationship status, tiers, branches, contacts, and opportunity signals in one place.",
       delay: 0.8,
-      link: links.relationship,
+      link: SHARED_PORTAL_LINKS.relationship,
     },
     {
       key: "hiringTrends",
@@ -100,7 +46,7 @@ export default function Home() {
       title: "Hiring Trend Intelligence",
       desc: "Track hiring velocity, open roles, and workforce expansion signals across client and prospect organizations to identify needs early.",
       delay: 0.9,
-      link: links.hiringTrends,
+      link: SHARED_PORTAL_LINKS.hiringTrends,
     },
   ];
 
@@ -141,86 +87,6 @@ export default function Home() {
         <div style={{position:"absolute",top:"5%",right:"8%",width:"320px",height:"320px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.90) 0%, rgba(56,182,255,0.45) 40%, transparent 70%)",filter:"blur(22px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s",willChange:"transform, opacity"}} />
         <div style={{position:"absolute",bottom:"12%",left:"6%",width:"400px",height:"400px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.72) 0%, rgba(56,182,255,0.34) 40%, transparent 70%)",filter:"blur(26px)",animation:"home-pulse 13s ease-in-out infinite",animationDelay:"-8s",willChange:"transform, opacity"}} />
       </div>
-
-      {/* Subtle Links button — top right */}
-      <button
-        onClick={openLinks}
-        className="absolute top-5 right-5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-transparent/[0.04] text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-transparent/[0.07] transition-all text-[11px] font-medium"
-      >
-        <Link2 className="w-3 h-3" />
-        Links
-      </button>
-
-      {/* Links modal */}
-      <AnimatePresence>
-        {linksOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-            onClick={() => setLinksOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="bg-[#0a1220] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Link2 className="w-4 h-4 text-primary/70" />
-                  <span className="text-sm font-semibold text-white/80">Portal Links</span>
-                </div>
-                <button onClick={() => setLinksOpen(false)} className="text-white/30 hover:text-white/60 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <p className="text-[11px] text-white/35 leading-relaxed mb-5">
-                Shared defaults come from Render/Vite environment variables. Saving here only creates a browser-level override for this device.
-              </p>
-
-              <div className="space-y-4">
-                {[
-                  { key: "outreach" as const, label: "Outreach Intelligence", placeholder: "VITE_OUTREACH_PORTAL_URL" },
-                  { key: "relationship" as const, label: "Relationship Intelligence", placeholder: "VITE_RELATIONSHIP_PORTAL_URL" },
-                  { key: "hiringTrends" as const, label: "Hiring Trend Intelligence", placeholder: "VITE_HIRING_TRENDS_PORTAL_URL" },
-                ].map(field => (
-                  <div key={field.key}>
-                    <label className="block text-[11px] text-white/40 mb-1.5 font-medium">{field.label}</label>
-                    <input
-                      type="url"
-                      value={draft[field.key]}
-                      onChange={e => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
-                      placeholder={field.placeholder}
-                      className="w-full text-xs bg-transparent/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white/70 placeholder-white/20 focus:outline-none focus:border-primary/40 transition-colors"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-2 mt-5">
-                <button
-                  onClick={saveLinks}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/30 transition-colors"
-                >
-                  {saved ? <Check className="w-4 h-4" /> : null}
-                  {saved ? "Saved!" : "Save Local Override"}
-                </button>
-                <button onClick={resetLinksToSharedDefaults} className="px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors">
-                  Env Defaults
-                </button>
-                <button onClick={() => setLinksOpen(false)} className="px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors">
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
         <motion.div
@@ -331,7 +197,7 @@ export default function Home() {
             </motion.div>
           ))}
 
-          {/* 3 new external portal cards — identical structure */}
+          {/* 3 external portal cards sourced only from Render/Vite environment variables */}
           {extraCards.map((card) => (
             <motion.div
               key={card.key}
@@ -369,8 +235,8 @@ export default function Home() {
                   </div>
                 </a>
               ) : (
-                <div onClick={openLinks} className="block h-full cursor-pointer">
-                  <div className="h-full glass-card rounded-3xl p-1 group relative overflow-hidden opacity-70 hover:opacity-90 transition-opacity">
+                <div className="block h-full cursor-not-allowed" title="Set this portal URL in Render environment variables.">
+                  <div className="h-full glass-card rounded-3xl p-1 group relative overflow-hidden opacity-70">
                     <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                     <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
                       <img
@@ -384,7 +250,7 @@ export default function Home() {
                       </div>
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-[11px] text-white/50 bg-black/40 rounded-full px-3 py-1 border border-white/10">
-                          Add link →
+                          Env var not set
                         </span>
                       </div>
                     </div>
