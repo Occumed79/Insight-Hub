@@ -9,6 +9,7 @@ import {
   ArrowLeft, Calendar, Loader2, DollarSign, Scale, ShieldAlert,
   AlertTriangle, CheckCircle, Lock, Crown, Users, Package,
   MessageSquare, Target, Linkedin, Trash2, Filter, Clock,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,8 @@ import {
 import type {
   FecResponse, OshaResponse, LitigationResponse,
 } from "./clients-types";
+import ClientDossierPanel from "@/components/portal/ClientDossierPanel";
+import { getDossier } from "@/data/client-dossiers";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -1237,7 +1240,7 @@ function HiringIntelPanel({ clientId, branches }: { clientId: string; branches: 
 
 // ── Client Detail View ─────────────────────────────────────────────────────────
 
-type IntelTab = "contacts" | "branches" | "hiring" | "fec" | "osha" | "litigation";
+type IntelTab = "contacts" | "branches" | "hiring" | "fec" | "osha" | "litigation" | "dossier";
 
 function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => void }) {
   const { toast } = useToast();
@@ -1275,10 +1278,13 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
     return <div className="text-center py-16 text-muted-foreground">Client not found.</div>;
   }
 
+  const dossier = getDossier(clientId, client?.name);
+
   const tabs: { id: IntelTab; label: string; icon: React.ElementType }[] = [
     { id: "contacts",   label: "Org Structure",     icon: Users       },
     { id: "hiring",     label: "Hiring Intel",      icon: TrendingUp  },
     { id: "branches",   label: "Branches",          icon: Building2   },
+    { id: "dossier",    label: "Data Profile",      icon: BarChart3   },
     { id: "fec",        label: "FEC / Political",   icon: DollarSign  },
     { id: "osha",       label: "Regulatory",        icon: ShieldAlert },
     { id: "litigation", label: "Litigation",        icon: Scale       },
@@ -1342,6 +1348,15 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
         <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {activeTab === "contacts"   && <OrgStructurePanel clientId={clientId} />}
           {activeTab === "hiring"     && <HiringIntelPanel clientId={clientId} branches={branches} />}
+          {activeTab === "dossier"    && dossier ? <ClientDossierPanel dossier={dossier} /> : (
+            <div className="glass-panel rounded-2xl p-12 text-center border border-white/10">
+              <BarChart3 className="w-10 h-10 text-primary/30 mx-auto mb-4" />
+              <p className="text-white font-semibold mb-2">No dossier data yet</p>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                Upload a client intelligence pack (CSV or JSON) to generate rich visual profiles with safety trends, benchmarks, and geographic breakdowns.
+              </p>
+            </div>
+          )}
           {activeTab === "fec"        && <FecPanel clientId={clientId} />}
           {activeTab === "osha"       && <OshaPanel clientId={clientId} />}
           {activeTab === "litigation" && <LitigationPanel clientId={clientId} />}
@@ -1386,6 +1401,7 @@ function ClientDetail({ clientId, onBack }: { clientId: string; onBack: () => vo
 function ClientCard({ client, onClick }: { client: Client; onClick: () => void }) {
   const trendConfig = TREND_CONFIG[client.overallHiringTrend || "unknown"] || TREND_CONFIG.unknown;
   const TrendIcon = trendConfig.icon;
+  const hasDossier = !!getDossier(client.id, client.name);
 
   return (
     <motion.div layout whileHover={{ y: -2 }} className="glass-card rounded-xl p-4 cursor-pointer border border-white/5 hover:border-white/15 transition-all" onClick={onClick}>
@@ -1400,6 +1416,11 @@ function ClientCard({ client, onClick }: { client: Client; onClick: () => void }
               <TrendIcon className="w-2.5 h-2.5" />{trendConfig.label}
             </span>
             {(client.branchCount ?? 0) > 0 && <span className="text-[10px] text-muted-foreground">{client.branchCount} branch{client.branchCount !== 1 ? "es" : ""}</span>}
+            {hasDossier && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 flex items-center gap-1">
+                <BarChart3 className="w-2.5 h-2.5" />Data Profile
+              </span>
+            )}
           </div>
         </div>
       </div>

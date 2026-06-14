@@ -4,7 +4,7 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
-import occuMedLogoSrc from "@/assets/occu-med-logo-mark.png";
+import occuMedLogoSrc from "@/assets/occu-med-logo.png";
 const LOGO_URL = occuMedLogoSrc;
 
 type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
