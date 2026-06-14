@@ -8,33 +8,67 @@ import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
 import occuMedLogoSrc from "@/assets/occu-med-logo-mark.png";
 const LOGO_URL = occuMedLogoSrc;
 
+type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
+type PortalLinks = Record<PortalLinkKey, string>;
+
 const LINKS_STORAGE_KEY = "insight_hub_extra_portal_links";
 
-function getStoredLinks(): { outreach: string; relationship: string; hiringTrends: string } {
+const SHARED_PORTAL_LINKS: PortalLinks = {
+  outreach: import.meta.env.VITE_OUTREACH_PORTAL_URL ?? "",
+  relationship: import.meta.env.VITE_RELATIONSHIP_PORTAL_URL ?? "",
+  hiringTrends: import.meta.env.VITE_HIRING_TRENDS_PORTAL_URL ?? "",
+};
+
+function normalizeLinks(value: Partial<PortalLinks> = {}): PortalLinks {
+  return {
+    outreach: typeof value.outreach === "string" ? value.outreach.trim() : "",
+    relationship: typeof value.relationship === "string" ? value.relationship.trim() : "",
+    hiringTrends: typeof value.hiringTrends === "string" ? value.hiringTrends.trim() : "",
+  };
+}
+
+function getStoredLinkOverrides(): PortalLinks {
   try {
-    return JSON.parse(localStorage.getItem(LINKS_STORAGE_KEY) || "{}");
+    return normalizeLinks(JSON.parse(localStorage.getItem(LINKS_STORAGE_KEY) || "{}"));
   } catch {
-    return { outreach: "", relationship: "", hiringTrends: "" };
+    return normalizeLinks();
   }
+}
+
+function resolvePortalLinks(overrides: Partial<PortalLinks> = getStoredLinkOverrides()): PortalLinks {
+  const normalizedOverrides = normalizeLinks(overrides);
+
+  return {
+    outreach: normalizedOverrides.outreach || SHARED_PORTAL_LINKS.outreach,
+    relationship: normalizedOverrides.relationship || SHARED_PORTAL_LINKS.relationship,
+    hiringTrends: normalizedOverrides.hiringTrends || SHARED_PORTAL_LINKS.hiringTrends,
+  };
 }
 
 export default function Home() {
   const [linksOpen, setLinksOpen] = useState(false);
-  const [links, setLinks] = useState(getStoredLinks);
-  const [draft, setDraft] = useState(getStoredLinks);
+  const [links, setLinks] = useState(resolvePortalLinks);
+  const [draft, setDraft] = useState(resolvePortalLinks);
   const [saved, setSaved] = useState(false);
 
   function openLinks() {
-    setDraft(getStoredLinks());
+    setDraft(resolvePortalLinks());
     setLinksOpen(true);
     setSaved(false);
   }
 
   function saveLinks() {
     localStorage.setItem(LINKS_STORAGE_KEY, JSON.stringify(draft));
-    setLinks(draft);
+    setLinks(resolvePortalLinks(draft));
     setSaved(true);
     setTimeout(() => setLinksOpen(false), 700);
+  }
+
+  function resetLinksToSharedDefaults() {
+    localStorage.removeItem(LINKS_STORAGE_KEY);
+    setDraft(SHARED_PORTAL_LINKS);
+    setLinks(SHARED_PORTAL_LINKS);
+    setSaved(false);
   }
 
   const extraCards = [
@@ -135,7 +169,7 @@ export default function Home() {
               className="bg-[#0a1220] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Link2 className="w-4 h-4 text-primary/70" />
                   <span className="text-sm font-semibold text-white/80">Portal Links</span>
@@ -145,11 +179,15 @@ export default function Home() {
                 </button>
               </div>
 
+              <p className="text-[11px] text-white/35 leading-relaxed mb-5">
+                Shared defaults come from Render/Vite environment variables. Saving here only creates a browser-level override for this device.
+              </p>
+
               <div className="space-y-4">
                 {[
-                  { key: "outreach" as const, label: "Outreach Intelligence", placeholder: "https://employee-lookup1.onrender.com" },
-                  { key: "relationship" as const, label: "Relationship Intelligence", placeholder: "https://your-render-url.onrender.com" },
-                  { key: "hiringTrends" as const, label: "Hiring Trend Intelligence", placeholder: "https://your-render-url.onrender.com" },
+                  { key: "outreach" as const, label: "Outreach Intelligence", placeholder: "VITE_OUTREACH_PORTAL_URL" },
+                  { key: "relationship" as const, label: "Relationship Intelligence", placeholder: "VITE_RELATIONSHIP_PORTAL_URL" },
+                  { key: "hiringTrends" as const, label: "Hiring Trend Intelligence", placeholder: "VITE_HIRING_TRENDS_PORTAL_URL" },
                 ].map(field => (
                   <div key={field.key}>
                     <label className="block text-[11px] text-white/40 mb-1.5 font-medium">{field.label}</label>
@@ -170,7 +208,10 @@ export default function Home() {
                   className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/30 transition-colors"
                 >
                   {saved ? <Check className="w-4 h-4" /> : null}
-                  {saved ? "Saved!" : "Save Links"}
+                  {saved ? "Saved!" : "Save Local Override"}
+                </button>
+                <button onClick={resetLinksToSharedDefaults} className="px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors">
+                  Env Defaults
                 </button>
                 <button onClick={() => setLinksOpen(false)} className="px-4 py-2 text-sm text-white/30 hover:text-white/60 transition-colors">
                   Cancel
