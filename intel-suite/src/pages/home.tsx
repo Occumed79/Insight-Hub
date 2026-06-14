@@ -96,7 +96,7 @@ export default function Home() {
           className="text-center mb-16"
         >
           <div className="inline-flex items-center justify-center mb-5">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "320px", height: "auto", objectFit: "contain", display: "block", filter: "invert(1) brightness(1.8) drop-shadow(0 0 24px rgba(255,255,255,0.35))" }} />
+            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "180px", height: "auto", objectFit: "contain", display: "block", filter: "invert(1) brightness(1.8) drop-shadow(0 0 24px rgba(255,255,255,0.35))" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
