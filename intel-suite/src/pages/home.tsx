@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink, Link2 } from "lucide-react";
+import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink } from "lucide-react";
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
@@ -257,7 +257,6 @@ export default function Home() {
                     <div className="px-5 pb-6">
                       <h3 className="text-xl font-display font-semibold text-white/60 mb-2 flex items-center justify-between">
                         {card.title}
-                        <Link2 className="w-4 h-4 text-white/20" />
                       </h3>
                       <p className="text-muted-foreground/60 text-sm leading-relaxed">
                         {card.desc}
