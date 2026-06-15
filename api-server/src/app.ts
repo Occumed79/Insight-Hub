@@ -39,6 +39,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ ok: true, service: "insight-hub", awake: true });
+});
+
+app.head("/api/health", (_req, res) => {
+  res.status(200).end();
+});
+
 app.use("/api", router);
 
 // Serve frontend static files in production
