@@ -21,7 +21,7 @@ function OccuMedHeroLogo() {
       <img
         src={occuMedLogoSrc}
         alt="Occu-Med"
-        className="h-auto w-[260px] drop-shadow-[0_0_30px_rgba(255,255,255,0.24)]"
+        className="h-auto w-[330px] drop-shadow-[0_0_34px_rgba(255,255,255,0.26)]"
       />
     </div>
   );
