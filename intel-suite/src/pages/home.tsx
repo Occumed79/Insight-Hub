@@ -95,8 +95,8 @@ export default function Home() {
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="text-center mb-16"
         >
-          <div className="inline-flex items-center justify-center mb-5 rounded-2xl border border-white/35 bg-white/90 px-8 py-4 shadow-[0_0_40px_rgba(125,211,252,0.25)] backdrop-blur-md">
-            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "174px", height: "auto", objectFit: "contain", display: "block" }} />
+          <div className="inline-flex items-center justify-center mb-5">
+            <img src={LOGO_URL} alt="Occu-Med" style={{ width: "230px", height: "auto", objectFit: "contain", display: "block", filter: "invert(1) brightness(2.05) drop-shadow(0 0 28px rgba(255,255,255,0.28))" }} />
           </div>
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
             Insight <span className="text-gradient">Hub</span>
