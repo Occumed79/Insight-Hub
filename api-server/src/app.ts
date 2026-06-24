@@ -3,6 +3,9 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
 import { fileURLToPath } from "url";
+import { eq, sql } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
 import { logger } from "./lib/logger";
@@ -46,6 +49,114 @@ app.get("/api/health", (_req, res) => {
 
 app.head("/api/health", (_req, res) => {
   res.status(200).end();
+});
+
+app.post("/api/source-monitor/items/:id/protect", async (req, res) => {
+  const { id } = req.params;
+  const protectedFromCleanup = req.body?.protectedFromCleanup !== false;
+
+  try {
+    const [item] = await db
+      .update(sourceMonitorItemsTable)
+      .set({
+        protectedFromCleanup,
+        protectedAt: protectedFromCleanup ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(sourceMonitorItemsTable.id, id))
+      .returning();
+
+    if (!item) return res.status(404).json({ error: "Item not found" });
+    return res.json({ item });
+  } catch (err: any) {
+    logger.error({ err, id }, "Failed to update source monitor item protection");
+    return res.status(500).json({ error: "Failed to update item protection" });
+  }
+});
+
+app.post("/api/source-monitor/cleanup-junk", async (_req, res) => {
+  try {
+    const result: any = await db.execute(sql`
+      WITH deleted AS (
+        DELETE FROM source_monitor_items
+        WHERE COALESCE(protected_from_cleanup, FALSE) = FALSE
+          AND (
+            lower(trim(title)) IN (
+              'about',
+              'accessibility',
+              'account',
+              'advertise opportunities',
+              'advertise bids',
+              'apply',
+              'awards',
+              'business registry',
+              'careers',
+              'contact',
+              'create an account',
+              'doing business with nys',
+              'find bids',
+              'find contracts',
+              'history',
+              'home',
+              'how to apply',
+              'log in',
+              'login',
+              'more information',
+              'please click here',
+              'policies and disclaimers',
+              'privacy',
+              'register',
+              'sign in',
+              'sitemap',
+              'staff plans',
+              'subscribe',
+              'terms',
+              'winners'
+            )
+            OR lower(COALESCE(item_url, '')) LIKE '%/about%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/accessibility%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/account%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/careers%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/contact%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/help%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/login%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/privacy%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/register%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/sitemap%'
+            OR lower(COALESCE(item_url, '')) LIKE '%/terms%'
+            OR length(trim(title)) < 8
+            OR (
+              cardinality(regexp_split_to_array(trim(title), '\\s+')) <= 2
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%acquisition%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%award%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%bid%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%contract%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%grant%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%medical%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%notice%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%opportunity%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%procurement%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%proposal%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%rfi%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%rfp%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%rfq%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%solicitation%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%sources sought%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%vendor%'
+              AND lower(title || ' ' || COALESCE(item_url, '')) NOT LIKE '%workforce%'
+            )
+          )
+        RETURNING id
+      )
+      SELECT COUNT(*)::int AS deleted_count FROM deleted
+    `);
+
+    const deletedCount = Number(result?.rows?.[0]?.deleted_count ?? result?.[0]?.deleted_count ?? 0);
+    return res.json({ deletedCount });
+  } catch (err: any) {
+    logger.error({ err }, "Failed to clean source monitor junk items");
+    return res.status(500).json({ error: "Failed to clean junk items" });
+  }
 });
 
 // Source Monitor route definitions currently include their own /api prefix.
