@@ -3,17 +3,9 @@
  *
  * Lightweight fetch-based scraper for the curated source registry.
  * No external scraping libraries — uses plain fetch + regex/string extraction.
- *
- * Strategy per source:
- * 1. rss_or_xml — Parse RSS/Atom feeds with regex.
- * 2. contractor_newsroom / generic_news_page — Extract article cards from HTML.
- * 3. government_listing — Extract listing links from HTML.
- * 4. procurement_portal — Extract opportunity/contract links from HTML.
- * 5. fallback_metadata — Return only source metadata (no items found).
  */
 
-import { createHash } from "crypto";
-import type { MonitoredSource, ScrapeStrategy } from "./registry";
+import type { MonitoredSource } from "./registry";
 
 export interface ScrapedItem {
   title: string;
@@ -34,12 +26,93 @@ const USER_AGENT =
   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 " +
   "InsightHub-SourceMonitor/1.0";
 
-function makeId(sourceId: string, title: string, url?: string): string {
-  const hash = createHash("sha256")
-    .update(`${sourceId}::${title}::${url ?? ""}`)
-    .digest("hex");
-  return `smi-${hash.slice(0, 16)}`;
-}
+const LOW_VALUE_TITLES = new Set([
+  "about",
+  "accessibility",
+  "account",
+  "advertise opportunities",
+  "advertise bids",
+  "apply",
+  "awards",
+  "business registry",
+  "careers",
+  "contact",
+  "create an account",
+  "doing business with nys",
+  "find bids",
+  "find contracts",
+  "history",
+  "home",
+  "how to apply",
+  "log in",
+  "login",
+  "more information",
+  "please click here",
+  "policies and disclaimers",
+  "privacy",
+  "register",
+  "sign in",
+  "sitemap",
+  "staff plans",
+  "subscribe",
+  "terms",
+  "winners",
+]);
+
+const LOW_VALUE_HREF_PARTS = [
+  "/about",
+  "/accessibility",
+  "/account",
+  "/careers",
+  "/contact",
+  "/help",
+  "/login",
+  "/privacy",
+  "/register",
+  "/search",
+  "/sign-in",
+  "/signin",
+  "/sitemap",
+  "/terms",
+  "facebook.com",
+  "instagram.com",
+  "linkedin.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+];
+
+const INTELLIGENCE_KEYWORDS = [
+  "acquisition",
+  "award",
+  "awarded",
+  "bid",
+  "bids",
+  "contract",
+  "contracts",
+  "contractor",
+  "deadline",
+  "delivery order",
+  "dod",
+  "federal register",
+  "grant",
+  "industry day",
+  "medical",
+  "notice",
+  "opportunity",
+  "procurement",
+  "proposal",
+  "rfi",
+  "rfp",
+  "rfq",
+  "rule",
+  "sam.gov",
+  "solicitation",
+  "sources sought",
+  "task order",
+  "vendor",
+  "workforce",
+];
 
 function resolveUrl(base: string, href: string): string {
   try {
@@ -80,69 +153,13 @@ async function fetchWithTimeout(
     },
   });
   const text = await res.text();
-  return {
-    ok: res.ok,
-    status: res.status,
-    text,
-    headers: res.headers,
-  };
+  return { ok: res.ok, status: res.status, text, headers: res.headers };
 }
-
-// ── RSS / XML extraction ─────────────────────────────────────────────────────
-
-function extractFromRss(html: string, baseUrl: string, maxItems: number): ScrapedItem[] {
-  const items: ScrapedItem[] = [];
-  // Match RSS <item> or Atom <entry> blocks
-  const itemRegex = /<(item|entry)[\s\S]*?<\/\1>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = itemRegex.exec(html)) !== null && items.length < maxItems) {
-    const block = match[0];
-    const title =
-      extractXmlTag(block, "title") ||
-      extractXmlTag(block, "dc:title") ||
-      "";
-    const link =
-      extractXmlTag(block, "link") ||
-      extractXmlAttr(block, "link", "href") ||
-      "";
-    const desc =
-      extractXmlTag(block, "description") ||
-      extractXmlTag(block, "summary") ||
-      extractXmlTag(block, "content") ||
-      "";
-    const pubDate =
-      extractXmlTag(block, "pubDate") ||
-      extractXmlTag(block, "published") ||
-      extractXmlTag(block, "dc:date") ||
-      "";
-    const date = parseDate(pubDate);
-    items.push({
-      title: cleanText(title) || "Untitled",
-      summary: cleanText(desc) || undefined,
-      itemUrl: link ? resolveUrl(baseUrl, cleanText(link)) : undefined,
-      publishedDate: date,
-    });
-  }
-  return items;
-}
-
-function extractXmlTag(xml: string, tag: string): string | undefined {
-  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-  const m = regex.exec(xml);
-  if (!m) return undefined;
-  return m[1].replace(/<\/?[^>]+>/g, "").trim();
-}
-
-function extractXmlAttr(xml: string, tag: string, attr: string): string | undefined {
-  const regex = new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, "i");
-  const m = regex.exec(xml);
-  return m ? m[1] : undefined;
-}
-
-// ── HTML extraction helpers ──────────────────────────────────────────────────
 
 function cleanText(raw: string): string {
   return raw
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -154,208 +171,203 @@ function cleanText(raw: string): string {
     .trim();
 }
 
+function extractXmlTag(xml: string, tag: string): string | undefined {
+  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const m = regex.exec(xml);
+  return m ? cleanText(m[1]) : undefined;
+}
+
+function extractXmlAttr(xml: string, tag: string, attr: string): string | undefined {
+  const regex = new RegExp(`<${tag}[^>]*\\s${attr}=["']([^"']*)`, "i");
+  const m = regex.exec(xml);
+  return m ? cleanText(m[1]) : undefined;
+}
+
 function extractMeta(html: string, name: string): string | undefined {
-  const regex = new RegExp(
-    `<meta\\s+(?:name|property)=["']${name}["']\\s+content=["']([^"']*)["']`,
-    "i"
-  );
+  const regex = new RegExp(`<meta\\s+(?:name|property)=["']${name}["']\\s+content=["']([^"']*)["']`, "i");
   const m = regex.exec(html);
   return m ? cleanText(m[1]) : undefined;
 }
 
-function extractOgTitle(html: string): string | undefined {
-  return extractMeta(html, "og:title");
+function hasIntelligenceSignal(text: string, href: string): boolean {
+  const combined = `${text} ${href}`.toLowerCase();
+  return INTELLIGENCE_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
-function extractOgDescription(html: string): string | undefined {
-  return extractMeta(html, "og:description");
+function isLowValueLink(title: string, href: string): boolean {
+  const normalizedTitle = title.toLowerCase().replace(/\s+/g, " ").trim();
+  const normalizedHref = href.toLowerCase();
+
+  if (!normalizedTitle || normalizedTitle.length < 8) return true;
+  if (LOW_VALUE_TITLES.has(normalizedTitle)) return true;
+  if (LOW_VALUE_HREF_PARTS.some((part) => normalizedHref.includes(part))) return true;
+
+  // Reject very generic one/two-word site-nav links unless the URL/text carries a real signal.
+  const wordCount = normalizedTitle.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= 2 && !hasIntelligenceSignal(normalizedTitle, normalizedHref)) return true;
+
+  return false;
 }
 
-function extractTitleTag(html: string): string | undefined {
-  const m = /<title>([^<]*)<\/title>/i.exec(html);
-  return m ? cleanText(m[1]) : undefined;
+function extractBlockSummary(block: string, title: string): string | undefined {
+  const text = cleanText(block).replace(title, "").trim();
+  if (!text || text.length < 40) return undefined;
+  return text.slice(0, 320);
 }
 
-function extractArticleLinks(
-  html: string,
-  baseUrl: string,
-  maxItems: number
-): ScrapedItem[] {
-  const items: ScrapedItem[] = [];
+function dedupeAndFilter(items: ScrapedItem[], baseUrl: string, maxItems: number): ScrapedItem[] {
   const seen = new Set<string>();
+  const filtered: ScrapedItem[] = [];
 
-  // Strategy: find article/card blocks then extract title + link from each
-  // Try common news/card patterns
+  for (const item of items) {
+    const title = cleanText(item.title ?? "");
+    const url = item.itemUrl ? resolveUrl(baseUrl, item.itemUrl) : undefined;
+    if (!title) continue;
+    if (url && !isSameDomain(baseUrl, url)) continue;
+    if (isLowValueLink(title, url ?? "")) continue;
+
+    const key = `${url ?? ""}::${title.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    filtered.push({
+      ...item,
+      title,
+      summary: item.summary ? cleanText(item.summary).slice(0, 320) : undefined,
+      itemUrl: url,
+    });
+    if (filtered.length >= maxItems) break;
+  }
+
+  return filtered;
+}
+
+function extractFromRss(html: string, baseUrl: string, maxItems: number): ScrapedItem[] {
+  const items: ScrapedItem[] = [];
+  const itemRegex = /<(item|entry)[\s\S]*?<\/\1>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = itemRegex.exec(html)) !== null && items.length < maxItems * 2) {
+    const block = match[0];
+    const title = extractXmlTag(block, "title") || extractXmlTag(block, "dc:title") || "";
+    const link = extractXmlTag(block, "link") || extractXmlAttr(block, "link", "href") || "";
+    const desc = extractXmlTag(block, "description") || extractXmlTag(block, "summary") || extractXmlTag(block, "content") || "";
+    const pubDate = extractXmlTag(block, "pubDate") || extractXmlTag(block, "published") || extractXmlTag(block, "dc:date") || "";
+    items.push({
+      title,
+      summary: desc || undefined,
+      itemUrl: link ? resolveUrl(baseUrl, link) : undefined,
+      publishedDate: pubDate ? parseDate(pubDate) : undefined,
+    });
+  }
+
+  return dedupeAndFilter(items, baseUrl, maxItems);
+}
+
+function extractArticleLinks(html: string, baseUrl: string, maxItems: number): ScrapedItem[] {
+  const items: ScrapedItem[] = [];
   const patterns = [
-    // News article blocks (div > a + heading)
     /<article[\s\S]*?<\/article>/gi,
-    /<div[^>]*class=["'][^"']*(?:news|article|story|post|item|card|teaser|listing)[^"']*["'][\s\S]*?<\/div>/gi,
-    // Generic list items
+    /<div[^>]*class=["'][^"']*(?:news|article|story|post|release|press|item|card|teaser|listing|opportunity|solicitation)[^"']*["'][\s\S]*?<\/div>/gi,
     /<li[\s\S]*?<\/li>/gi,
   ];
 
   for (const pattern of patterns) {
     let blockMatch: RegExpExecArray | null;
-    while ((blockMatch = pattern.exec(html)) !== null && items.length < maxItems) {
+    while ((blockMatch = pattern.exec(html)) !== null && items.length < maxItems * 3) {
       const block = blockMatch[0];
-
-      // Extract the primary link from this block
       const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let linkMatch: RegExpExecArray | null;
-      while ((linkMatch = linkRegex.exec(block)) !== null && items.length < maxItems) {
+      while ((linkMatch = linkRegex.exec(block)) !== null && items.length < maxItems * 3) {
         const href = cleanText(linkMatch[1]);
         const linkText = cleanText(linkMatch[2]);
         if (!href || href.startsWith("#") || href.startsWith("javascript:")) continue;
-
         const resolved = resolveUrl(baseUrl, href);
-        if (!isSameDomain(baseUrl, resolved)) continue;
-
-        // Skip nav/footer/social links
-        const lowerHref = href.toLowerCase();
-        const lowerText = linkText.toLowerCase();
-        if (
-          lowerHref.includes("/privacy") ||
-          lowerHref.includes("/terms") ||
-          lowerHref.includes("/contact") ||
-          lowerHref.includes("/about") ||
-          lowerHref.includes("/careers") ||
-          lowerHref.includes("/login") ||
-          lowerHref.includes("facebook.com") ||
-          lowerHref.includes("twitter.com") ||
-          lowerHref.includes("linkedin.com") ||
-          lowerHref.includes("youtube.com") ||
-          lowerText.length < 5
-        ) {
-          continue;
-        }
-
-        const key = resolved + "::" + linkText;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        // Try to find a date in the block
         const dateMatch =
           /<time[^>]*datetime=["']([^"']*)["']/i.exec(block) ||
           /(\d{1,2}\/\d{1,2}\/\d{2,4})/.exec(block) ||
           /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})/i.exec(block);
-        const date = dateMatch ? parseDate(dateMatch[1]) : undefined;
-
         items.push({
-          title: linkText || "Untitled",
-          summary: undefined,
+          title: linkText,
+          summary: extractBlockSummary(block, linkText),
           itemUrl: resolved,
-          publishedDate: date,
+          publishedDate: dateMatch ? parseDate(dateMatch[1]) : undefined,
         });
       }
     }
   }
 
-  // Fallback: extract all <a> tags with meaningful text and dedupe
   if (items.length === 0) {
     const allLinks = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let m: RegExpExecArray | null;
-    while ((m = allLinks.exec(html)) !== null && items.length < maxItems) {
+    while ((m = allLinks.exec(html)) !== null && items.length < maxItems * 3) {
       const href = cleanText(m[1]);
       const text = cleanText(m[2]);
       if (!href || href.startsWith("#") || href.startsWith("javascript:")) continue;
-      const resolved = resolveUrl(baseUrl, href);
-      if (!isSameDomain(baseUrl, resolved)) continue;
-      if (text.length < 10) continue;
-      const key = resolved + "::" + text;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({
-        title: text,
-        itemUrl: resolved,
-      });
+      items.push({ title: text, itemUrl: resolveUrl(baseUrl, href) });
     }
   }
 
-  return items;
+  return dedupeAndFilter(items, baseUrl, maxItems);
 }
 
-function extractGovernmentListings(
-  html: string,
-  baseUrl: string,
-  maxItems: number
-): ScrapedItem[] {
-  // Government pages often have table rows or simple link lists
+function extractGovernmentListings(html: string, baseUrl: string, maxItems: number): ScrapedItem[] {
   const items: ScrapedItem[] = [];
-  const seen = new Set<string>();
-
-  // Try table rows first
   const rowRegex = /<tr[\s\S]*?<\/tr>/gi;
   let rowMatch: RegExpExecArray | null;
-  while ((rowMatch = rowRegex.exec(html)) !== null && items.length < maxItems) {
+
+  while ((rowMatch = rowRegex.exec(html)) !== null && items.length < maxItems * 3) {
     const row = rowMatch[0];
     const linkMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(row);
     if (!linkMatch) continue;
     const href = cleanText(linkMatch[1]);
     const text = cleanText(linkMatch[2]);
-    if (!href || text.length < 5) continue;
-    const resolved = resolveUrl(baseUrl, href);
-    if (!isSameDomain(baseUrl, resolved)) continue;
-    if (seen.has(resolved)) continue;
-    seen.add(resolved);
-
-    // Try to find a date in the row
+    if (!href) continue;
     const dateMatch =
       /<time[^>]*datetime=["']([^"']*)["']/i.exec(row) ||
       /(\d{1,2}\/\d{1,2}\/\d{2,4})/.exec(row) ||
       /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})/i.exec(row);
-    const date = dateMatch ? parseDate(dateMatch[1]) : undefined;
-
     items.push({
       title: text,
-      itemUrl: resolved,
-      publishedDate: date,
+      summary: extractBlockSummary(row, text),
+      itemUrl: resolveUrl(baseUrl, href),
+      publishedDate: dateMatch ? parseDate(dateMatch[1]) : undefined,
     });
   }
 
-  // Fallback to all links if no table rows worked
-  if (items.length === 0) {
-    return extractArticleLinks(html, baseUrl, maxItems);
-  }
-  return items;
+  if (items.length === 0) return extractArticleLinks(html, baseUrl, maxItems);
+  return dedupeAndFilter(items, baseUrl, maxItems);
 }
-
-// ── Main scrape function ─────────────────────────────────────────────────────
 
 export async function scrapeSource(source: MonitoredSource): Promise<ScrapeResult> {
   const { url, scrapeStrategy, timeoutMs, maxItemsPerRun } = source;
 
-  // Security check
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     return { status: "failed", items: [], errorMessage: "Invalid URL scheme" };
   }
+
   try {
     const parsed = new URL(url);
-    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname.startsWith("192.168.") || parsed.hostname.startsWith("10.")) {
+    if (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname.startsWith("192.168.") ||
+      parsed.hostname.startsWith("10.")
+    ) {
       return { status: "failed", items: [], errorMessage: "Private IP blocked" };
     }
   } catch {
     return { status: "failed", items: [], errorMessage: "Invalid URL" };
   }
 
-  // Fetch
   let html: string;
-  let responseStatus: number;
   try {
     const result = await fetchWithTimeout(url, timeoutMs);
-    responseStatus = result.status;
     if (!result.ok) {
       if (result.status === 403 || result.status === 429) {
-        return {
-          status: "blocked",
-          items: [],
-          errorMessage: `HTTP ${result.status} — site blocked the request`,
-        };
+        return { status: "blocked", items: [], errorMessage: `HTTP ${result.status} — site blocked the request` };
       }
-      return {
-        status: "failed",
-        items: [],
-        errorMessage: `HTTP ${result.status}`,
-      };
+      return { status: "failed", items: [], errorMessage: `HTTP ${result.status}` };
     }
     html = result.text;
   } catch (err: any) {
@@ -365,19 +377,14 @@ export async function scrapeSource(source: MonitoredSource): Promise<ScrapeResul
     return { status: "failed", items: [], errorMessage: err?.message ?? String(err) };
   }
 
-  // Check for common anti-bot / block indicators
   const lowerHtml = html.toLowerCase();
-  if (
-    lowerHtml.includes("cloudflare") &&
-    (lowerHtml.includes("challenge") || lowerHtml.includes("checking your browser"))
-  ) {
+  if (lowerHtml.includes("cloudflare") && (lowerHtml.includes("challenge") || lowerHtml.includes("checking your browser"))) {
     return { status: "blocked", items: [], errorMessage: "Cloudflare challenge detected" };
   }
   if (lowerHtml.includes("access denied") && lowerHtml.includes("<body")) {
     return { status: "blocked", items: [], errorMessage: "Access denied by target site" };
   }
 
-  // Strategy dispatch
   let items: ScrapedItem[] = [];
   try {
     switch (scrapeStrategy) {
@@ -389,32 +396,23 @@ export async function scrapeSource(source: MonitoredSource): Promise<ScrapeResul
         items = extractArticleLinks(html, url, maxItemsPerRun);
         break;
       case "government_listing":
-        items = extractGovernmentListings(html, url, maxItemsPerRun);
-        break;
       case "procurement_portal":
         items = extractGovernmentListings(html, url, maxItemsPerRun);
         break;
       case "fallback_metadata":
-      default:
-        // No extraction, just metadata
+      default: {
+        const title = extractMeta(html, "og:title") || extractMeta(html, "twitter:title") || "Source checked";
+        const summary = extractMeta(html, "og:description") || extractMeta(html, "description");
+        items = dedupeAndFilter([{ title, summary, itemUrl: url }], url, maxItemsPerRun);
         break;
+      }
     }
   } catch (err: any) {
-    return {
-      status: "failed",
-      items: [],
-      errorMessage: `Extraction error: ${err.message}`,
-      rawHtml: html.slice(0, 5000),
-    };
+    return { status: "failed", items: [], errorMessage: `Extraction error: ${err.message}`, rawHtml: html.slice(0, 5000) };
   }
 
   if (items.length === 0) {
-    return {
-      status: "no_items_found",
-      items: [],
-      errorMessage: "No extractable items found on this page",
-      rawHtml: html.slice(0, 2000),
-    };
+    return { status: "no_items_found", items: [], errorMessage: "No useful intelligence items found after filtering navigation links", rawHtml: html.slice(0, 2000) };
   }
 
   return { status: "success", items };
