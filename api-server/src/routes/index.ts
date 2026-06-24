@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import opportunitySummaryRouter from "./opportunity-summary-v2";
 import opportunitiesRouter from "./opportunities";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
@@ -19,6 +20,7 @@ import searchRouter from "./search";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(opportunitySummaryRouter);
 router.use(opportunitiesRouter);
 router.use(opportunityFeedbackRouter);
 router.use(settingsRouter);
