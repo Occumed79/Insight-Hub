@@ -122,10 +122,22 @@ export async function runStartupMigrations(): Promise<void> {
         scrape_status   TEXT NOT NULL DEFAULT 'success',
         error_message   TEXT,
         raw_json        TEXT,
+        protected_from_cleanup BOOLEAN NOT NULL DEFAULT FALSE,
+        protected_at    TIMESTAMPTZ,
         scraped_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE source_monitor_items
+      ADD COLUMN IF NOT EXISTS protected_from_cleanup BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE source_monitor_items
+      ADD COLUMN IF NOT EXISTS protected_at TIMESTAMPTZ
     `);
 
     await db.execute(sql`
@@ -143,6 +155,10 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_source_monitor_items_item_url
         ON source_monitor_items (item_url)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_source_monitor_items_cleanup_protected
+        ON source_monitor_items (protected_from_cleanup)
     `);
 
     // ── source_monitor_runs ──────────────────────────────────────────────────
