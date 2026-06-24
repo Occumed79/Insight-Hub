@@ -25,6 +25,7 @@ import {
   Shield,
   ShieldCheck,
   Trash2,
+  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -228,6 +229,7 @@ export default function SourceIntelligenceMonitor() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceSearch, setSourceSearch] = useState("");
   const [showSources, setShowSources] = useState(true);
+  const [selectedItem, setSelectedItem] = useState<ScrapedItem | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 24;
 
@@ -340,6 +342,7 @@ export default function SourceIntelligenceMonitor() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["source-monitor", "items"] });
+      setSelectedItem((current) => current?.id === vars.itemId ? { ...current, protectedFromCleanup: vars.protectedFromCleanup, protectedAt: vars.protectedFromCleanup ? new Date().toISOString() : null } : current);
       toast({
         title: vars.protectedFromCleanup ? "Card protected" : "Card unprotected",
         description: vars.protectedFromCleanup
@@ -382,7 +385,7 @@ export default function SourceIntelligenceMonitor() {
           <h1 className="text-2xl font-bold text-white">Source Intelligence Monitor</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Scraped intelligence from curated sources. Refresh sources, protect useful cards, then clean low-value navigation junk from the database.
+          Scraped intelligence from curated sources. Click any card to inspect details, protect useful cards, or open the source.
         </p>
       </div>
 
@@ -562,7 +565,12 @@ export default function SourceIntelligenceMonitor() {
             {items.map((item) => {
               const protectedCard = Boolean(item.protectedFromCleanup);
               return (
-                <div key={item.id} className={`rounded-xl border p-4 transition-colors ${protectedCard ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedItem(item)}
+                  className={`group w-full rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(56,182,255,0.14)] ${protectedCard ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:border-primary/40"}`}
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -572,34 +580,20 @@ export default function SourceIntelligenceMonitor() {
                         <span className="text-[11px] text-muted-foreground">· {item.category}</span>
                         <span className="text-[11px] text-muted-foreground">· {hostFromUrl(item.itemUrl ?? item.sourceUrl)}</span>
                       </div>
-                      <h3 className="text-sm font-semibold leading-snug text-white">{item.title}</h3>
-                      {item.summary && <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{item.summary}</p>}
+                      <h3 className="text-sm font-semibold leading-snug text-white group-hover:text-primary">{item.title}</h3>
+                      {item.summary ? <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{item.summary}</p> : <p className="mt-1 text-xs text-muted-foreground/70">Click to inspect this scraped item and open its source.</p>}
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
                         {item.publishedDate && <span>Published: {formatDate(item.publishedDate)}</span>}
                         <span>Scraped: {formatRelative(item.scrapedAt)}</span>
                         {protectedCard && item.protectedAt && <span>Protected: {formatRelative(item.protectedAt)}</span>}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        onClick={() => protectMutation.mutate({ itemId: item.id, protectedFromCleanup: !protectedCard })}
-                        disabled={protectMutation.isPending && protectMutation.variables?.itemId === item.id}
-                        className={`rounded-md p-1.5 transition-colors disabled:opacity-40 ${protectedCard ? "text-emerald-300 hover:bg-emerald-500/20" : "text-muted-foreground hover:bg-white/10 hover:text-white"}`}
-                        title={protectedCard ? "Remove cleanup protection" : "Protect from cleanup"}
-                      >
-                        {protectMutation.isPending && protectMutation.variables?.itemId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : protectedCard ? <ShieldCheck className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5" />}
-                      </button>
-                      {item.itemUrl && (
-                        <a href={item.itemUrl} target="_blank" rel="noopener noreferrer" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-white" title="Open item">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                      <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-white" title="Open source">
-                        <Globe className="h-3.5 w-3.5" />
-                      </a>
+                    <div className="flex shrink-0 items-center gap-1 text-muted-foreground group-hover:text-primary">
+                      <span className="hidden text-[11px] sm:inline">Details</span>
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -617,6 +611,76 @@ export default function SourceIntelligenceMonitor() {
           </div>
         )}
       </div>
+
+      {selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setSelectedItem(null)}>
+          <div className="w-full max-w-3xl rounded-2xl border border-white/15 bg-[hsl(214,74%,9%)] p-5 shadow-[0_0_60px_rgba(56,182,255,0.18)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={`text-[10px] ${statusBadgeClass(selectedItem.scrapeStatus)}`}>{statusLabel(selectedItem.scrapeStatus)}</Badge>
+                  {selectedItem.protectedFromCleanup && <Badge variant="outline" className="border-emerald-400/30 bg-emerald-500/10 text-[10px] text-emerald-300">Protected</Badge>}
+                  <span className="text-xs text-muted-foreground">{selectedItem.sourceName}</span>
+                  <span className="text-xs text-muted-foreground">· {selectedItem.category}</span>
+                </div>
+                <h3 className="text-xl font-semibold leading-tight text-white">{selectedItem.title}</h3>
+              </div>
+              <button onClick={() => setSelectedItem(null)} className="rounded-lg p-2 text-muted-foreground hover:bg-white/10 hover:text-white" title="Close details">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Summary / Extracted text</div>
+                <p className="text-sm leading-relaxed text-white/85">{selectedItem.summary || "No summary was extracted from this source. Use Open Item or Open Source to inspect the original page."}</p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Item URL</div>
+                  <div className="mt-1 truncate text-sm text-white">{selectedItem.itemUrl || "No item-specific URL"}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Source URL</div>
+                  <div className="mt-1 truncate text-sm text-white">{selectedItem.sourceUrl}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Scraped</div>
+                  <div className="mt-1 text-sm text-white">{formatDate(selectedItem.scrapedAt)}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Published</div>
+                  <div className="mt-1 text-sm text-white">{formatDate(selectedItem.publishedDate)}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className={selectedItem.protectedFromCleanup ? "gap-2 border-emerald-400/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20" : "gap-2 border-white/10 bg-white/5 text-white hover:bg-white/10"}
+                  onClick={() => protectMutation.mutate({ itemId: selectedItem.id, protectedFromCleanup: !selectedItem.protectedFromCleanup })}
+                  disabled={protectMutation.isPending && protectMutation.variables?.itemId === selectedItem.id}
+                >
+                  {protectMutation.isPending && protectMutation.variables?.itemId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : selectedItem.protectedFromCleanup ? <ShieldCheck className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
+                  {selectedItem.protectedFromCleanup ? "Protected from cleanup" : "Protect from cleanup"}
+                </Button>
+
+                <div className="flex flex-wrap gap-2">
+                  {selectedItem.itemUrl && (
+                    <a href={selectedItem.itemUrl} target="_blank" rel="noopener noreferrer">
+                      <Button className="gap-2"><ExternalLink className="h-4 w-4" /> Open Item</Button>
+                    </a>
+                  )}
+                  <a href={selectedItem.sourceUrl} target="_blank" rel="noopener noreferrer">
+                    <Button variant="outline" className="gap-2 border-white/10 bg-white/5 text-white hover:bg-white/10"><Globe className="h-4 w-4" /> Open Source</Button>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
