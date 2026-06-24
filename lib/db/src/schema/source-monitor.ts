@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, pgEnum, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -25,6 +25,8 @@ export const sourceMonitorItemsTable = pgTable("source_monitor_items", {
   scrapeStatus: scrapeStatusEnum("scrape_status").notNull().default("success"),
   errorMessage: text("error_message"),
   rawJson: text("raw_json"),
+  protectedFromCleanup: boolean("protected_from_cleanup").notNull().default(false),
+  protectedAt: timestamp("protected_at"),
   scrapedAt: timestamp("scraped_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
