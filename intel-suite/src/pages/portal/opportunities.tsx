@@ -13,7 +13,6 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
-  Brain,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -110,6 +109,12 @@ export default function OpportunitiesDashboard() {
   const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "statePortals"]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
+
+  const [selectedOpportunity, setSelectedOpportunity] = useState<any | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryData, setSummaryData] = useState<any | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   // ── Fast Local Search state (POST /api/search) ────────────────────────────
   const [localSearchQuery, setLocalSearchQuery] = useState("");
@@ -321,6 +326,44 @@ export default function OpportunitiesDashboard() {
 
   const stripMarkdown = (text: string) =>
     text.replace(/#+\s*/g, "").replace(/\*+/g, "").replace(/\n+/g, " ").replace(/\s{2,}/g, " ").trim();
+
+  const getServiceFitLabel = (opp: any): string => {
+    const text = `${opp.title ?? ""} ${opp.description ?? ""} ${opp.matchReasons?.join(" ") ?? ""}`.toLowerCase();
+    if (/(drug test|drug screen|alcohol test|substance abuse)/.test(text)) return "Drug testing / occupational health";
+    if (/(respirator fit|fit test|pft|spirometry)/.test(text)) return "PFT / fit testing";
+    if (/(pre-employment physical|pre employment physical|medical testing|fitness for duty)/.test(text)) return "Pre-employment medical testing";
+    return "General occupational health";
+  };
+
+  const getSummaryHint = (opp: any): string | null => {
+    const reasons = opp.relevance?.reasons ?? opp.matchReasons ?? [];
+    if (reasons.length > 0) return reasons.slice(0, 2).join(" · ");
+    return null;
+  };
+
+  const handleOpenSummary = async (opp: any) => {
+    setSelectedOpportunity(opp);
+    setSummaryOpen(true);
+    setSummaryLoading(true);
+    setSummaryError(null);
+    setSummaryData(null);
+
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const resp = await fetch(`${baseUrl}/api/opportunities/${opp.id}/summary`, {
+        method: "POST",
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Summary failed");
+
+      setSummaryData(data);
+    } catch (err: any) {
+      setSummaryError(err.message || "Summary failed");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   const extractAgencyHint = (title: string): string | null => {
     const t = title.replace(/^\[PDF\]\s*/i, "").replace(/^\[DOC\]\s*/i, "").trim();
@@ -575,6 +618,14 @@ export default function OpportunitiesDashboard() {
                     {localSearchResults.map((opp: any, i: number) => {
                       const href = opp.sourceUrl || null;
                       const urgent = opp.responseDeadline && new Date(opp.responseDeadline).getTime() - new Date().getTime() < 14 * 24 * 60 * 60 * 1000;
+                      const localRelScore = typeof opp.relevanceScore === "number" ? Math.round(opp.relevanceScore) : (opp.matchScore ?? null);
+                      const localRelTone = localRelScore == null ? "" : localRelScore >= 75
+                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
+                        : localRelScore >= 50
+                          ? "bg-sky-500/10 text-sky-300 border-sky-500/25"
+                          : "bg-amber-500/10 text-amber-300 border-amber-500/25";
+                      const localHint = getSummaryHint(opp) ?? `${getServiceFitLabel(opp)} opportunity.`;
+                      const localDate = opp.responseDeadline ? format(new Date(opp.responseDeadline), "MMM d, yyyy") : (opp.postedDate ? `Posted ${format(new Date(opp.postedDate), "MMM d, yyyy")}` : "Date not available");
                       return (
                         <motion.article
                           key={opp.id}
@@ -582,58 +633,46 @@ export default function OpportunitiesDashboard() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -8 }}
                           transition={{ delay: Math.min(i * 0.025, 0.25) }}
-                          className="group relative min-h-[280px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10"
+                          onClick={() => handleOpenSummary(opp)}
+                          className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex flex-wrap gap-2 items-center">
                               {getSourceBadge(opp.source, opp.providerName)}
-                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 font-semibold tabular-nums text-[10px]">
-                                {opp.matchScore} pts
-                              </Badge>
+                              {localRelScore != null && (
+                                <Badge className={`${localRelTone} font-semibold tabular-nums text-[10px] border`} title="Occu-Med relevance score">
+                                  {localRelScore}% match
+                                </Badge>
+                              )}
                             </div>
-                            <Badge variant="outline" className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-muted-foreground border-white/10"}>
+                            <Badge className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
                               {opp.status}
                             </Badge>
                           </div>
 
-                          <div className="space-y-2 flex-1">
+                          <div className="space-y-2 flex-1 min-w-0">
                             <h3 className="text-sm font-semibold leading-snug text-white line-clamp-3 group-hover:text-primary transition-colors">
                               {opp.title}
                             </h3>
-                            {opp.matchReasons?.length > 0 && (
-                              <div className="flex items-start gap-1 text-[10px] text-primary/70 leading-snug">
-                                <Sparkles className="w-3 h-3 mt-px shrink-0" />
-                                <span className="line-clamp-2">{opp.matchReasons.slice(0, 3).join(" · ")}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Agency</div>
-                              <div className="mt-1 text-white/85 line-clamp-1">{opp.agency === "Unknown" ? (extractAgencyHint(opp.title) ?? "—") : (opp.agency ?? "—")}</div>
+                            <p className="text-[11px] text-primary/80 leading-snug line-clamp-2">{localHint}</p>
+                            <div className="text-[11px] text-white/70">
+                              <span className="text-muted-foreground">Agency:</span> {opp.agency === "Unknown" ? (extractAgencyHint(opp.title) ?? "Not available") : (opp.agency ?? "Not available")}
                             </div>
-                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Due</div>
-                              <div className={`mt-1 ${urgent ? "text-amber-300 font-medium" : "text-white/85"}`}>
-                                {opp.responseDeadline ? format(new Date(opp.responseDeadline), "MMM d, yyyy") : "—"}
-                              </div>
+                            <div className={`text-[11px] ${urgent ? "text-amber-300 font-medium" : "text-white/70"}`}>
+                              <span className="text-muted-foreground">{opp.responseDeadline ? "Due:" : "Posted:"}</span> {localDate}
                             </div>
-                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Location</div>
-                              <div className="mt-1 text-white/85 line-clamp-1">{opp.placeOfPerformance || "—"}</div>
-                            </div>
-                            <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Posted</div>
-                              <div className="mt-1 text-white/85">{opp.postedDate ? format(new Date(opp.postedDate), "MMM d, yyyy") : "—"}</div>
+                            <div className="text-[11px] text-primary/70 font-medium">
+                              {getServiceFitLabel(opp)}
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between gap-2 pt-1">
-                            <div className="text-[10px] text-muted-foreground">{opp.naicsCode ? `NAICS: ${opp.naicsCode}` : ""}</div>
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                            <div className="flex items-center gap-1 text-[10px] text-primary/70 group-hover:text-primary transition-colors">
+                              <Sparkles className="w-3 h-3" /> View AI brief
+                            </div>
                             {href && (
-                              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10 hover:text-white" asChild>
-                                <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-4 h-4" /></a>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                                <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
                               </Button>
                             )}
                           </div>
@@ -659,24 +698,18 @@ export default function OpportunitiesDashboard() {
               {opportunities.map((opp: any, i: number) => {
                 const href = getOpportunityUrl(opp);
                 const urgent = opp.responseDeadline && new Date(opp.responseDeadline).getTime() - new Date().getTime() < 14 * 24 * 60 * 60 * 1000;
-                const isGrading = gradingIds.has(opp.id);
-                const rel = opp.relevance ?? null;
-                // Per-card confidence band derived from the actual relevance score
-                // (always meaningful), not the feedback model's flat/null userConfidence.
-                const relConfidence: "high" | "medium" | "low" | null = rel?.confidence ?? null;
-                const confTone = relConfidence === "high"
-                  ? "text-emerald-300"
-                  : relConfidence === "medium"
-                    ? "text-sky-300"
-                    : relConfidence === "low"
-                      ? "text-amber-300"
-                      : "text-white/85";
-                const relScore = rel?.score ?? (typeof opp.relevanceScore === "number" ? Math.round(opp.relevanceScore) : null);
+                const relScore = opp.relevance?.score ?? (typeof opp.relevanceScore === "number" ? Math.round(opp.relevanceScore) : null);
                 const relTone = relScore == null ? "" : relScore >= 75
                   ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
                   : relScore >= 50
                     ? "bg-sky-500/10 text-sky-300 border-sky-500/25"
                     : "bg-amber-500/10 text-amber-300 border-amber-500/25";
+
+                const hint = getSummaryHint(opp) ?? `${getServiceFitLabel(opp)} opportunity.`;
+                const dateLabel = opp.responseDeadline ? "Due" : "Posted";
+                const dateValue = opp.responseDeadline
+                  ? format(new Date(opp.responseDeadline), "MMM d, yyyy")
+                  : (opp.postedDate ? format(new Date(opp.postedDate), "MMM d, yyyy") : "Date not available");
 
                 return (
                   <motion.article
@@ -685,99 +718,51 @@ export default function OpportunitiesDashboard() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ delay: Math.min(i * 0.025, 0.25) }}
-                    className="group relative min-h-[310px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-4 shadow-lg shadow-black/10"
+                    onClick={() => handleOpenSummary(opp)}
+                    className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-wrap gap-2 items-center">
                         {getSourceBadge(opp.source, opp.providerName)}
                         {relScore != null && (
-                          <Badge variant="outline" className={`${relTone} font-semibold tabular-nums`} title="Occu-Med relevance score">
+                          <Badge className={`${relTone} font-semibold tabular-nums text-[10px] border`} title="Occu-Med relevance score">
                             {relScore}% match
                           </Badge>
                         )}
                       </div>
-                      <Badge variant="outline" className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-white/5 text-muted-foreground border-white/10"}>{opp.status}</Badge>
+                      <Badge className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
+                        {opp.status}
+                      </Badge>
                     </div>
 
-                    <div className="space-y-2 flex-1">
+                    <div className="space-y-2 flex-1 min-w-0">
                       <h3 className="text-sm font-semibold leading-snug text-white line-clamp-3 group-hover:text-primary transition-colors">
                         {opp.title}
                       </h3>
-                      <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                        {opp.description ? stripMarkdown(opp.description).slice(0, 240) : "No description available."}
-                      </p>
-                      {(rel?.reasons?.length || rel?.stale || rel?.dateUnknown) && (
-                        <div className="flex flex-col gap-1 pt-0.5">
-                          {rel?.reasons?.length > 0 && (
-                            <div className="flex items-start gap-1 text-[10px] text-muted-foreground/90 leading-snug">
-                              <Sparkles className="w-3 h-3 mt-px shrink-0 text-primary/60" />
-                              <span className="line-clamp-2">{rel.reasons.slice(0, 2).join(" · ")}</span>
-                            </div>
-                          )}
-                          {(rel?.stale || rel?.dateUnknown) && (
-                            <div className="flex items-center gap-1 text-[10px] text-amber-300/90">
-                              <AlertCircle className="w-3 h-3 shrink-0" />
-                              {rel?.dateUnknown ? "Date unknown" : "May be a stale/older result"}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Agency</div>
-                        <div className="mt-1 text-white/85 line-clamp-1">{getAgency(opp)}</div>
+                      <p className="text-[11px] text-primary/80 leading-snug line-clamp-2">{hint}</p>
+                      <div className="text-[11px] text-white/70">
+                        <span className="text-muted-foreground">Agency:</span> {getAgency(opp)}
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Due</div>
-                        <div className={`mt-1 ${urgent ? "text-amber-300 font-medium" : "text-white/85"}`}>
-                          {opp.responseDeadline ? format(new Date(opp.responseDeadline), "MMM d, yyyy") : "—"}
-                        </div>
+                      <div className={`text-[11px] ${urgent ? "text-amber-300 font-medium" : "text-white/70"}`}>
+                        <span className="text-muted-foreground">{dateLabel}:</span> {dateValue}
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Value</div>
-                        <div className="mt-1 text-white/85">{formatCurrency(opp.estimatedValue || opp.awardAmount)}</div>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Posted</div>
-                        <div className="mt-1 text-white/85">
-                          {rel?.dateUnknown ? <span className="text-amber-300/80">Unknown</span> : (opp.postedDate ? format(new Date(opp.postedDate), "MMM d, yyyy") : "—")}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-black/15 p-2">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</div>
-                        <div className={`mt-1 flex items-center gap-1 capitalize ${confTone}`}>
-                          <Brain className="w-3 h-3 text-primary/70" /> {relConfidence ?? "—"}
-                        </div>
+                      <div className="text-[11px] text-primary/70 font-medium">
+                        {getServiceFitLabel(opp)}
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {GRADE_CONFIGS.map(({ grade, label, short }) => {
-                          const isActive = opp.userGrade === grade;
-                          return (
-                            <button
-                              key={grade}
-                              title={label}
-                              disabled={isGrading}
-                              onClick={() => handleGrade(opp.id, grade)}
-                              className={`px-2 py-1 rounded-md border text-[10px] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? "bg-white/15 border-white/30 text-white font-medium" : "border-white/10 text-muted-foreground bg-transparent hover:bg-white/5 hover:text-white/80 hover:border-white/20"}`}
-                            >
-                              {isGrading && isActive ? <Loader2 className="w-3 h-3 animate-spin inline" /> : short}
-                            </button>
-                          );
-                        })}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                      <div className="flex items-center gap-1 text-[10px] text-primary/70 group-hover:text-primary transition-colors">
+                        <Sparkles className="w-3 h-3" /> View AI brief
                       </div>
                       <div className="flex items-center gap-1">
                         {href && (
-                          <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10 hover:text-white" asChild>
-                            <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-4 h-4" /></a>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                            <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
                           </Button>
                         )}
-                        <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/20 hover:text-destructive text-muted-foreground" onClick={() => { if (confirm("Delete this opportunity?")) deleteMutation.mutate({ id: opp.id }); }}>
-                          <Trash2 className="w-4 h-4" />
+                        <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive text-muted-foreground" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this opportunity?")) deleteMutation.mutate({ id: opp.id }); }}>
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -894,6 +879,136 @@ export default function OpportunitiesDashboard() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+        <DialogContent className="bg-popover/95 backdrop-blur-xl border-white/10 text-white sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" /> AI RFP Brief
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {selectedOpportunity?.title ?? "Opportunity summary"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-5">
+            {summaryLoading ? (
+              <div className="py-12 text-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+                <p className="text-sm text-muted-foreground">Analyzing RFP...</p>
+              </div>
+            ) : summaryError ? (
+              <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/10 text-sm text-destructive/90">
+                {summaryError}
+              </div>
+            ) : summaryData ? (
+              <div className="space-y-5">
+                {summaryData.provider === "fallback" && (
+                  <div className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                    AI summary unavailable. Showing stored description instead.
+                  </div>
+                )}
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Plain-English Summary</h4>
+                  <p className="text-sm text-white/90 leading-relaxed">{summaryData.summary}</p>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Why It May Matter to Occu-Med</h4>
+                  <p className="text-sm text-white/90 leading-relaxed">{summaryData.occumedFit}</p>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Likely Service Lines</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(summaryData.serviceLines ?? []).map((line: string, idx: number) => (
+                      <Badge key={idx} className="bg-primary/10 text-primary border-primary/20 text-[11px]">{line}</Badge>
+                    ))}
+                    {(!summaryData.serviceLines || summaryData.serviceLines.length === 0) && (
+                      <span className="text-sm text-white/50">No service lines identified</span>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Key Dates / Deadline</h4>
+                  <div className="text-sm text-white/90 space-y-1">
+                    <div><span className="text-muted-foreground">Posted:</span> {summaryData.keyDates?.posted ?? "Not available"}</div>
+                    <div><span className="text-muted-foreground">Due:</span> {summaryData.keyDates?.due ?? "Not available"}</div>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Agency / Buyer</h4>
+                  <p className="text-sm text-white/90">{summaryData.buyer ?? "Not available"}</p>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Estimated Value</h4>
+                  <p className="text-sm text-white/90">{summaryData.estimatedValue ?? "Not available"}</p>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Bid / No-Bid Notes</h4>
+                  <ul className="list-disc list-inside text-sm text-white/90 space-y-1">
+                    {(summaryData.bidNotes ?? []).map((note: string, idx: number) => (
+                      <li key={idx}>{note}</li>
+                    ))}
+                    {(!summaryData.bidNotes || summaryData.bidNotes.length === 0) && (
+                      <li className="text-white/50">No bid notes available</li>
+                    )}
+                  </ul>
+                </section>
+
+                <section>
+                  <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Missing Information</h4>
+                  <ul className="list-disc list-inside text-sm text-white/90 space-y-1">
+                    {(summaryData.missingInfo ?? []).map((item: string, idx: number) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                    {(!summaryData.missingInfo || summaryData.missingInfo.length === 0) && (
+                      <li className="text-white/50">No missing information flagged</li>
+                    )}
+                  </ul>
+                </section>
+
+                {summaryData.sourceUrl && (
+                  <section>
+                    <h4 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Source Link</h4>
+                    <a href={summaryData.sourceUrl} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline break-all inline-flex items-center gap-1">
+                      <ExternalLink className="w-3.5 h-3.5" /> {summaryData.sourceUrl}
+                    </a>
+                  </section>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {selectedOpportunity && (
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between items-start sm:items-center border-t border-white/10 pt-4">
+              <div className="flex items-center gap-1 flex-wrap">
+                {GRADE_CONFIGS.map(({ grade, label, short }) => {
+                  const isActive = selectedOpportunity.userGrade === grade;
+                  const isGrading = gradingIds.has(selectedOpportunity.id);
+                  return (
+                    <button
+                      key={grade}
+                      title={label}
+                      disabled={isGrading}
+                      onClick={() => handleGrade(selectedOpportunity.id, grade)}
+                      className={`px-2 py-1 rounded-md border text-[10px] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? "bg-white/15 border-white/30 text-white font-medium" : "border-white/10 text-muted-foreground bg-transparent hover:bg-white/5 hover:text-white/80 hover:border-white/20"}`}
+                    >
+                      {isGrading && isActive ? <Loader2 className="w-3 h-3 animate-spin inline" /> : short}
+                    </button>
+                  );
+                })}
+              </div>
+              <Button type="button" variant="ghost" onClick={() => setSummaryOpen(false)} className="hover:bg-white/5">Close</Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     </div>

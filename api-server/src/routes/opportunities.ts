@@ -5,6 +5,8 @@ import { eq, ilike, and, or, sql, isNull, lt } from "drizzle-orm";
 import { unifiedFetch } from "../lib/search/unifiedSearch";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
+import { groqProvider } from "../lib/providers/groq";
+import { openrouterProvider } from "../lib/providers/openrouter";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
@@ -519,6 +521,232 @@ router.delete("/opportunities/:id", async (req, res) => {
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to delete opportunity" });
+  }
+});
+
+function toDateString(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const d = typeof value === "string" ? new Date(value) : value;
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().split("T")[0];
+  } catch {
+    return null;
+  }
+}
+
+function formatCurrency(value: number | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : parseFloat(value);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n}`;
+}
+
+function detectServiceLines(text: string): string[] {
+  const t = text.toLowerCase();
+  const lines: string[] = [];
+  if (/(drug test|drug screen|alcohol test|substance abuse|dot drug)/.test(t)) lines.push("Drug & alcohol testing");
+  if (/(dot physical|dot medical|dot exam|pre-employment physical|pre employment physical|medical exam|fitness for duty)/.test(t)) lines.push("Physical exams / fitness for duty");
+  if (/(respirator fit|fit test|pft|spirometry|pulmonary function)/.test(t)) lines.push("Respiratory / PFT fit testing");
+  if (/(audiogram|hearing conservation|hearing test)/.test(t)) lines.push("Hearing / audiograms");
+  if (/(vaccine|titer|tb test|tuberculosis|flu shot|immunization)/.test(t)) lines.push("Vaccines / titers / TB testing");
+  if (/(medical surveillance|osha|occupational health|occupational medicine)/.test(t)) lines.push("Occupational health / medical surveillance");
+  if (lines.length === 0) lines.push("General occupational health");
+  return lines;
+}
+
+function buildFallbackSummary(opp: any) {
+  const text = `${opp.title ?? ""} ${opp.description ?? ""} ${opp.agency ?? ""} ${opp.notes ?? ""}`;
+  const lines = detectServiceLines(text);
+  const due = toDateString(opp.responseDeadline);
+  const posted = toDateString(opp.postedDate);
+  const value = formatCurrency(opp.estimatedValue ?? opp.awardAmount ?? opp.ceilingValue ?? opp.floorValue);
+  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
+  const buyer = opp.agency && opp.agency !== "Unknown" ? opp.agency : null;
+  const summarySentences: string[] = [opp.title ?? "Opportunity details are limited."];
+  if (opp.description) summarySentences.push(opp.description.slice(0, 220).replace(/\s+/g, " ").trim() + (opp.description.length > 220 ? "..." : ""));
+  if (buyer) summarySentences.push(`Procuring agency: ${buyer}.`);
+  if (due) summarySentences.push(`Response due ${due}.`);
+
+  const fitReason = opp.relevance?.reasons?.length
+    ? opp.relevance.reasons.slice(0, 2).join(" ")
+    : `Mentions ${lines.slice(0, 2).join(" and ") || "occupational health"}.`;
+
+  const missing: string[] = [];
+  if (!due) missing.push("Response deadline");
+  if (!value) missing.push("Estimated value");
+  if (!buyer) missing.push("Procuring agency");
+  if (!opp.description || opp.description.length < 60) missing.push("Full opportunity description");
+  if (!sourceUrl) missing.push("Source link");
+
+  return {
+    summary: summarySentences.join(" "),
+    occumedFit: `This appears to match Occu-Med based on ${fitReason}`,
+    serviceLines: lines.slice(0, 3),
+    keyDates: { posted, due },
+    buyer,
+    estimatedValue: value,
+    bidNotes: ["Review source page to confirm scope and eligibility before bidding.", opp.relevance?.stale ? "Posted date may be stale; verify it is still open." : "Confirm deadline on the source page."].filter(Boolean),
+    missingInfo: missing,
+    sourceUrl,
+    provider: "fallback" as const,
+  };
+}
+
+function cleanJsonResponse(text: string): string {
+  return text
+    .replace(/```json\n?/gi, "")
+    .replace(/```\n?/g, "")
+    .replace(/^\s*\{\s*/g, "{")
+    .replace(/\s*\}\s*$/g, "}")
+    .trim();
+}
+
+function buildSummaryPrompt(opp: any, extractedContent: string | null): string {
+  const due = toDateString(opp.responseDeadline);
+  const posted = toDateString(opp.postedDate);
+  const value = formatCurrency(opp.estimatedValue ?? opp.awardAmount ?? opp.ceilingValue ?? opp.floorValue);
+  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
+  const buyer = opp.agency && opp.agency !== "Unknown" ? opp.agency : null;
+  const score = opp.relevance?.score ?? opp.relevanceScore ?? null;
+  const reasons = opp.relevance?.reasons?.join(" · ") ?? (typeof opp.notes === "string" ? opp.notes : "");
+
+  return `You are an RFP analyst for Occu-Med, an occupational health and medical exam coordination company.
+
+Occu-Med services include:
+- occupational health exams
+- pre-employment physicals
+- DOT physicals
+- drug and alcohol testing
+- PFT/spirometry
+- respirator fit testing
+- audiograms
+- vaccines/titers/TB testing
+- deployment medical exams
+- medical surveillance
+
+Analyze the opportunity below and produce a concise procurement brief.
+
+Rules:
+- Be practical and business-focused.
+- Do not hallucinate missing dates, values, or agencies.
+- If the opportunity is likely irrelevant, say so clearly.
+- Return ONLY valid JSON.
+
+Required JSON:
+{
+  "summary": "2-4 sentence plain-English summary",
+  "occumedFit": "why this may or may not fit Occu-Med",
+  "serviceLines": ["..."],
+  "keyDates": {
+    "posted": "YYYY-MM-DD or null",
+    "due": "YYYY-MM-DD or null"
+  },
+  "buyer": "agency/buyer or null",
+  "estimatedValue": "value or null",
+  "bidNotes": ["short practical note", "short practical note"],
+  "missingInfo": ["missing item", "missing item"]
+}
+
+Opportunity:
+Title: ${opp.title ?? "N/A"}
+Agency: ${buyer ?? "N/A"}
+Posted: ${posted ?? "N/A"}
+Due: ${due ?? "N/A"}
+Estimated Value: ${value ?? "N/A"}
+Relevance Score: ${score ?? "N/A"}
+Relevance Reasons: ${reasons || "N/A"}
+Source URL: ${sourceUrl ?? "N/A"}
+Description: ${(opp.description ?? "").slice(0, 2500).replace(/\s+/g, " ").trim() || "N/A"}
+${extractedContent ? `Extracted Page Content:\n${extractedContent.slice(0, 4000).replace(/\s+/g, " ").trim()}` : ""}`;
+}
+
+async function completeWithProvider(prompt: string, provider: "groq" | "openrouter"): Promise<any> {
+  const text = provider === "groq"
+    ? await groqProvider.complete(prompt, 900)
+    : await openrouterProvider.complete(prompt, 900);
+  const cleaned = cleanJsonResponse(text);
+  return JSON.parse(cleaned);
+}
+
+function sanitizeSummaryResult(raw: any, opp: any): any {
+  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
+  const fallback = buildFallbackSummary(opp);
+
+  return {
+    summary: typeof raw?.summary === "string" && raw.summary.trim() ? raw.summary : fallback.summary,
+    occumedFit: typeof raw?.occumedFit === "string" && raw.occumedFit.trim() ? raw.occumedFit : fallback.occumedFit,
+    serviceLines: Array.isArray(raw?.serviceLines) && raw.serviceLines.length > 0 ? raw.serviceLines.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.serviceLines,
+    keyDates: {
+      posted: typeof raw?.keyDates?.posted === "string" ? raw.keyDates.posted || null : fallback.keyDates.posted,
+      due: typeof raw?.keyDates?.due === "string" ? raw.keyDates.due || null : fallback.keyDates.due,
+    },
+    buyer: typeof raw?.buyer === "string" ? raw.buyer || null : fallback.buyer,
+    estimatedValue: typeof raw?.estimatedValue === "string" ? raw.estimatedValue || null : fallback.estimatedValue,
+    bidNotes: Array.isArray(raw?.bidNotes) && raw.bidNotes.length > 0 ? raw.bidNotes.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.bidNotes,
+    missingInfo: Array.isArray(raw?.missingInfo) && raw.missingInfo.length > 0 ? raw.missingInfo.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.missingInfo,
+    sourceUrl,
+    provider: raw?.provider ?? "fallback",
+  };
+}
+
+router.post("/opportunities/:id/summary", async (req, res) => {
+  try {
+    const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
+    if (rows.length === 0) return res.status(404).json({ error: "Opportunity not found" });
+
+    const opp = mapOpportunity(rows[0]);
+    const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
+    let extractedContent: string | null = null;
+
+    if (sourceUrl) {
+      try {
+        const isTavilyAvailable = await tavilyProvider.isConfigured();
+        if (isTavilyAvailable) {
+          const extracted = await tavilyProvider.extractContent([sourceUrl]);
+          if (extracted.length > 0) extractedContent = extracted[0].rawContent;
+        }
+      } catch (err) {
+        req.log.warn(err, "Tavily extract failed for summary");
+      }
+    }
+
+    const prompt = buildSummaryPrompt(opp, extractedContent);
+    let result: any = null;
+    let provider: "groq" | "openrouter" | "fallback" = "fallback";
+
+    try {
+      const isGroqConfigured = await groqProvider.isConfigured();
+      if (isGroqConfigured) {
+        result = await completeWithProvider(prompt, "groq");
+        provider = "groq";
+      }
+    } catch (err) {
+      req.log.warn(err, "Groq summary failed");
+    }
+
+    if (!result) {
+      try {
+        const isOpenRouterConfigured = await openrouterProvider.isConfigured();
+        if (isOpenRouterConfigured) {
+          result = await completeWithProvider(prompt, "openrouter");
+          provider = "openrouter";
+        }
+      } catch (err) {
+        req.log.warn(err, "OpenRouter summary failed");
+      }
+    }
+
+    if (!result) {
+      return res.json(buildFallbackSummary(opp));
+    }
+
+    return res.json(sanitizeSummaryResult({ ...result, provider }, opp));
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to generate summary" });
   }
 });
 
