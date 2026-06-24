@@ -31,8 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
-const BASE = import.meta.env.BASE_URL;
-function api(path: string) { return `${BASE}api/${path}`; }
+function api(path: string) { return `/api/${path}`; }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
