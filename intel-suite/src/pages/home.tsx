@@ -17,11 +17,11 @@ const SHARED_PORTAL_LINKS: PortalLinks = {
 
 function OccuMedHeroLogo() {
   return (
-    <div className="mb-5 flex justify-center" aria-label="Occu-Med">
+    <div className="mb-[-18px] flex justify-center" aria-label="Occu-Med">
       <img
         src={occuMedLogoSrc}
         alt="Occu-Med"
-        className="h-auto w-[330px] drop-shadow-[0_0_34px_rgba(255,255,255,0.26)]"
+        className="h-auto w-[430px] drop-shadow-[0_0_38px_rgba(255,255,255,0.28)]"
       />
     </div>
   );
