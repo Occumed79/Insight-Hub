@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 import { fileURLToPath } from "url";
 import router from "./routes";
+import sourceMonitorRouter from "./routes/source-monitor";
 import { logger } from "./lib/logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +47,11 @@ app.get("/api/health", (_req, res) => {
 app.head("/api/health", (_req, res) => {
   res.status(200).end();
 });
+
+// Source Monitor route definitions currently include their own /api prefix.
+// Mount them at root so live /api/source-monitor/* calls hit the API instead
+// of falling through to the SPA/static handler.
+app.use(sourceMonitorRouter);
 
 app.use("/api", router);
 
