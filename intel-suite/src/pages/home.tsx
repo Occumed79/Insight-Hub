@@ -4,6 +4,7 @@ import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, 
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
+import occuMedLogoSrc from "@/assets/occu-med-logo.png";
 
 type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
 type PortalLinks = Record<PortalLinkKey, string>;
@@ -17,33 +18,11 @@ const SHARED_PORTAL_LINKS: PortalLinks = {
 function OccuMedHeroLogo() {
   return (
     <div className="mb-5 flex justify-center" aria-label="Occu-Med">
-      <svg
-        width="260"
-        height="124"
-        viewBox="0 0 520 248"
-        role="img"
-        aria-labelledby="occu-med-logo-title"
-        className="drop-shadow-[0_0_30px_rgba(255,255,255,0.24)]"
-      >
-        <title id="occu-med-logo-title">Occu-Med</title>
-        <g fill="white">
-          <path d="M196 38c-41.42 0-75 33.58-75 75s33.58 75 75 75V38Z" />
-          <path d="M208 38c41.42 0 75 33.58 75 75v75h-75V38Z" />
-          <path d="M300 188V113c0-41.42 33.58-75 75-75h24v150h-99Z" />
-        </g>
-        <text
-          x="260"
-          y="238"
-          textAnchor="middle"
-          fill="white"
-          fontFamily="Georgia, 'Times New Roman', serif"
-          fontSize="62"
-          fontWeight="700"
-          letterSpacing="10"
-        >
-          OCCU-MED
-        </text>
-      </svg>
+      <img
+        src={occuMedLogoSrc}
+        alt="Occu-Med"
+        className="h-auto w-[260px] drop-shadow-[0_0_30px_rgba(255,255,255,0.24)]"
+      />
     </div>
   );
 }
