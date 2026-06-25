@@ -7,8 +7,6 @@ import {
   UserSearch,
   Landmark,
   Map,
-  Rss,
-  LayoutGrid,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import occuMedLogo from "@/assets/occu-med-logo.png";
@@ -35,8 +33,6 @@ export function AppSidebar() {
   const isProspects = location.startsWith('/portal/prospects');
   const isFederalAgencies = location.startsWith('/portal/federal-agencies');
   const isStateAgencies = location.startsWith('/portal/state-agencies');
-  const isIntelFeed = location.startsWith('/portal/intelligence-feed');
-  const isSourceWall = location.startsWith('/portal/source-wall');
   const isSettings = location.startsWith('/portal/settings');
 
   return (
@@ -81,32 +77,6 @@ export function AppSidebar() {
                   <Link href="/portal/opportunities" className="flex items-center gap-3">
                     <LayoutDashboard className="w-4 h-4" />
                     <span>Opportunities</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={isIntelFeed}
-                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
-                >
-                  <Link href="/portal/intelligence-feed" className="flex items-center gap-3">
-                    <Rss className="w-4 h-4" />
-                    <span>Intelligence Feed</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={isSourceWall}
-                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
-                >
-                  <Link href="/portal/source-wall" className="flex items-center gap-3">
-                    <LayoutGrid className="w-4 h-4" />
-                    <span>Source Intelligence Monitor</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
