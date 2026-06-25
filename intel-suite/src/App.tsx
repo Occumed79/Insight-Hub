@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import Home from "@/pages/home";
 import OpportunitiesDashboard from "@/pages/portal/opportunities";
-import ClientsPage from "@/pages/portal/clients";
+import EntitiesPage from "@/pages/portal/entities";
 import CompetitorsPage from "@/pages/portal/competitors";
 import ProspectsPage from "@/pages/portal/prospects";
 import ProspectDetailPage from "@/pages/portal/prospect-detail";
@@ -30,7 +30,7 @@ function PortalRouter() {
     <PortalLayout>
       <Switch>
         <Route path="/portal/opportunities" component={OpportunitiesDashboard} />
-        <Route path="/portal/clients" component={ClientsPage} />
+        <Route path="/portal/clients" component={EntitiesPage} />
         <Route path="/portal/competitors" component={CompetitorsPage} />
         <Route path="/portal/prospects" component={ProspectsPage} />
         <Route path="/portal/prospects/:id" component={ProspectDetailPage} />
