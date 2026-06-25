@@ -1,10 +1,7 @@
 import { 
-  LayoutDashboard, 
   Users,
   Target,
-  Home,
   Plug,
-  UserSearch,
   Landmark,
   Map,
 } from "lucide-react";
@@ -26,11 +23,8 @@ import {
 export function AppSidebar() {
   const [location] = useLocation();
 
-  const isHome = location === '/';
-  const isOpps = location.startsWith('/portal/opportunities');
-  const isClients = location.startsWith('/portal/clients');
+  const isEntities = location.startsWith('/portal/clients');
   const isCompetitors = location.startsWith('/portal/competitors');
-  const isProspects = location.startsWith('/portal/prospects');
   const isFederalAgencies = location.startsWith('/portal/federal-agencies');
   const isStateAgencies = location.startsWith('/portal/state-agencies');
   const isSettings = location.startsWith('/portal/settings');
@@ -38,7 +32,7 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-white/10 bg-background/50 backdrop-blur-xl">
       <SidebarHeader className="px-3 pt-5 pb-3">
-        <Link href="/" className="flex flex-col items-center transition-opacity hover:opacity-85">
+        <Link href="/portal/clients" className="flex flex-col items-center transition-opacity hover:opacity-85">
           <img
             src={occuMedLogo}
             alt="Occu-Med"
@@ -58,38 +52,12 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild 
-                  isActive={isHome}
-                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
-                >
-                  <Link href="/" className="flex items-center gap-3">
-                    <Home className="w-4 h-4" />
-                    <span>Home</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={isOpps}
-                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
-                >
-                  <Link href="/portal/opportunities" className="flex items-center gap-3">
-                    <LayoutDashboard className="w-4 h-4" />
-                    <span>Opportunities</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={isClients}
+                  isActive={isEntities}
                   className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
                 >
                   <Link href="/portal/clients" className="flex items-center gap-3">
                     <Users className="w-4 h-4" />
-                    <span>Clients</span>
+                    <span>Entities</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -103,19 +71,6 @@ export function AppSidebar() {
                   <Link href="/portal/competitors" className="flex items-center gap-3">
                     <Target className="w-4 h-4" />
                     <span>Competitors</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={isProspects}
-                  className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
-                >
-                  <Link href="/portal/prospects" className="flex items-center gap-3">
-                    <UserSearch className="w-4 h-4" />
-                    <span>Prospects</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
