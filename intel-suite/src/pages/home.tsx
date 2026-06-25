@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, UserSearch, Landmark, Map, Network, TrendingUp, ExternalLink } from "lucide-react";
+import { ArrowRight, Search, Users, Target, FileText, Landmark, Map, Network, TrendingUp, ExternalLink } from "lucide-react";
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
@@ -111,7 +111,7 @@ export default function Home() {
             Insight <span className="text-gradient">Hub</span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto font-light leading-relaxed">
-            The strategic intelligence command center for Occu-Med — surfacing contracting opportunities, tracking client relationships, and mapping the competitive landscape.
+            The strategic intelligence command center for Occu-Med — surfacing contracting opportunities, tracking entity relationships, and mapping the competitive landscape.
           </p>
         </motion.div>
 
@@ -129,10 +129,10 @@ export default function Home() {
             {
               href: "/portal/clients",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
-              alt: "Client Intelligence",
+              alt: "Entity Intelligence",
               icon: <Users className="w-5 h-5 text-primary-foreground" />,
-              title: "Client Intelligence",
-              desc: "Track client profiles, needs, patterns, priorities, decision-makers, and strategic insights.",
+              title: "Entity Intelligence",
+              desc: "Track entity profiles, needs, patterns, priorities, decision-makers, prospect records, and strategic insights.",
               delay: 0.2,
             },
             {
@@ -147,10 +147,10 @@ export default function Home() {
             {
               href: "/portal/prospects",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
-              alt: "Prospect Intelligence",
-              icon: <UserSearch className="w-5 h-5 text-primary-foreground" />,
-              title: "Prospect Intelligence",
-              desc: "Identify and track prospective employers, accounts, and organizations for business development.",
+              alt: "File Sharing",
+              icon: <FileText className="w-5 h-5 text-primary-foreground" />,
+              title: "File Sharing",
+              desc: "Access shared files, forms, packets, supporting documents, and organized reference materials.",
               delay: 0.4,
             },
             {
@@ -228,14 +228,11 @@ export default function Home() {
                       <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
                         {card.icon}
                       </div>
-                      <div className="absolute top-4 right-4 glass-panel rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <ExternalLink className="w-3 h-3 text-primary-foreground/70" />
-                      </div>
                     </div>
                     <div className="px-5 pb-6">
                       <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
                         {card.title}
-                        <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                        <ExternalLink className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
                       </h3>
                       <p className="text-muted-foreground text-sm leading-relaxed">
                         {card.desc}
@@ -244,31 +241,25 @@ export default function Home() {
                   </div>
                 </a>
               ) : (
-                <div className="block h-full cursor-not-allowed" title="Set this portal URL in Render environment variables.">
-                  <div className="h-full glass-card rounded-3xl p-1 group relative overflow-hidden opacity-70">
-                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="block h-full opacity-60 cursor-not-allowed">
+                  <div className="h-full glass-card rounded-3xl p-1 relative overflow-hidden">
                     <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
                       <img
                         src={card.imgUrl}
                         alt={card.alt}
-                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700 grayscale opacity-60"
+                        className="w-full h-auto object-contain"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/50 to-transparent" />
                       <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
                         {card.icon}
                       </div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-[11px] text-white/50 bg-black/40 rounded-full px-3 py-1 border border-white/10">
-                          Env var not set
-                        </span>
-                      </div>
                     </div>
                     <div className="px-5 pb-6">
-                      <h3 className="text-xl font-display font-semibold text-white/60 mb-2 flex items-center justify-between">
+                      <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
                         {card.title}
                       </h3>
-                      <p className="text-muted-foreground/60 text-sm leading-relaxed">
-                        {card.desc}
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        Configure the linked Render URL in environment variables to enable this portal shortcut.
                       </p>
                     </div>
                   </div>
@@ -276,7 +267,6 @@ export default function Home() {
               )}
             </motion.div>
           ))}
-
         </div>
       </div>
     </div>
