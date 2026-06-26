@@ -9,6 +9,8 @@ import occuMedLogoSrc from "@/assets/occu-med-logo.png";
 type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
 type PortalLinks = Record<PortalLinkKey, string>;
 
+const SOURCE_VAULT_URL = import.meta.env.VITE_FILE_SHARING_PORTAL_URL ?? "https://source-vault.onrender.com";
+
 const SHARED_PORTAL_LINKS: PortalLinks = {
   outreach: import.meta.env.VITE_OUTREACH_PORTAL_URL ?? "",
   relationship: import.meta.env.VITE_RELATIONSHIP_PORTAL_URL ?? "",
@@ -145,13 +147,14 @@ export default function Home() {
               delay: 0.3,
             },
             {
-              href: "/portal/prospects",
+              href: SOURCE_VAULT_URL,
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
               alt: "File Sharing",
               icon: <FileText className="w-5 h-5 text-primary-foreground" />,
               title: "File Sharing",
               desc: "Access shared files, forms, packets, supporting documents, and organized reference materials.",
               delay: 0.4,
+              external: true,
             },
             {
               href: "/portal/federal-agencies",
@@ -171,40 +174,56 @@ export default function Home() {
               desc: "Track state-level health program procurement, workers' compensation contracts, and occupational health RFPs across all 50 states.",
               delay: 0.6,
             },
-          ].map((card) => (
-            <motion.div
-              key={card.href}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: card.delay }}
-            >
-              <Link href={card.href} className="block h-full">
-                <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
-                    <img
-                      src={card.imgUrl}
-                      alt={card.alt}
-                      className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
-                    <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
-                      {card.icon}
-                    </div>
-                  </div>
-                  <div className="px-5 pb-6">
-                    <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
-                      {card.title}
-                      <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-                    </h3>
-                    <p className="text-muted-foreground text-sm leading-relaxed">
-                      {card.desc}
-                    </p>
+          ].map((card) => {
+            const cardBody = (
+              <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
+                  <img
+                    src={card.imgUrl}
+                    alt={card.alt}
+                    className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                  <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
+                    {card.icon}
                   </div>
                 </div>
-              </Link>
-            </motion.div>
-          ))}
+                <div className="px-5 pb-6">
+                  <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
+                    {card.title}
+                    {card.external ? (
+                      <ExternalLink className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                    ) : (
+                      <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                    )}
+                  </h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {card.desc}
+                  </p>
+                </div>
+              </div>
+            );
+
+            return (
+              <motion.div
+                key={card.href}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: card.delay }}
+              >
+                {card.external ? (
+                  <a href={card.href} target="_blank" rel="noopener noreferrer" className="block h-full">
+                    {cardBody}
+                  </a>
+                ) : (
+                  <Link href={card.href} className="block h-full">
+                    {cardBody}
+                  </Link>
+                )}
+              </motion.div>
+            );
+          })}
 
           {/* 3 external portal cards sourced only from Render/Vite environment variables */}
           {extraCards.map((card) => (
