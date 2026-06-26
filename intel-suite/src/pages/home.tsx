@@ -9,7 +9,30 @@ import occuMedLogoSrc from "@/assets/occu-med-logo.png";
 type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
 type PortalLinks = Record<PortalLinkKey, string>;
 
-const SOURCE_VAULT_URL = import.meta.env.VITE_FILE_SHARING_PORTAL_URL ?? "https://source-vault.onrender.com";
+const SOURCE_VAULT_FALLBACK_URL = "https://source-vault.onrender.com";
+
+function normalizeExternalPortalUrl(rawUrl: string | undefined) {
+  const trimmed = rawUrl?.trim();
+  if (!trimmed) return SOURCE_VAULT_FALLBACK_URL;
+
+  // Guard against stale Render/Vite settings that accidentally point this card back
+  // into Insight Hub's legacy prospect/client routes instead of the file portal.
+  if (trimmed.startsWith("/") || trimmed.includes("/portal/prospects") || trimmed.includes("/portal/clients")) {
+    return SOURCE_VAULT_FALLBACK_URL;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.pathname.startsWith("/portal/prospects") || url.pathname.startsWith("/portal/clients")) {
+      return SOURCE_VAULT_FALLBACK_URL;
+    }
+    return url.toString();
+  } catch {
+    return SOURCE_VAULT_FALLBACK_URL;
+  }
+}
+
+const SOURCE_VAULT_URL = normalizeExternalPortalUrl(import.meta.env.VITE_FILE_SHARING_PORTAL_URL);
 
 const SHARED_PORTAL_LINKS: PortalLinks = {
   outreach: import.meta.env.VITE_OUTREACH_PORTAL_URL ?? "",
@@ -129,7 +152,7 @@ export default function Home() {
               delay: 0.1,
             },
             {
-              href: "/portal/clients",
+              href: "/portal/entities",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
               alt: "Entity Intelligence",
               icon: <Users className="w-5 h-5 text-primary-foreground" />,
