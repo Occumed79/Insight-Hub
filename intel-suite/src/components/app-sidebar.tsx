@@ -27,7 +27,10 @@ export function AppSidebar() {
 
   const isHome = location === '/';
   const isOpps = location.startsWith('/portal/opportunities');
-  const isEntities = location.startsWith('/portal/clients');
+  const isEntities =
+    location.startsWith('/portal/entities') ||
+    location.startsWith('/portal/clients') ||
+    location.startsWith('/portal/prospects');
   const isCompetitors = location.startsWith('/portal/competitors');
   const isFederalAgencies = location.startsWith('/portal/federal-agencies');
   const isStateAgencies = location.startsWith('/portal/state-agencies');
@@ -85,7 +88,7 @@ export function AppSidebar() {
                   isActive={isEntities}
                   className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-medium transition-all"
                 >
-                  <Link href="/portal/clients" className="flex items-center gap-3">
+                  <Link href="/portal/entities" className="flex items-center gap-3">
                     <Users className="w-4 h-4" />
                     <span>Entities</span>
                   </Link>
