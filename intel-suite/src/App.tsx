@@ -7,7 +7,6 @@ import Home from "@/pages/home";
 import OpportunitiesDashboard from "@/pages/portal/opportunities";
 import EntitiesPage from "@/pages/portal/entities";
 import CompetitorsPage from "@/pages/portal/competitors";
-import ProspectsPage from "@/pages/portal/prospects";
 import ProspectDetailPage from "@/pages/portal/prospect-detail";
 import FederalAgenciesPage from "@/pages/portal/federal-agencies";
 import StateAgenciesPage from "@/pages/portal/state-agencies";
@@ -25,15 +24,24 @@ const queryClient = new QueryClient({
   },
 });
 
+function EntityProspectsRoute() {
+  return <EntitiesPage defaultTab="prospects" />;
+}
+
+function EntityClientsRoute() {
+  return <EntitiesPage defaultTab="clients" />;
+}
+
 function PortalRouter() {
   return (
     <PortalLayout>
       <Switch>
         <Route path="/portal/opportunities" component={OpportunitiesDashboard} />
-        <Route path="/portal/clients" component={EntitiesPage} />
+        <Route path="/portal/entities" component={EntityProspectsRoute} />
+        <Route path="/portal/clients" component={EntityClientsRoute} />
         <Route path="/portal/competitors" component={CompetitorsPage} />
-        <Route path="/portal/prospects" component={ProspectsPage} />
         <Route path="/portal/prospects/:id" component={ProspectDetailPage} />
+        <Route path="/portal/prospects" component={EntityProspectsRoute} />
         <Route path="/portal/federal-agencies" component={FederalAgenciesPage} />
         <Route path="/portal/state-agencies" component={StateAgenciesPage} />
         <Route path="/portal/settings" component={SettingsPage} />
