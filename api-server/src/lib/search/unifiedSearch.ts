@@ -44,8 +44,22 @@ export interface UnifiedFetchResult {
   }[];
 }
 
+const PROVIDER_ALIASES: Record<string, string> = {
+  sam_gov: "samGov",
+  grants_gov: "grantsGov",
+  usa_spending: "usaSpending",
+  state_portals: "statePortals",
+  scrapy_rfp: "scrapyRfp",
+  scrapy: "scrapyRfp",
+};
+
+function normalizeProviderNames(providers: string[] | undefined): string[] {
+  const requested = providers && providers.length > 0 ? providers : ["samGov"];
+  return requested.map((provider) => PROVIDER_ALIASES[provider] ?? provider);
+}
+
 export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
-  const requestedProviders = options.providers ?? ["samGov"];
+  const requestedProviders = normalizeProviderNames(options.providers);
 
   const result: UnifiedFetchResult = {
     fetched: 0,
