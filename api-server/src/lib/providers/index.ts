@@ -6,6 +6,7 @@ export * from "./tavily";
 export * from "./tango";
 export * from "./bidnet";
 export * from "./statePortals";
+export * from "./scrapyRfp";
 export * from "./firecrawl";
 export * from "./jina";
 export * from "./openrouter";
@@ -32,6 +33,7 @@ import { tavilyProvider } from "./tavily";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
 import { statePortalsProvider } from "./statePortals";
+import { scrapyRfpProvider } from "./scrapyRfp";
 import { firecrawlProvider } from "./firecrawl";
 import { jinaProvider } from "./jina";
 import { openrouterProvider } from "./openrouter";
@@ -67,6 +69,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   tango: tangoProvider,
   bidnet: bidnetProvider,
   statePortals: statePortalsProvider as unknown as DataSourceProvider,
+  scrapyRfp: scrapyRfpProvider,
   firecrawl: firecrawlProvider,
   jina: jinaProvider,
   openrouter: openrouterProvider,
