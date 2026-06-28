@@ -52,7 +52,7 @@ SCRAPY_RFP_COMMAND="python scripts/scrapy-rfp-finder/run.py"
 SCRAPY_RFP_JSONL="/tmp/insight-hub-scrapy-rfp.jsonl"
 ```
 
-Then include `scrapyRfp` in the providers array sent to `/opportunities/fetch`.
+Then include `scrapyRfp` in the providers array sent to `/opportunities/fetch`. The unified fetch layer also accepts `scrapy_rfp` and `scrapy` as aliases.
 
 ## Environment variables
 
