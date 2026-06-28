@@ -15,6 +15,7 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
     tavily: "manual",
     tango: "manual",
     bidnet: "manual",
+    scrapyRfp: "manual",
   };
 
   const rawData = record.rawData ?? {};

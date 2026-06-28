@@ -420,6 +420,9 @@ router.post("/opportunities/fetch", async (req, res) => {
       langsearch: "langsearch",
       websearch: "websearch",
       federalRegister: "federalRegister",
+      scrapyRfp: "scrapyRfp",
+      scrapy_rfp: "scrapyRfp",
+      scrapy: "scrapyRfp",
     };
 
     const resolvedProviders = providers && providers.length > 0
