@@ -10,6 +10,7 @@ export type ProviderName =
   | "tango"
   | "bidnet"
   | "statePortals"
+  | "scrapyRfp"
   | "firecrawl"
   | "openrouter"
   | "groq"
@@ -110,13 +111,20 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "BidNet API base URL", dbKey: "bidnetBaseUrl", envKey: "BIDNET_BASE_URL" }],
   },
   statePortals: provider("statePortals", "State / Local Procurement Sources", "procurement", "web_discovery", [], ["State procurement portals", "County bid sources", "City and municipal portals", "University bid portals"], "live", "Curated public procurement portal discovery controlled by Render feature flags."),
+  scrapyRfp: {
+    ...provider("scrapyRfp", "Scrapy RFP Crawler", "procurement", "direct_source", [], ["Portal crawling", "Pagination following", "JSONL import", "Selector-based extraction"], "partial", "Optional Scrapy bridge for procurement portals that need controlled crawling instead of search-only discovery."),
+    optionalFields: [
+      { key: "command", label: "Scrapy Command", type: "text", placeholder: "python scripts/scrapy-rfp-finder/run.py", dbKey: "scrapyRfpCommand", envKey: "SCRAPY_RFP_COMMAND" },
+      { key: "jsonlPath", label: "JSONL Output Path", type: "text", placeholder: "/tmp/insight-hub-scrapy-rfp.jsonl", dbKey: "scrapyRfpJsonlPath", envKey: "SCRAPY_RFP_JSONL" },
+    ],
+  },
   firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),
   openrouter: {
     ...provider("openrouter", "OpenRouter", "ai", "hybrid", [secretField("openrouterApiKey", "OPENROUTER_API_KEY")], ["AI model routing", "Extraction", "Scoring"], "partial"),
     optionalFields: [{ key: "model", label: "Model ID", type: "text", placeholder: "OpenRouter model", dbKey: "openrouterModel", envKey: "OPENROUTER_MODEL" }],
   },
   groq: {
-    ...provider("groq", "Groq", "ai", "hybrid", [secretField("groqApiKey", "GROQ_API_KEY")], ["Fast AI inference", "Extraction", "Scoring"], "partial"),
+    ...provider("groq", "Groq", "ai", "hybrid", [secretField("groqApiKey", "GROQ_API_KEY")], ["Fast AI inference", "Extraction", "Scoring failover"], "partial"),
     optionalFields: [{ key: "model", label: "Model ID", type: "text", placeholder: "Groq model", dbKey: "groqModel", envKey: "GROQ_MODEL" }],
   },
   exa: provider("exa", "Exa", "search", "web_discovery", [secretField("exaApiKey", "EXA_API_KEY")], ["Neural search", "Semantic discovery"], "partial"),
