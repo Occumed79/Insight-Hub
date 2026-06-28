@@ -17,6 +17,7 @@ import { bidnetProvider } from "../providers/bidnet";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { usaSpendingProvider } from "../providers/usaSpending";
 import { federalRegisterProvider } from "../providers/federalRegister";
+import { scrapyRfpProvider } from "../providers/scrapyRfp";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -81,6 +82,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("usaSpending", usaSpendingProvider);
   await runProvider("federalRegister", federalRegisterProvider);
+  await runProvider("scrapyRfp", scrapyRfpProvider);
   await runProvider("tango", tangoProvider);
 
   // ── Direct Stub Providers (BidNet) ───────────────────────────────────────
