@@ -11,6 +11,7 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
   const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
     samGov: "sam_gov",
     texasEsbd: "csv_import",
+    nyScr: "csv_import",
     statePortals: "csv_import",
     gemini: "manual",
     serper: "manual",

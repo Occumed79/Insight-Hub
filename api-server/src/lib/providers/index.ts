@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./samGov";
 export * from "./texasEsbd";
+export * from "./nyScr";
 export * from "./gemini";
 export * from "./serper";
 export * from "./tavily";
@@ -27,6 +28,7 @@ export * from "./configOnly";
 
 import { samGovProvider } from "./samGov";
 import { texasEsbdProvider } from "./texasEsbd";
+import { nyScrProvider } from "./nyScr";
 import { geminiProvider } from "./gemini";
 import { serperProvider } from "./serper";
 import { tavilyProvider } from "./tavily";
@@ -61,6 +63,7 @@ import type { ProviderName } from "../config/providerConfig";
 export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   texasEsbd: texasEsbdProvider,
+  nyScr: nyScrProvider,
   gemini: geminiProvider,
   serper: serperProvider,
   tavily: tavilyProvider,
