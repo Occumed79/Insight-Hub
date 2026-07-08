@@ -3,15 +3,18 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { providerRegistry } from "../lib/providers";
-import { PROVIDER_DEFINITIONS, ProviderName } from "../lib/config/providerConfig";
+import { PROVIDER_DEFINITIONS, type RfpProviderName } from "../lib/config/providerConfig";
 
 const router = Router();
 
-const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as ProviderName[];
+const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[];
 
 /**
  * GET /api/providers
- * Returns status of all configured providers.
+ * Returns status of all configured RFP/opportunity providers.
+ *
+ * USAspending and Federal Register are intentionally excluded here because they
+ * feed Federal Agencies intelligence windows instead of the RFP provider list.
  */
 router.get("/providers", async (req, res) => {
   try {
@@ -87,15 +90,16 @@ router.get("/providers", async (req, res) => {
 
 /**
  * PUT /api/providers/:name
- * Save credentials for a specific provider.
+ * Save credentials for a specific RFP/opportunity provider.
  * Body is a key-value map of dbKey -> value.
  */
 router.put("/providers/:name", async (req, res) => {
   try {
     const { name } = req.params;
-    const def = PROVIDER_DEFINITIONS[name as ProviderName];
+    const providerName = name as RfpProviderName;
+    const def = PROVIDER_DEFINITIONS[providerName];
     if (!def) {
-      return res.status(404).json({ error: `Unknown provider: ${name}` });
+      return res.status(404).json({ error: `Unknown RFP provider: ${name}` });
     }
 
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
@@ -126,12 +130,12 @@ router.put("/providers/:name", async (req, res) => {
 
     // Return updated status — wrap in try/catch so a failing status check
     // doesn't prevent the credential from being saved successfully.
-    const provider = providerRegistry[name as ProviderName];
+    const provider = providerRegistry[providerName];
     let status: Awaited<ReturnType<typeof provider.getStatus>>;
     try {
       status = await provider.getStatus();
     } catch {
-      status = { name: name as ProviderName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
+      status = { name: providerName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
     }
     return res.json({ name, status });
   } catch (err) {
