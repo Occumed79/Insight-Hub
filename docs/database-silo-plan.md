@@ -4,12 +4,12 @@ Insight Hub now treats the RFP/opportunity portal and the broader intelligence/c
 
 ## Environment variables
 
-Use two database URLs in production:
+Use exactly two database URLs in production:
 
-- `RFP_DATABASE_URL` — the RFP/opportunity database.
-- `INTEL_DATABASE_URL` — the non-RFP intelligence/client/prospect/source-monitor database.
+- `RFP_DATABASE_URL` — the current Insight Hub RFP/opportunity Neon database.
+- `INTEL_DATABASE_URL` — the new non-RFP intelligence/client/prospect/source-monitor Neon database.
 
-`DATABASE_URL` remains a temporary fallback so existing environments do not crash while deployment variables are being updated. Do not rely on that fallback long term.
+`DATABASE_URL` is not used by the siloed app after this change. Do not set it as a third database layer. If Render still has `DATABASE_URL` from an older deployment, it should be removed after `RFP_DATABASE_URL` and `INTEL_DATABASE_URL` are set.
 
 ## RFP database ownership
 
@@ -59,18 +59,19 @@ The `@workspace/db` package exposes two concrete clients:
 - `rfpDb`
 - `intelDb`
 
-For backward compatibility, existing imports of `db` use a request-scoped logical context. API paths for non-RFP sections route to the intel DB context; everything else defaults to the RFP DB context.
+Existing imports of `db` use a request-scoped logical context. API paths for non-RFP sections route to the intel DB context; everything else defaults to the RFP DB context.
 
 ## Migration sequence
 
 1. Set `RFP_DATABASE_URL` to the current Insight Hub RFP Neon database.
 2. Set `INTEL_DATABASE_URL` to the new empty Neon database.
-3. Run `pnpm db:push:intel` to create intel tables in the empty intel DB.
-4. Run `pnpm db:verify-silo` and confirm the RFP DB and intel DB point to different databases.
-5. Export non-RFP data from the current RFP DB.
-6. Import non-RFP data into the intel DB.
-7. Run `pnpm db:verify-silo` again and compare row counts.
-8. Only after row counts are verified, clean non-RFP tables from the RFP DB.
+3. Remove the old `DATABASE_URL` env var from Render so there is no ambiguous third DB setting.
+4. Run `pnpm db:push:intel` to create intel tables in the empty intel DB.
+5. Run `pnpm db:verify-silo` and confirm the RFP DB and intel DB point to different databases.
+6. Export non-RFP data from the current RFP DB.
+7. Import non-RFP data into the intel DB.
+8. Run `pnpm db:verify-silo` again and compare row counts.
+9. Only after row counts are verified, clean non-RFP tables from the RFP DB.
 
 ## Destructive cleanup rule
 
