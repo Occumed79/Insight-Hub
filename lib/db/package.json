@@ -10,7 +10,6 @@
     "./schema/intel": "./src/schema/intel.ts"
   },
   "scripts": {
-    "copy:intel-data": "node ./scripts/copy-intel-data.mjs",
     "push": "pnpm run push:rfp",
     "push-force": "pnpm run push:rfp-force",
     "push:rfp": "drizzle-kit push --config ./drizzle.config.ts",
