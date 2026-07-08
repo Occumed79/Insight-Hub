@@ -1,9 +1,14 @@
 /**
- * State / Local Procurement Sources Provider
+ * State / District Direct RFP Portal Provider
  *
- * Searches a curated list of public state, county, city, municipal, local-gov,
- * university, and regional procurement portals using targeted site: queries via
- * Serper (Google Search). Source groups are controlled by Render feature flags.
+ * This provider intentionally searches only official government procurement
+ * portals from the direct RFP source catalog. Paid/public aggregators such as
+ * BidNet, DemandStar, PlanetBids, OpenGov network pages, Periscope/S2G, and
+ * generic search engines are deliberately excluded from the source catalog.
+ *
+ * The current implementation still uses Serper as a cheap discovery layer over
+ * official domains while dedicated per-portal parsers are built. The catalog is
+ * the source-of-truth for which portals are allowed.
  */
 
 import { createHash } from "crypto";
@@ -11,11 +16,12 @@ import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderF
 import { serperProvider } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import { procurementSourceFlags } from "../config/env";
+import { directRfpPortalByDomain, directRfpPortalsForSearch, type DirectRfpPortal } from "./directRfpPortals";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 
-type PortalGroup = "state" | "county" | "city" | "municipal" | "localGov" | "university" | "national";
+type PortalGroup = "state" | "district";
 
 export interface StatePortal {
   domain: string;
@@ -23,64 +29,27 @@ export interface StatePortal {
   state: string;
   tier: 1 | 2 | 3;
   group: PortalGroup;
+  sourceId: string;
+  searchUrl?: string;
 }
 
-export const STATE_PORTALS: StatePortal[] = [
-  { domain: "demandstar.com",            name: "DemandStar / OpenBids",        state: "National", tier: 1, group: "national" },
-  { domain: "publicpurchase.com",        name: "Public Purchase",              state: "National", tier: 1, group: "national" },
-  { domain: "planetbids.com",            name: "PlanetBids",                   state: "National", tier: 1, group: "national" },
-  { domain: "bidnetdirect.com",          name: "BidNet Direct",                state: "National", tier: 1, group: "national" },
-  { domain: "periscopes2g.com",          name: "Periscope S2G",                state: "National", tier: 1, group: "national" },
-  { domain: "ionwave.net",               name: "IonWave eProcurement",         state: "National", tier: 1, group: "national" },
-  { domain: "opengov.com",               name: "OpenGov Procurement",          state: "National", tier: 1, group: "national" },
-  { domain: "bonfirehub.com",            name: "Bonfire",                      state: "National", tier: 1, group: "national" },
-  { domain: "bidding.procurement.opengov.com", name: "OpenGov Bidding",        state: "National", tier: 1, group: "national" },
-  { domain: "bidsync.com",               name: "BidSync",                      state: "National", tier: 1, group: "national" },
-  { domain: "rfpdb.com",                 name: "RFP Database",                 state: "National", tier: 1, group: "national" },
+function toStatePortal(portal: DirectRfpPortal): StatePortal | null {
+  if (portal.country !== "US") return null;
+  if (portal.level !== "state" && portal.level !== "district") return null;
+  return {
+    domain: portal.domain,
+    name: portal.name,
+    state: portal.state ?? portal.jurisdiction,
+    tier: portal.tier,
+    group: portal.level === "district" ? "district" : "state",
+    sourceId: portal.id,
+    searchUrl: portal.searchUrl,
+  };
+}
 
-  { domain: "caleprocure.ca.gov",        name: "California eProcure",          state: "CA", tier: 2, group: "state" },
-  { domain: "txsmartbuy.gov",            name: "Texas SmartBuy",               state: "TX", tier: 2, group: "state" },
-  { domain: "myfloridamarketplace.myflorida.com", name: "Florida Marketplace", state: "FL", tier: 2, group: "state" },
-  { domain: "emaryland.maryland.gov",    name: "eMaryland Marketplace",        state: "MD", tier: 2, group: "state" },
-  { domain: "procurement.pa.gov",        name: "Pennsylvania eMarketplace",    state: "PA", tier: 2, group: "state" },
-  { domain: "procure.ohio.gov",          name: "Ohio Procure.Ohio",            state: "OH", tier: 2, group: "state" },
-  { domain: "gears.illinois.gov",        name: "Illinois GEARS",               state: "IL", tier: 2, group: "state" },
-  { domain: "doa.georgia.gov",           name: "Georgia Team Georgia Marketplace", state: "GA", tier: 2, group: "state" },
-  { domain: "webs.wa.gov",               name: "Washington WEBS",              state: "WA", tier: 2, group: "state" },
-  { domain: "bids.nc.gov",               name: "NC eProcurement",              state: "NC", tier: 2, group: "state" },
-  { domain: "bids.az.gov",               name: "Arizona ProcureAZ",            state: "AZ", tier: 2, group: "state" },
-  { domain: "michigan.gov",              name: "Michigan SIGMA",               state: "MI", tier: 2, group: "state" },
-  { domain: "nj.gov",                    name: "New Jersey Purchase",          state: "NJ", tier: 2, group: "state" },
-  { domain: "eva.virginia.gov",          name: "Virginia eVA",                 state: "VA", tier: 2, group: "state" },
-  { domain: "tn.gov",                    name: "Tennessee Central Procurement", state: "TN", tier: 2, group: "state" },
-  { domain: "vendor.colorado.gov",       name: "Colorado BIDS",                state: "CO", tier: 2, group: "state" },
-  { domain: "procurement.nv.gov",        name: "Nevada Purchasing Division",   state: "NV", tier: 2, group: "state" },
-  { domain: "oregon.gov",                name: "Oregon Procurement",           state: "OR", tier: 2, group: "state" },
-  { domain: "mn.gov",                    name: "Minnesota SWIFT",              state: "MN", tier: 2, group: "state" },
-  { domain: "wi.gov",                    name: "Wisconsin DOA Procurement",    state: "WI", tier: 2, group: "state" },
-  { domain: "mo.gov",                    name: "Missouri Office of Admin",     state: "MO", tier: 2, group: "state" },
-  { domain: "mass.gov",                  name: "Massachusetts COMMBUYS",       state: "MA", tier: 2, group: "state" },
-  { domain: "ct.gov",                    name: "Connecticut DAS Procurement",  state: "CT", tier: 2, group: "state" },
-  { domain: "sc.gov",                    name: "South Carolina SciQuest",      state: "SC", tier: 2, group: "state" },
-
-  { domain: "bidexpress.com",            name: "Bid Express",                  state: "National", tier: 3, group: "localGov" },
-  { domain: "negometrix.com",            name: "Negometrix",                   state: "National", tier: 3, group: "municipal" },
-  { domain: "esolutionsinc.net",         name: "eSolutions Gov Bids",          state: "National", tier: 3, group: "localGov" },
-  { domain: "civicplus.com",             name: "CivicPlus Procurement",        state: "National", tier: 3, group: "municipal" },
-  { domain: "bid4michigan.com",          name: "Bid4Michigan",                 state: "MI",       tier: 3, group: "localGov" },
-  { domain: "lacontroller.org",          name: "LA County Bids",               state: "CA",       tier: 3, group: "county" },
-  { domain: "purchasing.lacounty.gov",   name: "LA County Purchasing",         state: "CA",       tier: 3, group: "county" },
-  { domain: "sco.ca.gov",                name: "California SCO Bids",          state: "CA",       tier: 3, group: "state" },
-  { domain: "houstontx.gov",             name: "City of Houston Bids",         state: "TX",       tier: 3, group: "city" },
-  { domain: "dallascityhall.com",        name: "Dallas City Hall Procurement", state: "TX",       tier: 3, group: "city" },
-  { domain: "nyc.gov",                   name: "New York City PASSPort",       state: "NY",       tier: 3, group: "city" },
-  { domain: "chicago.gov",               name: "City of Chicago Procurement",  state: "IL",       tier: 3, group: "city" },
-  { domain: "phoenixoasis.com",          name: "Phoenix OASIS",                state: "AZ",       tier: 3, group: "city" },
-  { domain: "sanjoseca.gov",             name: "San Jose eProcurement",        state: "CA",       tier: 3, group: "city" },
-  { domain: "universitybid.com",         name: "University Bid",               state: "National", tier: 3, group: "university" },
-  { domain: "purchasing.utexas.edu",     name: "University of Texas Purchasing", state: "TX",     tier: 3, group: "university" },
-  { domain: "procurement.ufl.edu",       name: "University of Florida Procurement", state: "FL",  tier: 3, group: "university" },
-];
+export const STATE_PORTALS: StatePortal[] = directRfpPortalsForSearch(true)
+  .map(toStatePortal)
+  .filter((portal): portal is StatePortal => Boolean(portal));
 
 const PORTAL_SEARCH_TERMS = [
   `"occupational health" (RFP OR "request for proposal" OR solicitation OR bid) -ambulance -EMS -LVN -LPN`,
@@ -99,7 +68,7 @@ const PROCURE_SIGNALS = [
   "rfp", "request for proposal", "request for proposals", "solicitation", "invitation to bid", "invitation for bid",
   "itb", "rfq", "request for quotation", "bid opportunity", "bid notice", "sources sought", "pre-solicitation",
   "response due", "proposals due", "submission deadline", "bids due", "seeking proposals", "contract opportunity",
-  "procurement notice", "sealed bid", "vendor registration",
+  "procurement notice", "sealed bid", "vendor registration", "open bid", "current bid", "public event",
 ];
 
 const OCCUMED_SERVICE_SIGNALS = [
@@ -129,15 +98,26 @@ function hasStaleYearOnly(text: string): boolean {
 }
 
 function isPortalEnabled(portal: StatePortal): boolean {
-  if (portal.group === "national") return true;
-  return procurementSourceFlags[portal.group] === true;
+  if (portal.group === "district") return procurementSourceFlags.state === true;
+  return procurementSourceFlags.state === true;
 }
 
 function enabledPortals(includeTier3 = false): StatePortal[] {
   return STATE_PORTALS.filter((portal) => isPortalEnabled(portal) && (includeTier3 || portal.tier !== 3));
 }
 
+function isOfficialDirectPortalResult(url: string): boolean {
+  try {
+    const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
+    return Boolean(directRfpPortalByDomain(host));
+  } catch {
+    return false;
+  }
+}
+
 function isUsefulPortalResult(title: string, url: string, snippet: string): boolean {
+  if (!isOfficialDirectPortalResult(url)) return false;
+
   const raw = `${title} ${url} ${snippet}`;
   const text = normalizeText(raw);
 
@@ -166,14 +146,15 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
 
   const domainMatch = url.match(/https?:\/\/([^/]+)/);
   const urlDomain = domainMatch?.[1] ?? "";
+  const directPortal = directRfpPortalByDomain(urlDomain);
   const matchedPortal = enabledPortals(true).find((p) => urlDomain.toLowerCase().includes(p.domain.toLowerCase()));
-  const portalName = matchedPortal?.name ?? "State / Local Portal";
-  const portalState = matchedPortal?.state ?? "";
+  const portalName = directPortal?.name ?? matchedPortal?.name ?? "Official State RFP Portal";
+  const portalState = directPortal?.state ?? matchedPortal?.state ?? "";
 
   return {
-    externalId: `state-${urlHash}`,
+    externalId: `direct-state-${urlHash}`,
     title,
-    agency: agencyHint ?? (portalState && portalState !== "National" ? `${portalState} Government` : "Unknown"),
+    agency: agencyHint ?? (portalState ? `${portalState} Government` : directPortal?.jurisdiction ?? "Unknown"),
     type: "Solicitation",
     status: "active",
     postedDate: new Date(),
@@ -183,12 +164,13 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
     sourceUrl: url,
     source: "statePortals" as const,
     rawData: {
-      providerName: "state_local_procurement_sources",
+      providerName: "direct_official_state_rfp_portals",
       portalName,
       portalState,
-      portalGroup: matchedPortal?.group ?? "unknown",
-      sourceConfidence: "medium",
-      notes: `Discovered via ${portalName}; passed procurement/service/staleness filters`,
+      portalGroup: matchedPortal?.group ?? directPortal?.level ?? "unknown",
+      sourceId: directPortal?.id ?? matchedPortal?.sourceId,
+      sourceConfidence: directPortal?.parserStatus === "ready_to_parse" ? "high" : "medium",
+      notes: `Discovered via official direct portal ${portalName}; passed procurement/service/staleness filters`,
       fallback: true,
     },
   };
@@ -216,7 +198,7 @@ export class StatePortalsProvider implements DataSourceProvider {
   }
 
   async search(options: { keywords?: string; includeTier3?: boolean } = {}): Promise<{ title: string; url: string; snippet: string; portal: string }[]> {
-    const includeTier3 = options.includeTier3 ?? true;
+    const includeTier3 = options.includeTier3 ?? false;
     const portals = enabledPortals(includeTier3);
     const tier1Queries = buildSiteQueries(portals.filter((p) => p.tier === 1));
     const tier2Queries = buildSiteQueries(portals.filter((p) => p.tier === 2));
@@ -238,7 +220,7 @@ export class StatePortalsProvider implements DataSourceProvider {
       .map((r) => {
         const domainMatch = r.link.match(/https?:\/\/([^/]+)/);
         const urlDomain = domainMatch?.[1] ?? "";
-        const portal = portals.find((p) => urlDomain.toLowerCase().includes(p.domain.toLowerCase()))?.name ?? "State / Local Portal";
+        const portal = directRfpPortalByDomain(urlDomain)?.name ?? portals.find((p) => urlDomain.toLowerCase().includes(p.domain.toLowerCase()))?.name ?? "Official State RFP Portal";
         return { title: r.title, url: r.link, snippet: r.snippet, portal };
       })
       .filter((r) => isUsefulPortalResult(r.title, r.url, r.snippet));
