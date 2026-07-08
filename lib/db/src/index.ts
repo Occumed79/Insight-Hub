@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import * as schema from "./schema";
 import * as rfpSchema from "./schema/rfp";
 import * as intelSchema from "./schema/intel";
 
