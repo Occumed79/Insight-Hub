@@ -59,20 +59,8 @@ function parseTexasDate(dateValue?: string, timeValue?: string): Date | undefine
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-function isProbablyRelevant(row: TexasEsbdRow, keywords?: string): boolean {
-  const haystack = `${row.title} ${row.solicitationId} ${row.status ?? ""}`.toLowerCase();
-  const keywordParts = (keywords ?? "")
-    .toLowerCase()
-    .split(/[\s,|]+/)
-    .map((part) => part.trim())
-    .filter((part) => part.length >= 4);
-
-  if (keywordParts.length === 0) return true;
-  return keywordParts.some((part) => haystack.includes(part));
-}
-
 function parseEsbdRows(html: string): TexasEsbdRow[] {
-  const anchors = Array.from(html.matchAll(/<a\b[^>]*href="([^"]*\/esbd\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi));
+  const anchors = Array.from(html.matchAll(/<a\b[^>]*href="([^"]*\/esbd\/[^\"]+)"[^>]*>([\s\S]*?)<\/a>/gi));
   const rows: TexasEsbdRow[] = [];
 
   for (let index = 0; index < anchors.length; index++) {
@@ -134,7 +122,7 @@ function rowToOpportunity(row: TexasEsbdRow): NormalizedOpportunity | null {
       row.postingDate ? `Posting Date: ${row.postingDate}` : null,
       row.agencyMemberNumber ? `Agency/Texas SmartBuy Member Number: ${row.agencyMemberNumber}` : null,
     ].filter(Boolean).join("\n"),
-    source: "texasEsbd" as any,
+    source: "texasEsbd",
     rawData: {
       providerName: "texas_esbd_direct_parser",
       portalName: "Texas ESBD / Texas SmartBuy",
@@ -149,7 +137,7 @@ function rowToOpportunity(row: TexasEsbdRow): NormalizedOpportunity | null {
 }
 
 export class TexasEsbdProvider implements DataSourceProvider {
-  readonly name = "texasEsbd" as any;
+  readonly name = "texasEsbd" as const;
 
   async isConfigured(): Promise<boolean> {
     return true;
@@ -169,9 +157,7 @@ export class TexasEsbdProvider implements DataSourceProvider {
     }
 
     const html = await response.text();
-    const rows = parseEsbdRows(html)
-      .filter((row) => isProbablyRelevant(row, options.keywords))
-      .slice(0, limit);
+    const rows = parseEsbdRows(html).slice(0, limit);
     const records = rows
       .map(rowToOpportunity)
       .filter((record): record is NormalizedOpportunity => Boolean(record));
@@ -181,7 +167,7 @@ export class TexasEsbdProvider implements DataSourceProvider {
 
   async getStatus(): Promise<ProviderStatus> {
     return {
-      name: "texasEsbd" as any,
+      name: "texasEsbd",
       configured: true,
       healthy: true,
     };
