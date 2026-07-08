@@ -4,12 +4,13 @@ import { randomUUID } from "crypto";
 
 /**
  * Convert a NormalizedOpportunity into an InsertOpportunity for DB storage.
- * Web-sourced records (serper/tavily) are stored with source = "manual" and
- * providerName set to the actual source provider.
+ * Web-sourced records are stored with source = manual unless they map to an
+ * explicit first-party source bucket in the current RFP schema.
  */
 export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOpportunity {
   const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
     samGov: "sam_gov",
+    statePortals: "csv_import",
     gemini: "manual",
     serper: "manual",
     tavily: "manual",
@@ -22,6 +23,20 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
   const relevanceReason = rawData.relevanceReason as string | undefined;
   const isFallback = rawData.fallback === true;
   const tagList = Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [];
+  const providerName = typeof rawData.providerName === "string" && rawData.providerName.trim()
+    ? rawData.providerName.trim()
+    : record.source;
+  const notes = typeof rawData.notes === "string" && rawData.notes.trim()
+    ? rawData.notes.trim()
+    : relevanceReason;
+  const rawConfidence = typeof rawData.sourceConfidence === "string" ? rawData.sourceConfidence : null;
+  const sourceConfidence = rawConfidence === "high" || rawConfidence === "medium" || rawConfidence === "low"
+    ? rawConfidence
+    : isFallback
+      ? "low"
+      : relevanceScore != null
+        ? relevanceScore >= 75 ? "high" : relevanceScore >= 50 ? "medium" : "low"
+        : null;
 
   // Auto-archive if the deadline has already passed
   const deadline = record.responseDeadline ?? null;
@@ -55,16 +70,12 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
     awardAmount: record.awardAmount != null ? String(record.awardAmount) : null,
     awardee: record.awardee ?? null,
     source: sourceMap[record.source] ?? "manual",
-    providerName: record.source,
+    providerName,
     relevanceScore: relevanceScore != null ? String(relevanceScore) : null,
-    sourceConfidence: isFallback
-      ? "low"
-      : relevanceScore != null
-        ? relevanceScore >= 75 ? "high" : relevanceScore >= 50 ? "medium" : "low"
-        : null,
+    sourceConfidence,
     tags: tagList.length > 0 ? JSON.stringify(tagList) : null,
     notes: isFallback
-      ? `Web discovery — AI analysis pending (rate limited). ${relevanceReason ?? ""}`.trim()
-      : relevanceReason ?? null,
+      ? `Official portal discovery — parser enrichment pending. ${notes ?? ""}`.trim()
+      : notes ?? null,
   };
 }
