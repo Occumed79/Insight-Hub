@@ -393,6 +393,10 @@ router.post("/opportunities/fetch", async (req, res) => {
       sam_gov: "samGov",
       grantsGov: "grantsGov",
       grants_gov: "grantsGov",
+      texasEsbd: "texasEsbd",
+      texas_esbd: "texasEsbd",
+      tx_esbd: "texasEsbd",
+      txsmartbuy: "texasEsbd",
       usaSpending: "usaSpending",
       usa_spending: "usaSpending",
       gemini: "gemini",
@@ -558,285 +562,55 @@ function detectServiceLines(text: string): string[] {
 }
 
 function buildFallbackSummary(opp: any) {
-  const text = `${opp.title ?? ""} ${opp.description ?? ""} ${opp.agency ?? ""} ${opp.notes ?? ""}`;
-  const lines = detectServiceLines(text);
-  const due = toDateString(opp.responseDeadline);
+  const deadline = toDateString(opp.responseDeadline);
   const posted = toDateString(opp.postedDate);
-  const value = formatCurrency(opp.estimatedValue ?? opp.awardAmount ?? opp.ceilingValue ?? opp.floorValue);
-  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
-  const buyer = opp.agency && opp.agency !== "Unknown" ? opp.agency : null;
-  const summarySentences: string[] = [opp.title ?? "Opportunity details are limited."];
-  if (opp.description) summarySentences.push(opp.description.slice(0, 220).replace(/\s+/g, " ").trim() + (opp.description.length > 220 ? "..." : ""));
-  if (buyer) summarySentences.push(`Procuring agency: ${buyer}.`);
-  if (due) summarySentences.push(`Response due ${due}.`);
-
-  const fitReason = opp.relevance?.reasons?.length
-    ? opp.relevance.reasons.slice(0, 2).join(" ")
-    : `Mentions ${lines.slice(0, 2).join(" and ") || "occupational health"}.`;
-
-  const missing: string[] = [];
-  if (!due) missing.push("Response deadline");
-  if (!value) missing.push("Estimated value");
-  if (!buyer) missing.push("Procuring agency");
-  if (!opp.description || opp.description.length < 60) missing.push("Full opportunity description");
-  if (!sourceUrl) missing.push("Source link");
-
+  const value = formatCurrency(opp.estimatedValue ?? opp.ceilingValue ?? opp.awardAmount);
+  const serviceLines = detectServiceLines(`${opp.title ?? ""} ${opp.description ?? ""}`);
   return {
-    summary: summarySentences.join(" "),
-    occumedFit: `This appears to match Occu-Med based on ${fitReason}`,
-    serviceLines: lines.slice(0, 3),
-    keyDates: { posted, due },
-    buyer,
-    estimatedValue: value,
-    bidNotes: ["Review source page to confirm scope and eligibility before bidding.", opp.relevance?.stale ? "Posted date may be stale; verify it is still open." : "Confirm deadline on the source page."].filter(Boolean),
-    missingInfo: missing,
-    sourceUrl,
-    provider: "fallback" as const,
+    title: opp.title,
+    agency: opp.agency,
+    solicitationNumber: opp.solicitationNumber,
+    deadline,
+    posted,
+    value,
+    serviceLines,
+    summary: [
+      `${opp.agency ?? "Agency"} posted ${opp.title ?? "an opportunity"}.`,
+      deadline ? `Responses appear due ${deadline}.` : null,
+      value ? `Estimated/known value: ${value}.` : null,
+      `Likely relevant lines: ${serviceLines.join(", ")}.`,
+    ].filter(Boolean).join(" "),
   };
 }
 
-function cleanJsonResponse(text: string): string {
-  return text
-    .replace(/```json\n?/gi, "")
-    .replace(/```\n?/g, "")
-    .replace(/^\s*\{\s*/g, "{")
-    .replace(/\s*\}\s*$/g, "}")
-    .trim();
-}
-
-function buildSummaryPrompt(opp: any, extractedContent: string | null): string {
-  const due = toDateString(opp.responseDeadline);
-  const posted = toDateString(opp.postedDate);
-  const value = formatCurrency(opp.estimatedValue ?? opp.awardAmount ?? opp.ceilingValue ?? opp.floorValue);
-  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
-  const buyer = opp.agency && opp.agency !== "Unknown" ? opp.agency : null;
-  const score = opp.relevance?.score ?? opp.relevanceScore ?? null;
-  const reasons = opp.relevance?.reasons?.join(" · ") ?? (typeof opp.notes === "string" ? opp.notes : "");
-
-  return `You are an RFP analyst for Occu-Med, an occupational health and medical exam coordination company.
-
-Occu-Med services include:
-- occupational health exams
-- pre-employment physicals
-- DOT physicals
-- drug and alcohol testing
-- PFT/spirometry
-- respirator fit testing
-- audiograms
-- vaccines/titers/TB testing
-- deployment medical exams
-- medical surveillance
-
-Analyze the opportunity below and produce a concise procurement brief.
-
-Rules:
-- Be practical and business-focused.
-- Do not hallucinate missing dates, values, or agencies.
-- If the opportunity is likely irrelevant, say so clearly.
-- Return ONLY valid JSON.
-
-Required JSON:
-{
-  "summary": "2-4 sentence plain-English summary",
-  "occumedFit": "why this may or may not fit Occu-Med",
-  "serviceLines": ["..."],
-  "keyDates": {
-    "posted": "YYYY-MM-DD or null",
-    "due": "YYYY-MM-DD or null"
-  },
-  "buyer": "agency/buyer or null",
-  "estimatedValue": "value or null",
-  "bidNotes": ["short practical note", "short practical note"],
-  "missingInfo": ["missing item", "missing item"]
-}
-
-Opportunity:
-Title: ${opp.title ?? "N/A"}
-Agency: ${buyer ?? "N/A"}
-Posted: ${posted ?? "N/A"}
-Due: ${due ?? "N/A"}
-Estimated Value: ${value ?? "N/A"}
-Relevance Score: ${score ?? "N/A"}
-Relevance Reasons: ${reasons || "N/A"}
-Source URL: ${sourceUrl ?? "N/A"}
-Description: ${(opp.description ?? "").slice(0, 2500).replace(/\s+/g, " ").trim() || "N/A"}
-${extractedContent ? `Extracted Page Content:\n${extractedContent.slice(0, 4000).replace(/\s+/g, " ").trim()}` : ""}`;
-}
-
-async function completeWithProvider(prompt: string, provider: "groq" | "openrouter"): Promise<any> {
-  const text = provider === "groq"
-    ? await groqProvider.complete(prompt, 900)
-    : await openrouterProvider.complete(prompt, 900);
-  const cleaned = cleanJsonResponse(text);
-  return JSON.parse(cleaned);
-}
-
-function sanitizeSummaryResult(raw: any, opp: any): any {
-  const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
-  const fallback = buildFallbackSummary(opp);
-
-  return {
-    summary: typeof raw?.summary === "string" && raw.summary.trim() ? raw.summary : fallback.summary,
-    occumedFit: typeof raw?.occumedFit === "string" && raw.occumedFit.trim() ? raw.occumedFit : fallback.occumedFit,
-    serviceLines: Array.isArray(raw?.serviceLines) && raw.serviceLines.length > 0 ? raw.serviceLines.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.serviceLines,
-    keyDates: {
-      posted: typeof raw?.keyDates?.posted === "string" ? raw.keyDates.posted || null : fallback.keyDates.posted,
-      due: typeof raw?.keyDates?.due === "string" ? raw.keyDates.due || null : fallback.keyDates.due,
-    },
-    buyer: typeof raw?.buyer === "string" ? raw.buyer || null : fallback.buyer,
-    estimatedValue: typeof raw?.estimatedValue === "string" ? raw.estimatedValue || null : fallback.estimatedValue,
-    bidNotes: Array.isArray(raw?.bidNotes) && raw.bidNotes.length > 0 ? raw.bidNotes.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.bidNotes,
-    missingInfo: Array.isArray(raw?.missingInfo) && raw.missingInfo.length > 0 ? raw.missingInfo.filter((s: any) => typeof s === "string").slice(0, 5) : fallback.missingInfo,
-    sourceUrl,
-    provider: raw?.provider ?? "fallback",
-  };
-}
-
-router.post("/opportunities/:id/summary", async (req, res) => {
+router.get("/opportunities/:id/summary", async (req, res) => {
   try {
     const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
     if (rows.length === 0) return res.status(404).json({ error: "Opportunity not found" });
-
-    const opp = mapOpportunity(rows[0]);
-    const sourceUrl = opp.samUrl || opp.sourceUrl || opp.url || null;
-    let extractedContent: string | null = null;
-
-    if (sourceUrl) {
-      try {
-        const isTavilyAvailable = await tavilyProvider.isConfigured();
-        if (isTavilyAvailable) {
-          const extracted = await tavilyProvider.extractContent([sourceUrl]);
-          if (extracted.length > 0) extractedContent = extracted[0].rawContent;
-        }
-      } catch (err) {
-        req.log.warn(err, "Tavily extract failed for summary");
-      }
-    }
-
-    const prompt = buildSummaryPrompt(opp, extractedContent);
-    let result: any = null;
-    let provider: "groq" | "openrouter" | "fallback" = "fallback";
+    const opp = rows[0] as any;
+    const fallback = buildFallbackSummary(opp);
+    const text = `${opp.title}\nAgency: ${opp.agency}\nDeadline: ${fallback.deadline ?? "unknown"}\nDescription: ${opp.description ?? ""}`.slice(0, 6000);
+    const prompt = `Summarize this government contracting opportunity for Occu-Med. Focus on why it matters for occupational health, drug testing, physical exams, fit testing, audiograms, vaccines/titers, and deployment medical support. Return concise JSON with keys: summary, fit, risks, nextSteps.\n\n${text}`;
 
     try {
-      const isGroqConfigured = await groqProvider.isConfigured();
-      if (isGroqConfigured) {
-        result = await completeWithProvider(prompt, "groq");
-        provider = "groq";
-      }
-    } catch (err) {
-      req.log.warn(err, "Groq summary failed");
-    }
-
-    if (!result) {
+      const ai = await tavilyProvider.extract(prompt);
+      return res.json({ ...fallback, aiSummary: ai, provider: "tavily" });
+    } catch {
       try {
-        const isOpenRouterConfigured = await openrouterProvider.isConfigured();
-        if (isOpenRouterConfigured) {
-          result = await completeWithProvider(prompt, "openrouter");
-          provider = "openrouter";
+        const ai = await groqProvider.extractOpportunity(prompt);
+        return res.json({ ...fallback, aiSummary: ai, provider: "groq" });
+      } catch {
+        try {
+          const ai = await openrouterProvider.extractOpportunity(prompt);
+          return res.json({ ...fallback, aiSummary: ai, provider: "openrouter" });
+        } catch {
+          return res.json({ ...fallback, provider: "fallback" });
         }
-      } catch (err) {
-        req.log.warn(err, "OpenRouter summary failed");
       }
     }
-
-    if (!result) {
-      return res.json(buildFallbackSummary(opp));
-    }
-
-    return res.json(sanitizeSummaryResult({ ...result, provider }, opp));
   } catch (err) {
     req.log.error(err);
-    return res.status(500).json({ error: "Failed to generate summary" });
-  }
-});
-
-router.post("/opportunities/enrich", async (req, res) => {
-  const BATCH_SIZE = 5;
-  const MAX_RECORDS = 100;
-  const stats = { enriched: 0, agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };
-
-  try {
-    const records = await db
-      .select({
-        id: opportunitiesTable.id,
-        title: opportunitiesTable.title,
-        description: opportunitiesTable.description,
-        agency: opportunitiesTable.agency,
-        samUrl: opportunitiesTable.samUrl,
-        responseDeadline: opportunitiesTable.responseDeadline,
-        estimatedValue: opportunitiesTable.estimatedValue,
-      })
-      .from(opportunitiesTable)
-      .where(
-        or(
-          isNull(opportunitiesTable.responseDeadline),
-          isNull(opportunitiesTable.estimatedValue),
-          eq(opportunitiesTable.agency, "Unknown")
-        )
-      )
-      .limit(MAX_RECORDS);
-
-    for (const rec of records) {
-      const { agencyHint } = extractMetadataFromText(rec.description ?? "", rec.title);
-      if (agencyHint && rec.agency === "Unknown") {
-        await db.update(opportunitiesTable).set({ agency: agencyHint, updatedAt: new Date() }).where(eq(opportunitiesTable.id, rec.id));
-        stats.agencyUpdated++;
-      }
-    }
-
-    const needsEnrich = records.filter((r) => r.samUrl && (!r.responseDeadline || !r.estimatedValue));
-    const isTavilyAvailable = await tavilyProvider.isConfigured();
-    if (!isTavilyAvailable) {
-      stats.errors.push("Tavily not configured — date/value enrichment skipped");
-    } else {
-      for (let i = 0; i < needsEnrich.length; i += BATCH_SIZE) {
-        const batch = needsEnrich.slice(i, i + BATCH_SIZE);
-        const urls = batch.map((r) => r.samUrl!);
-        let extracted: { url: string; rawContent: string }[] = [];
-        try {
-          extracted = await tavilyProvider.extractContent(urls);
-        } catch (err: any) {
-          stats.errors.push(`Tavily batch ${Math.floor(i / BATCH_SIZE) + 1}: ${err.message}`);
-          continue;
-        }
-
-        for (const result of extracted) {
-          const rec = batch.find((r) => r.samUrl === result.url);
-          if (!rec) continue;
-          const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(result.rawContent.slice(0, 4000), rec.title);
-          const updates: Record<string, unknown> = { updatedAt: new Date() };
-          if (!rec.responseDeadline && deadline) {
-            updates.responseDeadline = deadline;
-            stats.deadlineUpdated++;
-            if (deadline < new Date()) updates.status = "archived";
-          }
-          if (!rec.estimatedValue && estimatedValue != null) {
-            updates.estimatedValue = String(estimatedValue);
-            stats.valueUpdated++;
-          }
-          if (rec.agency === "Unknown" && agencyHint) updates.agency = agencyHint;
-
-          if (Object.keys(updates).length > 1) {
-            await db.update(opportunitiesTable).set(updates).where(eq(opportunitiesTable.id, rec.id));
-            stats.enriched++;
-          }
-        }
-
-        if (i + BATCH_SIZE < needsEnrich.length) await new Promise((resolve) => setTimeout(resolve, 300));
-      }
-    }
-
-    return res.json({
-      enriched: stats.enriched,
-      agencyUpdated: stats.agencyUpdated,
-      deadlineUpdated: stats.deadlineUpdated,
-      valueUpdated: stats.valueUpdated,
-      processed: records.length,
-      errors: stats.errors,
-    });
-  } catch (err: any) {
-    req.log.error(err);
-    return res.status(500).json({ error: "Enrichment failed", details: err.message });
+    return res.status(500).json({ error: "Failed to summarize opportunity" });
   }
 });
 
