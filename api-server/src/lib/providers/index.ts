@@ -21,6 +21,7 @@ export * from "./voyage";
 export * from "./huggingFace";
 export * from "./qdrant";
 export * from "./pinecone";
+export * from "./federalRegister";
 export * from "./cloudflareWorker";
 export * from "./configOnly";
 
