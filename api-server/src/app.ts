@@ -4,7 +4,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { eq, sql } from "drizzle-orm";
-import { db, runWithDbContext, type rfpDb } from "@workspace/db";
+import { db, runWithDbContext } from "@workspace/db";
 import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
