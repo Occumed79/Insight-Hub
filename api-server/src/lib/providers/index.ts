@@ -21,7 +21,6 @@ export * from "./voyage";
 export * from "./huggingFace";
 export * from "./qdrant";
 export * from "./pinecone";
-export * from "./federalRegister";
 export * from "./cloudflareWorker";
 export * from "./configOnly";
 
@@ -46,14 +45,12 @@ import { youProvider } from "./you";
 import { langsearchProvider } from "./langsearch";
 import { websearchProvider } from "./websearch";
 import { grantsGovProvider } from "./grantsGov";
-import { usaSpendingProvider } from "./usaSpending";
 import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "./openAiCompatible";
 import { cohereProvider } from "./cohere";
 import { voyageProvider } from "./voyage";
 import { huggingFaceProvider } from "./huggingFace";
 import { qdrantProvider } from "./qdrant";
 import { pineconeProvider } from "./pinecone";
-import { federalRegisterProvider } from "./federalRegister";
 import { cloudflareWorkerProvider } from "./cloudflareWorker";
 import { falProvider, mongoDbProvider } from "./configOnly";
 import type { DataSourceProvider } from "./types";
@@ -81,7 +78,6 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   langsearch: langsearchProvider,
   websearch: websearchProvider,
   grantsGov: grantsGovProvider,
-  usaSpending: usaSpendingProvider,
   cerebras: cerebrasProvider,
   cohere: cohereProvider,
   deepseek: deepseekProvider,
@@ -94,7 +90,6 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   mongoDb: mongoDbProvider,
   voyage: voyageProvider,
   huggingFace: huggingFaceProvider,
-  federalRegister: federalRegisterProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {

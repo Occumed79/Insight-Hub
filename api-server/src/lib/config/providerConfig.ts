@@ -24,7 +24,6 @@ export type ProviderName =
   | "langsearch"
   | "websearch"
   | "grantsGov"
-  | "usaSpending"
   | "cerebras"
   | "cohere"
   | "deepseek"
@@ -36,8 +35,7 @@ export type ProviderName =
   | "cloudflareWorker"
   | "mongoDb"
   | "voyage"
-  | "huggingFace"
-  | "federalRegister";
+  | "huggingFace";
 
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
@@ -136,7 +134,6 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
   langsearch: provider("langsearch", "Langsearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing"], "partial"),
   websearch: provider("websearch", "WebSearch API", "search", "web_discovery", [secretField("websearchApiKey", "WEBSEARCH_API_KEY")], ["Broad web search", "Opportunity sourcing"], "partial"),
   grantsGov: provider("grantsGov", "Grants.gov", "primary", "direct_source", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
-  usaSpending: provider("usaSpending", "USASpending.gov", "primary", "direct_source", [], ["Expiring contract discovery", "Re-compete intelligence", "Incumbent tracking"], "live", "Public federal spending database — no API key required."),
 
   cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "active"),
   cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Semantic reranking", "Opportunity relevance scoring"], "active"),
@@ -156,7 +153,6 @@ export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
   mongoDb: provider("mongoDb", "MongoDB API", "search", "research_analysis", [secretField("mongoDbApi", "MONGO_DB_API", "MongoDB API Key / URL")], ["External document store", "Future enrichment cache"], "partial"),
   voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Vector indexing fallback"], "active"),
   huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Embeddings", "Model inference", "Vector indexing fallback"], "active"),
-  federalRegister: provider("federalRegister", "Federal Register", "primary", "direct_source", [], ["Federal notices", "Rulemaking signals", "Agency activity monitoring"], "live", "Public Federal Register API configured through FEDERAL_REGISTER_API_BASE."),
 };
 
 export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
