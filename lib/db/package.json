@@ -10,8 +10,6 @@
     "./schema/intel": "./src/schema/intel.ts"
   },
   "scripts": {
-    "import:intel-csv": "node ./scripts/import-intel-csv.mjs",
-    "import:intel-csv:apply": "node ./scripts/import-intel-csv.mjs --apply --truncate-target",
     "push": "pnpm run push:rfp",
     "push-force": "pnpm run push:rfp-force",
     "push:rfp": "drizzle-kit push --config ./drizzle.config.ts",
