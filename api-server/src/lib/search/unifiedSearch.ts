@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 
 import { samGovProvider } from "../providers/samGov";
 import { texasEsbdProvider } from "../providers/texasEsbd";
+import { nyScrProvider } from "../providers/nyScr";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
 import { grantsGovProvider } from "../providers/grantsGov";
@@ -90,6 +91,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   // ── Public/direct RFP sources ────────────────────────────────────────────────
   await runProvider("samGov", samGovProvider);
   await runProvider("texasEsbd", texasEsbdProvider);
+  await runProvider("nyScr", nyScrProvider);
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("tango", tangoProvider);
 
