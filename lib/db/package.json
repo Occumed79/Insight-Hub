@@ -5,11 +5,16 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./schema/rfp": "./src/schema/rfp.ts",
+    "./schema/intel": "./src/schema/intel.ts"
   },
   "scripts": {
-    "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push": "pnpm run push:rfp",
+    "push:rfp": "drizzle-kit push --config ./drizzle.config.ts",
+    "push:rfp-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "push:intel": "drizzle-kit push --config ./drizzle.intel.config.ts",
+    "push:intel-force": "drizzle-kit push --force --config ./drizzle.intel.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
