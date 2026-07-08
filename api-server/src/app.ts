@@ -4,13 +4,34 @@ import pinoHttp from "pino-http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { eq, sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { db, runWithDbContext, type rfpDb } from "@workspace/db";
 import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
 import { logger } from "./lib/logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+type LogicalDatabase = "rfp" | "intel";
+
+const INTEL_API_PREFIXES = [
+  "/api/federal-intel",
+  "/api/state-agencies",
+  "/api/intelligence-feed",
+  "/api/source-monitor",
+  "/api/clients",
+  "/api/client-contacts",
+  "/api/prospects",
+  "/api/prospect-locations",
+  "/api/prospect-contacts",
+  "/api/competitors",
+];
+
+function logicalDatabaseForPath(pathname: string): LogicalDatabase {
+  return INTEL_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    ? "intel"
+    : "rfp";
+}
 
 (globalThis as any).safeDate = (value: string | number | Date | null | undefined): Date | null => {
   if (!value) return null;
@@ -42,6 +63,10 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use((req, _res, next) => {
+  runWithDbContext(logicalDatabaseForPath(req.path), () => next());
+});
 
 app.get("/api/health", (_req, res) => {
   res.status(200).json({ ok: true, service: "insight-hub", awake: true });
