@@ -24,6 +24,8 @@ export type ProviderName =
   | "langsearch"
   | "websearch"
   | "grantsGov"
+  | "usaSpending"
+  | "federalRegister"
   | "cerebras"
   | "cohere"
   | "deepseek"
@@ -37,10 +39,12 @@ export type ProviderName =
   | "voyage"
   | "huggingFace";
 
+export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegister">;
+
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
 export interface ProviderDefinition {
-  name: ProviderName;
+  name: RfpProviderName;
   displayName: string;
   description: string;
   category: "primary" | "ai" | "search" | "procurement";
@@ -74,7 +78,7 @@ const secretField = (dbKey: string, envKey: string, label = "API Key"): Provider
 });
 
 const provider = (
-  name: ProviderName,
+  name: RfpProviderName,
   displayName: string,
   category: ProviderDefinition["category"],
   useCase: ProviderUseCase,
@@ -94,7 +98,7 @@ const provider = (
   status,
 });
 
-export const PROVIDER_DEFINITIONS: Record<ProviderName, ProviderDefinition> = {
+export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> = {
   samGov: provider("samGov", "SAM.gov", "primary", "direct_source", [secretField("samApiKey", "SAM_GOV_API_KEY")], ["Federal solicitations", "Awards", "Presolicitations"], "live", "Direct source for U.S. federal contracting opportunities from System for Award Management."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
