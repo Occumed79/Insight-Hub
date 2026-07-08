@@ -15,17 +15,16 @@
  * Env vars (all optional):
  *   ENABLE_SCHEDULED_INGESTION   "true" to turn it on (default off)
  *   INGESTION_INTERVAL_MINUTES   minutes between runs (default 360 = 6h, min 15)
- *   INGESTION_PROVIDERS          comma-separated provider keys (default: free + default web)
+ *   INGESTION_PROVIDERS          comma-separated RFP provider keys
  *   INGESTION_DATE_RANGE_DAYS    look-back window passed to providers (default 30)
  */
 
 import { logger } from "../logger";
 import { unifiedFetch } from "./unifiedSearch";
 
-// Free (no-key) sources plus the default web providers. Kept conservative so an
-// unattended job doesn't hammer paid/keyed providers; override via INGESTION_PROVIDERS.
-const DEFAULT_INGESTION_PROVIDERS = ["samGov", "grantsGov", "usaSpending", "statePortals", "serper", "tavily"];
-
+// RFP-only defaults. USAspending and Federal Register are intentionally excluded:
+// they are intel/award/regulatory sources and should not publish direct RFP cards.
+const DEFAULT_INGESTION_PROVIDERS = ["samGov", "grantsGov", "statePortals", "serper", "tavily"];
 const DEFAULT_INTERVAL_MINUTES = 360;
 const MIN_INTERVAL_MINUTES = 15;
 const DEFAULT_DATE_RANGE_DAYS = 30;

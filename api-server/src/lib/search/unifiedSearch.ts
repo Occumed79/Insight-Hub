@@ -1,8 +1,8 @@
 /**
  * Unified Fetch Pipeline
  *
- * Aggregates opportunity records from all configured providers, normalizes,
- * deduplicates, scores, persists to the DB, and optionally writes vectors to
+ * Aggregates RFP opportunity records from configured RFP providers, normalizes,
+ * deduplicates, scores, persists to the RFP DB, and optionally writes vectors to
  * Qdrant/Pinecone for future similarity retrieval.
  */
 
@@ -15,8 +15,6 @@ import { samGovProvider } from "../providers/samGov";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
 import { grantsGovProvider } from "../providers/grantsGov";
-import { usaSpendingProvider } from "../providers/usaSpending";
-import { federalRegisterProvider } from "../providers/federalRegister";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -43,8 +41,10 @@ export interface UnifiedFetchResult {
   }[];
 }
 
+const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister"]);
+
 export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
-  const requestedProviders = options.providers ?? ["samGov"];
+  const requestedProviders = (options.providers ?? ["samGov"]).filter((provider) => !INTEL_ONLY_PROVIDERS.has(provider));
 
   const result: UnifiedFetchResult = {
     fetched: 0,
@@ -53,6 +53,16 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     skipped: 0,
     providerResults: [],
   };
+
+  for (const provider of options.providers ?? []) {
+    if (INTEL_ONLY_PROVIDERS.has(provider)) {
+      result.providerResults.push({
+        provider,
+        fetched: 0,
+        errors: ["Excluded from RFP ingestion. This source belongs in the intel database pipeline."],
+      });
+    }
+  }
 
   const allRecords: NormalizedOpportunity[] = [];
 
@@ -76,11 +86,9 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     result.fetched += fetched;
   };
 
-  // ── Public/direct sources ──────────────────────────────────────────────────
+  // ── Public/direct RFP sources ────────────────────────────────────────────────
   await runProvider("samGov", samGovProvider);
   await runProvider("grantsGov", grantsGovProvider);
-  await runProvider("usaSpending", usaSpendingProvider);
-  await runProvider("federalRegister", federalRegisterProvider);
   await runProvider("tango", tangoProvider);
 
   // ── Direct Stub Providers (BidNet) ───────────────────────────────────────

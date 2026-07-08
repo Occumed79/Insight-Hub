@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
 import { startScheduledIngestion } from "./lib/search/scheduler";
+import { getDatabaseConfigSummary, runWithDbContext } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
 
@@ -23,13 +24,14 @@ app.listen(port, (err) => {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
-  logger.info({ port }, "Server listening");
+  logger.info({ port, databases: getDatabaseConfigSummary() }, "Server listening");
 
-  // Run migrations after server is up — non-fatal if they fail
-  runStartupMigrations().catch((err) => {
+  // Run non-RFP startup migrations against the intel DB after server is up.
+  // Non-fatal if they fail.
+  runWithDbContext("intel", () => runStartupMigrations()).catch((err) => {
     logger.error({ err }, "Unexpected error in startup migrations");
   });
 
-  // Start background ingestion (opt-in via ENABLE_SCHEDULED_INGESTION=true)
+  // Start background RFP ingestion (opt-in via ENABLE_SCHEDULED_INGESTION=true)
   startScheduledIngestion();
 });
