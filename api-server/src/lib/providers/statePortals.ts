@@ -1,14 +1,12 @@
 /**
  * State / District Direct RFP Portal Provider
  *
- * This provider intentionally searches only official government procurement
- * portals from the direct RFP source catalog. Paid/public aggregators such as
- * BidNet, DemandStar, PlanetBids, OpenGov network pages, Periscope/S2G, and
- * generic search engines are deliberately excluded from the source catalog.
+ * Searches only official government procurement portals from the direct RFP
+ * source catalog. Aggregators are deliberately excluded from this layer.
  *
- * The current implementation still uses Serper as a cheap discovery layer over
- * official domains while dedicated per-portal parsers are built. The catalog is
- * the source-of-truth for which portals are allowed.
+ * Wave 2 makes this provider operational through /opportunities/fetch while
+ * staying quota-aware: tier-1 official portals are queried first, tier-2 only
+ * when includeTier3 is explicitly requested, and tier-3 remains off by default.
  */
 
 import { createHash } from "crypto";
@@ -20,6 +18,8 @@ import { directRfpPortalByDomain, directRfpPortalsForSearch, type DirectRfpPorta
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
+const DEFAULT_QUERY_LIMIT = 6;
+const DEFAULT_RESULT_LIMIT = 25;
 
 type PortalGroup = "state" | "district";
 
@@ -136,6 +136,15 @@ function buildSiteQueries(portals: StatePortal[]): string[] {
   return PORTAL_SEARCH_TERMS.map((term) => `(${domainStr}) ${term} ${CURRENT_YEAR}`);
 }
 
+function normalizeResultKey(title: string, url: string): string {
+  try {
+    const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`.toLowerCase();
+  } catch {
+    return `${title}|${url}`.toLowerCase();
+  }
+}
+
 function resultToOpportunity(title: string, url: string, snippet: string): NormalizedOpportunity | null {
   if (!isUsefulPortalResult(title, url, snippet)) return null;
 
@@ -170,6 +179,7 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
       portalGroup: matchedPortal?.group ?? directPortal?.level ?? "unknown",
       sourceId: directPortal?.id ?? matchedPortal?.sourceId,
       sourceConfidence: directPortal?.parserStatus === "ready_to_parse" ? "high" : "medium",
+      tags: ["direct-official-portal", portalState ? `state:${portalState}` : "state:unknown"],
       notes: `Discovered via official direct portal ${portalName}; passed procurement/service/staleness filters`,
       fallback: true,
     },
@@ -183,8 +193,17 @@ export class StatePortalsProvider implements DataSourceProvider {
     return serperProvider.isConfigured();
   }
 
-  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    return { records: [], total: 0, errors: [] };
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    const configured = await this.isConfigured();
+    if (!configured) {
+      return { records: [], total: 0, errors: ["Serper API key not configured; official portal discovery is disabled."] };
+    }
+
+    const includeTier3 = Boolean((options as any).includeTier3);
+    const searchResults = await this.search({ keywords: options.keywords, includeTier3 });
+    const records = this.toOpportunities(searchResults).slice(0, options.limit ?? DEFAULT_RESULT_LIMIT);
+
+    return { records, total: records.length, errors: [] };
   }
 
   async getStatus(): Promise<ProviderStatus> {
@@ -211,10 +230,11 @@ export class StatePortalsProvider implements DataSourceProvider {
       keywordQueries.push(`(${domainStr}) (${kw}) ("occupational health" OR "drug testing" OR "DOT physical" OR "employee health") (RFP OR solicitation OR bid) ${CURRENT_YEAR} -ambulance -EMS -LVN -LPN -hiring -jobs`);
     }
 
-    const allQueries = [...keywordQueries, ...tier1Queries, ...tier2Queries, ...tier3Queries];
+    const allQueries = [...keywordQueries, ...tier1Queries, ...tier2Queries, ...tier3Queries].slice(0, DEFAULT_QUERY_LIMIT);
     if (allQueries.length === 0) return [];
 
     const results = await serperProvider.searchMultiple(allQueries, 10);
+    const seen = new Set<string>();
 
     return results
       .map((r) => {
@@ -223,7 +243,14 @@ export class StatePortalsProvider implements DataSourceProvider {
         const portal = directRfpPortalByDomain(urlDomain)?.name ?? portals.find((p) => urlDomain.toLowerCase().includes(p.domain.toLowerCase()))?.name ?? "Official State RFP Portal";
         return { title: r.title, url: r.link, snippet: r.snippet, portal };
       })
-      .filter((r) => isUsefulPortalResult(r.title, r.url, r.snippet));
+      .filter((r) => isUsefulPortalResult(r.title, r.url, r.snippet))
+      .filter((r) => {
+        const key = normalizeResultKey(r.title, r.url);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, DEFAULT_RESULT_LIMIT);
   }
 
   toOpportunities(results: { title: string; url: string; snippet: string; portal: string }[]): NormalizedOpportunity[] {
