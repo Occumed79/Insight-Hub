@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 export type ProviderName =
   | "samGov"
   | "texasEsbd"
+  | "nyScr"
   | "gemini"
   | "serper"
   | "tavily"
@@ -102,6 +103,7 @@ const provider = (
 export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> = {
   samGov: provider("samGov", "SAM.gov", "primary", "direct_source", [secretField("samApiKey", "SAM_GOV_API_KEY")], ["Federal solicitations", "Awards", "Presolicitations"], "live", "Direct source for U.S. federal contracting opportunities from System for Award Management."),
   texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Direct parser for official Texas ESBD / Texas SmartBuy public solicitations. No API key required."),
+  nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Direct parser for the official New York State Contract Reporter public open-opportunity listing. No API key required."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
   tavily: provider("tavily", "Tavily", "search", "research_analysis", [secretField("tavilyApiKey", "TAVILY_API_KEY")], ["Research API", "RFP discovery", "Market intelligence"], "partial"),
