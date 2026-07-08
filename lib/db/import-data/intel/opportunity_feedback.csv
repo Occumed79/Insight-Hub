@@ -1,0 +1,4 @@
+"id","opportunity_id","grade","notes","agency","naics_code","provider_name","tags","created_at","updated_at"
+"2d50543e-7196-4b7a-b5ea-f8320f837539","72bd861f-7e28-4ab3-84ee-fb563e904e29","poor",,"Michigan",,"statePortals",,"2026-06-03 11:27:52.309827","2026-06-03 11:28:03.232"
+"be6a4c15-f38e-4b23-8287-d423e7e13d90","2af1f99d-abe9-4e3b-bd8a-c2e5c7e863b2","excellent",,"Unknown",,"statePortals",,"2026-06-12 01:35:21.750018","2026-06-22 01:20:02.004"
+"f88c75ea-18d2-4c13-98d5-79831b432a51","ef0cb082-be5e-4042-99d2-2c5434e16668","excellent",,"Department of Justice","","usa_spending",,"2026-06-02 23:22:30.527036","2026-06-02 23:22:30.527036"
