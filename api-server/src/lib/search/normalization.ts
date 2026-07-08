@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOpportunity {
   const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
     samGov: "sam_gov",
+    texasEsbd: "csv_import",
     statePortals: "csv_import",
     gemini: "manual",
     serper: "manual",
