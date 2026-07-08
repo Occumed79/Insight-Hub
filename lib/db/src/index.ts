@@ -10,21 +10,18 @@ type LogicalDatabase = "rfp" | "intel";
 
 const dbContext = new AsyncLocalStorage<LogicalDatabase>();
 
-function connectionStringFor(primaryEnvName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL"): string {
-  const value = process.env[primaryEnvName] ?? process.env.DATABASE_URL;
+function requiredConnectionString(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL"): string {
+  const value = process.env[envName];
 
   if (!value) {
-    throw new Error(
-      `${primaryEnvName} must be set. DATABASE_URL is allowed only as a temporary fallback during migration.`,
-    );
+    throw new Error(`${envName} must be set. Insight Hub no longer falls back to DATABASE_URL for siloed database routing.`);
   }
 
   return value;
 }
 
-function safeConnectionSummary(primaryEnvName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL") {
-  const source = process.env[primaryEnvName] ? primaryEnvName : "DATABASE_URL";
-  return { logicalDatabase: primaryEnvName === "RFP_DATABASE_URL" ? "rfp" : "intel", source };
+function safeConnectionSummary(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL") {
+  return { logicalDatabase: envName === "RFP_DATABASE_URL" ? "rfp" : "intel", source: envName };
 }
 
 export function runWithDbContext<T>(logicalDatabase: LogicalDatabase, callback: () => T): T {
@@ -35,8 +32,8 @@ export function getActiveLogicalDatabase(): LogicalDatabase {
   return dbContext.getStore() ?? "rfp";
 }
 
-export const rfpPool = new Pool({ connectionString: connectionStringFor("RFP_DATABASE_URL") });
-export const intelPool = new Pool({ connectionString: connectionStringFor("INTEL_DATABASE_URL") });
+export const rfpPool = new Pool({ connectionString: requiredConnectionString("RFP_DATABASE_URL") });
+export const intelPool = new Pool({ connectionString: requiredConnectionString("INTEL_DATABASE_URL") });
 
 export const rfpDb = drizzle(rfpPool, { schema: rfpSchema });
 export const intelDb = drizzle(intelPool, { schema: intelSchema });
@@ -49,8 +46,8 @@ const dynamicDb = new Proxy({}, {
   },
 });
 
-// Backward-compatible exports. Existing RFP code can continue importing `db` while
-// request middleware routes non-RFP API paths to the intel DB context.
+// Existing imports of `db` use request-scoped logical routing.
+// RFP paths default to rfpDb; configured non-RFP API paths use intelDb.
 export const db = dynamicDb as typeof rfpDb & typeof intelDb;
 export const pool = rfpPool;
 
