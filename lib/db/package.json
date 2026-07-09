@@ -13,9 +13,9 @@
     "push": "pnpm run push:rfp",
     "push-force": "pnpm run push:rfp-force",
     "push:rfp": "drizzle-kit push --config ./drizzle.config.ts",
-    "push:rfp-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "push:rfp-force": "node ./scripts/guarded-drizzle-push-force.mjs ./drizzle.config.ts",
     "push:intel": "drizzle-kit push --config ./drizzle.intel.config.ts",
-    "push:intel-force": "drizzle-kit push --force --config ./drizzle.intel.config.ts"
+    "push:intel-force": "node ./scripts/guarded-drizzle-push-force.mjs ./drizzle.intel.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
