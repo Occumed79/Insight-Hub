@@ -33,6 +33,7 @@ USAspending and Federal Register belong in Federal Agencies intelligence windows
 - `api-server/src/lib/providers/directRfpPortals.ts` contains the official portal catalog.
 - `api-server/src/lib/providers/statePortals.ts` now uses that catalog instead of a mixed aggregator-heavy list.
 - `GET /api/rfp-sources` exposes catalog metadata for admin/UI work and parser planning.
+- `scripts/validate-direct-rfp-portals.mjs` verifies that the catalog has expected state coverage and does not leak blocked aggregator domains.
 
 ## Parser priority
 
@@ -50,6 +51,28 @@ Wave 1 should become dedicated parsers first:
 10. eMaryland Marketplace Advantage
 11. North Carolina eVP
 
+## Wave 2 guardrails
+
+Run this before merging portal catalog edits:
+
+```bash
+pnpm rfp:sources:validate
+```
+
+The validator fails if:
+
+- SAM.gov is missing.
+- Fewer than 45 direct portal entries are present.
+- Any expected U.S. state is missing.
+- Blocked aggregators leak into the direct catalog.
+- Duplicate source IDs exist.
+
 ## Build safety
 
 This change does not add tables, migrations, DB pushes, or env vars. It is a catalog/routing foundation only.
+
+The production build command must stay non-destructive:
+
+```bash
+pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/intel-suite run build
+```
