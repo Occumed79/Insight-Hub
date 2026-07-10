@@ -36,6 +36,21 @@ USAspending and Federal Register belong in Federal Agencies intelligence windows
 - `scripts/validate-direct-rfp-portals.mjs` validates catalog coverage and blocks aggregator leakage.
 
 
+
+## Public Portal Providers derived catalog
+
+`api-server/src/lib/providers/directRfpPortals.ts` remains the official source catalog for direct public RFP/procurement portals. The `publicPortalProviders` family derives runnable `PublicPortalSource` entries from that catalog instead of maintaining a separate hardcoded portal list.
+
+Only sources that are both enabled and verified in the derived public-portal catalog are fetched by `publicPortalProviders`. Parser-backed sources such as Texas ESBD and NYSCR keep their explicit existing parser routes, while safe public HTML sources can use the generic static-page extractor.
+
+Dynamic, portal-style, login-heavy, or otherwise adapter-sensitive sources stay disabled/`needs_review` until a source-specific public adapter exists. This keeps the catalog factual without adding fake portals, fake URLs, Scrapy placeholders, or Playwright placeholders.
+
+Validate the derived catalog without network or database access before merging source-catalog changes:
+
+```bash
+pnpm public-portals:validate
+```
+
 ## Source-specific parser adapters
 
 Parser scaffolding lives under `api-server/src/lib/providers/portal-parsers/`. Each adapter accepts raw portal listing data, HTML, or text and returns normalized candidate opportunity objects with best-effort fields such as title, source URL, buyer/agency, solicitation or bid number, posted date, response deadline, summary, location/state, and portal source ID.
