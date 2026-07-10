@@ -19,6 +19,11 @@ const MIN_DOMAIN_INTERVAL_MS = 1_000;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
+const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = {
+  "tx-esbd": texasEsbdProvider,
+  "ny-contract-reporter": nyScrProvider,
+};
+
 function isOccuMedMatch(record: NormalizedOpportunity): boolean {
   return Boolean(record.rawData?.occuMedMatched);
 }
@@ -43,13 +48,14 @@ async function fetchHtml(source: PublicPortalSource): Promise<string> {
 }
 
 async function runExistingParser(source: PublicPortalSource, options: FetchOptions): Promise<NormalizedOpportunity[]> {
-  if (source.id === "texasEsbd") return (await texasEsbdProvider.fetch(options)).records.map((record) => withPublicPortalMetadata(record, source));
-  if (source.id === "nyScr") return (await nyScrProvider.fetch(options)).records.map((record) => withPublicPortalMetadata(record, source));
+  const adapter = SOURCE_ADAPTERS[source.id];
+  if (adapter) return (await adapter.fetch(options)).records.map((record) => withPublicPortalMetadata(record, source));
   throw new Error(`No existing parser is registered for public portal source ${source.id}`);
 }
 
 async function runSource(source: PublicPortalSource, options: FetchOptions): Promise<NormalizedOpportunity[]> {
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
+  if (SOURCE_ADAPTERS[source.id]) return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "existing_parser") return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "static_html") return extractStaticHtmlOpportunities(await fetchHtml(source), source, limit);
   if (source.scraperType === "pdf_links") return extractPdfLinkOpportunities(await fetchHtml(source), source, limit);
