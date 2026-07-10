@@ -15,6 +15,7 @@ export interface PublicPortalSourceRunStatus {
 }
 
 const DEFAULT_LIMIT = 100;
+export const DEFAULT_MAX_SOURCES_PER_FETCH = 25;
 const MIN_DOMAIN_INTERVAL_MS = 1_000;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
@@ -71,7 +72,9 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
   getSourceStatuses(): PublicPortalSourceRunStatus[] { return Array.from(sourceStatuses.values()); }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const enabledSources = this.sources.filter((source) => source.enabled && source.verificationStatus === "verified");
+    const enabledSources = this.sources
+      .filter((source) => source.enabled && source.verificationStatus === "verified")
+      .slice(0, DEFAULT_MAX_SOURCES_PER_FETCH);
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
 

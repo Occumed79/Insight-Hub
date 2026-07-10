@@ -35,6 +35,12 @@ USAspending and Federal Register belong in Federal Agencies intelligence windows
 - `GET /api/rfp-sources` exposes catalog metadata for admin/UI work and parser planning.
 - `scripts/validate-direct-rfp-portals.mjs` validates catalog coverage and blocks aggregator leakage.
 
+## Public Portal Providers derived catalog
+
+`api-server/src/lib/providers/directRfpPortals.ts` remains the canonical catalog of official public procurement portals and domains. The `publicPortalProviders` catalog derives runnable source entries from that canonical list instead of maintaining a second hand-built source inventory.
+
+Only enabled and verified public portal sources are fetched by the provider. Existing parser-backed sources such as Texas ESBD and NYSCR stay explicitly enabled, while derived dynamic or login-heavy portal entries remain disabled with `needs_review` until source-specific adapters exist.
+
 
 ## Source-specific parser adapters
 
