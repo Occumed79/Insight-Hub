@@ -35,6 +35,13 @@ USAspending and Federal Register belong in Federal Agencies intelligence windows
 - `GET /api/rfp-sources` exposes catalog metadata for admin/UI work and parser planning.
 - `scripts/validate-direct-rfp-portals.mjs` validates catalog coverage and blocks aggregator leakage.
 
+
+## Source-specific parser adapters
+
+Parser scaffolding lives under `api-server/src/lib/providers/portal-parsers/`. Each adapter accepts raw portal listing data, HTML, or text and returns normalized candidate opportunity objects with best-effort fields such as title, source URL, buyer/agency, solicitation or bid number, posted date, response deadline, summary, location/state, and portal source ID.
+
+These adapters are parsing-only guardrails: they do not write to the database, do not insert into `opportunities`, and do not bypass the existing quality filtering, dedupe, and scoring steps. The state/direct portal provider calls the parser registry only when a matching direct portal source ID exists; portals without a registered parser keep the existing fallback behavior.
+
 ## Parser priority
 
 Wave 1 should become dedicated parsers first:
@@ -46,10 +53,12 @@ Wave 1 should become dedicated parsers first:
 5. Pennsylvania eMarketplace
 6. California Cal eProcure
 7. Florida Vendor Bid System
-8. OhioBuys
-9. Washington WEBS
+8. OhioBuys / Ohio Procurement
+9. Michigan SIGMA
 10. eMaryland Marketplace Advantage
 11. North Carolina eVP
+
+Washington WEBS remains cataloged for a later adapter wave.
 
 ## Wave 2 guardrails
 
