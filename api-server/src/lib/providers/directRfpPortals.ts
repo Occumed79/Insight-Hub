@@ -1,3 +1,5 @@
+import { GENERATED_DIRECT_RFP_PORTALS } from "./directRfpPortals.generated";
+
 export type DirectRfpPortalLevel = "federal" | "state" | "district" | "international";
 export type DirectRfpPortalAccessMode = "api" | "csv" | "public_html" | "dynamic_html" | "portal";
 export type DirectRfpPortalParserStatus = "ready_to_parse" | "needs_parser" | "catalog_only";
@@ -28,7 +30,7 @@ export interface DirectRfpPortal {
  * generic search engines. Those may be useful for discovery, but they are not
  * the direct buyer/source-of-truth layer we want to build on.
  */
-export const DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
+export const CORE_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   {
     id: "us-sam-gov",
     name: "SAM.gov Contract Opportunities",
@@ -229,6 +231,11 @@ export const DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   { id: "ca-canadabuys", name: "CanadaBuys Tender Opportunities", jurisdiction: "Canada", country: "CA", level: "international", url: "https://canadabuys.canada.ca/en/tender-opportunities", searchUrl: "https://canadabuys.canada.ca/en/tender-opportunities", domain: "canadabuys.canada.ca", accessMode: "public_html", requiresKey: false, requiresLogin: false, tier: 2, parserStatus: "needs_parser", notes: "Official Canadian tender opportunities portal." },
   { id: "uk-contracts-finder", name: "UK Contracts Finder", jurisdiction: "United Kingdom", country: "GB", level: "international", url: "https://www.contractsfinder.service.gov.uk/", searchUrl: "https://www.contractsfinder.service.gov.uk/Search", domain: "contractsfinder.service.gov.uk", accessMode: "api", requiresKey: false, requiresLogin: false, tier: 2, parserStatus: "needs_parser", notes: "UK public contracts portal with documented API/OCDS access patterns." },
   { id: "worldbank-procurement", name: "World Bank Procurement Notices", jurisdiction: "World Bank", country: "INTL", level: "international", url: "https://projects.worldbank.org/en/projects-operations/procurement", searchUrl: "https://projects.worldbank.org/en/projects-operations/procurement", domain: "projects.worldbank.org", accessMode: "public_html", requiresKey: false, requiresLogin: false, tier: 3, parserStatus: "catalog_only", notes: "International procurement notices; not a US RFP source but useful for later global coverage." },
+];
+
+export const DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
+  ...CORE_DIRECT_RFP_PORTALS,
+  ...GENERATED_DIRECT_RFP_PORTALS,
 ];
 
 export const OFFICIAL_DIRECT_RFP_DOMAINS = new Set(DIRECT_RFP_PORTALS.map((portal) => portal.domain));
