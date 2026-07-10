@@ -104,7 +104,16 @@ export function derivePublicPortalSourcesFromDirectCatalog(portals: DirectRfpPor
     .filter(isSafeDirectPortal)
     .map((portal) => {
       const sourceUrl = portal.searchUrl || portal.url;
-      const enabled = false;
+      const enabled =
+        portal.country === "US" &&
+        portal.level !== "federal" &&
+        !portal.requiresLogin &&
+        !portal.requiresKey &&
+        Boolean(sourceUrl) &&
+        !isAggregatorDomain(portal.domain) &&
+        (portal.accessMode === "public_html" ||
+          portal.accessMode === "csv" ||
+          portal.accessMode === "api");
       return {
         id: portal.id,
         agencyName: portal.name,
