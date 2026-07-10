@@ -15,6 +15,7 @@ import { serperProvider } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import { procurementSourceFlags } from "../config/env";
 import { directRfpPortalByDomain, directRfpPortalsForSearch, type DirectRfpPortal } from "./directRfpPortals";
+import { parserForPortalSource, type PortalCandidateOpportunity } from "./portal-parsers";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
@@ -145,13 +146,15 @@ function normalizeResultKey(title: string, url: string): string {
   }
 }
 
-function resultToOpportunity(title: string, url: string, snippet: string): NormalizedOpportunity | null {
+function resultToOpportunity(title: string, url: string, snippet: string, parsed?: PortalCandidateOpportunity): NormalizedOpportunity | null {
   if (!isUsefulPortalResult(title, url, snippet)) return null;
 
   const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 20);
   const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(snippet, title);
+  const parsedDeadline = parsed?.responseDeadline;
+  const effectiveDeadline = parsedDeadline ?? deadline;
 
-  if (deadline && deadline < new Date()) return null;
+  if (effectiveDeadline && effectiveDeadline < new Date()) return null;
 
   const domainMatch = url.match(/https?:\/\/([^/]+)/);
   const urlDomain = domainMatch?.[1] ?? "";
@@ -162,15 +165,17 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
 
   return {
     externalId: `direct-state-${urlHash}`,
-    title,
-    agency: agencyHint ?? (portalState ? `${portalState} Government` : directPortal?.jurisdiction ?? "Unknown"),
+    title: parsed?.title ?? title,
+    agency: parsed?.agency ?? agencyHint ?? (portalState ? `${portalState} Government` : directPortal?.jurisdiction ?? "Unknown"),
     type: "Solicitation",
     status: "active",
-    postedDate: new Date(),
-    responseDeadline: deadline ?? undefined,
+    postedDate: parsed?.postedDate ?? new Date(),
+    responseDeadline: effectiveDeadline ?? undefined,
     estimatedValue: estimatedValue ?? undefined,
-    description: snippet,
-    sourceUrl: url,
+    description: parsed?.description ?? snippet,
+    solicitationNumber: parsed?.solicitationNumber,
+    location: parsed?.location ?? parsed?.state,
+    sourceUrl: parsed?.sourceUrl ?? url,
     source: "statePortals" as const,
     rawData: {
       providerName: "direct_official_state_rfp_portals",
@@ -181,7 +186,9 @@ function resultToOpportunity(title: string, url: string, snippet: string): Norma
       sourceConfidence: directPortal?.parserStatus === "ready_to_parse" ? "high" : "medium",
       tags: ["direct-official-portal", portalState ? `state:${portalState}` : "state:unknown"],
       notes: `Discovered via official direct portal ${portalName}; passed procurement/service/staleness filters`,
-      fallback: true,
+      parserApplied: Boolean(parsed),
+      parsedPortalSourceId: parsed?.portalSourceId,
+      fallback: !parsed,
     },
   };
 }
@@ -255,7 +262,19 @@ export class StatePortalsProvider implements DataSourceProvider {
 
   toOpportunities(results: { title: string; url: string; snippet: string; portal: string }[]): NormalizedOpportunity[] {
     return results
-      .map((r) => resultToOpportunity(r.title, r.url, r.snippet))
+      .flatMap((r) => {
+        const domainMatch = r.url.match(/https?:\/\/([^/]+)/);
+        const directPortal = directRfpPortalByDomain(domainMatch?.[1] ?? "");
+        const parser = parserForPortalSource(directPortal?.id);
+        const parsed = parser?.({
+          sourceId: directPortal?.id ?? "unknown",
+          data: { title: r.title, url: r.url, summary: r.snippet },
+          baseUrl: directPortal?.searchUrl ?? directPortal?.url,
+        }) ?? [];
+
+        if (parsed.length === 0) return [resultToOpportunity(r.title, r.url, r.snippet)];
+        return parsed.map((candidate) => resultToOpportunity(candidate.title ?? r.title, candidate.sourceUrl ?? r.url, candidate.description ?? r.snippet, candidate));
+      })
       .filter((opp): opp is NormalizedOpportunity => Boolean(opp));
   }
 }
