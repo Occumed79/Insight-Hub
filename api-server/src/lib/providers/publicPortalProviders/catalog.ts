@@ -36,44 +36,6 @@ export interface PublicPortalSource {
   matchedCount?: number;
 }
 
-const EXPLICIT_PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
-  {
-    id: "texasEsbd",
-    agencyName: "Texas ESBD / Texas SmartBuy",
-    agencyType: "state",
-    state: "TX",
-    sourceUrl: "https://www.txsmartbuy.gov/esbd",
-    searchUrl: "https://www.txsmartbuy.gov/esbd",
-    domain: "txsmartbuy.gov",
-    portalPlatform: "Texas SmartBuy",
-    sourceLevel: "state",
-    level: "state",
-    accessMode: "csv",
-    scraperType: "existing_parser",
-    enabled: true,
-    verificationStatus: "verified",
-    notes: "Existing working direct parser for the official Texas ESBD / Texas SmartBuy public solicitations.",
-  },
-  {
-    id: "nyScr",
-    agencyName: "New York State Contract Reporter",
-    agencyType: "state",
-    state: "NY",
-    sourceUrl: "https://www.nyscr.ny.gov/Ads/Search",
-    searchUrl: "https://www.nyscr.ny.gov/Ads/Search",
-    domain: "nyscr.ny.gov",
-    portalPlatform: "New York State Contract Reporter",
-    sourceLevel: "state",
-    level: "state",
-    accessMode: "public_html",
-    scraperType: "existing_parser",
-    enabled: true,
-    verificationStatus: "verified",
-    notes: "Existing working direct parser for the official NYSCR public search page.",
-  },
-];
-
-const EXPLICIT_DIRECT_PORTAL_IDS = new Set(["tx-esbd", "ny-contract-reporter"]);
 const AGGREGATOR_DOMAIN_PATTERNS = ["bidnet", "demandstar", "govwin", "planetbids", "opengov", "periscope", "s2g"];
 
 function isAggregatorDomain(domain: string): boolean {
@@ -100,7 +62,6 @@ function scraperTypeFromAccessMode(accessMode: DirectRfpPortalAccessMode): Publi
 
 export function derivePublicPortalSourcesFromDirectCatalog(portals: DirectRfpPortal[] = DIRECT_RFP_PORTALS): PublicPortalSource[] {
   return portals
-    .filter((portal) => !EXPLICIT_DIRECT_PORTAL_IDS.has(portal.id))
     .filter(isSafeDirectPortal)
     .map((portal) => {
       const sourceUrl = portal.searchUrl || portal.url;
@@ -134,12 +95,7 @@ export function derivePublicPortalSourcesFromDirectCatalog(portals: DirectRfpPor
     });
 }
 
-const DERIVED_PUBLIC_PORTAL_SOURCES = derivePublicPortalSourcesFromDirectCatalog();
-
-export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
-  ...EXPLICIT_PUBLIC_PORTAL_SOURCES,
-  ...DERIVED_PUBLIC_PORTAL_SOURCES,
-];
+export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = derivePublicPortalSourcesFromDirectCatalog();
 
 function normalizeDomain(sourceUrl: string): string {
   return new URL(sourceUrl).hostname.replace(/^www\./, "").toLowerCase();
@@ -195,7 +151,7 @@ export function validatePublicPortalCatalog(sources: PublicPortalSource[] = PUBL
   }
 
   return {
-    totalDerivedSources: sources.filter((source) => !EXPLICIT_PUBLIC_PORTAL_SOURCES.some((explicit) => explicit.id === source.id)).length,
+    totalDerivedSources: sources.length,
     enabledSources: sources.filter((source) => source.enabled).length,
     needsReviewSources: sources.filter((source) => source.verificationStatus === "needs_review").length,
     disabledLoginOrDynamicSources: sources.filter((source) => !source.enabled && (source.accessMode === "dynamic_html" || source.accessMode === "portal")).length,
