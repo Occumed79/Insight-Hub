@@ -1,3 +1,5 @@
+import { DIRECT_RFP_PORTALS, type DirectRfpPortal, type DirectRfpPortalAccessMode } from "../directRfpPortals";
+
 export const AGENCY_TYPES = ["state", "county", "city", "fire_department", "fire_district", "ems", "public_safety", "school_district", "special_district", "public_authority", "transit_authority", "airport_authority", "port_authority"] as const;
 export const SOURCE_LEVELS = ["state", "county", "municipal", "district", "authority"] as const;
 export const SCRAPER_TYPES = ["static_html", "scrapy", "playwright_public", "rss", "public_json", "pdf_links", "existing_parser"] as const;
@@ -16,9 +18,12 @@ export interface PublicPortalSource {
   county?: string;
   city?: string;
   sourceUrl: string;
+  searchUrl?: string;
   domain: string;
   portalPlatform?: string;
   sourceLevel: PublicPortalSourceLevel;
+  level?: DirectRfpPortal["level"];
+  accessMode?: DirectRfpPortalAccessMode;
   scraperType: PublicPortalScraperType;
   enabled: boolean;
   verificationStatus: PublicPortalVerificationStatus;
@@ -31,16 +36,19 @@ export interface PublicPortalSource {
   matchedCount?: number;
 }
 
-export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
+const EXPLICIT_PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
   {
     id: "texasEsbd",
     agencyName: "Texas ESBD / Texas SmartBuy",
     agencyType: "state",
     state: "TX",
     sourceUrl: "https://www.txsmartbuy.gov/esbd",
+    searchUrl: "https://www.txsmartbuy.gov/esbd",
     domain: "txsmartbuy.gov",
     portalPlatform: "Texas SmartBuy",
     sourceLevel: "state",
+    level: "state",
+    accessMode: "csv",
     scraperType: "existing_parser",
     enabled: true,
     verificationStatus: "verified",
@@ -52,14 +60,91 @@ export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
     agencyType: "state",
     state: "NY",
     sourceUrl: "https://www.nyscr.ny.gov/Ads/Search",
+    searchUrl: "https://www.nyscr.ny.gov/Ads/Search",
     domain: "nyscr.ny.gov",
     portalPlatform: "New York State Contract Reporter",
     sourceLevel: "state",
+    level: "state",
+    accessMode: "public_html",
     scraperType: "existing_parser",
     enabled: true,
     verificationStatus: "verified",
     notes: "Existing working direct parser for the official NYSCR public search page.",
   },
+];
+
+const EXPLICIT_DIRECT_PORTAL_IDS = new Set(["tx-esbd", "ny-contract-reporter"]);
+const AGGREGATOR_DOMAIN_PATTERNS = ["bidnet", "demandstar", "govwin", "planetbids", "opengov", "periscope", "s2g"];
+
+function isAggregatorDomain(domain: string): boolean {
+  const normalized = domain.toLowerCase().replace(/^www\./, "");
+  return AGGREGATOR_DOMAIN_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function sourceUrlFromPortal(portal: DirectRfpPortal): string | undefined {
+  return (portal.searchUrl || portal.url || "").trim() || undefined;
+}
+
+function isRunnablePublicAccessMode(accessMode: DirectRfpPortalAccessMode): boolean {
+  return accessMode === "public_html" || accessMode === "csv" || accessMode === "api";
+}
+
+function isEnabledDerivedPortal(portal: DirectRfpPortal): boolean {
+  return Boolean(
+    portal.country === "US" &&
+      portal.level !== "federal" &&
+      !portal.requiresLogin &&
+      !portal.requiresKey &&
+      sourceUrlFromPortal(portal) &&
+      !isAggregatorDomain(portal.domain) &&
+      isRunnablePublicAccessMode(portal.accessMode),
+  );
+}
+
+function sourceLevelFromPortal(portal: DirectRfpPortal): PublicPortalSourceLevel {
+  if (portal.level === "district") return "district";
+  return "state";
+}
+
+function scraperTypeFromAccessMode(accessMode: DirectRfpPortalAccessMode): PublicPortalScraperType {
+  if (accessMode === "public_html") return "static_html";
+  if (accessMode === "csv") return "static_html";
+  if (accessMode === "api") return "public_json";
+  return "playwright_public";
+}
+
+
+export function derivePublicPortalSourcesFromDirectCatalog(portals: DirectRfpPortal[] = DIRECT_RFP_PORTALS): PublicPortalSource[] {
+  return portals
+    .filter((portal) => !EXPLICIT_DIRECT_PORTAL_IDS.has(portal.id))
+    .map((portal) => {
+      const sourceUrl = sourceUrlFromPortal(portal) ?? portal.url;
+      const enabled = isEnabledDerivedPortal(portal);
+      return {
+        id: portal.id,
+        agencyName: portal.name,
+        agencyType: portal.level === "district" ? "special_district" : "state",
+        state: portal.state ?? "US",
+        sourceUrl,
+        searchUrl: portal.searchUrl,
+        domain: portal.domain,
+        portalPlatform: portal.name,
+        sourceLevel: sourceLevelFromPortal(portal),
+        level: portal.level,
+        accessMode: portal.accessMode,
+        scraperType: scraperTypeFromAccessMode(portal.accessMode),
+        enabled,
+        verificationStatus: enabled ? "verified" : "needs_review",
+        notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
+      } satisfies PublicPortalSource;
+    });
+}
+
+const DERIVED_PUBLIC_PORTAL_SOURCES = derivePublicPortalSourcesFromDirectCatalog();
+
+export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = [
+  ...EXPLICIT_PUBLIC_PORTAL_SOURCES,
+  ...DERIVED_PUBLIC_PORTAL_SOURCES,
 ];
 
 function normalizeDomain(sourceUrl: string): string {
@@ -102,6 +187,7 @@ export function publicPortalSourceFromImport(row: Record<string, unknown>): Publ
     county: String(row.county ?? "").trim() || undefined,
     city: String(row.city ?? "").trim() || undefined,
     sourceUrl,
+    searchUrl: String(row.searchUrl ?? "").trim() || undefined,
     domain,
     portalPlatform: String(row.portalPlatform ?? "").trim() || undefined,
     sourceLevel: (row.sourceLevel as PublicPortalSourceLevel) ?? "municipal",
