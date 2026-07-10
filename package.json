@@ -12,7 +12,8 @@
     "rfp:sources:validate": "node ./scripts/validate-direct-rfp-portals.mjs",
     "public-portals:import": "node ./scripts/import-public-portal-sources.mjs",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./api-server\" --filter \"./intel-suite\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./api-server\" --filter \"./intel-suite\" --filter \"./scripts\" --if-present run typecheck",
+    "public-portals:validate": "node ./scripts/validate-public-portal-sources.mjs"
   },
   "private": true,
   "devDependencies": {
