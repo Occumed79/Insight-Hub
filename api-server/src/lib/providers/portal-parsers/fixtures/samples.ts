@@ -1,0 +1,16 @@
+import { PORTAL_PARSER_REGISTRY } from "../index";
+
+export const PORTAL_PARSER_SAMPLE_FIXTURES = [
+  { sourceId: "us-sam-gov", data: [{ noticeTitle: "Occupational Health Services", solicitationNumber: "FA1234-26-R-0001", fullParentPathName: "Department of the Air Force", postedDate: "2026-07-01", responseDeadLine: "2026-08-15", uiLink: "https://sam.gov/opp/example/view", descriptionText: "Clinic exams and occupational medicine support." }] },
+  { sourceId: "tx-esbd", data: [{ "Solicitation Title": "Employee Physical Exams", "Solicitation ID": "601-26-001", "Agency Name": "Texas Department of Transportation", "Response Due Date": "2026-09-01", "Detail URL": "https://www.txsmartbuy.gov/esbd/601-26-001", "NIGP Description": "Occupational medical testing services" }] },
+  { sourceId: "ny-contract-reporter", data: [{ "Ad Title": "Medical Surveillance Program", "CR Number": "2069934", "Agency Name": "Office of General Services", "Publication Date": "July 12, 2026", "Due Date": "September 12, 2026", "Ad URL": "https://www.nyscr.ny.gov/contracts.cfm", "Ad Description": "Annual employee medical surveillance program." }] },
+  { sourceId: "pa-emarketplace", data: [{ "Solicitation Title": "Drug Testing Services", "Solicitation Number": "6100061234", "Issuing Office": "Department of Corrections", "Advertisement Date": "07/10/2026", "Bid Opening Date": "08/20/2026", "Solicitation URL": "https://www.emarketplace.state.pa.us/Solicitations.aspx", Description: "Random and pre-employment drug testing." }] },
+  { sourceId: "va-eva", data: [{ "Opportunity Title": "Fit for Duty Exams", "Solicitation Number": "RFP-VA-26-001", Buyer: "Virginia Department of Transportation", "Posted Date": "2026-07-09", "Closing Date": "2026-08-19", "Opportunity URL": "https://eva.virginia.gov/business-opportunities.html", Description: "Occupational health exams for field staff." }] },
+  { sourceId: "oh-ohiobuys", data: [{ "Procurement Title": "DOT Physical Examination Services", "Opportunity Number": "SRC0000023456", Agency: "Ohio Department of Administrative Services", "Posted Date": "2026-07-08", "Opening Date": "2026-08-18", "Opportunity URL": "https://procure.ohio.gov/proc/view-procurement-opportunities", Summary: "DOT physicals and related screenings." }] },
+  { sourceId: "md-emma", data: [{ "Solicitation Title": "Random Drug Testing", "Solicitation ID": "BPM046789", "Issuing Agency": "Department of Budget and Management", "Publication Date": "2026-07-07", "Bid Opening Date": "2026-08-17", "Solicitation URL": "https://emma.maryland.gov/page.aspx/en/rfp/request_browse_public", Summary: "Statewide employee drug testing services." }] },
+  { sourceId: "nc-evp", data: [{ "Solicitation Title": "Employee Health Screening", "Solicitation Number": "54-RC-120026", Department: "Department of Transportation", "Open Date": "2026-07-06", "Due Date": "2026-08-16", "Solicitation URL": "https://evp.nc.gov/solicitations/54-RC-120026", Description: "Pre-employment and annual health screenings." }] },
+];
+
+export function validatePortalParserSamples(): boolean {
+  return PORTAL_PARSER_SAMPLE_FIXTURES.every((fixture) => (PORTAL_PARSER_REGISTRY[fixture.sourceId]?.({ sourceId: fixture.sourceId, data: fixture.data }) ?? []).length > 0);
+}
