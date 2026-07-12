@@ -3,7 +3,10 @@ import {
   ENRICHED_DIRECT_RFP_PORTALS,
   validateDirectRfpPortalRelevanceCatalog,
 } from "../lib/providers/directRfpPortalRelevanceCatalog";
-import { scanPortalEvidence } from "../lib/providers/portalEvidenceScanner";
+import {
+  buildPortalEvidenceScanPlan,
+  scanPortalEvidence,
+} from "../lib/providers/portalEvidenceScanner";
 import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
 
 const router = Router();
@@ -96,6 +99,41 @@ router.get("/rfp-sources", async (req, res) => {
       coveragePolicy:
         "A finite execution query budget rotates deterministically through the complete eligible portal and ontology-query plan; fullCoverage=true returns the complete execution plan without introducing a permanent source cap.",
     },
+  });
+});
+
+router.get("/rfp-sources/evidence-scan/plan", async (req, res) => {
+  const portalIds =
+    typeof req.query.portalIds === "string"
+      ? req.query.portalIds
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : undefined;
+  const includeTier3 = String(req.query.includeTier3 ?? "true") === "true";
+  const includeHistorical =
+    String(req.query.includeHistorical ?? "false") === "true";
+  const historicalYears = Number(req.query.historicalYears ?? 5);
+  const fullCoverage = String(req.query.fullCoverage ?? "false") === "true";
+  const executionBudget = Number(req.query.executionBudget ?? 12);
+  const rotationKey =
+    typeof req.query.rotationKey === "string"
+      ? req.query.rotationKey
+      : undefined;
+
+  const plan = buildPortalEvidenceScanPlan({
+    portalIds,
+    includeTier3,
+    includeHistorical,
+    historicalYears: Number.isFinite(historicalYears) ? historicalYears : 5,
+    fullCoverage,
+    executionBudget: Number.isFinite(executionBudget) ? executionBudget : 12,
+    rotationKey,
+  });
+
+  return res.json({
+    diagnostics: plan.diagnostics,
+    selectedQueries: plan.selectedQueries,
   });
 });
 
