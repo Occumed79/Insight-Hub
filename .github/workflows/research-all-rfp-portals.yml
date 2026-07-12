@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 330
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
@@ -53,7 +53,7 @@ jobs:
           pnpm --filter @workspace/scripts exec tsx ../scripts/research-all-rfp-portals.ts \
             --shard "${{ matrix.shard }}" \
             --shards 8 \
-            --concurrency 4 \
+            --concurrency 2 \
             --max-evidence-pages 12 \
             --out "$GITHUB_WORKSPACE/portal-research-shards/portal-research-${{ matrix.shard }}.json"
 
@@ -153,3 +153,18 @@ jobs:
           gh pr edit chatgpt/actual-portal-research \
             --title "Replace inferred portal rankings with real evidence research" \
             --body-file artifacts/portal-research/portal-research-summary.json
+
+  report:
+    name: Report research outcome
+    if: always()
+    needs: [research, combine]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post status to PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESEARCH_RESULT: ${{ needs.research.result }}
+          COMBINE_RESULT: ${{ needs.combine.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment 79 --repo "$GITHUB_REPOSITORY" --body "Portal research workflow finished. Research shards: **$RESEARCH_RESULT**. Combine and validation: **$COMBINE_RESULT**. Run: $RUN_URL"
