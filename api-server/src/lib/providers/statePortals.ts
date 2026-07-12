@@ -8,7 +8,6 @@ import type {
 } from "./types";
 import { serperProvider } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
-import { procurementSourceFlags } from "../config/env";
 import {
   ENRICHED_DIRECT_RFP_PORTALS,
   enrichedDirectRfpPortalsForOccuMedSearch,
@@ -91,14 +90,12 @@ function toStatePortal(portal: EnrichedDirectRfpPortal): StatePortal | null {
 }
 
 export const STATE_PORTALS: StatePortal[] =
-  enrichedDirectRfpPortalsForOccuMedSearch({
-    includeTier3: true,
-  })
+  enrichedDirectRfpPortalsForOccuMedSearch({ includeTier3: true })
     .map(toStatePortal)
     .filter((portal): portal is StatePortal => Boolean(portal));
 
-function normalizeText(value: string): string {
-  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+function eligiblePortals(includeTier3 = true): StatePortal[] {
+  return STATE_PORTALS.filter((portal) => includeTier3 || portal.tier !== 3);
 }
 
 function hasStaleYearOnly(text: string): boolean {
@@ -111,16 +108,6 @@ function hasStaleYearOnly(text: string): boolean {
   );
   const hasOld = years.some((year) => year < CURRENT_YEAR);
   return hasOld && !hasCurrentOrFuture;
-}
-
-function isPortalEnabled(portal: StatePortal): boolean {
-  return procurementSourceFlags.state === true;
-}
-
-function eligiblePortals(includeTier3 = false): StatePortal[] {
-  return STATE_PORTALS.filter(
-    (portal) => isPortalEnabled(portal) && (includeTier3 || portal.tier !== 3),
-  );
 }
 
 function enrichedPortalByDomain(
@@ -150,7 +137,11 @@ function isUsefulPortalResult(
   if (!isOfficialDirectPortalResult(url)) return false;
   const raw = `${title} ${url} ${snippet}`;
   if (hasStaleYearOnly(raw)) return false;
-  const classification = classifyResult({ title, snippet, allowHistorical: false });
+  const classification = classifyResult({
+    title,
+    snippet,
+    allowHistorical: false,
+  });
   return !classification.rejected;
 }
 
@@ -184,7 +175,9 @@ function buildDomainGroups(portals: StatePortal[]): StatePortal[][] {
 
   for (const portal of portals) {
     const candidate = [...current, portal];
-    const expression = candidate.map((item) => `site:${item.domain}`).join(" OR ");
+    const expression = candidate
+      .map((item) => `site:${item.domain}`)
+      .join(" OR ");
     if (
       current.length > 0 &&
       (candidate.length > MAX_DOMAINS_PER_QUERY ||
@@ -230,30 +223,14 @@ export function buildStatePortalSearchPlan(
     rotationKey?: string;
   } = {},
 ): StatePortalSearchPlan {
-  const portals = eligiblePortals(options.includeTier3 ?? false);
+  const portals = eligiblePortals(options.includeTier3 ?? true);
   const domainGroups = buildDomainGroups(portals);
   const queryBundles = buildOccuMedSearchQueries(CURRENT_YEAR);
-  const fullPlannedQueryCount = Math.max(
-    domainGroups.length,
-    queryBundles.length,
+  const allQueries = domainGroups.flatMap((group) =>
+    queryBundles.map((bundle, index) =>
+      makePlannedQuery(group, bundle, index, options.keywords),
+    ),
   );
-  const allQueries: StatePortalPlannedQuery[] = [];
-
-  for (let index = 0; index < fullPlannedQueryCount; index += 1) {
-    const group = domainGroups[index % Math.max(1, domainGroups.length)] ?? [];
-    const bundle = queryBundles[index % Math.max(1, queryBundles.length)] ??
-      `("occupational health services") (RFP OR RFQ OR solicitation OR bid) ${CURRENT_YEAR}`;
-    if (group.length > 0) {
-      allQueries.push(
-        makePlannedQuery(
-          group,
-          bundle,
-          index % Math.max(1, queryBundles.length),
-          options.keywords,
-        ),
-      );
-    }
-  }
 
   const rotationKey = options.rotationKey ?? defaultRotationKey();
   const rotationOffset =
