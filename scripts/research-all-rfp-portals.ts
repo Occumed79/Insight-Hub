@@ -71,12 +71,20 @@ const QUERY_BUNDLES = [
 
 const PROCUREMENT_SUFFIX =
   '(RFP OR RFQ OR IFB OR ITB OR solicitation OR bid OR contract OR award OR "scope of work" OR forecast)';
+const MIN_SUCCESSFUL_QUERIES_FOR_NO_MATCH = 4;
 
 interface SearchResult {
   title: string;
   url: string;
   snippet: string;
-  source: "serper" | "duckduckgo";
+  source: "serper" | "bing_rss" | "bing_html" | "duckduckgo";
+}
+
+interface SearchOutcome {
+  succeeded: boolean;
+  provider?: SearchResult["source"];
+  results: SearchResult[];
+  errors: string[];
 }
 
 interface EvidenceItem {
@@ -105,11 +113,15 @@ interface PortalResearchRecord {
   researchStatus:
     | "verified_relevant"
     | "researched_no_match"
+    | "research_failed"
     | "inaccessible"
     | "not_a_direct_source";
   researchStartedAt: string;
   researchCompletedAt: string;
   queriesExecuted: string[];
+  successfulQueryCount: number;
+  failedQueryCount: number;
+  searchProviders: string[];
   officialPagesInspected: string[];
   acceptedEvidence: EvidenceItem[];
   rejectedCandidates: Array<{ url: string; reason: string }>;
@@ -129,15 +141,22 @@ const out = resolve(arg("out", `portal-research-${shard}.json`));
 const concurrency = Math.max(1, Number(arg("concurrency", "4")));
 const maxEvidencePages = Math.max(3, Number(arg("max-evidence-pages", "12")));
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
+    .replace(/<!\[CDATA\[|\]\]>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -225,13 +244,19 @@ async function fetchText(url: string, timeoutMs = 20_000): Promise<{
       signal: controller.signal,
       headers: {
         "user-agent":
-          "Mozilla/5.0 (compatible; InsightHubPortalResearch/1.0; +https://github.com/Occumed79/Insight-Hub)",
-        accept: "text/html,application/xhtml+xml,application/pdf;q=0.8,*/*;q=0.5",
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml,application/rss+xml,application/pdf;q=0.8,*/*;q=0.5",
+        "accept-language": "en-US,en;q=0.9",
       },
     });
     const contentType = response.headers.get("content-type") ?? "";
     let text = "";
-    if (contentType.includes("text") || contentType.includes("json")) {
+    if (
+      contentType.includes("text") ||
+      contentType.includes("json") ||
+      contentType.includes("xml") ||
+      contentType.includes("rss")
+    ) {
       text = stripHtml((await response.text()).slice(0, 2_000_000));
     }
     return { status: response.status, finalUrl: response.url, text };
@@ -247,9 +272,49 @@ async function fetchText(url: string, timeoutMs = 20_000): Promise<{
   }
 }
 
+async function fetchRaw(url: string, timeoutMs = 20_000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml,application/rss+xml,*/*;q=0.5",
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+    if (!response.ok) throw new Error(`${response.status}`);
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function retry<T>(
+  label: string,
+  operation: () => Promise<T>,
+  attempts = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(500 * 2 ** (attempt - 1));
+    }
+  }
+  throw new Error(
+    `${label}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
 async function serperSearch(query: string): Promise<SearchResult[]> {
   const key = process.env.SERPER_API_KEY;
-  if (!key) return [];
+  if (!key) throw new Error("SERPER_API_KEY unavailable");
   const response = await fetch("https://google.serper.dev/search", {
     method: "POST",
     headers: {
@@ -272,6 +337,56 @@ async function serperSearch(query: string): Promise<SearchResult[]> {
     }));
 }
 
+async function bingRssSearch(query: string): Promise<SearchResult[]> {
+  const xml = await fetchRaw(
+    `https://www.bing.com/search?format=rss&count=10&q=${encodeURIComponent(query)}`,
+  );
+  if (!/<rss|<item/i.test(xml)) throw new Error("Bing RSS returned no RSS payload");
+  const results: SearchResult[] = [];
+  const itemPattern = /<item>([\s\S]*?)<\/item>/gi;
+  let itemMatch: RegExpExecArray | null;
+  while ((itemMatch = itemPattern.exec(xml)) && results.length < 10) {
+    const item = itemMatch[1];
+    const title = item.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? "";
+    const link = item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] ?? "";
+    const description =
+      item.match(/<description>([\s\S]*?)<\/description>/i)?.[1] ?? "";
+    if (!link.trim()) continue;
+    results.push({
+      title: stripHtml(title),
+      url: stripHtml(link),
+      snippet: stripHtml(description),
+      source: "bing_rss",
+    });
+  }
+  return results;
+}
+
+async function bingHtmlSearch(query: string): Promise<SearchResult[]> {
+  const html = await fetchRaw(
+    `https://www.bing.com/search?count=10&q=${encodeURIComponent(query)}`,
+  );
+  const results: SearchResult[] = [];
+  const blockPattern = /<li[^>]+class="[^"]*b_algo[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+  let blockMatch: RegExpExecArray | null;
+  while ((blockMatch = blockPattern.exec(html)) && results.length < 10) {
+    const block = blockMatch[1];
+    const anchor = block.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!anchor?.[1]) continue;
+    const snippet = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "";
+    results.push({
+      title: stripHtml(anchor[2]),
+      url: anchor[1],
+      snippet: stripHtml(snippet),
+      source: "bing_html",
+    });
+  }
+  if (results.length === 0 && !/b_algo/i.test(html)) {
+    throw new Error("Bing HTML returned no recognizable result payload");
+  }
+  return results;
+}
+
 function decodeDuckDuckGoUrl(value: string): string {
   try {
     const parsed = new URL(value, "https://html.duckduckgo.com");
@@ -283,41 +398,67 @@ function decodeDuckDuckGoUrl(value: string): string {
 }
 
 async function duckDuckGoSearch(query: string): Promise<SearchResult[]> {
-  const response = await fetch(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    {
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (compatible; InsightHubPortalResearch/1.0; +https://github.com/Occumed79/Insight-Hub)",
-      },
-    },
+  const html = await fetchRaw(
+    `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
   );
-  if (!response.ok) throw new Error(`DuckDuckGo ${response.status}`);
-  const html = await response.text();
   const results: SearchResult[] = [];
-  const linkPattern = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const linkPattern = /<a[^>]+(?:class=['"]result-link['"][^>]+)?href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
   while ((match = linkPattern.exec(html)) && results.length < 10) {
-    const tail = html.slice(match.index, match.index + 2500);
-    const snippetMatch = tail.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>|class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i);
+    const url = decodeDuckDuckGoUrl(match[1]);
+    if (!/^https?:/i.test(url)) continue;
     results.push({
       title: stripHtml(match[2]),
-      url: decodeDuckDuckGoUrl(match[1]),
-      snippet: stripHtml(snippetMatch?.[1] ?? snippetMatch?.[2] ?? ""),
+      url,
+      snippet: "",
       source: "duckduckgo",
     });
+  }
+  if (results.length === 0 && !/no results|result-link/i.test(html)) {
+    throw new Error("DuckDuckGo returned no recognizable result payload");
   }
   return results;
 }
 
-async function search(query: string): Promise<SearchResult[]> {
-  try {
-    const serper = await serperSearch(query);
-    if (serper.length > 0) return serper;
-  } catch {
-    // Continue to the public fallback.
+async function search(query: string): Promise<SearchOutcome> {
+  const errors: string[] = [];
+  const providers: Array<{
+    name: SearchResult["source"];
+    run: () => Promise<SearchResult[]>;
+  }> = [];
+  if (process.env.SERPER_API_KEY) {
+    providers.push({
+      name: "serper",
+      run: () => retry("Serper", () => serperSearch(query), 3),
+    });
   }
-  return duckDuckGoSearch(query);
+  providers.push(
+    {
+      name: "bing_rss",
+      run: () => retry("Bing RSS", () => bingRssSearch(query), 3),
+    },
+    {
+      name: "bing_html",
+      run: () => retry("Bing HTML", () => bingHtmlSearch(query), 2),
+    },
+    {
+      name: "duckduckgo",
+      run: () => retry("DuckDuckGo", () => duckDuckGoSearch(query), 2),
+    },
+  );
+
+  for (const provider of providers) {
+    try {
+      const results = await provider.run();
+      return { succeeded: true, provider: provider.name, results, errors };
+    } catch (error) {
+      errors.push(
+        `${provider.name}:${error instanceof Error ? error.message : String(error)}`,
+      );
+      await sleep(200);
+    }
+  }
+  return { succeeded: false, results: [], errors };
 }
 
 async function mapLimit<T, R>(
@@ -338,7 +479,9 @@ async function mapLimit<T, R>(
   return results;
 }
 
-async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Promise<PortalResearchRecord> {
+async function researchPortal(
+  portal: (typeof DIRECT_RFP_PORTALS)[number],
+): Promise<PortalResearchRecord> {
   const started = new Date().toISOString();
   const errors: string[] = [];
   const officialPagesInspected: string[] = [];
@@ -354,19 +497,32 @@ async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Prom
   );
 
   const queries = QUERY_BUNDLES.map(
-    (bundle) => `site:${portal.domain} (${bundle.join(" OR ")}) ${PROCUREMENT_SUFFIX}`,
+    (bundle) =>
+      `site:${portal.domain} (${bundle.join(" OR ")}) ${PROCUREMENT_SUFFIX}`,
   );
-  const resultGroups = await mapLimit(queries, 2, async (query) => {
-    try {
-      return await search(query);
-    } catch (error) {
-      errors.push(`search:${query}:${error instanceof Error ? error.message : String(error)}`);
-      return [];
+  const searchOutcomes = await mapLimit(queries, 2, async (query) => {
+    const outcome = await search(query);
+    if (!outcome.succeeded) {
+      errors.push(`search-failed:${query}:${outcome.errors.join(" | ")}`);
+    } else if (outcome.errors.length > 0) {
+      errors.push(`search-fallback:${query}:${outcome.errors.join(" | ")}`);
     }
+    return outcome;
   });
+  const successfulQueryCount = searchOutcomes.filter(
+    (outcome) => outcome.succeeded,
+  ).length;
+  const failedQueryCount = queries.length - successfulQueryCount;
+  const searchProviders = [
+    ...new Set(
+      searchOutcomes
+        .map((outcome) => outcome.provider)
+        .filter((provider): provider is SearchResult["source"] => Boolean(provider)),
+    ),
+  ];
 
   const candidates = new Map<string, SearchResult>();
-  for (const result of resultGroups.flat()) {
+  for (const result of searchOutcomes.flatMap((outcome) => outcome.results)) {
     if (!result.url || candidates.has(result.url)) continue;
     if (!sameOfficialFamily(portal.domain, result.url)) {
       rejectedCandidates.push({ url: result.url, reason: "not-official-domain" });
@@ -383,6 +539,13 @@ async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Prom
 
   for (const { candidate, fetched } of fetchedCandidates) {
     if (fetched.status !== null) officialPagesInspected.push(fetched.finalUrl);
+    if (fetched.error) {
+      rejectedCandidates.push({
+        url: candidate.url,
+        reason: `official-page-fetch-failed:${fetched.error}`,
+      });
+      continue;
+    }
     const combined = `${candidate.title} ${candidate.snippet} ${fetched.text}`;
     const classification = classifyEvidence(combined);
     if (
@@ -396,14 +559,23 @@ async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Prom
       });
       continue;
     }
-    const pageConfirmed = Boolean(
-      fetched.status && fetched.status >= 200 && fetched.status < 400 && fetched.text.length > 100,
+    const pageReachable = Boolean(
+      fetched.status && fetched.status >= 200 && fetched.status < 400,
     );
-    const artifactLike = /\.pdf($|\?)|bid|rfp|rfq|solicitation|contract|award|opportunit/i.test(
-      candidate.url,
-    );
-    if (!pageConfirmed && !artifactLike) {
-      rejectedCandidates.push({ url: candidate.url, reason: "official-page-not-verifiable" });
+    if (!pageReachable) {
+      rejectedCandidates.push({
+        url: candidate.url,
+        reason: `official-page-not-reachable:${fetched.status ?? "unknown"}`,
+      });
+      continue;
+    }
+    const pageHasEvidenceText = fetched.text.length > 100;
+    const officialDocument = /\.pdf($|\?)/i.test(candidate.url);
+    if (!pageHasEvidenceText && !officialDocument) {
+      rejectedCandidates.push({
+        url: candidate.url,
+        reason: "official-page-has-no-verifiable-content",
+      });
       continue;
     }
     acceptedEvidence.push({
@@ -425,7 +597,9 @@ async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Prom
   let researchStatus: PortalResearchRecord["researchStatus"];
   if (redirectedToBlocked) researchStatus = "not_a_direct_source";
   else if (uniqueEvidence.length > 0) researchStatus = "verified_relevant";
-  else if (portalFetch.status === null && resultGroups.every((items) => items.length === 0))
+  else if (successfulQueryCount < MIN_SUCCESSFUL_QUERIES_FOR_NO_MATCH)
+    researchStatus = "research_failed";
+  else if (portalFetch.status === null && officialPagesInspected.length === 0)
     researchStatus = "inaccessible";
   else researchStatus = "researched_no_match";
 
@@ -441,6 +615,9 @@ async function researchPortal(portal: (typeof DIRECT_RFP_PORTALS)[number]): Prom
     researchStartedAt: started,
     researchCompletedAt: new Date().toISOString(),
     queriesExecuted: queries,
+    successfulQueryCount,
+    failedQueryCount,
+    searchProviders,
     officialPagesInspected: [...new Set(officialPagesInspected)],
     acceptedEvidence: uniqueEvidence,
     rejectedCandidates: rejectedCandidates.slice(0, 100),
