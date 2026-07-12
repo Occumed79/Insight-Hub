@@ -23,6 +23,7 @@ import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
+import { buildOccuMedSearchQueries } from "./occumedProcurementOntology";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
@@ -38,31 +39,22 @@ const SERPER_DEEP_PAGES = 2;
 const EXA_RESULTS_PER_QUERY = 20;
 const TAVILY_RESULTS_PER_QUERY = 10;
 
-type SearchCandidateProvider = "serper" | "tavily" | "exa" | "you" | "langsearch" | "websearch";
+type SearchCandidateProvider =
+  | "serper"
+  | "tavily"
+  | "exa"
+  | "you"
+  | "langsearch"
+  | "websearch";
 
-const OCCUMED_WEB_QUERIES: { query: string; type?: "search" | "news"; tbs?: string }[] = [
-  { query: `site:demandstar.com "occupational health" OR "drug testing" OR "medical examination"`, type: "search" },
-  { query: `site:bidsync.com "occupational health" OR "drug screening" OR "occupational medicine"`, type: "search" },
-  { query: `site:publicpurchase.com "occupational health" OR "employee health"`, type: "search" },
-  { query: `"request for proposal" "occupational health services" deadline ${CURRENT_YEAR} -awarded -award`, type: "search" },
-  { query: `"request for proposal" "drug testing" OR "drug screening" government ${CURRENT_YEAR} response due -award`, type: "search" },
-  { query: `"occupational health" OR "occupational medicine" RFP solicitation government issued ${CURRENT_YEAR}`, type: "news", tbs: "qdr:m" },
-  { query: `"pre-employment" OR "drug testing" OR "DOT physical" "request for proposal" government ${CURRENT_YEAR}`, type: "news", tbs: "qdr:m" },
-  { query: `NAICS 621111 OR NAICS 621999 "occupational health" solicitation RFP ${CURRENT_YEAR} active`, type: "search" },
-  { query: `"solicitation" "occupational medicine" OR "occupational health" "due date" ${CURRENT_YEAR} OR ${NEXT_YEAR}`, type: "search" },
-  { query: `"invitation to bid" OR "sources sought" "occupational health" OR "employee health" government ${CURRENT_YEAR}`, type: "search" },
-  // Defense primes / staffing partners that subcontract occupational-health & deployment-medical work.
-  { query: `("LOGCAP" OR "AFCAP" OR "V2X" OR "Amentum" OR "KBR" OR "Fluor" OR "PAE" OR "Acuity" OR "QTC" OR "Leidos") ("occupational health" OR "medical screening" OR "deployment medical") subcontract OR teaming ${CURRENT_YEAR}`, type: "search" },
-  { query: `("WorkCare" OR "Concentra" OR "International SOS") ("occupational health" OR "medical examination" OR "provider network") subcontract OR partner ${CURRENT_YEAR}`, type: "search" },
-  { query: `"deployment medical" OR "medical clearance" OR "CONUS replacement center" OR "OCONUS" contractor screening solicitation ${CURRENT_YEAR}`, type: "search" },
-  // Agencies that buy occupational-health services directly.
-  { query: `("Department of Veterans Affairs" OR "Defense Logistics Agency" OR "Indian Health Service" OR "Department of Energy") ("occupational health" OR "medical examination" OR "drug testing") RFP OR solicitation ${CURRENT_YEAR}`, type: "search" },
-  // Service-line synonyms that keyword search otherwise misses.
-  { query: `"sources sought" OR "RFI" ("medical surveillance" OR "audiogram" OR "respirator clearance" OR "pulmonary function" OR "audiometric") government ${CURRENT_YEAR}`, type: "search" },
-  { query: `site:sam.gov ("occupational health" OR "medical examination" OR "drug testing" OR "pre-employment physical") solicitation ${CURRENT_YEAR}`, type: "search" },
-  { query: `("provider network" OR "clinic network") ("occupational health" OR "employee health") RFP OR procurement ${CURRENT_YEAR}`, type: "search" },
-  { query: `("pre-employment physical" OR "fit for duty" OR "DOT physical") contract solicitation government ${CURRENT_YEAR} -awarded`, type: "news", tbs: "qdr:m" },
-];
+const OCCUMED_WEB_QUERIES: {
+  query: string;
+  type?: "search" | "news";
+  tbs?: string;
+}[] = buildOccuMedSearchQueries(CURRENT_YEAR).map((query) => ({
+  query,
+  type: "search",
+}));
 
 const EXA_QUERIES = [
   `active government RFP for occupational health services ${CURRENT_YEAR}`,
@@ -125,7 +117,11 @@ interface Candidate {
 }
 
 function isRfpCandidate(candidate: Candidate): boolean {
-  return isRfpCandidateShared(candidate.title, candidate.content, candidate.url);
+  return isRfpCandidateShared(
+    candidate.title,
+    candidate.content,
+    candidate.url,
+  );
 }
 
 /**
@@ -147,10 +143,13 @@ function buildWebOpportunity(
     cls: RelevanceResult;
     fallback: boolean;
     extra?: Record<string, unknown>;
-  }
+  },
 ): NormalizedOpportunity {
   const { cls } = fields;
-  const urlHash = createHash("sha256").update(candidate.url).digest("hex").slice(0, 20);
+  const urlHash = createHash("sha256")
+    .update(candidate.url)
+    .digest("hex")
+    .slice(0, 20);
   const dateUnknown = cls.publishedDate == null;
 
   const tags: string[] = [];
@@ -197,8 +196,17 @@ function isExpiredDeadline(deadline: Date | undefined | null): boolean {
   return deadline < oneDayAgo;
 }
 
-function addCandidate(candidates: Candidate[], seen: Set<string>, candidate: Candidate) {
-  if (!candidate.url || seen.has(candidate.url) || isBlockedDomainShared(candidate.url)) return;
+function addCandidate(
+  candidates: Candidate[],
+  seen: Set<string>,
+  candidate: Candidate,
+) {
+  if (
+    !candidate.url ||
+    seen.has(candidate.url) ||
+    isBlockedDomainShared(candidate.url)
+  )
+    return;
   seen.add(candidate.url);
   candidates.push(candidate);
 }
@@ -251,7 +259,12 @@ export async function webIntelligenceFetch(options: {
   const useLangsearch = options.useLangsearch === true;
   const useWebsearch = options.useWebsearch === true;
 
-  type SerperQuery = { query: string; type?: "search" | "news"; tbs?: string; deep?: boolean };
+  type SerperQuery = {
+    query: string;
+    type?: "search" | "news";
+    tbs?: string;
+    deep?: boolean;
+  };
   let serperQueries: SerperQuery[] = [...OCCUMED_WEB_QUERIES];
   let exaQueries = [...EXA_QUERIES];
   let tavilyQueries = [...TAVILY_QUERIES];
@@ -265,32 +278,62 @@ export async function webIntelligenceFetch(options: {
       { query: kwQ, type: "news" as const, tbs: "qdr:m" },
       ...serperQueries,
     ];
-    exaQueries = [`active open government procurement opportunity for ${kw} occupational health medical screening drug testing services ${CURRENT_YEAR}`, ...exaQueries];
-    tavilyQueries = [`${kw} occupational health drug testing medical screening government RFP solicitation open ${CURRENT_YEAR}`, ...tavilyQueries];
+    exaQueries = [
+      `active open government procurement opportunity for ${kw} occupational health medical screening drug testing services ${CURRENT_YEAR}`,
+      ...exaQueries,
+    ];
+    tavilyQueries = [
+      `${kw} occupational health drug testing medical screening government RFP solicitation open ${CURRENT_YEAR}`,
+      ...tavilyQueries,
+    ];
   }
 
   let feedbackHints = "";
   try {
     const weights = await buildSignalWeights();
     if (weights.totalGrades >= 3) {
-      const topAgencies = Object.entries(weights.agencies).filter(([, w]) => w > 0).sort(([, a], [, b]) => b - a).slice(0, 5).map(([k]) => k);
-      const topKeywords = Object.entries(weights.keywords).filter(([, w]) => w > 0).sort(([, a], [, b]) => b - a).slice(0, 8).map(([k]) => k);
+      const topAgencies = Object.entries(weights.agencies)
+        .filter(([, w]) => w > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([k]) => k);
+      const topKeywords = Object.entries(weights.keywords)
+        .filter(([, w]) => w > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([k]) => k);
       feedbackHints = [
-        topAgencies.length ? `High-value agencies from past feedback: ${topAgencies.join(", ")}.` : "",
-        topKeywords.length ? `High-signal keywords from past feedback: ${topKeywords.join(", ")}.` : "",
-      ].filter(Boolean).join(" ");
+        topAgencies.length
+          ? `High-value agencies from past feedback: ${topAgencies.join(", ")}.`
+          : "",
+        topKeywords.length
+          ? `High-signal keywords from past feedback: ${topKeywords.join(", ")}.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
     }
   } catch {}
 
   if (useGemini) {
     try {
-      const keywordsWithHints = [options.keywords, feedbackHints].filter(Boolean).join(". ") || undefined;
-      const generated = await geminiProvider.generateSearchQueries(keywordsWithHints);
-      serperQueries.push(...generated.map((q) => ({ query: `${q} -awarded -"contract award" -"award notice"`, type: "search" as const })));
+      const keywordsWithHints =
+        [options.keywords, feedbackHints].filter(Boolean).join(". ") ||
+        undefined;
+      const generated =
+        await geminiProvider.generateSearchQueries(keywordsWithHints);
+      serperQueries.push(
+        ...generated.map((q) => ({
+          query: `${q} -awarded -"contract award" -"award notice"`,
+          type: "search" as const,
+        })),
+      );
     } catch (err: any) {
       if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) {
         stats.geminiRateLimited = true;
-        errors.push("Gemini daily quota reached — using built-in search queries.");
+        errors.push(
+          "Gemini daily quota reached — using built-in search queries.",
+        );
       } else {
         errors.push(`Gemini query generation: ${err.message}`);
       }
@@ -300,38 +343,96 @@ export async function webIntelligenceFetch(options: {
   // Track per-query Serper failures so they appear in the response instead of vanishing.
   let serperQueryFailures = 0;
   let serperLastError = "";
-  const [serperRaw, exaRaw, tavilyRaw, statePortalRaw, youRaw, langsearchRaw, websearchRaw] = await Promise.all([
+  const [
+    serperRaw,
+    exaRaw,
+    tavilyRaw,
+    statePortalRaw,
+    youRaw,
+    langsearchRaw,
+    websearchRaw,
+  ] = await Promise.all([
     useSerper
       ? Promise.allSettled(
           serperQueries.flatMap((q) => {
             const pages = q.deep ? SERPER_DEEP_PAGES : 1;
             return Array.from({ length: pages }, (_, i) =>
               serperProvider
-                .search(q.query, SERPER_RESULTS_PER_QUERY, { type: q.type, tbs: q.tbs, page: i + 1 })
-                .catch((err: any) => { serperQueryFailures++; serperLastError = err.message ?? String(err); return [] as SerperSearchResult[]; })
+                .search(q.query, SERPER_RESULTS_PER_QUERY, {
+                  type: q.type,
+                  tbs: q.tbs,
+                  page: i + 1,
+                })
+                .catch((err: any) => {
+                  serperQueryFailures++;
+                  serperLastError = err.message ?? String(err);
+                  return [] as SerperSearchResult[];
+                }),
             );
-          })
+          }),
         )
-          .then((results) => results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])))
-          .catch((err: any) => { errors.push(`Serper: ${err.message}`); return []; })
+          .then((results) =>
+            results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])),
+          )
+          .catch((err: any) => {
+            errors.push(`Serper: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
     useExa
-      ? exaProvider.isConfigured().then((configured) => configured ? exaProvider.searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY).catch((err: any) => { errors.push(`Exa: ${err.message}`); return []; }) : [])
+      ? exaProvider.isConfigured().then((configured) =>
+          configured
+            ? exaProvider
+                .searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY)
+                .catch((err: any) => {
+                  errors.push(`Exa: ${err.message}`);
+                  return [];
+                })
+            : [],
+        )
       : Promise.resolve([]),
     useTavily
-      ? tavilyProvider.researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY).catch((err: any) => { errors.push(`Tavily: ${err.message}`); return []; })
+      ? tavilyProvider
+          .researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY)
+          .catch((err: any) => {
+            errors.push(`Tavily: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
     useStatePortals
-      ? statePortalsProvider.search({ keywords: options.keywords }).catch((err: any) => { errors.push(`State Portals: ${err.message}`); return []; })
+      ? statePortalsProvider
+          .search({ keywords: options.keywords })
+          .catch((err: any) => {
+            errors.push(`State Portals: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
     useYou
-      ? youProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`You.com: ${err.message}`); return []; })
+      ? youProvider
+          .fetch({ keywords: options.keywords })
+          .then((r) => r.records)
+          .catch((err: any) => {
+            errors.push(`You.com: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
     useLangsearch
-      ? langsearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`Langsearch: ${err.message}`); return []; })
+      ? langsearchProvider
+          .fetch({ keywords: options.keywords })
+          .then((r) => r.records)
+          .catch((err: any) => {
+            errors.push(`Langsearch: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
     useWebsearch
-      ? websearchProvider.fetch({ keywords: options.keywords }).then((r) => r.records).catch((err: any) => { errors.push(`WebSearch: ${err.message}`); return []; })
+      ? websearchProvider
+          .fetch({ keywords: options.keywords })
+          .then((r) => r.records)
+          .catch((err: any) => {
+            errors.push(`WebSearch: ${err.message}`);
+            return [];
+          })
       : Promise.resolve([]),
   ]);
 
@@ -344,52 +445,109 @@ export async function webIntelligenceFetch(options: {
 
   // Surface per-query Serper failures (they were previously silently swallowed).
   if (serperQueryFailures > 0) {
-    errors.push(`Serper: ${serperQueryFailures} query(ies) failed — ${serperLastError}`);
+    errors.push(
+      `Serper: ${serperQueryFailures} query(ies) failed — ${serperLastError}`,
+    );
   } else if (useSerper && serperRaw.length === 0) {
-    errors.push("Serper: 0 results across all queries (API key may be invalid or quota exhausted — no HTTP error was thrown)");
+    errors.push(
+      "Serper: 0 results across all queries (API key may be invalid or quota exhausted — no HTTP error was thrown)",
+    );
   }
   if (useTavily && tavilyRaw.length === 0) {
-    errors.push("Tavily: 0 results across all queries (API key may be invalid or quota exhausted — check server logs)");
+    errors.push(
+      "Tavily: 0 results across all queries (API key may be invalid or quota exhausted — check server logs)",
+    );
   }
 
-  const statePortalOpportunities = statePortalsProvider.toOpportunities(statePortalRaw);
+  const statePortalOpportunities =
+    statePortalsProvider.toOpportunities(statePortalRaw);
   stats.statePortalResults = statePortalOpportunities.length;
 
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
-  for (const opp of statePortalOpportunities) if (opp.sourceUrl) seen.add(opp.sourceUrl);
+  for (const opp of statePortalOpportunities)
+    if (opp.sourceUrl) seen.add(opp.sourceUrl);
 
-  for (const r of serperRaw) addCandidate(candidates, seen, { title: r.title, url: r.link, content: r.snippet, sourceProvider: "serper", dateRaw: r.date });
+  for (const r of serperRaw)
+    addCandidate(candidates, seen, {
+      title: r.title,
+      url: r.link,
+      content: r.snippet,
+      sourceProvider: "serper",
+      dateRaw: r.date,
+    });
   for (const r of exaRaw) {
     const url = r.url ?? "";
-    addCandidate(candidates, seen, { title: r.title ?? "", url, content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "", sourceProvider: "exa", dateRaw: r.publishedDate });
+    addCandidate(candidates, seen, {
+      title: r.title ?? "",
+      url,
+      content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "",
+      sourceProvider: "exa",
+      dateRaw: r.publishedDate,
+    });
   }
-  for (const r of tavilyRaw) addCandidate(candidates, seen, { title: r.title, url: r.url, content: r.content, sourceProvider: "tavily", dateRaw: r.publishedDate });
+  for (const r of tavilyRaw)
+    addCandidate(candidates, seen, {
+      title: r.title,
+      url: r.url,
+      content: r.content,
+      sourceProvider: "tavily",
+      dateRaw: r.publishedDate,
+    });
 
-  for (const r of youRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.description ?? "", sourceProvider: "you" });
-  for (const r of langsearchRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.content ?? "", sourceProvider: "langsearch" });
-  for (const r of websearchRaw as any[]) addCandidate(candidates, seen, { title: r.title ?? "", url: r.url ?? r.sourceUrl ?? "", content: r.description ?? r.snippet ?? r.content ?? "", sourceProvider: "websearch" });
+  for (const r of youRaw as any[])
+    addCandidate(candidates, seen, {
+      title: r.title ?? "",
+      url: r.url ?? r.sourceUrl ?? "",
+      content: r.description ?? r.snippet ?? r.description ?? "",
+      sourceProvider: "you",
+    });
+  for (const r of langsearchRaw as any[])
+    addCandidate(candidates, seen, {
+      title: r.title ?? "",
+      url: r.url ?? r.sourceUrl ?? "",
+      content: r.description ?? r.snippet ?? r.content ?? "",
+      sourceProvider: "langsearch",
+    });
+  for (const r of websearchRaw as any[])
+    addCandidate(candidates, seen, {
+      title: r.title ?? "",
+      url: r.url ?? r.sourceUrl ?? "",
+      content: r.description ?? r.snippet ?? r.content ?? "",
+      sourceProvider: "websearch",
+    });
 
   stats.totalCandidates = candidates.length;
   const filtered = candidates.filter(isRfpCandidate);
   stats.preFiltered = filtered.length;
   stats.rejected = candidates.length - filtered.length;
 
-  if (filtered.length === 0) return { opportunities: statePortalOpportunities, stats, errors };
+  if (filtered.length === 0)
+    return { opportunities: statePortalOpportunities, stats, errors };
 
   const enrichedCandidates = [...filtered];
 
   if (useFirecrawl) {
     const fcConfigured = await firecrawlProvider.isConfigured();
     if (fcConfigured) {
-      const toEnrich = filtered.filter((c) => c.content.length < 800).slice(0, FIRECRAWL_MAX_URLS);
+      const toEnrich = filtered
+        .filter((c) => c.content.length < 800)
+        .slice(0, FIRECRAWL_MAX_URLS);
       if (toEnrich.length > 0) {
         try {
-          const scraped = await firecrawlProvider.scrapeMany(toEnrich.map((c) => c.url));
+          const scraped = await firecrawlProvider.scrapeMany(
+            toEnrich.map((c) => c.url),
+          );
           for (const result of scraped) {
-            const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
+            const idx = enrichedCandidates.findIndex(
+              (c) => c.url === result.url,
+            );
             if (idx >= 0 && result.markdown) {
-              enrichedCandidates[idx] = { ...enrichedCandidates[idx], content: result.markdown.slice(0, 4000), firecrawlEnriched: true };
+              enrichedCandidates[idx] = {
+                ...enrichedCandidates[idx],
+                content: result.markdown.slice(0, 4000),
+                firecrawlEnriched: true,
+              };
               stats.firecrawlEnriched++;
             }
           }
@@ -402,14 +560,24 @@ export async function webIntelligenceFetch(options: {
 
   const jinaConfigured = await jinaProvider.isConfigured();
   if (jinaConfigured) {
-    const stillShort = enrichedCandidates.filter((c) => !c.firecrawlEnriched && c.content.length < 600);
+    const stillShort = enrichedCandidates.filter(
+      (c) => !c.firecrawlEnriched && c.content.length < 600,
+    );
     if (stillShort.length > 0) {
       try {
-        const jinaResults = await jinaProvider.extractUrls(stillShort.map((c) => c.url), 4, 5000);
+        const jinaResults = await jinaProvider.extractUrls(
+          stillShort.map((c) => c.url),
+          4,
+          5000,
+        );
         for (const [url, text] of jinaResults) {
           const idx = enrichedCandidates.findIndex((c) => c.url === url);
           if (idx >= 0 && text.length > 200) {
-            enrichedCandidates[idx] = { ...enrichedCandidates[idx], content: text, jinaEnriched: true };
+            enrichedCandidates[idx] = {
+              ...enrichedCandidates[idx],
+              content: text,
+              jinaEnriched: true,
+            };
             stats.jinaEnriched++;
           }
         }
@@ -422,18 +590,30 @@ export async function webIntelligenceFetch(options: {
   // ── Olostep enrichment fallback (residential proxy scraping) ────────────
   const olostepConfigured = await olostepProvider.isConfigured();
   if (olostepConfigured) {
-    const stillShort = enrichedCandidates.filter(
-      (c) => !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600
-    ).slice(0, 8);
+    const stillShort = enrichedCandidates
+      .filter(
+        (c) =>
+          !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600,
+      )
+      .slice(0, 8);
     if (stillShort.length > 0) {
       try {
-        const scraped = await olostepProvider.scrapeMany(stillShort.map((c) => c.url));
+        const scraped = await olostepProvider.scrapeMany(
+          stillShort.map((c) => c.url),
+        );
         for (const result of scraped) {
           const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
-          if (idx >= 0 && (result.markdown_content ?? result.text_content ?? "").length > 200) {
+          if (
+            idx >= 0 &&
+            (result.markdown_content ?? result.text_content ?? "").length > 200
+          ) {
             enrichedCandidates[idx] = {
               ...enrichedCandidates[idx],
-              content: (result.markdown_content ?? result.text_content ?? "").slice(0, 4000),
+              content: (
+                result.markdown_content ??
+                result.text_content ??
+                ""
+              ).slice(0, 4000),
             };
             stats.olostepEnriched++;
           }
@@ -447,12 +627,15 @@ export async function webIntelligenceFetch(options: {
   // ── Cloudflare Worker enrichment fallback ──────────────────────────────
   const cfConfigured = await cloudflareWorkerProvider.isConfigured();
   if (cfConfigured) {
-    const stillShort = enrichedCandidates.filter(
-      (c) => !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600
-    ).slice(0, 6);
+    const stillShort = enrichedCandidates
+      .filter(
+        (c) =>
+          !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600,
+      )
+      .slice(0, 6);
     if (stillShort.length > 0) {
       const settled = await Promise.allSettled(
-        stillShort.map((c) => cloudflareWorkerProvider.extractUrl(c.url))
+        stillShort.map((c) => cloudflareWorkerProvider.extractUrl(c.url)),
       );
       settled.forEach((r, i) => {
         if (r.status === "fulfilled" && r.value && r.value.length > 200) {
@@ -470,16 +653,24 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  if (stats.geminiRateLimited) errors.push("Gemini rate limited — falling back to other available scorers.");
+  if (stats.geminiRateLimited)
+    errors.push(
+      "Gemini rate limited — falling back to other available scorers.",
+    );
 
   const opportunities: NormalizedOpportunity[] = [];
 
   try {
     // Batched AI extraction (round-robin across Gemini → Groq → OpenRouter →
     // Minimax, memoized by URL) instead of one 3-provider call per candidate.
-    const { extractions, rateLimited, usedScorers, cacheHits } = await extractOpportunitiesBatch(
-      enrichedCandidates.map((c) => ({ title: c.title, url: c.url, content: c.content }))
-    );
+    const { extractions, rateLimited, usedScorers, cacheHits } =
+      await extractOpportunitiesBatch(
+        enrichedCandidates.map((c) => ({
+          title: c.title,
+          url: c.url,
+          content: c.content,
+        })),
+      );
     if (rateLimited) stats.geminiRateLimited = true;
     stats.aiCacheHits = cacheHits;
     stats.aiScorers = usedScorers;
@@ -495,8 +686,11 @@ export async function webIntelligenceFetch(options: {
 
       // Branch B: AI confirmed an opportunity → use its structured extraction.
       if (extraction && extraction.isOpportunity) {
-        const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
-        const validDeadline = deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
+        const deadline = extraction.deadline
+          ? new Date(extraction.deadline)
+          : undefined;
+        const validDeadline =
+          deadline && !isNaN(deadline.getTime()) ? deadline : undefined;
         if (isExpiredDeadline(validDeadline)) {
           stats.expiredRejected++;
           stats.rejected++;
@@ -581,5 +775,9 @@ export async function webIntelligenceFetch(options: {
     errors.push(`Web intelligence error: ${err.message}`);
   }
 
-  return { opportunities: [...statePortalOpportunities, ...opportunities], stats, errors };
+  return {
+    opportunities: [...statePortalOpportunities, ...opportunities],
+    stats,
+    errors,
+  };
 }
