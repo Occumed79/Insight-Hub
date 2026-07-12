@@ -1,14 +1,52 @@
-import { DIRECT_RFP_PORTALS, type DirectRfpPortal, type DirectRfpPortalAccessMode } from "../directRfpPortals";
+import type { DirectRfpPortalAccessMode } from "../directRfpPortals";
+import {
+  ENRICHED_DIRECT_RFP_PORTALS,
+  type EnrichedDirectRfpPortal,
+} from "../directRfpPortalRelevanceCatalog";
+import type { PortalFit } from "../portalRelevance";
 
-export const AGENCY_TYPES = ["state", "county", "city", "fire_department", "fire_district", "ems", "public_safety", "school_district", "special_district", "public_authority", "transit_authority", "airport_authority", "port_authority"] as const;
-export const SOURCE_LEVELS = ["state", "county", "municipal", "district", "authority"] as const;
-export const SCRAPER_TYPES = ["static_html", "scrapy", "playwright_public", "rss", "public_json", "pdf_links", "existing_parser"] as const;
-export const VERIFICATION_STATUSES = ["verified", "needs_review", "broken"] as const;
+export const AGENCY_TYPES = [
+  "state",
+  "county",
+  "city",
+  "fire_department",
+  "fire_district",
+  "ems",
+  "public_safety",
+  "school_district",
+  "special_district",
+  "public_authority",
+  "transit_authority",
+  "airport_authority",
+  "port_authority",
+] as const;
+export const SOURCE_LEVELS = [
+  "state",
+  "county",
+  "municipal",
+  "district",
+  "authority",
+] as const;
+export const SCRAPER_TYPES = [
+  "static_html",
+  "scrapy",
+  "playwright_public",
+  "rss",
+  "public_json",
+  "pdf_links",
+  "existing_parser",
+] as const;
+export const VERIFICATION_STATUSES = [
+  "verified",
+  "needs_review",
+  "broken",
+] as const;
 
-export type PublicPortalAgencyType = typeof AGENCY_TYPES[number];
-export type PublicPortalSourceLevel = typeof SOURCE_LEVELS[number];
-export type PublicPortalScraperType = typeof SCRAPER_TYPES[number];
-export type PublicPortalVerificationStatus = typeof VERIFICATION_STATUSES[number];
+export type PublicPortalAgencyType = (typeof AGENCY_TYPES)[number];
+export type PublicPortalSourceLevel = (typeof SOURCE_LEVELS)[number];
+export type PublicPortalScraperType = (typeof SCRAPER_TYPES)[number];
+export type PublicPortalVerificationStatus =
+  (typeof VERIFICATION_STATUSES)[number];
 
 export interface PublicPortalSource {
   id: string;
@@ -22,7 +60,7 @@ export interface PublicPortalSource {
   domain: string;
   portalPlatform?: string;
   sourceLevel: PublicPortalSourceLevel;
-  level?: DirectRfpPortal["level"];
+  level?: EnrichedDirectRfpPortal["level"];
   accessMode?: DirectRfpPortalAccessMode;
   scraperType: PublicPortalScraperType;
   enabled: boolean;
@@ -34,85 +72,129 @@ export interface PublicPortalSource {
   lastFailureReason?: string;
   resultCount?: number;
   matchedCount?: number;
+  occumedFit?: PortalFit;
+  buyerSector?: string;
+  occumedServiceCategories?: string[];
+  relevanceEvidenceCount?: number;
+  relevanceReasonCodes?: string[];
+  lastRelevanceVerified?: string;
 }
 
-const AGGREGATOR_DOMAIN_PATTERNS = ["bidnet", "demandstar", "govwin", "planetbids", "opengov", "periscope", "s2g"];
+const AGGREGATOR_DOMAIN_PATTERNS = [
+  "bidnet",
+  "demandstar",
+  "govwin",
+  "planetbids",
+  "opengov",
+  "periscope",
+  "s2g",
+];
 
 function isAggregatorDomain(domain: string): boolean {
   const normalized = domain.toLowerCase().replace(/^www\./, "");
-  return AGGREGATOR_DOMAIN_PATTERNS.some((pattern) => normalized.includes(pattern));
+  return AGGREGATOR_DOMAIN_PATTERNS.some((pattern) =>
+    normalized.includes(pattern),
+  );
 }
 
-function isSafeDirectPortal(portal: DirectRfpPortal): boolean {
-  return portal.country === "US" && portal.level !== "federal" && !portal.requiresLogin && !portal.requiresKey && !isAggregatorDomain(portal.domain);
+function isSafeDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
+  return (
+    portal.country === "US" &&
+    portal.level !== "federal" &&
+    !portal.requiresLogin &&
+    !portal.requiresKey &&
+    !isAggregatorDomain(portal.domain)
+  );
 }
 
-function sourceLevelFromPortal(portal: DirectRfpPortal): PublicPortalSourceLevel {
+function sourceLevelFromPortal(
+  portal: EnrichedDirectRfpPortal,
+): PublicPortalSourceLevel {
   if (portal.level === "district") return "district";
   return "state";
 }
 
-function scraperTypeFromAccessMode(accessMode: DirectRfpPortalAccessMode): PublicPortalScraperType {
+function scraperTypeFromAccessMode(
+  accessMode: DirectRfpPortalAccessMode,
+): PublicPortalScraperType {
   if (accessMode === "public_html") return "static_html";
   if (accessMode === "csv") return "static_html";
   if (accessMode === "api") return "public_json";
   return "playwright_public";
 }
 
-
-export function derivePublicPortalSourcesFromDirectCatalog(portals: DirectRfpPortal[] = DIRECT_RFP_PORTALS): PublicPortalSource[] {
-  return portals
-    .filter(isSafeDirectPortal)
-    .map((portal) => {
-      const sourceUrl = portal.searchUrl || portal.url;
-      const enabled =
-        portal.country === "US" &&
-        portal.level !== "federal" &&
-        !portal.requiresLogin &&
-        !portal.requiresKey &&
-        Boolean(sourceUrl) &&
-        !isAggregatorDomain(portal.domain) &&
-        (portal.accessMode === "public_html" ||
-          portal.accessMode === "csv" ||
-          portal.accessMode === "api");
-      return {
-        id: portal.id,
-        agencyName: portal.name,
-        agencyType: portal.level === "district" ? "special_district" : "state",
-        state: portal.state ?? "US",
-        sourceUrl,
-        searchUrl: portal.searchUrl,
-        domain: portal.domain,
-        portalPlatform: portal.name,
-        sourceLevel: sourceLevelFromPortal(portal),
-        level: portal.level,
-        accessMode: portal.accessMode,
-        scraperType: scraperTypeFromAccessMode(portal.accessMode),
-        enabled,
-        verificationStatus: enabled ? "verified" : "needs_review",
-        notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
-      } satisfies PublicPortalSource;
-    });
+export function derivePublicPortalSourcesFromDirectCatalog(
+  portals: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS,
+): PublicPortalSource[] {
+  return portals.filter(isSafeDirectPortal).map((portal) => {
+    const sourceUrl = portal.searchUrl || portal.url;
+    const enabled =
+      portal.country === "US" &&
+      portal.level !== "federal" &&
+      !portal.requiresLogin &&
+      !portal.requiresKey &&
+      Boolean(sourceUrl) &&
+      !isAggregatorDomain(portal.domain) &&
+      (portal.accessMode === "public_html" ||
+        portal.accessMode === "csv" ||
+        portal.accessMode === "api");
+    return {
+      id: portal.id,
+      agencyName: portal.name,
+      agencyType:
+        portal.level === "district" ? "special_district" : "state",
+      state: portal.state ?? "US",
+      sourceUrl,
+      searchUrl: portal.searchUrl,
+      domain: portal.domain,
+      portalPlatform: portal.name,
+      sourceLevel: sourceLevelFromPortal(portal),
+      level: portal.level,
+      accessMode: portal.accessMode,
+      scraperType: scraperTypeFromAccessMode(portal.accessMode),
+      enabled,
+      verificationStatus: enabled ? "verified" : "needs_review",
+      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
+      occumedFit: portal.occumedFit,
+      buyerSector: portal.buyerSector,
+      occumedServiceCategories: portal.occumedServiceCategories,
+      relevanceEvidenceCount: portal.relevanceEvidenceUrls.length,
+      relevanceReasonCodes: portal.relevanceReasonCodes,
+      lastRelevanceVerified: portal.lastRelevanceVerified,
+    } satisfies PublicPortalSource;
+  });
 }
 
-export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] = derivePublicPortalSourcesFromDirectCatalog();
+export const PUBLIC_PORTAL_SOURCES: PublicPortalSource[] =
+  derivePublicPortalSourcesFromDirectCatalog();
 
 function normalizeDomain(sourceUrl: string): string {
   return new URL(sourceUrl).hostname.replace(/^www\./, "").toLowerCase();
 }
 
-export function validatePublicPortalSource(source: PublicPortalSource): string[] {
+export function validatePublicPortalSource(
+  source: PublicPortalSource,
+): string[] {
   const errors: string[] = [];
   if (!source.id.trim()) errors.push("id is required");
   if (!source.agencyName.trim()) errors.push("agencyName is required");
-  if (!AGENCY_TYPES.includes(source.agencyType)) errors.push(`invalid agencyType: ${source.agencyType}`);
-  if (!SOURCE_LEVELS.includes(source.sourceLevel)) errors.push(`invalid sourceLevel: ${source.sourceLevel}`);
-  if (!SCRAPER_TYPES.includes(source.scraperType)) errors.push(`invalid scraperType: ${source.scraperType}`);
-  if (!VERIFICATION_STATUSES.includes(source.verificationStatus)) errors.push(`invalid verificationStatus: ${source.verificationStatus}`);
+  if (!AGENCY_TYPES.includes(source.agencyType))
+    errors.push(`invalid agencyType: ${source.agencyType}`);
+  if (!SOURCE_LEVELS.includes(source.sourceLevel))
+    errors.push(`invalid sourceLevel: ${source.sourceLevel}`);
+  if (!SCRAPER_TYPES.includes(source.scraperType))
+    errors.push(`invalid scraperType: ${source.scraperType}`);
+  if (!VERIFICATION_STATUSES.includes(source.verificationStatus))
+    errors.push(`invalid verificationStatus: ${source.verificationStatus}`);
   try {
     const parsed = new URL(source.sourceUrl);
-    if (!/^https?:$/.test(parsed.protocol)) errors.push("sourceUrl must be http(s)");
-    if (source.domain && normalizeDomain(source.sourceUrl) !== source.domain.replace(/^www\./, "").toLowerCase()) {
+    if (!/^https?:$/.test(parsed.protocol))
+      errors.push("sourceUrl must be http(s)");
+    if (
+      source.domain &&
+      normalizeDomain(source.sourceUrl) !==
+        source.domain.replace(/^www\./, "").toLowerCase()
+    ) {
       errors.push("domain must match sourceUrl hostname");
     }
   } catch {
@@ -132,12 +214,17 @@ export interface PublicPortalCatalogValidationSummary {
   duplicateIds: string[];
   invalidUrls: string[];
   aggregatorDomainLeakage: string[];
+  byOccumedFit: Record<string, number>;
+  withRelevanceEvidence: number;
 }
 
-export function validatePublicPortalCatalog(sources: PublicPortalSource[] = PUBLIC_PORTAL_SOURCES): PublicPortalCatalogValidationSummary {
+export function validatePublicPortalCatalog(
+  sources: PublicPortalSource[] = PUBLIC_PORTAL_SOURCES,
+): PublicPortalCatalogValidationSummary {
   const ids = new Map<string, number>();
   const invalidUrls: string[] = [];
   const aggregatorDomainLeakage: string[] = [];
+  const byOccumedFit: Record<string, number> = {};
 
   for (const source of sources) {
     ids.set(source.id, (ids.get(source.id) ?? 0) + 1);
@@ -147,24 +234,48 @@ export function validatePublicPortalCatalog(sources: PublicPortalSource[] = PUBL
     } catch {
       invalidUrls.push(source.id);
     }
-    if (isAggregatorDomain(source.domain)) aggregatorDomainLeakage.push(source.id);
+    if (isAggregatorDomain(source.domain))
+      aggregatorDomainLeakage.push(source.id);
+    const fit = source.occumedFit ?? "unclassified";
+    byOccumedFit[fit] = (byOccumedFit[fit] ?? 0) + 1;
   }
 
   return {
     totalDerivedSources: sources.length,
     enabledSources: sources.filter((source) => source.enabled).length,
-    needsReviewSources: sources.filter((source) => source.verificationStatus === "needs_review").length,
-    disabledLoginOrDynamicSources: sources.filter((source) => !source.enabled && (source.accessMode === "dynamic_html" || source.accessMode === "portal")).length,
-    duplicateIds: [...ids.entries()].filter(([, count]) => count > 1).map(([id]) => id),
+    needsReviewSources: sources.filter(
+      (source) => source.verificationStatus === "needs_review",
+    ).length,
+    disabledLoginOrDynamicSources: sources.filter(
+      (source) =>
+        !source.enabled &&
+        (source.accessMode === "dynamic_html" ||
+          source.accessMode === "portal"),
+    ).length,
+    duplicateIds: [...ids.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([id]) => id),
     invalidUrls,
     aggregatorDomainLeakage,
+    byOccumedFit,
+    withRelevanceEvidence: sources.filter(
+      (source) => (source.relevanceEvidenceCount ?? 0) > 0,
+    ).length,
   };
 }
 
-export function publicPortalSourceFromImport(row: Record<string, unknown>): PublicPortalSource {
+export function publicPortalSourceFromImport(
+  row: Record<string, unknown>,
+): PublicPortalSource {
   const sourceUrl = String(row.sourceUrl ?? "").trim();
   const agencyName = String(row.agencyName ?? "").trim();
-  const id = String(row.id ?? `${String(row.state ?? "").toLowerCase()}-${agencyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`).trim();
+  const id = String(
+    row.id ??
+      `${String(row.state ?? "").toLowerCase()}-${agencyName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")}`,
+  ).trim();
   const domain = sourceUrl ? normalizeDomain(sourceUrl) : "";
   return {
     id,
@@ -177,10 +288,26 @@ export function publicPortalSourceFromImport(row: Record<string, unknown>): Publ
     searchUrl: String(row.searchUrl ?? "").trim() || undefined,
     domain,
     portalPlatform: String(row.portalPlatform ?? "").trim() || undefined,
-    sourceLevel: (row.sourceLevel as PublicPortalSourceLevel) ?? "municipal",
-    scraperType: String(row.scraperType ?? "static_html") as PublicPortalScraperType,
+    sourceLevel:
+      (row.sourceLevel as PublicPortalSourceLevel) ?? "municipal",
+    scraperType: String(
+      row.scraperType ?? "static_html",
+    ) as PublicPortalScraperType,
     enabled: String(row.enabled ?? "false").toLowerCase() === "true",
-    verificationStatus: String(row.verificationStatus ?? "needs_review") as PublicPortalVerificationStatus,
+    verificationStatus: String(
+      row.verificationStatus ?? "needs_review",
+    ) as PublicPortalVerificationStatus,
     notes: String(row.notes ?? "").trim() || undefined,
+    occumedFit: row.occumedFit as PortalFit | undefined,
+    buyerSector: String(row.buyerSector ?? "").trim() || undefined,
+    occumedServiceCategories: Array.isArray(row.occumedServiceCategories)
+      ? row.occumedServiceCategories.map(String)
+      : undefined,
+    relevanceEvidenceCount: Number(row.relevanceEvidenceCount ?? 0) || 0,
+    relevanceReasonCodes: Array.isArray(row.relevanceReasonCodes)
+      ? row.relevanceReasonCodes.map(String)
+      : undefined,
+    lastRelevanceVerified:
+      String(row.lastRelevanceVerified ?? "").trim() || undefined,
   };
 }

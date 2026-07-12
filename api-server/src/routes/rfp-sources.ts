@@ -1,22 +1,39 @@
 import { Router } from "express";
-import { DIRECT_RFP_PORTALS } from "../lib/providers/directRfpPortals";
+import {
+  ENRICHED_DIRECT_RFP_PORTALS,
+  validateDirectRfpPortalRelevanceCatalog,
+} from "../lib/providers/directRfpPortalRelevanceCatalog";
+import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
 
 const router = Router();
 
-/**
- * GET /api/rfp-sources
- * Returns the direct official RFP portal catalog used to seed/parser-plan
- * direct-source ingestion. This is metadata only; it does not call or scrape
- * any portal.
- */
-router.get("/rfp-sources", async (_req, res) => {
-  const totals = DIRECT_RFP_PORTALS.reduce(
+router.get("/rfp-sources", async (req, res) => {
+  const includeTier3 = String(req.query.includeTier3 ?? "true") === "true";
+  const fullCoverage = String(req.query.fullCoverage ?? "false") === "true";
+  const executionBudget = Math.max(
+    1,
+    Number(req.query.executionBudget ?? 6) || 6,
+  );
+  const rotationKey =
+    typeof req.query.rotationKey === "string"
+      ? req.query.rotationKey
+      : undefined;
+
+  const totals = ENRICHED_DIRECT_RFP_PORTALS.reduce(
     (acc, source) => {
-      acc.total++;
+      acc.total += 1;
       acc.byTier[source.tier] = (acc.byTier[source.tier] ?? 0) + 1;
       acc.byLevel[source.level] = (acc.byLevel[source.level] ?? 0) + 1;
-      acc.byAccessMode[source.accessMode] = (acc.byAccessMode[source.accessMode] ?? 0) + 1;
-      acc.byParserStatus[source.parserStatus] = (acc.byParserStatus[source.parserStatus] ?? 0) + 1;
+      acc.byAccessMode[source.accessMode] =
+        (acc.byAccessMode[source.accessMode] ?? 0) + 1;
+      acc.byParserStatus[source.parserStatus] =
+        (acc.byParserStatus[source.parserStatus] ?? 0) + 1;
+      acc.byOccumedFit[source.occumedFit] =
+        (acc.byOccumedFit[source.occumedFit] ?? 0) + 1;
+      acc.byBuyerSector[source.buyerSector] =
+        (acc.byBuyerSector[source.buyerSector] ?? 0) + 1;
+      if (source.relevanceEvidenceUrls.length > 0) acc.withEvidence += 1;
+      else acc.withoutEvidence += 1;
       return acc;
     },
     {
@@ -25,16 +42,58 @@ router.get("/rfp-sources", async (_req, res) => {
       byLevel: {} as Record<string, number>,
       byAccessMode: {} as Record<string, number>,
       byParserStatus: {} as Record<string, number>,
+      byOccumedFit: {} as Record<string, number>,
+      byBuyerSector: {} as Record<string, number>,
+      withEvidence: 0,
+      withoutEvidence: 0,
     },
   );
 
+  const catalogValidation = validateDirectRfpPortalRelevanceCatalog();
+  const runtimePlan = getStatePortalSearchPlanDiagnostics({
+    includeTier3,
+    fullCoverage,
+    executionBudget,
+    rotationKey,
+  });
+
   return res.json({
-    sources: DIRECT_RFP_PORTALS,
-    totals,
+    sources: ENRICHED_DIRECT_RFP_PORTALS,
+    totals: {
+      ...totals,
+      verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,
+      likelyCount: totals.byOccumedFit.likely ?? 0,
+      broadCount: totals.byOccumedFit.broad ?? 0,
+      insufficientEvidenceCount:
+        totals.byOccumedFit.insufficient_evidence ?? 0,
+      irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
+      unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
+    },
+    relevanceValidation: catalogValidation,
+    runtimePlan,
     rules: {
-      includes: ["official federal/state/district/international procurement portals"],
-      excludes: ["BidNet", "DemandStar", "GovWin", "PlanetBids", "OpenGov network pages", "Periscope/S2G", "generic search providers"],
-      ingestionPriority: ["direct official portals", "quality gate", "staging", "validated opportunities", "search/AI enrichment only after cheap filters"],
+      includes: [
+        "official federal/state/district/international procurement portals",
+        "Occu-Med fit classification based on official evidence or buyer propensity",
+      ],
+      excludes: [
+        "BidNet",
+        "DemandStar",
+        "GovWin",
+        "PlanetBids marketplace pages",
+        "OpenGov network pages",
+        "Periscope/S2G",
+        "generic search providers",
+      ],
+      ingestionPriority: [
+        "verified_high",
+        "likely",
+        "broad",
+        "insufficient_evidence",
+        "irrelevant",
+      ],
+      coveragePolicy:
+        "A finite execution query budget rotates deterministically through the complete eligible portal and ontology-query plan; fullCoverage=true returns the complete execution plan without introducing a permanent source cap.",
     },
   });
 });

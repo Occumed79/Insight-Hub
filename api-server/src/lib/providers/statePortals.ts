@@ -1,14 +1,3 @@
-/**
- * State / District Direct RFP Portal Provider
- *
- * Searches only official government procurement portals from the direct RFP
- * source catalog. Aggregators are deliberately excluded from this layer.
- *
- * Wave 2 makes this provider operational through /opportunities/fetch while
- * staying quota-aware: tier-1 official portals are queried first, tier-2 only
- * when includeTier3 is explicitly requested, and tier-3 remains off by default.
- */
-
 import { createHash } from "crypto";
 import type {
   DataSourceProvider,
@@ -19,27 +8,25 @@ import type {
 } from "./types";
 import { serperProvider } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
-import { procurementSourceFlags } from "../config/env";
 import {
-  directRfpPortalByDomain,
-  directRfpPortalsForSearch,
-  type DirectRfpPortal,
-} from "./directRfpPortals";
+  ENRICHED_DIRECT_RFP_PORTALS,
+  enrichedDirectRfpPortalsForOccuMedSearch,
+  type EnrichedDirectRfpPortal,
+} from "./directRfpPortalRelevanceCatalog";
 import {
   parserForPortalSource,
   type PortalCandidateOpportunity,
 } from "./portal-parsers";
-import {
-  ALL_SERVICE_TERMS,
-  HARD_REJECT_TERMS,
-  PROCUREMENT_SIGNALS,
-  buildOccuMedSearchQueries,
-} from "../search/occumedProcurementOntology";
+import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
+import { classifyResult } from "../search/relevance";
+import type { PortalFit } from "./portalRelevance";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
-const DEFAULT_QUERY_LIMIT = 6;
+const DEFAULT_EXECUTION_QUERY_BUDGET = 6;
 const DEFAULT_RESULT_LIMIT = 25;
+const MAX_DOMAINS_PER_QUERY = 6;
+const MAX_DOMAIN_EXPRESSION_LENGTH = 1_250;
 
 type PortalGroup = "state" | "district";
 
@@ -51,9 +38,41 @@ export interface StatePortal {
   group: PortalGroup;
   sourceId: string;
   searchUrl?: string;
+  occumedFit: PortalFit;
+  buyerSector: string;
+  occumedServiceCategories: string[];
 }
 
-function toStatePortal(portal: DirectRfpPortal): StatePortal | null {
+export interface StatePortalPlannedQuery {
+  query: string;
+  portalIds: string[];
+  domains: string[];
+  queryBundleIndex: number;
+  fitCounts: Record<string, number>;
+}
+
+export interface StatePortalSearchPlanDiagnostics {
+  eligiblePortalCount: number;
+  selectedPortalCount: number;
+  deferredPortalCount: number;
+  selectedPortalIds: string[];
+  deferredPortalIds: string[];
+  queryBundleCount: number;
+  selectedQueryCount: number;
+  fullPlannedQueryCount: number;
+  rotationKey: string;
+  rotationOffset: number;
+  countsByFitInCurrentExecution: Record<string, number>;
+  countsByFitInCompletePlan: Record<string, number>;
+}
+
+export interface StatePortalSearchPlan {
+  selectedQueries: StatePortalPlannedQuery[];
+  allQueries: StatePortalPlannedQuery[];
+  diagnostics: StatePortalSearchPlanDiagnostics;
+}
+
+function toStatePortal(portal: EnrichedDirectRfpPortal): StatePortal | null {
   if (portal.country !== "US") return null;
   if (portal.level !== "state" && portal.level !== "district") return null;
   return {
@@ -64,48 +83,39 @@ function toStatePortal(portal: DirectRfpPortal): StatePortal | null {
     group: portal.level === "district" ? "district" : "state",
     sourceId: portal.id,
     searchUrl: portal.searchUrl,
+    occumedFit: portal.occumedFit,
+    buyerSector: portal.buyerSector,
+    occumedServiceCategories: portal.occumedServiceCategories,
   };
 }
 
-export const STATE_PORTALS: StatePortal[] = directRfpPortalsForSearch(true)
-  .map(toStatePortal)
-  .filter((portal): portal is StatePortal => Boolean(portal));
+export const STATE_PORTALS: StatePortal[] =
+  enrichedDirectRfpPortalsForOccuMedSearch({ includeTier3: true })
+    .map(toStatePortal)
+    .filter((portal): portal is StatePortal => Boolean(portal));
 
-const PORTAL_SEARCH_TERMS = buildOccuMedSearchQueries(CURRENT_YEAR).slice(
-  0,
-  24,
-);
-
-const PROCURE_SIGNALS = PROCUREMENT_SIGNALS;
-
-const OCCUMED_SERVICE_SIGNALS = ALL_SERVICE_TERMS;
-
-const HARD_REJECT_SIGNALS = HARD_REJECT_TERMS;
-
-function normalizeText(value: string): string {
-  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+function eligiblePortals(includeTier3 = true): StatePortal[] {
+  return STATE_PORTALS.filter((portal) => includeTier3 || portal.tier !== 3);
 }
 
 function hasStaleYearOnly(text: string): boolean {
-  const years = Array.from(text.matchAll(/\b20\d{2}\b/g)).map((m) =>
-    Number(m[0]),
+  const years = Array.from(text.matchAll(/\b20\d{2}\b/g)).map((match) =>
+    Number(match[0]),
   );
   if (years.length === 0) return false;
   const hasCurrentOrFuture = years.some(
-    (y) => y >= CURRENT_YEAR && y <= NEXT_YEAR + 1,
+    (year) => year >= CURRENT_YEAR && year <= NEXT_YEAR + 1,
   );
-  const hasOld = years.some((y) => y < CURRENT_YEAR);
+  const hasOld = years.some((year) => year < CURRENT_YEAR);
   return hasOld && !hasCurrentOrFuture;
 }
 
-function isPortalEnabled(portal: StatePortal): boolean {
-  if (portal.group === "district") return procurementSourceFlags.state === true;
-  return procurementSourceFlags.state === true;
-}
-
-function enabledPortals(includeTier3 = false): StatePortal[] {
-  return STATE_PORTALS.filter(
-    (portal) => isPortalEnabled(portal) && (includeTier3 || portal.tier !== 3),
+function enrichedPortalByDomain(
+  hostname: string,
+): EnrichedDirectRfpPortal | undefined {
+  const normalized = hostname.toLowerCase().replace(/^www\./, "");
+  return ENRICHED_DIRECT_RFP_PORTALS.find((portal) =>
+    normalized.includes(portal.domain.toLowerCase().replace(/^www\./, "")),
   );
 }
 
@@ -113,7 +123,7 @@ function isOfficialDirectPortalResult(url: string): boolean {
   try {
     const host = new URL(url.startsWith("http") ? url : `https://${url}`)
       .hostname;
-    return Boolean(directRfpPortalByDomain(host));
+    return Boolean(enrichedPortalByDomain(host));
   } catch {
     return false;
   }
@@ -125,32 +135,152 @@ function isUsefulPortalResult(
   snippet: string,
 ): boolean {
   if (!isOfficialDirectPortalResult(url)) return false;
-
   const raw = `${title} ${url} ${snippet}`;
-  const text = normalizeText(raw);
-
   if (hasStaleYearOnly(raw)) return false;
-  if (
-    HARD_REJECT_SIGNALS.some((signal) => text.includes(normalizeText(signal)))
-  )
-    return false;
-
-  const hasProcurementSignal = PROCURE_SIGNALS.some((signal) =>
-    text.includes(normalizeText(signal)),
-  );
-  const hasServiceSignal = OCCUMED_SERVICE_SIGNALS.some((signal) =>
-    text.includes(normalizeText(signal)),
-  );
-
-  return hasProcurementSignal && hasServiceSignal;
+  const classification = classifyResult({
+    title,
+    snippet,
+    allowHistorical: false,
+  });
+  return !classification.rejected;
 }
 
-function buildSiteQueries(portals: StatePortal[]): string[] {
-  const domainStr = portals.map((p) => `site:${p.domain}`).join(" OR ");
-  if (!domainStr) return [];
-  return PORTAL_SEARCH_TERMS.map(
-    (term) => `(${domainStr}) ${term} ${CURRENT_YEAR}`,
+function countByFit(portals: StatePortal[]): Record<string, number> {
+  return portals.reduce<Record<string, number>>((counts, portal) => {
+    counts[portal.occumedFit] = (counts[portal.occumedFit] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function unique<T>(values: T[]): T[] {
+  return Array.from(new Set(values));
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function defaultRotationKey(): string {
+  return new Date().toISOString().slice(0, 13);
+}
+
+function buildDomainGroups(portals: StatePortal[]): StatePortal[][] {
+  const groups: StatePortal[][] = [];
+  let current: StatePortal[] = [];
+
+  for (const portal of portals) {
+    const candidate = [...current, portal];
+    const expression = candidate
+      .map((item) => `site:${item.domain}`)
+      .join(" OR ");
+    if (
+      current.length > 0 &&
+      (candidate.length > MAX_DOMAINS_PER_QUERY ||
+        expression.length > MAX_DOMAIN_EXPRESSION_LENGTH)
+    ) {
+      groups.push(current);
+      current = [portal];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+function makePlannedQuery(
+  portals: StatePortal[],
+  queryBundle: string,
+  queryBundleIndex: number,
+  keywords?: string,
+): StatePortalPlannedQuery {
+  const domainExpression = portals
+    .map((portal) => `site:${portal.domain}`)
+    .join(" OR ");
+  const keywordSupplement = keywords?.trim()
+    ? ` (${keywords.trim()})`
+    : "";
+  return {
+    query: `(${domainExpression}) ${queryBundle}${keywordSupplement}`,
+    portalIds: portals.map((portal) => portal.sourceId),
+    domains: portals.map((portal) => portal.domain),
+    queryBundleIndex,
+    fitCounts: countByFit(portals),
+  };
+}
+
+export function buildStatePortalSearchPlan(
+  options: {
+    keywords?: string;
+    includeTier3?: boolean;
+    fullCoverage?: boolean;
+    executionBudget?: number;
+    rotationKey?: string;
+  } = {},
+): StatePortalSearchPlan {
+  const portals = eligiblePortals(options.includeTier3 ?? true);
+  const domainGroups = buildDomainGroups(portals);
+  const queryBundles = buildOccuMedSearchQueries(CURRENT_YEAR);
+  const allQueries = domainGroups.flatMap((group) =>
+    queryBundles.map((bundle, index) =>
+      makePlannedQuery(group, bundle, index, options.keywords),
+    ),
   );
+
+  const rotationKey = options.rotationKey ?? defaultRotationKey();
+  const rotationOffset =
+    allQueries.length > 0 ? stableHash(rotationKey) % allQueries.length : 0;
+  const rotated = [
+    ...allQueries.slice(rotationOffset),
+    ...allQueries.slice(0, rotationOffset),
+  ];
+  const executionBudget = Math.max(
+    1,
+    options.executionBudget ?? DEFAULT_EXECUTION_QUERY_BUDGET,
+  );
+  const selectedQueries = options.fullCoverage
+    ? rotated
+    : rotated.slice(0, executionBudget);
+  const selectedPortalIds = unique(
+    selectedQueries.flatMap((query) => query.portalIds),
+  );
+  const selectedSet = new Set(selectedPortalIds);
+  const deferredPortalIds = portals
+    .map((portal) => portal.sourceId)
+    .filter((id) => !selectedSet.has(id));
+  const selectedPortals = portals.filter((portal) =>
+    selectedSet.has(portal.sourceId),
+  );
+
+  return {
+    selectedQueries,
+    allQueries,
+    diagnostics: {
+      eligiblePortalCount: portals.length,
+      selectedPortalCount: selectedPortalIds.length,
+      deferredPortalCount: deferredPortalIds.length,
+      selectedPortalIds,
+      deferredPortalIds,
+      queryBundleCount: queryBundles.length,
+      selectedQueryCount: selectedQueries.length,
+      fullPlannedQueryCount: allQueries.length,
+      rotationKey,
+      rotationOffset,
+      countsByFitInCurrentExecution: countByFit(selectedPortals),
+      countsByFitInCompletePlan: countByFit(portals),
+    },
+  };
+}
+
+export function getStatePortalSearchPlanDiagnostics(
+  options: Parameters<typeof buildStatePortalSearchPlan>[0] = {},
+): StatePortalSearchPlanDiagnostics {
+  return buildStatePortalSearchPlan(options).diagnostics;
 }
 
 function normalizeResultKey(title: string, url: string): string {
@@ -175,16 +305,15 @@ function resultToOpportunity(
     snippet,
     title,
   );
-  const parsedDeadline = parsed?.responseDeadline;
-  const effectiveDeadline = parsedDeadline ?? deadline;
-
+  const effectiveDeadline = parsed?.responseDeadline ?? deadline;
   if (effectiveDeadline && effectiveDeadline < new Date()) return null;
 
   const domainMatch = url.match(/https?:\/\/([^/]+)/);
-  const urlDomain = domainMatch?.[1] ?? "";
-  const directPortal = directRfpPortalByDomain(urlDomain);
-  const matchedPortal = enabledPortals(true).find((p) =>
-    urlDomain.toLowerCase().includes(p.domain.toLowerCase()),
+  const directPortal = enrichedPortalByDomain(domainMatch?.[1] ?? "");
+  const matchedPortal = eligiblePortals(true).find((portal) =>
+    (domainMatch?.[1] ?? "")
+      .toLowerCase()
+      .includes(portal.domain.toLowerCase()),
   );
   const portalName =
     directPortal?.name ?? matchedPortal?.name ?? "Official State RFP Portal";
@@ -217,11 +346,17 @@ function resultToOpportunity(
       sourceId: directPortal?.id ?? matchedPortal?.sourceId,
       sourceConfidence:
         directPortal?.parserStatus === "ready_to_parse" ? "high" : "medium",
+      occumedFit: directPortal?.occumedFit ?? matchedPortal?.occumedFit,
+      buyerSector: directPortal?.buyerSector ?? matchedPortal?.buyerSector,
+      occumedServiceCategories:
+        directPortal?.occumedServiceCategories ??
+        matchedPortal?.occumedServiceCategories ??
+        [],
       tags: [
         "direct-official-portal",
         portalState ? `state:${portalState}` : "state:unknown",
       ],
-      notes: `Discovered via official direct portal ${portalName}; passed procurement/service/staleness filters`,
+      notes: `Discovered via official direct portal ${portalName}; passed ontology-based procurement relevance and staleness filters`,
       parserApplied: Boolean(parsed),
       parsedPortalSourceId: parsed?.portalSourceId,
       fallback: !parsed,
@@ -248,10 +383,18 @@ export class StatePortalsProvider implements DataSourceProvider {
       };
     }
 
-    const includeTier3 = Boolean((options as any).includeTier3);
+    const extended = options as FetchOptions & {
+      includeTier3?: boolean;
+      fullCoverage?: boolean;
+      executionBudget?: number;
+      rotationKey?: string;
+    };
     const searchResults = await this.search({
       keywords: options.keywords,
-      includeTier3,
+      includeTier3: extended.includeTier3,
+      fullCoverage: extended.fullCoverage,
+      executionBudget: extended.executionBudget,
+      rotationKey: extended.rotationKey,
     });
     const records = this.toOpportunities(searchResults).slice(
       0,
@@ -267,56 +410,46 @@ export class StatePortalsProvider implements DataSourceProvider {
       name: "statePortals" as any,
       configured,
       healthy: configured,
-      recordCount: enabledPortals(true).length,
+      recordCount: eligiblePortals(true).length,
     };
   }
 
   async search(
-    options: { keywords?: string; includeTier3?: boolean } = {},
+    options: {
+      keywords?: string;
+      includeTier3?: boolean;
+      fullCoverage?: boolean;
+      executionBudget?: number;
+      rotationKey?: string;
+    } = {},
   ): Promise<
     { title: string; url: string; snippet: string; portal: string }[]
   > {
-    const includeTier3 = options.includeTier3 ?? false;
-    const portals = enabledPortals(includeTier3);
-    const tier1Queries = buildSiteQueries(portals.filter((p) => p.tier === 1));
-    const tier2Queries = buildSiteQueries(portals.filter((p) => p.tier === 2));
-    const tier3Queries = buildSiteQueries(portals.filter((p) => p.tier === 3));
+    const plan = buildStatePortalSearchPlan(options);
+    if (plan.selectedQueries.length === 0) return [];
 
-    const keywordQueries: string[] = [];
-    if (options.keywords?.trim() && portals.length > 0) {
-      const kw = options.keywords.trim();
-      const domainStr = portals.map((p) => `site:${p.domain}`).join(" OR ");
-      keywordQueries.push(
-        `(${domainStr}) (${kw}) ("occupational health" OR "drug testing" OR "DOT physical" OR "employee health") (RFP OR solicitation OR bid) ${CURRENT_YEAR} -ambulance -EMS -LVN -LPN -hiring -jobs`,
-      );
-    }
-
-    const allQueries = [
-      ...keywordQueries,
-      ...tier1Queries,
-      ...tier2Queries,
-      ...tier3Queries,
-    ].slice(0, DEFAULT_QUERY_LIMIT);
-    if (allQueries.length === 0) return [];
-
-    const results = await serperProvider.searchMultiple(allQueries, 10);
+    const results = await serperProvider.searchMultiple(
+      plan.selectedQueries.map((query) => query.query),
+      10,
+    );
     const seen = new Set<string>();
 
     return results
-      .map((r) => {
-        const domainMatch = r.link.match(/https?:\/\/([^/]+)/);
-        const urlDomain = domainMatch?.[1] ?? "";
-        const portal =
-          directRfpPortalByDomain(urlDomain)?.name ??
-          portals.find((p) =>
-            urlDomain.toLowerCase().includes(p.domain.toLowerCase()),
-          )?.name ??
-          "Official State RFP Portal";
-        return { title: r.title, url: r.link, snippet: r.snippet, portal };
+      .map((result) => {
+        const domainMatch = result.link.match(/https?:\/\/([^/]+)/);
+        const directPortal = enrichedPortalByDomain(domainMatch?.[1] ?? "");
+        return {
+          title: result.title,
+          url: result.link,
+          snippet: result.snippet,
+          portal: directPortal?.name ?? "Official State RFP Portal",
+        };
       })
-      .filter((r) => isUsefulPortalResult(r.title, r.url, r.snippet))
-      .filter((r) => {
-        const key = normalizeResultKey(r.title, r.url);
+      .filter((result) =>
+        isUsefulPortalResult(result.title, result.url, result.snippet),
+      )
+      .filter((result) => {
+        const key = normalizeResultKey(result.title, result.url);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -328,29 +461,38 @@ export class StatePortalsProvider implements DataSourceProvider {
     results: { title: string; url: string; snippet: string; portal: string }[],
   ): NormalizedOpportunity[] {
     return results
-      .flatMap((r) => {
-        const domainMatch = r.url.match(/https?:\/\/([^/]+)/);
-        const directPortal = directRfpPortalByDomain(domainMatch?.[1] ?? "");
+      .flatMap((result) => {
+        const domainMatch = result.url.match(/https?:\/\/([^/]+)/);
+        const directPortal = enrichedPortalByDomain(domainMatch?.[1] ?? "");
         const parser = parserForPortalSource(directPortal?.id);
         const parsed =
           parser?.({
             sourceId: directPortal?.id ?? "unknown",
-            data: { title: r.title, url: r.url, summary: r.snippet },
+            data: {
+              title: result.title,
+              url: result.url,
+              summary: result.snippet,
+            },
             baseUrl: directPortal?.searchUrl ?? directPortal?.url,
           }) ?? [];
 
-        if (parsed.length === 0)
-          return [resultToOpportunity(r.title, r.url, r.snippet)];
+        if (parsed.length === 0) {
+          return [
+            resultToOpportunity(result.title, result.url, result.snippet),
+          ];
+        }
         return parsed.map((candidate) =>
           resultToOpportunity(
-            candidate.title ?? r.title,
-            candidate.sourceUrl ?? r.url,
-            candidate.description ?? r.snippet,
+            candidate.title ?? result.title,
+            candidate.sourceUrl ?? result.url,
+            candidate.description ?? result.snippet,
             candidate,
           ),
         );
       })
-      .filter((opp): opp is NormalizedOpportunity => Boolean(opp));
+      .filter((opportunity): opportunity is NormalizedOpportunity =>
+        Boolean(opportunity),
+      );
   }
 }
 
