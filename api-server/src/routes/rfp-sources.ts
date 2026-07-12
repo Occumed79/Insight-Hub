@@ -8,7 +8,7 @@ import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePorta
 const router = Router();
 
 router.get("/rfp-sources", async (req, res) => {
-  const includeTier3 = String(req.query.includeTier3 ?? "false") === "true";
+  const includeTier3 = String(req.query.includeTier3 ?? "true") === "true";
   const fullCoverage = String(req.query.fullCoverage ?? "false") === "true";
   const executionBudget = Math.max(
     1,
@@ -93,7 +93,7 @@ router.get("/rfp-sources", async (req, res) => {
         "irrelevant",
       ],
       coveragePolicy:
-        "A finite execution query budget rotates deterministically through the complete eligible portal plan; fullCoverage=true returns the complete execution plan without introducing a permanent source cap.",
+        "A finite execution query budget rotates deterministically through the complete eligible portal and ontology-query plan; fullCoverage=true returns the complete execution plan without introducing a permanent source cap.",
     },
   });
 });
