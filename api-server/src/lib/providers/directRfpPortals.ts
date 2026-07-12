@@ -3,6 +3,7 @@ import { GENERATED_DIRECT_RFP_PORTALS } from "./directRfpPortals.generated";
 export type DirectRfpPortalLevel = "federal" | "state" | "district" | "international";
 export type DirectRfpPortalAccessMode = "api" | "csv" | "public_html" | "dynamic_html" | "portal";
 export type DirectRfpPortalParserStatus = "ready_to_parse" | "needs_parser" | "catalog_only";
+export type OccuMedPortalFit = "verified_high" | "likely" | "broad" | "insufficient_evidence";
 
 export interface DirectRfpPortal {
   id: string;
@@ -20,6 +21,13 @@ export interface DirectRfpPortal {
   tier: 1 | 2 | 3;
   parserStatus: DirectRfpPortalParserStatus;
   notes: string;
+  occumedFit?: OccuMedPortalFit;
+  occumedServiceCategories?: string[];
+  relevanceReasonCodes?: string[];
+  relevanceEvidence?: string[];
+  relevanceEvidenceUrls?: string[];
+  lastRelevanceVerified?: string;
+  buyerSector?: string;
 }
 
 /**
@@ -247,4 +255,14 @@ export function directRfpPortalsForSearch(includeTier3 = false): DirectRfpPortal
 export function directRfpPortalByDomain(hostname: string): DirectRfpPortal | undefined {
   const normalized = hostname.toLowerCase().replace(/^www\./, "");
   return DIRECT_RFP_PORTALS.find((portal) => normalized.includes(portal.domain.toLowerCase().replace(/^www\./, "")));
+}
+
+
+const OCCUMED_FIT_ORDER: Record<OccuMedPortalFit | "unclassified", number> = { verified_high: 0, likely: 1, broad: 2, insufficient_evidence: 3, unclassified: 4 };
+
+export function directRfpPortalsForOccuMedSearch(options: { includeTier3?: boolean; minimumFit?: OccuMedPortalFit } = {}): DirectRfpPortal[] {
+  const minimum = options.minimumFit ? OCCUMED_FIT_ORDER[options.minimumFit] : null;
+  return directRfpPortalsForSearch(options.includeTier3 ?? true)
+    .filter((portal) => minimum == null || OCCUMED_FIT_ORDER[portal.occumedFit ?? "unclassified"] <= minimum)
+    .sort((a, b) => OCCUMED_FIT_ORDER[a.occumedFit ?? "unclassified"] - OCCUMED_FIT_ORDER[b.occumedFit ?? "unclassified"] || a.tier - b.tier || a.name.localeCompare(b.name));
 }
