@@ -9,13 +9,6 @@ on:
       - scripts/research-all-rfp-portals.ts
       - scripts/merge-portal-research.ts
       - .github/workflows/research-all-rfp-portals.yml
-  pull_request:
-    branches:
-      - main
-    paths:
-      - scripts/research-all-rfp-portals.ts
-      - scripts/merge-portal-research.ts
-      - .github/workflows/research-all-rfp-portals.yml
 
 permissions:
   contents: write
@@ -133,11 +126,11 @@ jobs:
           if (summary.missingPortalIds.length || summary.unknownPortalIds.length || summary.duplicatePortalIds.length) {
             throw new Error(JSON.stringify(summary, null, 2));
           }
+          if (summary.researchFailedPortalIds.length) throw new Error('Search failures remain');
           console.log(JSON.stringify(summary, null, 2));
           NODE
 
       - name: Commit completed research
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -153,19 +146,10 @@ jobs:
             git push origin HEAD:chatgpt/actual-portal-research
           fi
 
-      - name: Open or update pull request
-        if: github.event_name != 'pull_request'
+      - name: Update pull request
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh pr view chatgpt/actual-portal-research --json number >/dev/null 2>&1; then
-            gh pr edit chatgpt/actual-portal-research \
-              --title "Replace inferred portal rankings with real evidence research" \
-              --body-file artifacts/portal-research/portal-research-summary.json
-          else
-            gh pr create \
-              --base main \
-              --head chatgpt/actual-portal-research \
-              --title "Replace inferred portal rankings with real evidence research" \
-              --body "Completed external research for every direct RFP portal. The audit and summary files record the queries, official pages inspected, accepted evidence, rejected candidates, errors, and final research status for each portal. Generic portal homepages are not treated as Occu-Med relevance evidence."
-          fi
+          gh pr edit chatgpt/actual-portal-research \
+            --title "Replace inferred portal rankings with real evidence research" \
+            --body-file artifacts/portal-research/portal-research-summary.json
