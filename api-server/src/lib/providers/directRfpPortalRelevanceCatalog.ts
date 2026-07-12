@@ -1,6 +1,8 @@
-import { DIRECT_RFP_PORTALS, type DirectRfpPortal } from "./directRfpPortals";
+import {
+  DIRECT_RFP_PORTALS,
+  type DirectRfpPortal,
+} from "./directRfpPortals";
 import type { PortalFit } from "./portalRelevance";
-import { GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_RECORDS_001 } from "./directRfpPortalRelevance.generated.001";
 
 export type DirectRfpPortalBuyerSector =
   | "federal_government"
@@ -74,17 +76,6 @@ export type EnrichedDirectRfpPortal = Omit<
   lastRelevanceVerified: string;
   reviewMethod: PortalRelevanceReviewMethod;
 };
-
-export const GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_RECORDS = [
-  ...GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_RECORDS_001,
-];
-
-const GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_BY_ID = new Map(
-  GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.map((record) => [
-    record.portalId,
-    record,
-  ]),
-);
 
 const VERIFIED_DATE = "2026-07-12";
 
@@ -297,19 +288,13 @@ export function inferPortalBuyerSector(
   if (/airport|aviation authority/.test(text)) return "airport_authority";
   if (/port authority|port of |seaport|harbor/.test(text))
     return "port_authority";
-  if (
-    /transit|metro |transportation authority|regional transportation/.test(text)
-  )
+  if (/transit|metro |transportation authority|regional transportation/.test(text))
     return "transit_authority";
   if (/department of transportation|\bdot\b/.test(text))
     return "transportation_department";
   if (/water|wastewater|sewer|sanitation district/.test(text))
     return "water_wastewater_utility";
-  if (
-    /electric|energy|power utility|municipal utility|utility authority/.test(
-      text,
-    )
-  )
+  if (/electric|energy|power utility|municipal utility|utility authority/.test(text))
     return "electric_energy_utility";
   if (/public works/.test(text)) return "public_works";
   if (/hazmat|hazardous|environmental protection/.test(text))
@@ -336,9 +321,6 @@ export function inferPortalBuyerSector(
 function buildBaselineRecord(
   portal: DirectRfpPortal,
 ): DirectRfpPortalRelevanceRecord {
-  const generated = GENERATED_DIRECT_RFP_PORTAL_RELEVANCE_BY_ID.get(portal.id);
-  if (generated) return generated;
-
   const verified = VERIFIED_OFFICIAL_EVIDENCE[portal.id];
   if (verified) {
     return {
@@ -353,10 +335,10 @@ function buildBaselineRecord(
   const likely = HIGH_PROPENSITY_SECTORS.has(buyerSector);
   const hasOfficialEvidence = Boolean(
     officialEvidenceUrl &&
-    portal.domain &&
-    /official|procurement|purchasing|bid|solicitation|contract|vendor|opportunit/i.test(
-      `${portal.name} ${portal.notes}`,
-    ),
+      portal.domain &&
+      /official|procurement|purchasing|bid|solicitation|contract|vendor|opportunit/i.test(
+        `${portal.name} ${portal.notes}`,
+      ),
   );
 
   if (likely && hasOfficialEvidence) {
@@ -412,10 +394,7 @@ export const DIRECT_RFP_PORTAL_RELEVANCE_RECORDS: DirectRfpPortalRelevanceRecord
   );
 
 export const DIRECT_RFP_PORTAL_RELEVANCE_BY_ID = new Map(
-  DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.map((record) => [
-    record.portalId,
-    record,
-  ]),
+  DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.map((record) => [record.portalId, record]),
 );
 
 export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
@@ -459,8 +438,7 @@ export function enrichedDirectRfpPortalsForOccuMedSearch(
     (portal) =>
       portal.level !== "federal" &&
       (includeTier3 || portal.tier !== 3) &&
-      (options.includeIrrelevant === true ||
-        portal.occumedFit !== "irrelevant") &&
+      (options.includeIrrelevant === true || portal.occumedFit !== "irrelevant") &&
       (minimum == null || FIT_ORDER[portal.occumedFit] <= minimum),
   ).sort(
     (a, b) =>
