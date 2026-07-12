@@ -1,7 +1,10 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { DIRECT_RFP_PORTALS } from "../api-server/src/lib/providers/directRfpPortals";
-import { inferPortalBuyerSector } from "../api-server/src/lib/providers/directRfpPortalRelevanceCatalog";
+import {
+  DIRECT_RFP_PORTAL_RELEVANCE_BY_ID,
+  inferPortalBuyerSector,
+} from "../api-server/src/lib/providers/directRfpPortalRelevanceCatalog";
 
 interface EvidenceItem {
   title: string;
@@ -200,6 +203,8 @@ const relevanceRecords = DIRECT_RFP_PORTALS.map((portal) => {
     ...new Set(evidence.flatMap((item) => item.matchedServiceCategories)),
   ];
   const completedDate = research.researchCompletedAt.slice(0, 10);
+  const previouslyVerified = DIRECT_RFP_PORTAL_RELEVANCE_BY_ID.get(portal.id);
+
   if (research.researchStatus === "verified_relevant") {
     const reviewMethod = evidence.some(
       (item) => item.evidenceType === "award_or_contract",
@@ -224,6 +229,19 @@ const relevanceRecords = DIRECT_RFP_PORTALS.map((portal) => {
       reviewMethod,
     };
   }
+
+  if (previouslyVerified?.occumedFit === "verified_high") {
+    return {
+      ...previouslyVerified,
+      relevanceReasonCodes: [
+        ...new Set([
+          ...previouslyVerified.relevanceReasonCodes,
+          "previously_verified_official_evidence_preserved",
+        ]),
+      ],
+    };
+  }
+
   if (research.researchStatus === "not_a_direct_source") {
     return {
       portalId: portal.id,
