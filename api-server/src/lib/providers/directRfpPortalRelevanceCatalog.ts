@@ -66,10 +66,16 @@ export type EnrichedDirectRfpPortal = Omit<
   | "relevanceEvidenceUrls"
   | "lastRelevanceVerified"
   | "buyerSector"
-> &
-  Omit<DirectRfpPortalRelevanceRecord, "portalId" | "reviewMethod"> & {
-    reviewMethod: PortalRelevanceReviewMethod;
-  };
+> & {
+  occumedFit: PortalFit;
+  buyerSector: DirectRfpPortalBuyerSector;
+  occumedServiceCategories: string[];
+  relevanceReasonCodes: string[];
+  relevanceEvidence: string[];
+  relevanceEvidenceUrls: string[];
+  lastRelevanceVerified: string;
+  reviewMethod: PortalRelevanceReviewMethod;
+};
 
 const VERIFIED_DATE = "2026-07-12";
 
@@ -269,7 +275,7 @@ export function inferPortalBuyerSector(
       : "international_government";
   }
   if (portal.level === "federal") return "federal_government";
-  if (/defense|military|army|navy|air force|marine corps|dod\b/.test(text))
+  if (/defense|military|army|navy|air force|marine corps|\bdod\b/.test(text))
     return "defense";
   if (/juvenile justice/.test(text)) return "juvenile_justice";
   if (/correction|prison|detention/.test(text)) return "corrections";
@@ -343,7 +349,7 @@ function buildBaselineRecord(
       occumedServiceCategories: SERVICE_CATEGORIES_BY_SECTOR[buyerSector] ?? [],
       relevanceReasonCodes: ["portal_likely"],
       relevanceEvidence: [
-        `${portal.name} is an official ${buyerSector.replaceAll("_", " ")} procurement source. That buyer population has recurring occupational-medical, safety-sensitive, exposure-surveillance, public-safety, or regulated-testing needs; no direct matching solicitation was claimed during this baseline review.`,
+        `${portal.name} is an official ${buyerSector.replace(/_/g, " ")} procurement source. That buyer population has recurring occupational-medical, safety-sensitive, exposure-surveillance, public-safety, or regulated-testing needs; no direct matching solicitation is claimed by this baseline classification.`,
       ],
       relevanceEvidenceUrls: [officialEvidenceUrl],
       lastRelevanceVerified: VERIFIED_DATE,
@@ -359,7 +365,7 @@ function buildBaselineRecord(
       occumedServiceCategories: [],
       relevanceReasonCodes: ["portal_broad"],
       relevanceEvidence: [
-        `${portal.name} is confirmed by its catalog record and official URL as a broad public procurement source, but this baseline review did not claim direct Occu-Med-specific procurement evidence.`,
+        `${portal.name} is confirmed by its catalog record and official URL as a broad public procurement source, but this baseline classification does not claim direct Occu-Med-specific procurement evidence.`,
       ],
       relevanceEvidenceUrls: [officialEvidenceUrl],
       lastRelevanceVerified: VERIFIED_DATE,
@@ -374,7 +380,7 @@ function buildBaselineRecord(
     occumedServiceCategories: [],
     relevanceReasonCodes: ["portal_insufficient_evidence"],
     relevanceEvidence: [
-      `${portal.name} remains in the direct catalog, but its current metadata did not provide enough public procurement evidence for a stronger Occu-Med fit classification.`,
+      `${portal.name} remains in the direct catalog, but its current metadata does not provide enough public procurement evidence for a stronger Occu-Med fit classification.`,
     ],
     relevanceEvidenceUrls: officialEvidenceUrl ? [officialEvidenceUrl] : [],
     lastRelevanceVerified: VERIFIED_DATE,
@@ -397,8 +403,17 @@ export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
     if (!record) {
       throw new Error(`Missing Occu-Med relevance record for ${portal.id}`);
     }
-    const { portalId: _portalId, ...metadata } = record;
-    return { ...portal, ...metadata };
+    return {
+      ...portal,
+      occumedFit: record.occumedFit,
+      buyerSector: record.buyerSector,
+      occumedServiceCategories: record.occumedServiceCategories,
+      relevanceReasonCodes: record.relevanceReasonCodes,
+      relevanceEvidence: record.relevanceEvidence,
+      relevanceEvidenceUrls: record.relevanceEvidenceUrls,
+      lastRelevanceVerified: record.lastRelevanceVerified,
+      reviewMethod: record.reviewMethod,
+    };
   });
 
 const FIT_ORDER: Record<PortalFit | "unclassified", number> = {
@@ -406,8 +421,8 @@ const FIT_ORDER: Record<PortalFit | "unclassified", number> = {
   likely: 1,
   broad: 2,
   insufficient_evidence: 3,
-  irrelevant: 5,
   unclassified: 4,
+  irrelevant: 5,
 };
 
 export function enrichedDirectRfpPortalsForOccuMedSearch(
@@ -417,14 +432,13 @@ export function enrichedDirectRfpPortalsForOccuMedSearch(
     includeIrrelevant?: boolean;
   } = {},
 ): EnrichedDirectRfpPortal[] {
-  const minimum = options.minimumFit
-    ? FIT_ORDER[options.minimumFit]
-    : null;
+  const includeTier3 = options.includeTier3 ?? true;
+  const minimum = options.minimumFit ? FIT_ORDER[options.minimumFit] : null;
   return ENRICHED_DIRECT_RFP_PORTALS.filter(
     (portal) =>
       portal.level !== "federal" &&
-      (options.includeTier3 ?? true || portal.tier !== 3) &&
-      (options.includeIrrelevant || portal.occumedFit !== "irrelevant") &&
+      (includeTier3 || portal.tier !== 3) &&
+      (options.includeIrrelevant === true || portal.occumedFit !== "irrelevant") &&
       (minimum == null || FIT_ORDER[portal.occumedFit] <= minimum),
   ).sort(
     (a, b) =>
@@ -473,7 +487,7 @@ export function validateDirectRfpPortalRelevanceCatalog(): PortalRelevanceCatalo
     counts.set(record.portalId, (counts.get(record.portalId) ?? 0) + 1);
     const evidenceText = record.relevanceEvidence.join(" ").trim();
     const urls = record.relevanceEvidenceUrls;
-    if (!record.lastRelevanceVerified.match(/^\d{4}-\d{2}-\d{2}$/))
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(record.lastRelevanceVerified))
       invalidRecords.push(`${record.portalId}:invalid-date`);
     if (!record.buyerSector)
       invalidRecords.push(`${record.portalId}:missing-buyer-sector`);
