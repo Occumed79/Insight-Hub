@@ -56,18 +56,18 @@ jobs:
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
         run: |
-          mkdir -p portal-research-shards
+          mkdir -p "$GITHUB_WORKSPACE/portal-research-shards"
           pnpm --filter @workspace/scripts exec tsx ../scripts/research-all-rfp-portals.ts \
             --shard "${{ matrix.shard }}" \
             --shards 8 \
             --concurrency 4 \
             --max-evidence-pages 12 \
-            --out "portal-research-shards/portal-research-${{ matrix.shard }}.json"
+            --out "$GITHUB_WORKSPACE/portal-research-shards/portal-research-${{ matrix.shard }}.json"
 
       - uses: actions/upload-artifact@v4
         with:
           name: portal-research-${{ matrix.shard }}
-          path: portal-research-shards/portal-research-${{ matrix.shard }}.json
+          path: ${{ github.workspace }}/portal-research-shards/portal-research-${{ matrix.shard }}.json
           if-no-files-found: error
           retention-days: 14
 
@@ -97,17 +97,17 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: portal-research-*
-          path: portal-research-shards
+          path: ${{ github.workspace }}/portal-research-shards
           merge-multiple: true
 
       - name: Merge all 461 research records
         run: |
           pnpm --filter @workspace/scripts exec tsx ../scripts/merge-portal-research.ts \
-            --input-dir portal-research-shards \
-            --audit-out artifacts/portal-research/portal-research-audit.json \
-            --summary-out artifacts/portal-research/portal-research-summary.json \
-            --generated-out api-server/src/lib/providers/portalResearch.generated.ts \
-            --catalog api-server/src/lib/providers/directRfpPortalRelevanceCatalog.ts
+            --input-dir "$GITHUB_WORKSPACE/portal-research-shards" \
+            --audit-out "$GITHUB_WORKSPACE/artifacts/portal-research/portal-research-audit.json" \
+            --summary-out "$GITHUB_WORKSPACE/artifacts/portal-research/portal-research-summary.json" \
+            --generated-out "$GITHUB_WORKSPACE/api-server/src/lib/providers/portalResearch.generated.ts" \
+            --catalog "$GITHUB_WORKSPACE/api-server/src/lib/providers/directRfpPortalRelevanceCatalog.ts"
 
       - name: Format generated files
         run: |
