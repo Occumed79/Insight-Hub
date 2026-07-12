@@ -4,7 +4,11 @@ import {
 } from "./directRfpPortalRelevanceCatalog";
 import { serperProvider, type SerperSearchResult } from "./serper";
 import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
-import { classifyResult, hostFromUrl, type RelevanceResult } from "../search/relevance";
+import {
+  classifyResult,
+  hostFromUrl,
+  type RelevanceResult,
+} from "../search/relevance";
 import type { PortalFit } from "./portalRelevance";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -12,6 +16,8 @@ const DEFAULT_EXECUTION_BUDGET = 12;
 const DEFAULT_RESULTS_PER_QUERY = 5;
 const MAX_EXECUTION_BUDGET = 100;
 const MAX_RESULTS_PER_QUERY = 10;
+const MAX_FULL_COVERAGE_EXECUTION_QUERIES = 500;
+const SEARCH_CONCURRENCY = 5;
 
 export interface PortalEvidencePlannedQuery {
   portalId: string;
@@ -23,6 +29,8 @@ export interface PortalEvidencePlannedQuery {
 }
 
 export interface PortalEvidenceScanPlanDiagnostics {
+  requestedPortalIds: string[];
+  unknownPortalIds: string[];
   eligiblePortalCount: number;
   selectedPortalCount: number;
   deferredPortalCount: number;
@@ -127,8 +135,16 @@ export function isOfficialPortalEvidenceUrl(
   );
 }
 
-function eligiblePortals(options: PortalEvidenceScanOptions): EnrichedDirectRfpPortal[] {
-  const requested = new Set((options.portalIds ?? []).map((id) => id.trim()).filter(Boolean));
+function requestedPortalIds(options: PortalEvidenceScanOptions): string[] {
+  return unique(
+    (options.portalIds ?? []).map((id) => id.trim()).filter(Boolean),
+  );
+}
+
+function eligiblePortals(
+  options: PortalEvidenceScanOptions,
+): EnrichedDirectRfpPortal[] {
+  const requested = new Set(requestedPortalIds(options));
   return ENRICHED_DIRECT_RFP_PORTALS.filter(
     (portal) =>
       (options.includeTier3 !== false || portal.tier !== 3) &&
@@ -139,8 +155,14 @@ function eligiblePortals(options: PortalEvidenceScanOptions): EnrichedDirectRfpP
 
 function scanYears(options: PortalEvidenceScanOptions): number[] {
   if (!options.includeHistorical) return [CURRENT_YEAR];
-  const historicalYears = Math.min(10, Math.max(1, options.historicalYears ?? 5));
-  return Array.from({ length: historicalYears + 1 }, (_, index) => CURRENT_YEAR - index);
+  const historicalYears = Math.min(
+    10,
+    Math.max(1, options.historicalYears ?? 5),
+  );
+  return Array.from(
+    { length: historicalYears + 1 },
+    (_, index) => CURRENT_YEAR - index,
+  );
 }
 
 function buildPortalEvidenceQueries(
@@ -162,6 +184,10 @@ function buildPortalEvidenceQueries(
 export function buildPortalEvidenceScanPlan(
   options: PortalEvidenceScanOptions = {},
 ): PortalEvidenceScanPlan {
+  const requested = requestedPortalIds(options);
+  const knownIds = new Set(
+    ENRICHED_DIRECT_RFP_PORTALS.map((portal) => portal.id),
+  );
   const portals = eligiblePortals(options);
   const years = scanYears(options);
   const allQueries = portals.flatMap((portal) =>
@@ -192,6 +218,8 @@ export function buildPortalEvidenceScanPlan(
     selectedQueries,
     allQueries,
     diagnostics: {
+      requestedPortalIds: requested,
+      unknownPortalIds: requested.filter((id) => !knownIds.has(id)),
       eligiblePortalCount: portals.length,
       selectedPortalCount: selectedPortalIds.length,
       deferredPortalCount: deferredPortalIds.length,
@@ -211,7 +239,9 @@ export function classifyPortalEvidenceResult(
   portal: EnrichedDirectRfpPortal,
   result: SerperSearchResult,
 ): PortalEvidenceCandidate | null {
-  if (!result.link || !isOfficialPortalEvidenceUrl(portal, result.link)) return null;
+  if (!result.link || !isOfficialPortalEvidenceUrl(portal, result.link)) {
+    return null;
+  }
   const classification = classifyResult({
     title: result.title,
     snippet: result.snippet,
@@ -219,7 +249,13 @@ export function classifyPortalEvidenceResult(
     date: result.date,
     allowHistorical: true,
   });
-  if (classification.rejected) return null;
+  if (classification.rejected || classification.score < 60) return null;
+  if (
+    classification.confidence !== "verified_explicit" &&
+    classification.confidence !== "strong_combination"
+  ) {
+    return null;
+  }
   if (
     classification.matchedServiceCategories.length === 0 ||
     classification.matchedProcurementSignals.length === 0
@@ -250,8 +286,11 @@ function recommendationForPortal(
   portal: EnrichedDirectRfpPortal,
   candidates: PortalEvidenceCandidate[],
 ): PortalEvidenceRecommendation {
-  const deduped = [...new Map(candidates.map((candidate) => [candidate.url, candidate])).values()]
-    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+  const deduped = [
+    ...new Map(
+      candidates.map((candidate) => [candidate.url, candidate]),
+    ).values(),
+  ].sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
   return {
     portalId: portal.id,
     portalName: portal.name,
@@ -266,6 +305,26 @@ function recommendationForPortal(
   };
 }
 
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) return;
+        await worker(items[index]);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 export async function scanPortalEvidence(
   options: PortalEvidenceScanOptions = {},
 ): Promise<PortalEvidenceScanResult> {
@@ -278,7 +337,25 @@ export async function scanPortalEvidence(
       scannedPortalCount: 0,
       evidenceCandidateCount: 0,
       recommendations: [],
-      errors: ["Serper API key not configured; portal evidence scanning is disabled."],
+      errors: [
+        "Serper API key not configured; portal evidence scanning is disabled.",
+      ],
+    };
+  }
+
+  if (
+    options.fullCoverage &&
+    plan.selectedQueries.length > MAX_FULL_COVERAGE_EXECUTION_QUERIES
+  ) {
+    return {
+      configured: true,
+      plan: plan.diagnostics,
+      scannedPortalCount: 0,
+      evidenceCandidateCount: 0,
+      recommendations: [],
+      errors: [
+        `Full-coverage execution contains ${plan.selectedQueries.length} external queries, above the ${MAX_FULL_COVERAGE_EXECUTION_QUERIES}-query safety threshold. Narrow portalIds, reduce historicalYears, or use rotating execution budgets. The full plan remains visible and no source is permanently excluded.`,
+      ],
     };
   }
 
@@ -292,12 +369,17 @@ export async function scanPortalEvidence(
   const errors: string[] = [];
   const candidateMap = new Map<string, PortalEvidenceCandidate[]>();
 
-  await Promise.all(
-    plan.selectedQueries.map(async (planned) => {
+  await runWithConcurrency(
+    plan.selectedQueries,
+    SEARCH_CONCURRENCY,
+    async (planned) => {
       const portal = portalById.get(planned.portalId);
       if (!portal) return;
       try {
-        const results = await serperProvider.search(planned.query, resultsPerQuery);
+        const results = await serperProvider.search(
+          planned.query,
+          resultsPerQuery,
+        );
         for (const result of results) {
           const candidate = classifyPortalEvidenceResult(portal, result);
           if (!candidate) continue;
@@ -307,10 +389,12 @@ export async function scanPortalEvidence(
         }
       } catch (error) {
         errors.push(
-          `${planned.portalId}: ${error instanceof Error ? error.message : String(error)}`,
+          `${planned.portalId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         );
       }
-    }),
+    },
   );
 
   const scannedPortalIds = unique(
