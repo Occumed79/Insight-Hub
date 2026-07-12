@@ -9,6 +9,13 @@ on:
       - scripts/research-all-rfp-portals.ts
       - scripts/merge-portal-research.ts
       - .github/workflows/research-all-rfp-portals.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/research-all-rfp-portals.ts
+      - scripts/merge-portal-research.ts
+      - .github/workflows/research-all-rfp-portals.yml
 
 permissions:
   contents: write
@@ -16,7 +23,7 @@ permissions:
 
 concurrency:
   group: research-all-rfp-portals
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   research:
@@ -130,6 +137,7 @@ jobs:
           NODE
 
       - name: Commit completed research
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -146,6 +154,7 @@ jobs:
           fi
 
       - name: Open or update pull request
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
