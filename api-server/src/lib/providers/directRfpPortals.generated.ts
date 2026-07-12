@@ -14,6 +14,30 @@ import { GENERATED_DIRECT_RFP_PORTALS_013 } from "./directRfpPortals.generated.0
 import { GENERATED_DIRECT_RFP_PORTALS_014 } from "./directRfpPortals.generated.014";
 import { GENERATED_DIRECT_RFP_PORTALS_015 } from "./directRfpPortals.generated.015";
 import { GENERATED_DIRECT_RFP_PORTALS_016 } from "./directRfpPortals.generated.016";
+import { GENERATED_DIRECT_RFP_PORTALS_017 } from "./directRfpPortals.generated.017";
+import { GENERATED_DIRECT_RFP_PORTALS_018 } from "./directRfpPortals.generated.018";
+import { GENERATED_DIRECT_RFP_PORTALS_019 } from "./directRfpPortals.generated.019";
+import { GENERATED_DIRECT_RFP_PORTALS_020 } from "./directRfpPortals.generated.020";
+import { GENERATED_DIRECT_RFP_PORTALS_021 } from "./directRfpPortals.generated.021";
+import { GENERATED_DIRECT_RFP_PORTALS_022 } from "./directRfpPortals.generated.022";
+import { GENERATED_DIRECT_RFP_PORTALS_023 } from "./directRfpPortals.generated.023";
+import { GENERATED_DIRECT_RFP_PORTALS_024 } from "./directRfpPortals.generated.024";
+import { GENERATED_DIRECT_RFP_PORTALS_025 } from "./directRfpPortals.generated.025";
+import { GENERATED_DIRECT_RFP_PORTALS_026 } from "./directRfpPortals.generated.026";
+import { GENERATED_DIRECT_RFP_PORTALS_027 } from "./directRfpPortals.generated.027";
+import { GENERATED_DIRECT_RFP_PORTALS_028 } from "./directRfpPortals.generated.028";
+import { GENERATED_DIRECT_RFP_PORTALS_029 } from "./directRfpPortals.generated.029";
+import { GENERATED_DIRECT_RFP_PORTALS_030 } from "./directRfpPortals.generated.030";
+import { GENERATED_DIRECT_RFP_PORTALS_031 } from "./directRfpPortals.generated.031";
+import { GENERATED_DIRECT_RFP_PORTALS_032 } from "./directRfpPortals.generated.032";
+import { GENERATED_DIRECT_RFP_PORTALS_033 } from "./directRfpPortals.generated.033";
+import { GENERATED_DIRECT_RFP_PORTALS_034 } from "./directRfpPortals.generated.034";
+import { GENERATED_DIRECT_RFP_PORTALS_035 } from "./directRfpPortals.generated.035";
+import { GENERATED_DIRECT_RFP_PORTALS_036 } from "./directRfpPortals.generated.036";
+import { GENERATED_DIRECT_RFP_PORTALS_037 } from "./directRfpPortals.generated.037";
+import { GENERATED_DIRECT_RFP_PORTALS_038 } from "./directRfpPortals.generated.038";
+import { GENERATED_DIRECT_RFP_PORTALS_039 } from "./directRfpPortals.generated.039";
+import { GENERATED_DIRECT_RFP_PORTALS_040 } from "./directRfpPortals.generated.040";
 
 import type { DirectRfpPortal } from "./directRfpPortals";
 
@@ -34,4 +58,28 @@ export const GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   ...GENERATED_DIRECT_RFP_PORTALS_014,
   ...GENERATED_DIRECT_RFP_PORTALS_015,
   ...GENERATED_DIRECT_RFP_PORTALS_016,
+  ...GENERATED_DIRECT_RFP_PORTALS_017,
+  ...GENERATED_DIRECT_RFP_PORTALS_018,
+  ...GENERATED_DIRECT_RFP_PORTALS_019,
+  ...GENERATED_DIRECT_RFP_PORTALS_020,
+  ...GENERATED_DIRECT_RFP_PORTALS_021,
+  ...GENERATED_DIRECT_RFP_PORTALS_022,
+  ...GENERATED_DIRECT_RFP_PORTALS_023,
+  ...GENERATED_DIRECT_RFP_PORTALS_024,
+  ...GENERATED_DIRECT_RFP_PORTALS_025,
+  ...GENERATED_DIRECT_RFP_PORTALS_026,
+  ...GENERATED_DIRECT_RFP_PORTALS_027,
+  ...GENERATED_DIRECT_RFP_PORTALS_028,
+  ...GENERATED_DIRECT_RFP_PORTALS_029,
+  ...GENERATED_DIRECT_RFP_PORTALS_030,
+  ...GENERATED_DIRECT_RFP_PORTALS_031,
+  ...GENERATED_DIRECT_RFP_PORTALS_032,
+  ...GENERATED_DIRECT_RFP_PORTALS_033,
+  ...GENERATED_DIRECT_RFP_PORTALS_034,
+  ...GENERATED_DIRECT_RFP_PORTALS_035,
+  ...GENERATED_DIRECT_RFP_PORTALS_036,
+  ...GENERATED_DIRECT_RFP_PORTALS_037,
+  ...GENERATED_DIRECT_RFP_PORTALS_038,
+  ...GENERATED_DIRECT_RFP_PORTALS_039,
+  ...GENERATED_DIRECT_RFP_PORTALS_040,
 ];
