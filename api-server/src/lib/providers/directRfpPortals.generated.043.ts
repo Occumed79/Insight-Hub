@@ -653,11 +653,11 @@ export const GENERATED_DIRECT_RFP_PORTALS_043: DirectRfpPortal[] = [
     url: "https://www.stancounty.com/purchasing/",
     searchUrl: "https://www.stancounty.com/purchasing/county-bids.shtm",
     domain: "www.stancounty.com",
-    accessMode: "public_html",
+    accessMode: "dynamic_html",
     requiresKey: false,
     requiresLogin: false,
     tier: 3,
-    parserStatus: "ready_to_parse",
+    parserStatus: "needs_parser",
     notes:
       "Official Stanislaus County Purchasing division and active county bid listing. Public Works opportunities may additionally route to a county-specific hosted system. No Occu-Med-specific solicitation is claimed.",
   },
