@@ -40,6 +40,7 @@ import { GENERATED_DIRECT_RFP_PORTALS_039 } from "./directRfpPortals.generated.0
 import { GENERATED_DIRECT_RFP_PORTALS_040 } from "./directRfpPortals.generated.040";
 import { GENERATED_DIRECT_RFP_PORTALS_041 } from "./directRfpPortals.generated.041";
 import { GENERATED_DIRECT_RFP_PORTALS_042 } from "./directRfpPortals.generated.042";
+import { GENERATED_DIRECT_RFP_PORTALS_043 } from "./directRfpPortals.generated.043";
 
 import type { DirectRfpPortal } from "./directRfpPortals";
 
@@ -86,4 +87,5 @@ export const GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   ...GENERATED_DIRECT_RFP_PORTALS_040,
   ...GENERATED_DIRECT_RFP_PORTALS_041,
   ...GENERATED_DIRECT_RFP_PORTALS_042,
+  ...GENERATED_DIRECT_RFP_PORTALS_043,
 ];
