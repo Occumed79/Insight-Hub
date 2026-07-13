@@ -10,6 +10,14 @@ on:
       - api-server/src/lib/providers/directRfpPortals.ts
       - api-server/src/lib/providers/directRfpPortals.generated.*.ts
       - .github/workflows/audit-rfp-chunks-011-042.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/audit-rfp-chunks-011-042.mjs
+      - api-server/src/lib/providers/directRfpPortals.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.*.ts
+      - .github/workflows/audit-rfp-chunks-011-042.yml
 
 permissions:
   contents: read
