@@ -1,0 +1,47 @@
+name: Audit RFP chunks 001-010
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - chatgpt/audit-rfp-chunks-001-010
+    paths:
+      - scripts/audit-rfp-chunks-001-010.mjs
+      - api-server/src/lib/providers/directRfpPortals.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.*.ts
+      - .github/workflows/audit-rfp-chunks-001-010.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Audit portal chunks
+        run: node scripts/audit-rfp-chunks-001-010.mjs
+
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f audit-output/rfp-chunks-001-010/audit.md ]; then
+            cat audit-output/rfp-chunks-001-010/audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rfp-chunks-001-010-audit
+          path: audit-output/rfp-chunks-001-010/
+          if-no-files-found: error
+          retention-days: 14
