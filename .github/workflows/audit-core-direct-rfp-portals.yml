@@ -38,23 +38,42 @@ jobs:
           cp audit-output/core-direct-rfp-portals/audit.md \
             docs/audits/core-direct-rfp-portals-pre-prune-2026-07-13.md
 
-      - name: Strictly prune and repeatedly revalidate
+      - name: Strictly prune until the retained catalog is all live
         run: |
           set -euo pipefail
           source_file="api-server/src/lib/providers/directRfpPortals.ts"
           output_dir="audit-output/core-direct-rfp-portals"
+          converged=false
 
-          for pass in 1 2 3; do
+          for pass in $(seq 1 20); do
             echo "Applying strict core prune pass ${pass}"
             cp "$output_dir/directRfpPortals.pruned.ts" "$source_file"
             rm -rf "$output_dir"
             node scripts/run-core-direct-rfp-audit.mjs
+
+            non_live=$(node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const report = JSON.parse(
+            fs.readFileSync("audit-output/core-direct-rfp-portals/audit.json", "utf8"),
+          );
+          const count = Object.entries(report.summary.statusCounts)
+            .filter(([status]) => status !== "live")
+            .reduce((sum, [, value]) => sum + value, 0);
+          process.stdout.write(String(count));
+          NODE
+            )
+
+            echo "Non-live records after pass ${pass}: ${non_live}"
+            if [ "$non_live" = "0" ]; then
+              converged=true
+              break
+            fi
           done
 
-          echo "Applying final generated core prune set"
-          cp "$output_dir/directRfpPortals.pruned.ts" "$source_file"
-          rm -rf "$output_dir"
-          node scripts/run-core-direct-rfp-audit.mjs
+          if [ "$converged" != "true" ]; then
+            echo "Core pruning did not converge within 20 passes." >&2
+            exit 1
+          fi
 
           node --input-type=module <<'NODE'
           import fs from "node:fs";
