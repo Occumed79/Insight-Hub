@@ -1,6 +1,6 @@
 # Live audit and strict-prune plan: direct RFP portal chunks 011-042
 
-Generated: 2026-07-14T00:00:07.478Z
+Generated: 2026-07-14T00:04:16.757Z
 
 ## Summary
 
