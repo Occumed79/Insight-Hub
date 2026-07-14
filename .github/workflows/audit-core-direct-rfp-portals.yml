@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - scripts/audit-core-direct-rfp-portals.mjs
+      - scripts/run-core-direct-rfp-audit.mjs
       - api-server/src/lib/providers/directRfpPortals.ts
       - .github/workflows/audit-core-direct-rfp-portals.yml
 
@@ -32,7 +33,7 @@ jobs:
       - name: Audit the unpruned core catalog
         run: |
           rm -rf audit-output/core-direct-rfp-portals
-          node scripts/audit-core-direct-rfp-portals.mjs
+          node scripts/run-core-direct-rfp-audit.mjs
           mkdir -p docs/audits
           cp audit-output/core-direct-rfp-portals/audit.md \
             docs/audits/core-direct-rfp-portals-pre-prune-2026-07-13.md
@@ -47,13 +48,13 @@ jobs:
             echo "Applying strict core prune pass ${pass}"
             cp "$output_dir/directRfpPortals.pruned.ts" "$source_file"
             rm -rf "$output_dir"
-            node scripts/audit-core-direct-rfp-portals.mjs
+            node scripts/run-core-direct-rfp-audit.mjs
           done
 
           echo "Applying final generated core prune set"
           cp "$output_dir/directRfpPortals.pruned.ts" "$source_file"
           rm -rf "$output_dir"
-          node scripts/audit-core-direct-rfp-portals.mjs
+          node scripts/run-core-direct-rfp-audit.mjs
 
           node --input-type=module <<'NODE'
           import fs from "node:fs";
