@@ -2,14 +2,6 @@ name: Audit core direct RFP portals
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - scripts/audit-core-direct-rfp-portals.mjs
-      - scripts/run-core-direct-rfp-audit.mjs
-      - api-server/src/lib/providers/directRfpPortals.ts
-      - .github/workflows/audit-core-direct-rfp-portals.yml
 
 permissions:
   contents: read
@@ -19,10 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Check out pull request branch
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
