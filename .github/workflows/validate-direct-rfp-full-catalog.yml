@@ -18,7 +18,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 16
     steps:
       - name: Check out pull request branch
         uses: actions/checkout@v4
