@@ -1,16 +1,16 @@
 # Live audit and strict-prune plan: direct RFP portal chunks 043-047
 
-Generated: 2026-07-14T00:07:08.511Z
+Generated: 2026-07-14T00:09:15.199Z
 
 ## Summary
 
-- Records audited: **202**
-- Strictly verified live records retained: **202**
+- Records audited: **136**
+- Strictly verified live records retained: **136**
 - Unverified, mixed, protected, unclear, dead, or unreachable records removed: **0**
 
 | Status | Count |
 |---|---:|
-| live | 202 |
+| live | 136 |
 
 ## Per-chunk accounting
 
@@ -19,7 +19,7 @@ Generated: 2026-07-14T00:07:08.511Z
 | 043 | 29 | 29 | 0 |
 | 044 | 23 | 23 | 0 |
 | 045 | 27 | 27 | 0 |
-| 046 | 88 | 88 | 0 |
+| 046 | 22 | 22 | 0 |
 | 047 | 35 | 35 | 0 |
 
 ## Removed records
