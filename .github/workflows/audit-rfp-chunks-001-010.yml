@@ -2,22 +2,6 @@ name: Audit RFP chunks 001-010
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - chatgpt/audit-rfp-chunks-001-010
-    paths:
-      - scripts/audit-rfp-chunks-001-010.mjs
-      - api-server/src/lib/providers/directRfpPortals.ts
-      - api-server/src/lib/providers/directRfpPortals.generated.*.ts
-      - .github/workflows/audit-rfp-chunks-001-010.yml
-  pull_request:
-    branches:
-      - main
-    paths:
-      - scripts/audit-rfp-chunks-001-010.mjs
-      - api-server/src/lib/providers/directRfpPortals.ts
-      - api-server/src/lib/providers/directRfpPortals.generated.*.ts
-      - .github/workflows/audit-rfp-chunks-001-010.yml
 
 permissions:
   contents: read
