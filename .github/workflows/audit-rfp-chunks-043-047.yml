@@ -39,6 +39,28 @@ jobs:
           git checkout origin/codex/correct-tennessee-county-portals-046 -- \
             api-server/src/lib/providers/directRfpPortals.generated.046.ts
 
+      - name: Remove Tennessee CTAS fallback placeholders
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const file = "api-server/src/lib/providers/directRfpPortals.generated.046.ts";
+          const source = fs.readFileSync(file, "utf8");
+          const start = source.indexOf("const REPLACEMENTS");
+          const end = source.indexOf("\n};", start);
+          if (start < 0 || end < 0) throw new Error("Could not locate Tennessee replacements");
+          const replacementSource = source.slice(start, end + 3);
+          const countyNames = [...replacementSource.matchAll(/^\s*(\w+):\s*\[/gm)]
+            .map((match) => match[1]);
+          if (countyNames.length === 0) throw new Error("No Tennessee direct replacements were found");
+          const updated = source.replace(
+            /(const COUNTY_NAMES\s*=\s*")([^"]+)("\.split)/s,
+            `$1${countyNames.join(",")}$3`,
+          );
+          if (updated === source) throw new Error("Tennessee county list was not updated");
+          fs.writeFileSync(file, updated);
+          console.log(`Retained ${countyNames.length} Tennessee counties with direct replacement sources; removed all CTAS-only fallbacks.`);
+          NODE
+
       - name: Audit the unpruned catalog
         run: |
           rm -rf audit-output/rfp-chunks-043-047
