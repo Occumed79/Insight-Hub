@@ -1,0 +1,125 @@
+name: Audit RFP chunks 043-047
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/audit-rfp-chunks-043-047.mjs
+      - api-server/src/lib/providers/directRfpPortals.generated.043.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.044.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.045.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.046.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.047.ts
+      - .github/workflows/audit-rfp-chunks-043-047.yml
+
+permissions:
+  contents: write
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Import corrected Tennessee source
+        run: |
+          git fetch origin codex/correct-tennessee-county-portals-046
+          git checkout origin/codex/correct-tennessee-county-portals-046 -- \
+            api-server/src/lib/providers/directRfpPortals.generated.046.ts
+
+      - name: Audit the unpruned catalog
+        run: |
+          rm -rf audit-output/rfp-chunks-043-047
+          node scripts/audit-rfp-chunks-043-047.mjs
+          mkdir -p docs/audits
+          cp audit-output/rfp-chunks-043-047/audit.md \
+            docs/audits/direct-rfp-chunks-043-047-pre-prune-2026-07-13.md
+
+      - name: Strictly prune and repeatedly revalidate
+        run: |
+          set -euo pipefail
+          provider_dir="api-server/src/lib/providers"
+          output_dir="audit-output/rfp-chunks-043-047"
+
+          for pass in 1 2 3; do
+            echo "Applying strict prune pass ${pass}"
+            cp "$output_dir"/pruned/directRfpPortals.generated.*.ts "$provider_dir"/
+            rm -rf "$output_dir"
+            node scripts/audit-rfp-chunks-043-047.mjs
+          done
+
+          echo "Applying final generated prune set"
+          cp "$output_dir"/pruned/directRfpPortals.generated.*.ts "$provider_dir"/
+          rm -rf "$output_dir"
+          node scripts/audit-rfp-chunks-043-047.mjs
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const report = JSON.parse(
+            fs.readFileSync("audit-output/rfp-chunks-043-047/audit.json", "utf8"),
+          );
+          const nonLive = Object.entries(report.summary.statusCounts)
+            .filter(([status, count]) => status !== "live" && count > 0);
+          if (nonLive.length > 0) {
+            throw new Error(`Final audit still contains non-live records: ${JSON.stringify(nonLive)}`);
+          }
+          console.log(`Final strict audit passed: ${report.summary.retained} of ${report.auditScope.records} records are live.`);
+          NODE
+
+          cp "$output_dir"/audit.md \
+            docs/audits/direct-rfp-chunks-043-047-post-prune-2026-07-13.md
+
+      - name: Commit pruned chunks to PR
+        env:
+          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server/src/lib/providers/directRfpPortals.generated.043.ts
+          git add api-server/src/lib/providers/directRfpPortals.generated.044.ts
+          git add api-server/src/lib/providers/directRfpPortals.generated.045.ts
+          git add api-server/src/lib/providers/directRfpPortals.generated.046.ts
+          git add api-server/src/lib/providers/directRfpPortals.generated.047.ts
+          git add docs/audits/direct-rfp-chunks-043-047-*.md
+          if git diff --cached --quiet; then
+            echo "No additional chunk changes were required."
+          else
+            git commit -m "Prune unverified RFP portals from chunks 043-047"
+            local_sha=$(git rev-parse HEAD)
+            set +e
+            git push origin "HEAD:${TARGET_BRANCH}"
+            push_status=$?
+            set -e
+            remote_sha=$(git ls-remote origin "refs/heads/${TARGET_BRANCH}" | cut -f1)
+            if [ "$remote_sha" != "$local_sha" ]; then
+              exit "$push_status"
+            fi
+          fi
+
+      - name: Publish final audit summary
+        if: always()
+        run: |
+          if [ -f audit-output/rfp-chunks-043-047/audit.md ]; then
+            cat audit-output/rfp-chunks-043-047/audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload final audit and pruned files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rfp-chunks-043-047-audit
+          path: audit-output/rfp-chunks-043-047/
+          if-no-files-found: error
+          retention-days: 14
