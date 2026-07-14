@@ -2,24 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_028: DirectRfpPortal[] = [
   {
-    id: "tx-austin-purchasing",
-    name: "City of Austin Purchasing Office",
-    jurisdiction: "City of Austin",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.austintexas.gov/department/purchasing-office",
-    searchUrl: "https://www.austintexas.gov/department/purchasing-office",
-    domain: "www.austintexas.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Austin procurement or business opportunities page.",
-  },
-  {
     id: "tx-corpus-christi-purchasing",
     name: "City of Corpus Christi Contracts and Procurement",
     jurisdiction: "City of Corpus Christi",
@@ -38,42 +20,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_028: DirectRfpPortal[] = [
       "Official City of Corpus Christi procurement or business opportunities page.",
   },
   {
-    id: "tx-laredo-purchasing",
-    name: "City of Laredo Purchasing",
-    jurisdiction: "City of Laredo",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.cityoflaredo.com/Purchasing/Purchasing.html",
-    searchUrl: "https://www.cityoflaredo.com/Purchasing/Purchasing.html",
-    domain: "www.cityoflaredo.com",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Laredo procurement or business opportunities page.",
-  },
-  {
-    id: "fl-jacksonville-procurement",
-    name: "City of Jacksonville Procurement",
-    jurisdiction: "City of Jacksonville",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.jacksonville.gov/departments/procurement",
-    searchUrl: "https://www.jacksonville.gov/departments/procurement",
-    domain: "www.jacksonville.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Jacksonville procurement or business opportunities page.",
-  },
-  {
     id: "fl-miami-procurement",
     name: "City of Miami Procurement",
     jurisdiction: "City of Miami",
@@ -90,5 +36,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_028: DirectRfpPortal[] = [
     tier: 3,
     parserStatus: "catalog_only",
     notes: "Official City of Miami procurement or business opportunities page.",
-  },
+  }
 ];

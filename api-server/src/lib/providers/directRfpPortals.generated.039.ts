@@ -1,3 +1,5 @@
 import type { DirectRfpPortal } from "./directRfpPortals";
 
-export const GENERATED_DIRECT_RFP_PORTALS_039: DirectRfpPortal[] = [];
+export const GENERATED_DIRECT_RFP_PORTALS_039: DirectRfpPortal[] = [
+
+];

@@ -2,24 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_029: DirectRfpPortal[] = [
   {
-    id: "fl-st-petersburg-procurement",
-    name: "City of St. Petersburg Procurement",
-    jurisdiction: "City of St. Petersburg",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.stpete.org/business/procurement.php",
-    searchUrl: "https://www.stpete.org/business/procurement.php",
-    domain: "www.stpete.org",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of St. Petersburg procurement or business opportunities page.",
-  },
-  {
     id: "fl-hialeah-purchasing",
     name: "City of Hialeah Purchasing",
     jurisdiction: "City of Hialeah",
@@ -36,24 +18,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_029: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official City of Hialeah procurement or business opportunities page.",
-  },
-  {
-    id: "fl-tallahassee-procurement",
-    name: "City of Tallahassee Procurement Services",
-    jurisdiction: "City of Tallahassee",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.talgov.com/doingbusiness/procurement",
-    searchUrl: "https://www.talgov.com/doingbusiness/procurement",
-    domain: "www.talgov.com",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Tallahassee procurement or business opportunities page.",
   },
   {
     id: "fl-fort-lauderdale-procurement",
@@ -73,24 +37,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_029: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official City of Fort Lauderdale procurement or business opportunities page.",
-  },
-  {
-    id: "fl-port-st-lucie-procurement",
-    name: "City of Port St. Lucie Procurement Management",
-    jurisdiction: "City of Port St. Lucie",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.cityofpsl.com/government/departments/finance/procurement-management",
-    searchUrl:
-      "https://www.cityofpsl.com/government/departments/finance/procurement-management",
-    domain: "www.cityofpsl.com",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Port St. Lucie procurement or business opportunities page.",
-  },
+  }
 ];

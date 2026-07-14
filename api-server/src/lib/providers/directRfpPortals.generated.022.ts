@@ -20,24 +20,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_022: DirectRfpPortal[] = [
       "Official University of North Texas procurement or business opportunities page.",
   },
   {
-    id: "tx-texasstate-procurement",
-    name: "Texas State University Procurement",
-    jurisdiction: "Texas State University",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.procurement.txst.edu/",
-    searchUrl: "https://www.procurement.txst.edu/",
-    domain: "www.procurement.txst.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Texas State University procurement or business opportunities page.",
-  },
-  {
     id: "tx-rice-procurement",
     name: "Rice University Procurement",
     jurisdiction: "Rice University",
@@ -90,5 +72,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_022: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official University of South Florida procurement or business opportunities page.",
-  },
+  }
 ];

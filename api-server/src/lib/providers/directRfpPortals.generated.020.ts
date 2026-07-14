@@ -2,42 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_020: DirectRfpPortal[] = [
   {
-    id: "ca-sacstate-procurement",
-    name: "Sacramento State Procurement and Contract Services",
-    jurisdiction: "Sacramento State",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.csus.edu/administration-business-affairs/procurement-contract-services/",
-    searchUrl:
-      "https://www.csus.edu/administration-business-affairs/procurement-contract-services/",
-    domain: "www.csus.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Sacramento State procurement or business opportunities page.",
-  },
-  {
-    id: "ca-fresnostate-procurement",
-    name: "Fresno State Procurement",
-    jurisdiction: "Fresno State",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://adminfinance.fresnostate.edu/purchasing/",
-    searchUrl: "https://adminfinance.fresnostate.edu/purchasing/",
-    domain: "adminfinance.fresnostate.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes: "Official Fresno State procurement or business opportunities page.",
-  },
-  {
     id: "ca-sfsu-procurement",
     name: "San Francisco State University Procurement",
     jurisdiction: "San Francisco State University",
@@ -56,24 +20,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_020: DirectRfpPortal[] = [
       "Official San Francisco State University procurement or business opportunities page.",
   },
   {
-    id: "ca-csun-procurement",
-    name: "Cal State Northridge Purchasing and Contract Administration",
-    jurisdiction: "Cal State Northridge",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.csun.edu/purchasing",
-    searchUrl: "https://www.csun.edu/purchasing",
-    domain: "www.csun.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Cal State Northridge procurement or business opportunities page.",
-  },
-  {
     id: "tx-ut-austin-procurement",
     name: "University of Texas at Austin Procurement",
     jurisdiction: "University of Texas at Austin",
@@ -90,5 +36,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_020: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official University of Texas at Austin procurement or business opportunities page.",
-  },
+  }
 ];

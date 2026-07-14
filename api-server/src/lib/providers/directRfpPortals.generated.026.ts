@@ -2,43 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_026: DirectRfpPortal[] = [
   {
-    id: "ca-san-jose-purchasing",
-    name: "City of San Jose Purchasing",
-    jurisdiction: "City of San Jose",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.sanjoseca.gov/your-government/departments-offices/finance/purchasing",
-    searchUrl:
-      "https://www.sanjoseca.gov/your-government/departments-offices/finance/purchasing",
-    domain: "www.sanjoseca.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of San Jose procurement or business opportunities page.",
-  },
-  {
-    id: "ca-oakland-purchasing",
-    name: "City of Oakland Purchasing",
-    jurisdiction: "City of Oakland",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.oaklandca.gov/topics/doing-business-with-the-city",
-    searchUrl: "https://www.oaklandca.gov/topics/doing-business-with-the-city",
-    domain: "www.oaklandca.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Oakland procurement or business opportunities page.",
-  },
-  {
     id: "ca-bakersfield-purchasing",
     name: "City of Bakersfield Purchasing",
     jurisdiction: "City of Bakersfield",
@@ -55,41 +18,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_026: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official City of Bakersfield procurement or business opportunities page.",
-  },
-  {
-    id: "ca-anaheim-purchasing",
-    name: "City of Anaheim Purchasing",
-    jurisdiction: "City of Anaheim",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.anaheim.net/261/Purchasing",
-    searchUrl: "https://www.anaheim.net/261/Purchasing",
-    domain: "www.anaheim.net",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Anaheim procurement or business opportunities page.",
-  },
-  {
-    id: "ca-riverside-purchasing",
-    name: "City of Riverside Purchasing",
-    jurisdiction: "City of Riverside",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://riversideca.gov/finance/purchasing",
-    searchUrl: "https://riversideca.gov/finance/purchasing",
-    domain: "riversideca.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City of Riverside procurement or business opportunities page.",
-  },
+  }
 ];
