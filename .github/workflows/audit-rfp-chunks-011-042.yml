@@ -2,12 +2,6 @@ name: Audit RFP chunks 011-042
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - scripts/audit-rfp-chunks-011-042.mjs
-      - .github/workflows/audit-rfp-chunks-011-042.yml
 
 permissions:
   contents: read
@@ -17,10 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Check out pull request branch
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
