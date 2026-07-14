@@ -20,7 +20,7 @@ permissions:
 jobs:
   live-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 60
     steps:
       - name: Check out pull request branch
         uses: actions/checkout@v4
