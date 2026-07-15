@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const providerDir = path.join(repoRoot, "api-server", "src", "lib", "providers");
+const providerDir = path.join(
+  repoRoot,
+  "api-server",
+  "src",
+  "lib",
+  "providers",
+);
 const outputDir = path.join(repoRoot, "audit-output", "rfp-chunks-001-010");
 const USER_AGENT =
   "Mozilla/5.0 (compatible; OccuMed-InsightHub-Audit/1.0; +https://www.occumed.com)";
@@ -136,7 +142,10 @@ function readChunk(chunkNumber) {
 }
 
 function normalizeHostname(hostname) {
-  return hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  return hostname
+    .toLowerCase()
+    .replace(/^www\./, "")
+    .replace(/\.$/, "");
 }
 
 function hostnameFor(url) {
@@ -149,7 +158,12 @@ function hostnameFor(url) {
 
 function normalizedBuyer(portal) {
   return [portal.country, portal.state, portal.jurisdiction]
-    .map((value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " "))
+    .map((value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " "),
+    )
     .join("|");
 }
 
@@ -161,7 +175,9 @@ function normalizeUrl(url) {
     parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
     return parsed.toString().replace(/\/$/, "");
   } catch {
-    return String(url || "").trim().toLowerCase();
+    return String(url || "")
+      .trim()
+      .toLowerCase();
   }
 }
 
@@ -240,60 +256,86 @@ function classifyResponse({ status, contentType, text, error }) {
 }
 
 async function fetchEndpoint(url) {
-  const startedAt = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
-        "user-agent": USER_AGENT,
-      },
-    });
-    const contentType = response.headers.get("content-type") || "";
-    let body = "";
-    if (/text|html|json|xml|javascript/i.test(contentType)) {
-      body = (await response.text()).slice(0, 350_000);
-    } else if (/pdf/i.test(contentType)) {
-      body = "PDF document";
-    } else {
-      const buffer = await response.arrayBuffer();
-      body = Buffer.from(buffer.slice(0, 100_000)).toString("utf8");
+  const maxAttempts = 3;
+  let lastResult;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          accept:
+            "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+          "user-agent": USER_AGENT,
+        },
+      });
+      const contentType = response.headers.get("content-type") || "";
+      let body = "";
+      if (/text|html|json|xml|javascript/i.test(contentType)) {
+        body = (await response.text()).slice(0, 350_000);
+      } else if (/pdf/i.test(contentType)) {
+        body = "PDF document";
+      } else {
+        const buffer = await response.arrayBuffer();
+        body = Buffer.from(buffer.slice(0, 100_000)).toString("utf8");
+      }
+      const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const plainText = stripHtml(body).slice(0, 80_000);
+      const result = {
+        requestedUrl: url,
+        finalUrl: response.url || url,
+        status: response.status,
+        contentType,
+        title: titleMatch ? stripHtml(titleMatch[1]).slice(0, 250) : "",
+        elapsedMs: Date.now() - startedAt,
+        procurementSignals: procurementSignals.filter((signal) =>
+          plainText.toLowerCase().includes(signal),
+        ),
+        error: null,
+        textSample: plainText.slice(0, 500),
+      };
+      lastResult = {
+        ...result,
+        classification: classifyResponse({ ...result, text: plainText }),
+        attempts: attempt,
+      };
+    } catch (error) {
+      const result = {
+        requestedUrl: url,
+        finalUrl: url,
+        status: 0,
+        contentType: "",
+        title: "",
+        elapsedMs: Date.now() - startedAt,
+        procurementSignals: [],
+        error: error instanceof Error ? error.message : String(error),
+        textSample: "",
+      };
+      lastResult = {
+        ...result,
+        classification: classifyResponse(result),
+        attempts: attempt,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const plainText = stripHtml(body).slice(0, 80_000);
-    const result = {
-      requestedUrl: url,
-      finalUrl: response.url || url,
-      status: response.status,
-      contentType,
-      title: titleMatch ? stripHtml(titleMatch[1]).slice(0, 250) : "",
-      elapsedMs: Date.now() - startedAt,
-      procurementSignals: procurementSignals.filter((signal) =>
-        plainText.toLowerCase().includes(signal),
-      ),
-      error: null,
-      textSample: plainText.slice(0, 500),
-    };
-    return { ...result, classification: classifyResponse({ ...result, text: plainText }) };
-  } catch (error) {
-    const result = {
-      requestedUrl: url,
-      finalUrl: url,
-      status: 0,
-      contentType: "",
-      title: "",
-      elapsedMs: Date.now() - startedAt,
-      procurementSignals: [],
-      error: error instanceof Error ? error.message : String(error),
-      textSample: "",
-    };
-    return { ...result, classification: classifyResponse(result) };
-  } finally {
-    clearTimeout(timer);
+
+    const retryable =
+      lastResult.status === 429 ||
+      ["timeout", "network_error", "server_error"].includes(
+        lastResult.classification,
+      );
+    if (!retryable || attempt === maxAttempts) return lastResult;
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
   }
+
+  return lastResult;
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -307,7 +349,9 @@ async function mapWithConcurrency(items, limit, mapper) {
       results[index] = await mapper(items[index], index);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
   return results;
 }
 
@@ -328,7 +372,9 @@ function endpointSeverity(classification) {
 }
 
 function summarizePortalStatus(endpointResults) {
-  const classifications = endpointResults.map((result) => result.classification);
+  const classifications = endpointResults.map(
+    (result) => result.classification,
+  );
   if (classifications.every((value) => value === "dead")) return "dead";
   if (
     classifications.some((value) =>
@@ -385,7 +431,11 @@ for (const portal of fullCatalog) {
   for (const [map, key] of keys) {
     if (!key) continue;
     const values = map.get(key) || [];
-    values.push({ id: portal.id, sourceFile: portal.sourceFile, jurisdiction: portal.jurisdiction });
+    values.push({
+      id: portal.id,
+      sourceFile: portal.sourceFile,
+      jurisdiction: portal.jurisdiction,
+    });
     map.set(key, values);
   }
 }
@@ -419,7 +469,9 @@ const endpointByUrl = new Map(
 );
 
 const records = auditedPortals.map((portal) => {
-  const endpointUrls = [...new Set([portal.url, portal.searchUrl].filter(Boolean))];
+  const endpointUrls = [
+    ...new Set([portal.url, portal.searchUrl].filter(Boolean)),
+  ];
   const endpoints = endpointUrls.map((url) => endpointByUrl.get(url));
   const issues = [];
   const declaredHost = normalizeHostname(portal.domain || "");
@@ -431,7 +483,9 @@ const records = auditedPortals.map((portal) => {
   if (
     portal.accessMode === "public_html" &&
     endpoints.some((endpoint) =>
-      ["blocked_or_dynamic", "blocked_or_login"].includes(endpoint.classification),
+      ["blocked_or_dynamic", "blocked_or_login"].includes(
+        endpoint.classification,
+      ),
     )
   ) {
     issues.push("access_mode_likely_dynamic_or_protected");
@@ -462,11 +516,14 @@ const records = auditedPortals.map((portal) => {
   }
 
   const idDuplicates = duplicateIdMap.get(portal.id) || [];
-  const urlDuplicates = duplicateUrlMap.get(normalizeUrl(portal.searchUrl || portal.url)) || [];
+  const urlDuplicates =
+    duplicateUrlMap.get(normalizeUrl(portal.searchUrl || portal.url)) || [];
   const buyerDuplicates = duplicateBuyerMap.get(normalizedBuyer(portal)) || [];
   if (idDuplicates.length > 1) issues.push("duplicate_id_in_combined_catalog");
-  if (urlDuplicates.length > 1) issues.push("duplicate_url_in_combined_catalog");
-  if (buyerDuplicates.length > 1) issues.push("duplicate_buyer_in_combined_catalog");
+  if (urlDuplicates.length > 1)
+    issues.push("duplicate_url_in_combined_catalog");
+  if (buyerDuplicates.length > 1)
+    issues.push("duplicate_buyer_in_combined_catalog");
 
   return {
     ...portal,
@@ -485,11 +542,13 @@ const statusCounts = records.reduce((counts, record) => {
   counts[record.auditStatus] = (counts[record.auditStatus] || 0) + 1;
   return counts;
 }, {});
-const issueCounts = records.flatMap((record) => record.issues).reduce((counts, issue) => {
-  const key = issue.split(":")[0];
-  counts[key] = (counts[key] || 0) + 1;
-  return counts;
-}, {});
+const issueCounts = records
+  .flatMap((record) => record.issues)
+  .reduce((counts, issue) => {
+    const key = issue.split(":")[0];
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
 const perChunk = auditedChunkNumbers.map((chunk) => {
   const chunkRecords = records.filter((record) => record.chunk === chunk);
   const statuses = chunkRecords.reduce((counts, record) => {
@@ -533,8 +592,16 @@ const flaggedRecords = records
   .filter((record) => record.issues.length > 0 || record.auditStatus !== "live")
   .sort((a, b) => {
     const severityDifference =
-      Math.max(...b.endpoints.map((endpoint) => endpointSeverity(endpoint.classification))) -
-      Math.max(...a.endpoints.map((endpoint) => endpointSeverity(endpoint.classification)));
+      Math.max(
+        ...b.endpoints.map((endpoint) =>
+          endpointSeverity(endpoint.classification),
+        ),
+      ) -
+      Math.max(
+        ...a.endpoints.map((endpoint) =>
+          endpointSeverity(endpoint.classification),
+        ),
+      );
     return severityDifference || a.id.localeCompare(b.id);
   });
 

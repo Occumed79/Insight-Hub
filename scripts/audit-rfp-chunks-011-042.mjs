@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import prettier from "prettier";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const providerDir = path.join(repoRoot, "api-server", "src", "lib", "providers");
+const providerDir = path.join(
+  repoRoot,
+  "api-server",
+  "src",
+  "lib",
+  "providers",
+);
 const outputDir = path.join(repoRoot, "audit-output", "rfp-chunks-011-042");
 const prunedDir = path.join(outputDir, "pruned");
 const USER_AGENT =
@@ -80,7 +87,10 @@ function extractObjectBlocks(source) {
 }
 
 function stringField(block, field) {
-  const expression = new RegExp(`${field}\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, "m");
+  const expression = new RegExp(
+    `${field}\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
+    "m",
+  );
   const match = block.match(expression);
   if (!match) return undefined;
   try {
@@ -113,7 +123,11 @@ function parsePortals(source, sourceFile, chunk) {
 function readChunk(chunk) {
   const sourceFile = `directRfpPortals.generated.${chunk}.ts`;
   const source = fs.readFileSync(path.join(providerDir, sourceFile), "utf8");
-  return { sourceFile, source, records: parsePortals(source, sourceFile, chunk) };
+  return {
+    sourceFile,
+    source,
+    records: parsePortals(source, sourceFile, chunk),
+  };
 }
 
 function normalizeHostname(hostname) {
@@ -191,8 +205,10 @@ function classifyResponse({ status, contentType, text, error }) {
   if (status < 200 || status >= 400) return "unexpected_status";
   if (/pdf/i.test(contentType)) return "live_document";
   const lowered = text.toLowerCase();
-  if (challengeSignals.some((signal) => lowered.includes(signal))) return "blocked_or_dynamic";
-  if (procurementSignals.some((signal) => lowered.includes(signal))) return "live_procurement";
+  if (challengeSignals.some((signal) => lowered.includes(signal)))
+    return "blocked_or_dynamic";
+  if (procurementSignals.some((signal) => lowered.includes(signal)))
+    return "live_procurement";
   return "reachable_unclear";
 }
 
@@ -205,7 +221,8 @@ async function fetchEndpoint(url) {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+        accept:
+          "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
         "user-agent": USER_AGENT,
       },
     });
@@ -234,7 +251,10 @@ async function fetchEndpoint(url) {
       error: null,
       textSample: plainText.slice(0, 500),
     };
-    return { ...result, classification: classifyResponse({ ...result, text: plainText }) };
+    return {
+      ...result,
+      classification: classifyResponse({ ...result, text: plainText }),
+    };
   } catch (error) {
     const result = {
       requestedUrl: url,
@@ -264,7 +284,9 @@ async function mapWithConcurrency(items, limit, mapper) {
       results[index] = await mapper(items[index], index);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
   return results;
 }
 
@@ -297,7 +319,9 @@ if (auditedPortals.length === 0) {
 
 const uniqueEndpointUrls = [
   ...new Set(
-    auditedPortals.flatMap((portal) => [portal.url, portal.searchUrl].filter(Boolean)),
+    auditedPortals.flatMap((portal) =>
+      [portal.url, portal.searchUrl].filter(Boolean),
+    ),
   ),
 ];
 
@@ -322,7 +346,9 @@ const endpointByUrl = new Map(
 );
 
 const records = auditedPortals.map((portal) => {
-  const endpointUrls = [...new Set([portal.url, portal.searchUrl].filter(Boolean))];
+  const endpointUrls = [
+    ...new Set([portal.url, portal.searchUrl].filter(Boolean)),
+  ];
   const endpoints = endpointUrls.map((url) => endpointByUrl.get(url));
   const issues = [];
   const declaredHost = normalizeHostname(portal.domain);
@@ -333,7 +359,9 @@ const records = auditedPortals.map((portal) => {
   if (
     portal.accessMode === "public_html" &&
     endpoints.some((endpoint) =>
-      ["blocked_or_dynamic", "blocked_or_login"].includes(endpoint.classification),
+      ["blocked_or_dynamic", "blocked_or_login"].includes(
+        endpoint.classification,
+      ),
     )
   ) {
     issues.push("access_mode_likely_dynamic_or_protected");
@@ -361,7 +389,11 @@ const statusCounts = records.reduce((counts, record) => {
 }, {});
 
 const perChunk = chunks.map((chunk) => {
-  const chunkRecords = records.filter((record) => record.chunk === chunk.records[0]?.chunk || record.chunk === chunk.sourceFile.match(/(\d{3})/)[1]);
+  const chunkRecords = records.filter(
+    (record) =>
+      record.chunk === chunk.records[0]?.chunk ||
+      record.chunk === chunk.sourceFile.match(/(\d{3})/)[1],
+  );
   const statuses = chunkRecords.reduce((counts, record) => {
     counts[record.auditStatus] = (counts[record.auditStatus] || 0) + 1;
     return counts;
@@ -380,7 +412,10 @@ for (const chunk of chunks) {
   const chunkNumber = chunk.sourceFile.match(/(\d{3})/)[1];
   const liveIds = new Set(
     records
-      .filter((record) => record.chunk === chunkNumber && record.auditStatus === "live")
+      .filter(
+        (record) =>
+          record.chunk === chunkNumber && record.auditStatus === "live",
+      )
       .map((record) => record.id),
   );
   const keptBlocks = chunk.records
@@ -391,11 +426,14 @@ for (const chunk of chunks) {
     'import type { DirectRfpPortal } from "./directRfpPortals";',
     "",
     `export const ${exportName}: DirectRfpPortal[] = [`,
-    keptBlocks.length ? `  ${keptBlocks.join(",\n  ")}` : "",
+    keptBlocks.length ? `  ${keptBlocks.join(",\n  ")},` : "",
     "];",
     "",
   ].join("\n");
-  fs.writeFileSync(path.join(prunedDir, chunk.sourceFile), content);
+  const formattedContent = await prettier.format(content, {
+    parser: "typescript",
+  });
+  fs.writeFileSync(path.join(prunedDir, chunk.sourceFile), formattedContent);
 }
 
 const report = {
@@ -417,7 +455,10 @@ const report = {
 };
 
 fs.mkdirSync(outputDir, { recursive: true });
-fs.writeFileSync(path.join(outputDir, "audit.json"), `${JSON.stringify(report, null, 2)}\n`);
+fs.writeFileSync(
+  path.join(outputDir, "audit.json"),
+  `${JSON.stringify(report, null, 2)}\n`,
+);
 
 const markdown = [
   "# Live audit and strict-prune plan: direct RFP portal chunks 011-042",
@@ -453,7 +494,10 @@ const markdown = [
     .filter((record) => record.auditStatus !== "live")
     .map((record) => {
       const endpoints = record.endpoints
-        .map((endpoint) => `${endpoint.status || "ERR"} ${endpoint.classification}`)
+        .map(
+          (endpoint) =>
+            `${endpoint.status || "ERR"} ${endpoint.classification}`,
+        )
         .join("; ");
       return `| ${record.chunk} | \`${record.id}\` | ${String(record.jurisdiction || "").replace(/\|/g, "\\|")} | ${record.auditStatus} | ${endpoints} |`;
     }),
