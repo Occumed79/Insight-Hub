@@ -1,15 +1,15 @@
 name: Inspect portal directory wiring
 
 on:
-  push:
-    branches:
-      - agent/expand-portal-directory-international
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   inspect:
+    if: github.head_ref == 'agent/expand-portal-directory-international'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
