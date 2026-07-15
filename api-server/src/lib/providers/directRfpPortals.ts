@@ -1,4 +1,5 @@
 import { GENERATED_DIRECT_RFP_PORTALS } from "./directRfpPortals.generated";
+import { ADDITIONAL_DIRECTORY_PORTALS } from "./portalDirectory";
 
 export type DirectRfpPortalLevel = "federal" | "state" | "district" | "international";
 export type DirectRfpPortalAccessMode = "api" | "csv" | "public_html" | "dynamic_html" | "portal";
@@ -120,6 +121,7 @@ export const CORE_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
 
 export const DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   ...CORE_DIRECT_RFP_PORTALS,
+  ...ADDITIONAL_DIRECTORY_PORTALS,
   ...GENERATED_DIRECT_RFP_PORTALS,
 ];
 

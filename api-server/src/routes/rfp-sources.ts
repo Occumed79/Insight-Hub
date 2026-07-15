@@ -8,6 +8,7 @@ import {
   scanPortalEvidence,
 } from "../lib/providers/portalEvidenceScanner";
 import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
+import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
 
 const router = Router();
 
@@ -60,9 +61,13 @@ router.get("/rfp-sources", async (req, res) => {
     executionBudget,
     rotationKey,
   });
+  const directory = buildProcurementPortalDirectory(
+    ENRICHED_DIRECT_RFP_PORTALS,
+  );
 
   return res.json({
     sources: ENRICHED_DIRECT_RFP_PORTALS,
+    directory,
     totals: {
       ...totals,
       verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,

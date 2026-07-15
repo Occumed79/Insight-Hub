@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ProcurementPortalDirectory } from "@/components/portal/ProcurementPortalDirectory";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -479,6 +480,8 @@ export default function OpportunitiesDashboard() {
           </Button>
         </div>
       </div>
+
+      <ProcurementPortalDirectory />
 
       <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold whitespace-nowrap">Active Sources:</span>
