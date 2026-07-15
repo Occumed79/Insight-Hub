@@ -13,10 +13,18 @@ services:
         value: "3000"
       - key: BASE_PATH
         value: /
-      - key: DATABASE_URL
-        fromDatabase:
-          name: insight-hub-db
-          property: connectionString
+      - key: RFP_DATABASE_URL
+        sync: false
+      - key: INTEL_DATABASE_URL
+        sync: false
+      - key: ENABLE_SCHEDULED_INGESTION
+        value: "false"
+      - key: INGESTION_INTERVAL_MINUTES
+        value: "360"
+      - key: INGESTION_DATE_RANGE_DAYS
+        value: "30"
+      - key: INGESTION_PROVIDERS
+        value: samGov,grantsGov,statePortals,serper,tavily
       - key: SAM_GOV_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -97,11 +105,3 @@ services:
         sync: false
       - key: LOCAL_GOV_BID_SOURCES_ENABLED
         sync: false
-
-
-databases:
-  - name: insight-hub-db
-    region: oregon
-    plan: starter
-    databaseName: insighthub
-    user: insighthub
