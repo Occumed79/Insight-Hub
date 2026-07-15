@@ -123,11 +123,10 @@ jobs:
 
           async function mapWithConcurrency'''
           retry_text, count = re.subn(
-              r'async function fetchEndpoint\(url\) \{.*?\n\}\n\nasync function mapWithConcurrency',
+              r'async function fetchEndpoint\(url\) \{[\s\S]*?\n\}\n\nasync function mapWithConcurrency',
               replacement,
               retry_text,
               count=1,
-              flags=re.S,
           )
           if count != 1:
               raise SystemExit("Failed to replace fetchEndpoint exactly once")
@@ -135,30 +134,23 @@ jobs:
 
           format_file = Path("scripts/audit-rfp-chunks-011-042.mjs")
           format_text = format_file.read_text()
-          if 'import prettier from "prettier";' not in format_text:
-              format_text = format_text.replace(
-                  'import path from "node:path";\n',
-                  'import path from "node:path";\nimport prettier from "prettier";\n',
-                  1,
-              )
+          format_text, import_count = re.subn(
+              r'(import path from "node:path";\n)',
+              r'\1import prettier from "prettier";\n',
+              format_text,
+              count=1,
+          )
+          if import_count != 1 and 'import prettier from "prettier";' not in format_text:
+              raise SystemExit("Failed to add Prettier import")
 
-          old_writer = '''  const content = [
+          new_writer = r'''  const content = [
             'import type { DirectRfpPortal } from "./directRfpPortals";',
             "",
             `export const ${exportName}: DirectRfpPortal[] = [`,
-            keptBlocks.length ? `  ${keptBlocks.join(",\\n  ")}` : "",
+            keptBlocks.length ? `  ${keptBlocks.join(",\n  ")},` : "",
             "];",
             "",
-          ].join("\\n");
-          fs.writeFileSync(path.join(prunedDir, chunk.sourceFile), content);'''
-          new_writer = '''  const content = [
-            'import type { DirectRfpPortal } from "./directRfpPortals";',
-            "",
-            `export const ${exportName}: DirectRfpPortal[] = [`,
-            keptBlocks.length ? `  ${keptBlocks.join(",\\n  ")},` : "",
-            "];",
-            "",
-          ].join("\\n");
+          ].join("\n");
           const formattedContent = await prettier.format(content, {
             parser: "typescript",
           });
@@ -166,9 +158,14 @@ jobs:
             path.join(prunedDir, chunk.sourceFile),
             formattedContent,
           );'''
-          if old_writer not in format_text:
-              raise SystemExit("Failed to find generated writer block")
-          format_text = format_text.replace(old_writer, new_writer, 1)
+          format_text, writer_count = re.subn(
+              r'  const content = \[[\s\S]*?  fs\.writeFileSync\(path\.join\(prunedDir, chunk\.sourceFile\), content\);',
+              new_writer,
+              format_text,
+              count=1,
+          )
+          if writer_count != 1:
+              raise SystemExit("Failed to replace generated writer exactly once")
           format_file.write_text(format_text)
           PY
 
