@@ -16,6 +16,7 @@ import { publicPortalProvidersProvider } from "../providers/publicPortalProvider
 import { eunaBonfireProvider } from "../providers/eunaBonfire";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
+import { govBidProvider } from "../providers/govBid";
 import { grantsGovProvider } from "../providers/grantsGov";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
@@ -93,6 +94,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   await runProvider("samGov", samGovProvider);
   await runProvider("publicPortalProviders", publicPortalProvidersProvider);
   await runProvider("eunaBonfire", eunaBonfireProvider);
+  await runProvider("govBid", govBidProvider);
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("tango", tangoProvider);
 

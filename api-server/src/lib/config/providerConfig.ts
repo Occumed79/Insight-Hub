@@ -13,6 +13,7 @@ export type ProviderName =
   | "tavily"
   | "tango"
   | "bidnet"
+  | "govBid"
   | "statePortals"
   | "firecrawl"
   | "openrouter"
@@ -118,6 +119,12 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   bidnet: {
     ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["State and local bids"], "partial"),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "BidNet API base URL", dbKey: "bidnetBaseUrl", envKey: "BIDNET_BASE_URL" }],
+  },
+  govBid: {
+    ...provider("govBid", "GovBid", "procurement", "direct_source", [], ["Authorized U.S. and Canadian tender aggregation", "Healthcare and medical opportunity discovery", "Original government source links", "Cross-source deduplication"], "live", "Authorized GovBid integration for open government tenders across the United States and Canada."),
+    docsUrl: "https://govbid.ca/coverage",
+    signupUrl: "https://govbid.ca/alerts",
+    notes: "Automated access is enabled under permission confirmed by Occu-Med. Records preserve GovBid detail links and the original government notice URL when available.",
   },
   statePortals: provider("statePortals", "State / Local Procurement Sources", "procurement", "web_discovery", [], ["State procurement portals", "County bid sources", "City and municipal portals", "University bid portals"], "live", "Curated public procurement portal discovery controlled by Render feature flags."),
   firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),

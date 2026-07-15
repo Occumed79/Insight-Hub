@@ -75,6 +75,7 @@ const FETCH_PROVIDER_OPTIONS = [
   { key: "openrouter", label: "OpenRouter", desc: "Multi-model AI", stub: false },
   { key: "publicPortalProviders", label: "Public Portal Providers", desc: "Direct parsers + Serper official-portal discovery", stub: false },
   { key: "eunaBonfire", label: "Euna Supplier Network", desc: "Separate public Bonfire/Euna opportunity discovery", stub: false },
+  { key: "govBid", label: "GovBid", desc: "Authorized U.S. + Canada tender feed", stub: false },
   { key: "olostep", label: "Olostep", desc: "Web crawling", stub: false },
   { key: "browseAi", label: "Browse AI", desc: "Automated extraction", stub: false },
   { key: "firecrawl", label: "Firecrawl", desc: "Deep crawling", stub: false },
@@ -107,7 +108,7 @@ export default function OpportunitiesDashboard() {
   const [fetchDays, setFetchDays] = useState("30");
   // grantsGov + usaSpending are free (no key) and fully implemented — enable them by
   // default so a stock fetch pulls federal grants and expiring/re-compete contracts too.
-  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "publicPortalProviders", "eunaBonfire"]);
+  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "publicPortalProviders", "eunaBonfire", "govBid"]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
 

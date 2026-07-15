@@ -11,6 +11,7 @@ export * from "./serper";
 export * from "./tavily";
 export * from "./tango";
 export * from "./bidnet";
+export * from "./govBid";
 export * from "./statePortals";
 export * from "./firecrawl";
 export * from "./jina";
@@ -42,6 +43,7 @@ import { serperProvider } from "./serper";
 import { tavilyProvider } from "./tavily";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
+import { govBidProvider } from "./govBid";
 import { statePortalsProvider } from "./statePortals";
 import { firecrawlProvider } from "./firecrawl";
 import { jinaProvider } from "./jina";
@@ -81,6 +83,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   tavily: tavilyProvider,
   tango: tangoProvider,
   bidnet: bidnetProvider,
+  govBid: govBidProvider,
   statePortals: statePortalsProvider as unknown as DataSourceProvider,
   firecrawl: firecrawlProvider,
   jina: jinaProvider,
