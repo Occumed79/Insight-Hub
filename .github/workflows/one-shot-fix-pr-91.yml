@@ -1,0 +1,198 @@
+name: One-shot fix PR 91 review feedback
+
+on:
+  push:
+    branches:
+      - chatgpt/audit-rfp-chunks-001-010
+    paths:
+      - .github/workflows/one-shot-fix-pr-91.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-validate-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/audit-rfp-chunks-001-010
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Apply surgical fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          retry_file = Path("scripts/audit-rfp-chunks-001-010.mjs")
+          retry_text = retry_file.read_text()
+          replacement = r'''async function fetchEndpoint(url) {
+            const maxAttempts = 3;
+            let lastResult;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+              const startedAt = Date.now();
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+              try {
+                const response = await fetch(url, {
+                  redirect: "follow",
+                  signal: controller.signal,
+                  headers: {
+                    accept:
+                      "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+                    "user-agent": USER_AGENT,
+                  },
+                });
+                const contentType = response.headers.get("content-type") || "";
+                let body = "";
+                if (/text|html|json|xml|javascript/i.test(contentType)) {
+                  body = (await response.text()).slice(0, 350_000);
+                } else if (/pdf/i.test(contentType)) {
+                  body = "PDF document";
+                } else {
+                  const buffer = await response.arrayBuffer();
+                  body = Buffer.from(buffer.slice(0, 100_000)).toString("utf8");
+                }
+                const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+                const plainText = stripHtml(body).slice(0, 80_000);
+                const result = {
+                  requestedUrl: url,
+                  finalUrl: response.url || url,
+                  status: response.status,
+                  contentType,
+                  title: titleMatch ? stripHtml(titleMatch[1]).slice(0, 250) : "",
+                  elapsedMs: Date.now() - startedAt,
+                  procurementSignals: procurementSignals.filter((signal) =>
+                    plainText.toLowerCase().includes(signal),
+                  ),
+                  error: null,
+                  textSample: plainText.slice(0, 500),
+                };
+                lastResult = {
+                  ...result,
+                  classification: classifyResponse({ ...result, text: plainText }),
+                  attempts: attempt,
+                };
+              } catch (error) {
+                const result = {
+                  requestedUrl: url,
+                  finalUrl: url,
+                  status: 0,
+                  contentType: "",
+                  title: "",
+                  elapsedMs: Date.now() - startedAt,
+                  procurementSignals: [],
+                  error: error instanceof Error ? error.message : String(error),
+                  textSample: "",
+                };
+                lastResult = {
+                  ...result,
+                  classification: classifyResponse(result),
+                  attempts: attempt,
+                };
+              } finally {
+                clearTimeout(timer);
+              }
+
+              const retryable =
+                lastResult.status === 429 ||
+                ["timeout", "network_error", "server_error"].includes(
+                  lastResult.classification,
+                );
+              if (!retryable || attempt === maxAttempts) return lastResult;
+
+              await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
+            }
+
+            return lastResult;
+          }
+
+          async function mapWithConcurrency'''
+          retry_text, count = re.subn(
+              r'async function fetchEndpoint\(url\) \{.*?\n\}\n\nasync function mapWithConcurrency',
+              replacement,
+              retry_text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("Failed to replace fetchEndpoint exactly once")
+          retry_file.write_text(retry_text)
+
+          format_file = Path("scripts/audit-rfp-chunks-011-042.mjs")
+          format_text = format_file.read_text()
+          if 'import prettier from "prettier";' not in format_text:
+              format_text = format_text.replace(
+                  'import path from "node:path";\n',
+                  'import path from "node:path";\nimport prettier from "prettier";\n',
+                  1,
+              )
+
+          old_writer = '''  const content = [
+            'import type { DirectRfpPortal } from "./directRfpPortals";',
+            "",
+            `export const ${exportName}: DirectRfpPortal[] = [`,
+            keptBlocks.length ? `  ${keptBlocks.join(",\\n  ")}` : "",
+            "];",
+            "",
+          ].join("\\n");
+          fs.writeFileSync(path.join(prunedDir, chunk.sourceFile), content);'''
+          new_writer = '''  const content = [
+            'import type { DirectRfpPortal } from "./directRfpPortals";',
+            "",
+            `export const ${exportName}: DirectRfpPortal[] = [`,
+            keptBlocks.length ? `  ${keptBlocks.join(",\\n  ")},` : "",
+            "];",
+            "",
+          ].join("\\n");
+          const formattedContent = await prettier.format(content, {
+            parser: "typescript",
+          });
+          fs.writeFileSync(
+            path.join(prunedDir, chunk.sourceFile),
+            formattedContent,
+          );'''
+          if old_writer not in format_text:
+              raise SystemExit("Failed to find generated writer block")
+          format_text = format_text.replace(old_writer, new_writer, 1)
+          format_file.write_text(format_text)
+          PY
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format changed scripts
+        run: pnpm exec prettier --write scripts/audit-rfp-chunks-001-010.mjs scripts/audit-rfp-chunks-011-042.mjs
+
+      - name: Validate catalog
+        run: node scripts/validate-direct-rfp-catalog.mjs
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Commit fixes and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/one-shot-fix-pr-91.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/audit-rfp-chunks-001-010.mjs scripts/audit-rfp-chunks-011-042.mjs .github/workflows/one-shot-fix-pr-91.yml
+          git commit -m "Address PR 91 audit review feedback"
+          git push origin HEAD:chatgpt/audit-rfp-chunks-001-010
