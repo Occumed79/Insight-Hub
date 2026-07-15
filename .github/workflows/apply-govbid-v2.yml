@@ -1,0 +1,78 @@
+name: Apply and validate GovBid on latest main
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-validate-smoke:
+    if: github.head_ref == 'agent/add-govbid-provider-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out GovBid v2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10
+
+      - name: Restore validated GovBid provider
+        run: |
+          git fetch origin agent/add-govbid-provider
+          git show origin/agent/add-govbid-provider:api-server/src/lib/providers/govBid.ts > api-server/src/lib/providers/govBid.ts
+
+      - name: Apply latest-main wiring
+        run: python scripts/apply-govbid-v2.py
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Live GovBid smoke test
+        run: |
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { govBidProvider } from './api-server/src/lib/providers/govBid.ts';
+          const result = await govBidProvider.fetch({ keywords: 'physical examination', limit: 10 });
+          console.log(JSON.stringify({
+            total: result.total,
+            errors: result.errors,
+            sample: result.records.slice(0, 3).map((record) => ({
+              title: record.title,
+              agency: record.agency,
+              deadline: record.responseDeadline,
+              sourceUrl: record.sourceUrl,
+              govBidUrl: record.rawData?.govBidUrl,
+            })),
+          }, null, 2));
+          if (result.records.length === 0) {
+            throw new Error(`GovBid smoke test returned no physical-examination records: ${result.errors.join('; ')}`);
+          }
+          if (!result.records.every((record) => record.rawData?.govBidUrl)) {
+            throw new Error('GovBid records are missing traceability URLs');
+          }
+          NODE
+
+      - name: Remove one-shot files and commit
+        run: |
+          rm scripts/apply-govbid-v2.py
+          rm .github/workflows/apply-govbid-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add authorized GovBid tender provider"
+          git push origin HEAD:${{ github.head_ref }}
