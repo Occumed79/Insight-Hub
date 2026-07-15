@@ -7,7 +7,10 @@ import { PROVIDER_DEFINITIONS, type RfpProviderName } from "../lib/config/provid
 
 const router = Router();
 
-const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[];
+const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>(["texasEsbd", "nyScr"]);
+const PROVIDER_NAMES = (Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]).filter(
+  (name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name),
+);
 
 /**
  * GET /api/providers
