@@ -1,4 +1,4 @@
-name: Inspect portal directory wiring
+name: Portal directory integration validation
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  inspect:
+  integrate-and-validate:
     if: github.head_ref == 'agent/expand-portal-directory-international'
     runs-on: ubuntu-latest
     steps:
@@ -16,22 +16,121 @@ jobs:
         with:
           ref: agent/expand-portal-directory-international
           fetch-depth: 0
-      - name: Capture portal duplicate check
+
+      - name: Wire portal directory into catalog, API, and UI
         shell: bash
         run: |
-          if [ -f tmp/portal-duplicate-check.txt ]; then
-            echo 'Duplicate-check file already exists.'
-            exit 0
-          fi
-          mkdir -p tmp
-          {
-            echo '=== REQUESTED AND CANDIDATE PORTALS ALREADY IN CATALOG ==='
-            grep -RInEi --include='directRfpPortals*.ts' 'COMMBUYS|RAMP|PASSPort|Washington.*WEBS|\bWEBS\b|eMarketplace|NevadaEPro|CanadaBuys|SEAO|SaskTenders|CivicInfo|City of Toronto|Contracts Finder|Find a Tender|Public Contracts Scotland|Sell2Wales|eTendersNI|TED|TenderNed|eTenders Ireland|marches-publics|e-Vergabe|contrataciondelestado|BASE Portugal|publicprocurement.be|simap' api-server/src/lib/providers || true
-            echo '=== INTERNATIONAL PORTAL ENTRIES ==='
-            grep -RIn --include='directRfpPortals*.ts' 'level: "international"' api-server/src/lib/providers || true
-          } > tmp/portal-duplicate-check.txt
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tmp/portal-duplicate-check.txt
-          git commit -m 'Capture portal duplicate check'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}: {old!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "api-server/src/lib/providers/directRfpPortals.ts",
+              'import { GENERATED_DIRECT_RFP_PORTALS } from "./directRfpPortals.generated";\n',
+              'import { GENERATED_DIRECT_RFP_PORTALS } from "./directRfpPortals.generated";\nimport { ADDITIONAL_DIRECTORY_PORTALS } from "./portalDirectory";\n',
+          )
+          replace_once(
+              "api-server/src/lib/providers/directRfpPortals.ts",
+              '  ...CORE_DIRECT_RFP_PORTALS,\n  ...GENERATED_DIRECT_RFP_PORTALS,',
+              '  ...CORE_DIRECT_RFP_PORTALS,\n  ...ADDITIONAL_DIRECTORY_PORTALS,\n  ...GENERATED_DIRECT_RFP_PORTALS,',
+          )
+
+          replace_once(
+              "api-server/src/routes/rfp-sources.ts",
+              'import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";\n',
+              'import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";\nimport { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";\n',
+          )
+          replace_once(
+              "api-server/src/routes/rfp-sources.ts",
+              '  const runtimePlan = getStatePortalSearchPlanDiagnostics({\n    includeTier3,\n    fullCoverage,\n    executionBudget,\n    rotationKey,\n  });\n\n  return res.json({',
+              '  const runtimePlan = getStatePortalSearchPlanDiagnostics({\n    includeTier3,\n    fullCoverage,\n    executionBudget,\n    rotationKey,\n  });\n  const directory = buildProcurementPortalDirectory(\n    ENRICHED_DIRECT_RFP_PORTALS,\n  );\n\n  return res.json({',
+          )
+          replace_once(
+              "api-server/src/routes/rfp-sources.ts",
+              '    sources: ENRICHED_DIRECT_RFP_PORTALS,\n    totals:',
+              '    sources: ENRICHED_DIRECT_RFP_PORTALS,\n    directory,\n    totals:',
+          )
+
+          replace_once(
+              "intel-suite/src/pages/portal/opportunities.tsx",
+              'import { Badge } from "@/components/ui/badge";\nimport { useToast } from "@/hooks/use-toast";',
+              'import { Badge } from "@/components/ui/badge";\nimport { ProcurementPortalDirectory } from "@/components/portal/ProcurementPortalDirectory";\nimport { useToast } from "@/hooks/use-toast";',
+          )
+          replace_once(
+              "intel-suite/src/pages/portal/opportunities.tsx",
+              '        </div>\n      </div>\n\n      <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">',
+              '        </div>\n      </div>\n\n      <ProcurementPortalDirectory />\n\n      <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">',
+          )
+          PY
+
+      - name: Install dependencies
+        run: |
+          npm install --global pnpm@10
+          pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Verify directory boundaries and requested sources
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          portal_directory = Path("api-server/src/lib/providers/portalDirectory.ts").read_text()
+          requested = [
+              "ma-commbuys",
+              "ca-los-angeles-ramp",
+              "ny-city-of-new-york",
+              "wa-webs",
+              "pa-emarketplace",
+              "nv-epro",
+              "ca-canadabuys",
+              "ca-seao-quebec",
+              "ca-sasktenders",
+              "ca-civicinfo-bc",
+              "ca-city-of-toronto",
+          ]
+          combined = portal_directory + Path("api-server/src/lib/providers/directRfpPortals.ts").read_text()
+          for portal_id in requested:
+              if portal_id not in combined:
+                  raise SystemExit(f"Missing requested portal {portal_id}")
+
+          route = Path("api-server/src/routes/rfp-sources.ts").read_text()
+          ui = Path("intel-suite/src/pages/portal/opportunities.tsx").read_text()
+          component = Path("intel-suite/src/components/portal/ProcurementPortalDirectory.tsx").read_text()
+          public_catalog = Path("api-server/src/lib/providers/publicPortalProviders/catalog.ts").read_text()
+
+          for needle in ["buildProcurementPortalDirectory", "directory,"]:
+              if needle not in route:
+                  raise SystemExit(f"Missing API directory wiring: {needle}")
+          if "<ProcurementPortalDirectory />" not in ui:
+              raise SystemExit("Portal directory is not rendered on Opportunities page")
+          for needle in ["United States Portal Directory", "International Opportunities", "Canada", "United Kingdom", "Europe"]:
+              if needle not in portal_directory + component:
+                  raise SystemExit(f"Missing directory section {needle}")
+          if 'portal.country === "US"' not in public_catalog:
+              raise SystemExit("International directory boundary was removed from Public Portal Providers")
+          PY
+
+      - name: Commit validated integration and remove temporary files
+        shell: bash
+        run: |
+          rm -f .github/workflows/inspect-portal-directory.yml
+          rm -f tmp/portal-directory-inspection.txt tmp/portal-duplicate-check.txt
+          rmdir tmp 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete U.S. and international portal directory"
           git push origin HEAD:agent/expand-portal-directory-international
