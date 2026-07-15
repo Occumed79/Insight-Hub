@@ -3,11 +3,21 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { providerRegistry } from "../lib/providers";
-import { PROVIDER_DEFINITIONS, type RfpProviderName } from "../lib/config/providerConfig";
+import {
+  PROVIDER_DEFINITIONS,
+  type RfpProviderName,
+} from "../lib/config/providerConfig";
 
 const router = Router();
 
-const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[];
+const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>([
+  "texasEsbd",
+  "nyScr",
+]);
+
+const PROVIDER_NAMES = (
+  Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]
+).filter((name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name));
 
 /**
  * GET /api/providers
@@ -70,8 +80,22 @@ router.get("/providers", async (req, res) => {
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
             notes: def.notes,
-            requiredFields: def.requiredFields.map((f) => ({ key: f.key, label: f.label, type: f.type, placeholder: f.placeholder, description: f.description, dbKey: f.dbKey })),
-            optionalFields: def.optionalFields.map((f) => ({ key: f.key, label: f.label, type: f.type, placeholder: f.placeholder, description: f.description, dbKey: f.dbKey })),
+            requiredFields: def.requiredFields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.type,
+              placeholder: f.placeholder,
+              description: f.description,
+              dbKey: f.dbKey,
+            })),
+            optionalFields: def.optionalFields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.type,
+              placeholder: f.placeholder,
+              description: f.description,
+              dbKey: f.dbKey,
+            })),
             status: {
               configured: false,
               healthy: false,
@@ -79,7 +103,7 @@ router.get("/providers", async (req, res) => {
             },
           };
         }
-      })
+      }),
     );
     return res.json({ providers: statuses });
   } catch (err) {
@@ -116,7 +140,9 @@ router.put("/providers/:name", async (req, res) => {
       }
 
       if (typeof value === "object") {
-        return res.status(400).json({ error: `Invalid value for ${field.dbKey}` });
+        return res
+          .status(400)
+          .json({ error: `Invalid value for ${field.dbKey}` });
       }
 
       const normalized = String(value).trim();
@@ -124,7 +150,10 @@ router.put("/providers/:name", async (req, res) => {
         await db
           .insert(settingsTable)
           .values({ key: field.dbKey, value: normalized })
-          .onConflictDoUpdate({ target: settingsTable.key, set: { value: normalized } });
+          .onConflictDoUpdate({
+            target: settingsTable.key,
+            set: { value: normalized },
+          });
       }
     }
 
@@ -135,12 +164,19 @@ router.put("/providers/:name", async (req, res) => {
     try {
       status = await provider.getStatus();
     } catch {
-      status = { name: providerName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
+      status = {
+        name: providerName,
+        configured: true,
+        healthy: false,
+        errorMessage: "Status check unavailable",
+      };
     }
     return res.json({ name, status });
   } catch (err) {
     req.log.error(err);
-    return res.status(500).json({ error: "Failed to save provider credentials" });
+    return res
+      .status(500)
+      .json({ error: "Failed to save provider credentials" });
   }
 });
 

@@ -12,8 +12,6 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 import { samGovProvider } from "../providers/samGov";
-import { texasEsbdProvider } from "../providers/texasEsbd";
-import { nyScrProvider } from "../providers/nyScr";
 import { publicPortalProvidersProvider } from "../providers/publicPortalProviders";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
@@ -46,8 +44,12 @@ export interface UnifiedFetchResult {
 
 const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister"]);
 
-export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
-  const requestedProviders = (options.providers ?? ["samGov"]).filter((provider) => !INTEL_ONLY_PROVIDERS.has(provider));
+export async function unifiedFetch(
+  options: UnifiedFetchOptions = {},
+): Promise<UnifiedFetchResult> {
+  const requestedProviders = (options.providers ?? ["samGov"]).filter(
+    (provider) => !INTEL_ONLY_PROVIDERS.has(provider),
+  );
 
   const result: UnifiedFetchResult = {
     fetched: 0,
@@ -62,14 +64,23 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       result.providerResults.push({
         provider,
         fetched: 0,
-        errors: ["Excluded from RFP ingestion. This source belongs in the intel database pipeline."],
+        errors: [
+          "Excluded from RFP ingestion. This source belongs in the intel database pipeline.",
+        ],
       });
     }
   }
 
   const allRecords: NormalizedOpportunity[] = [];
 
-  const runProvider = async (name: string, provider: { fetch: (options: any) => Promise<{ records: NormalizedOpportunity[]; errors?: string[] }> }) => {
+  const runProvider = async (
+    name: string,
+    provider: {
+      fetch: (
+        options: any,
+      ) => Promise<{ records: NormalizedOpportunity[]; errors?: string[] }>;
+    },
+  ) => {
     if (!requestedProviders.includes(name)) return;
     const providerErrors: string[] = [];
     let fetched = 0;
@@ -85,14 +96,16 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     } catch (err: any) {
       providerErrors.push(err.message ?? String(err));
     }
-    result.providerResults.push({ provider: name, fetched, errors: providerErrors });
+    result.providerResults.push({
+      provider: name,
+      fetched,
+      errors: providerErrors,
+    });
     result.fetched += fetched;
   };
 
   // ── Public/direct RFP sources ────────────────────────────────────────────────
   await runProvider("samGov", samGovProvider);
-  await runProvider("texasEsbd", texasEsbdProvider);
-  await runProvider("nyScr", nyScrProvider);
   await runProvider("publicPortalProviders", publicPortalProvidersProvider);
   await runProvider("grantsGov", grantsGovProvider);
   await runProvider("tango", tangoProvider);
@@ -107,14 +120,42 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       });
       allRecords.push(...fetchResult.records);
       result.fetched += fetchResult.records.length;
-      result.providerResults.push({ provider: "bidnet", fetched: fetchResult.records.length, errors: fetchResult.errors ?? [] });
+      result.providerResults.push({
+        provider: "bidnet",
+        fetched: fetchResult.records.length,
+        errors: fetchResult.errors ?? [],
+      });
     } catch (err: any) {
-      result.providerResults.push({ provider: "bidnet", fetched: 0, errors: [err.message ?? String(err)] });
+      result.providerResults.push({
+        provider: "bidnet",
+        fetched: 0,
+        errors: [err.message ?? String(err)],
+      });
     }
   }
 
   // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker", "clod", "olostep"];
+  const webProviders = [
+    "serper",
+    "tavily",
+    "gemini",
+    "statePortals",
+    "exa",
+    "firecrawl",
+    "you",
+    "langsearch",
+    "websearch",
+    "groq",
+    "openrouter",
+    "minimax",
+    "cerebras",
+    "deepseek",
+    "mistral",
+    "nvidia",
+    "cloudflareWorker",
+    "clod",
+    "olostep",
+  ];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
@@ -128,7 +169,13 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const useLangsearch = requestedProviders.includes("langsearch");
     const useWebsearch = requestedProviders.includes("websearch");
     const useGroqFetch = requestedProviders.includes("groq");
-    const useOpenrouterFetch = requestedProviders.includes("openrouter") || requestedProviders.includes("cerebras") || requestedProviders.includes("deepseek") || requestedProviders.includes("mistral") || requestedProviders.includes("nvidia") || requestedProviders.includes("clod");
+    const useOpenrouterFetch =
+      requestedProviders.includes("openrouter") ||
+      requestedProviders.includes("cerebras") ||
+      requestedProviders.includes("deepseek") ||
+      requestedProviders.includes("mistral") ||
+      requestedProviders.includes("nvidia") ||
+      requestedProviders.includes("clod");
 
     try {
       const webResult = await webIntelligenceFetch({
@@ -149,18 +196,51 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       allRecords.push(...webResult.opportunities);
 
       const { stats, errors } = webResult;
-      if (useSerper) result.providerResults.push({ provider: "serper", fetched: stats.serperResults, errors: errors.filter((e) => e.startsWith("Serper")) });
-      if (useTavily) result.providerResults.push({ provider: "tavily", fetched: stats.tavilyResults, errors: errors.filter((e) => e.startsWith("Tavily")) });
-      if (useGemini) result.providerResults.push({ provider: "gemini", fetched: stats.extracted, errors: errors.filter((e) => e.startsWith("Gemini")) });
-      if (useStatePortals) result.providerResults.push({ provider: "statePortals", fetched: stats.statePortalResults, errors: errors.filter((e) => e.startsWith("State Portals")) });
-      for (const aiName of ["cerebras", "deepseek", "mistral", "nvidia", "clod"]) {
-        if (requestedProviders.includes(aiName)) result.providerResults.push({ provider: aiName, fetched: stats.extracted, errors: errors.filter((e) => e.includes(aiName)) });
+      if (useSerper)
+        result.providerResults.push({
+          provider: "serper",
+          fetched: stats.serperResults,
+          errors: errors.filter((e) => e.startsWith("Serper")),
+        });
+      if (useTavily)
+        result.providerResults.push({
+          provider: "tavily",
+          fetched: stats.tavilyResults,
+          errors: errors.filter((e) => e.startsWith("Tavily")),
+        });
+      if (useGemini)
+        result.providerResults.push({
+          provider: "gemini",
+          fetched: stats.extracted,
+          errors: errors.filter((e) => e.startsWith("Gemini")),
+        });
+      if (useStatePortals)
+        result.providerResults.push({
+          provider: "statePortals",
+          fetched: stats.statePortalResults,
+          errors: errors.filter((e) => e.startsWith("State Portals")),
+        });
+      for (const aiName of [
+        "cerebras",
+        "deepseek",
+        "mistral",
+        "nvidia",
+        "clod",
+      ]) {
+        if (requestedProviders.includes(aiName))
+          result.providerResults.push({
+            provider: aiName,
+            fetched: stats.extracted,
+            errors: errors.filter((e) => e.includes(aiName)),
+          });
       }
 
       result.fetched += webResult.opportunities.length;
     } catch (err: any) {
       const msg = err.message ?? String(err);
-      for (const p of requestedProviders.filter((p) => webProviders.includes(p))) {
+      for (const p of requestedProviders.filter((p) =>
+        webProviders.includes(p),
+      )) {
         result.providerResults.push({ provider: p, fetched: 0, errors: [msg] });
       }
     }
@@ -168,7 +248,9 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
 
   // ── Score and deduplicate ──────────────────────────────────────────────────
   const scored = scoreOpportunities(allRecords, {
-    keywords: options.keywords ? options.keywords.split(/[\s,]+/).filter(Boolean) : [],
+    keywords: options.keywords
+      ? options.keywords.split(/[\s,]+/).filter(Boolean)
+      : [],
     naicsCodes: ["621111", "621999", "621512", "621310"],
   });
 
@@ -176,9 +258,11 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   const qualityFiltered = scored.filter(({ opportunity }) =>
     passesQualityFilter({
       title: opportunity.title,
-      description: [opportunity.description, opportunity.agency].filter(Boolean).join(" "),
+      description: [opportunity.description, opportunity.agency]
+        .filter(Boolean)
+        .join(" "),
       sourceUrl: opportunity.sourceUrl,
-    })
+    }),
   );
   result.skipped += scored.length - qualityFiltered.length;
 
@@ -255,13 +339,24 @@ function dedupeKeys(opp: NormalizedOpportunity): string[] {
   const host = hostFromUrl(opp.sourceUrl);
   if (opp.sourceUrl) {
     try {
-      const u = new URL(opp.sourceUrl.startsWith("http") ? opp.sourceUrl : `https://${opp.sourceUrl}`);
-      keys.push(`url:${(u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "")).toLowerCase()}`);
+      const u = new URL(
+        opp.sourceUrl.startsWith("http")
+          ? opp.sourceUrl
+          : `https://${opp.sourceUrl}`,
+      );
+      keys.push(
+        `url:${(u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "")).toLowerCase()}`,
+      );
     } catch {
       keys.push(`url:${opp.sourceUrl.toLowerCase()}`);
     }
   }
-  const normTitle = opp.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
-  if (normTitle.length >= 8) keys.push(`title:${normTitle}|${host ?? (opp.agency ?? "").toLowerCase()}`);
+  const normTitle = opp.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (normTitle.length >= 8)
+    keys.push(`title:${normTitle}|${host ?? (opp.agency ?? "").toLowerCase()}`);
   return keys;
 }
