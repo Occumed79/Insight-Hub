@@ -1,0 +1,26 @@
+name: Inspect portal directory wiring
+
+on:
+  push:
+    branches:
+      - agent/expand-portal-directory-international
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate portal directory files
+        shell: bash
+        run: |
+          echo '=== FILES WITH RFP/SOURCE/PORTAL NAMES ==='
+          find intel-suite/src api-server/src -type f | grep -Ei '(rfp|source|portal)' | sort
+          echo '=== REFERENCES TO /rfp-sources ==='
+          grep -RIn --exclude-dir=node_modules --exclude='*.map' 'rfp-sources' intel-suite/src api-server/src || true
+          echo '=== REFERENCES TO ENRICHED_DIRECT_RFP_PORTALS ==='
+          grep -RIn --exclude-dir=node_modules 'ENRICHED_DIRECT_RFP_PORTALS' intel-suite/src api-server/src || true
+          echo '=== ROUTE REGISTRATION ==='
+          grep -RIn --exclude-dir=node_modules 'rfpSources\|rfp-sources' api-server/src | head -80 || true
