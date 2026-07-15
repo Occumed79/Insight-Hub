@@ -26,9 +26,6 @@ jobs:
       - name: Install pnpm
         run: npm install --global pnpm@10
 
-      - name: Restore validated GovBid provider
-        run: git show 30b18e3d70c986b8c4e8f3aacb9c624e1f9d8899:api-server/src/lib/providers/govBid.ts > api-server/src/lib/providers/govBid.ts
-
       - name: Apply latest-main wiring
         run: python scripts/apply-govbid-v2.py
 
@@ -69,7 +66,7 @@ jobs:
         run: |
           rm scripts/apply-govbid-v2.py
           rm .github/workflows/apply-govbid-v2.yml
-          git config user.name "github-actions[bot]"
+          git config user.name "github-actions[bot]]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Add authorized GovBid tender provider"
