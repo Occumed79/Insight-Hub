@@ -34,7 +34,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           retry_file = Path("scripts/audit-rfp-chunks-001-010.mjs")
           retry_text = retry_file.read_text()
@@ -121,27 +120,22 @@ jobs:
             return lastResult;
           }
 
-          async function mapWithConcurrency'''
-          retry_text, count = re.subn(
-              r'async function fetchEndpoint\(url\) \{[\s\S]*?\n\}\n\nasync function mapWithConcurrency',
-              replacement,
-              retry_text,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit("Failed to replace fetchEndpoint exactly once")
+          '''
+          retry_start = retry_text.index("async function fetchEndpoint(url) {")
+          retry_end = retry_text.index("async function mapWithConcurrency", retry_start)
+          retry_text = retry_text[:retry_start] + replacement + retry_text[retry_end:]
           retry_file.write_text(retry_text)
 
           format_file = Path("scripts/audit-rfp-chunks-011-042.mjs")
           format_text = format_file.read_text()
-          format_text, import_count = re.subn(
-              r'(import path from "node:path";\n)',
-              r'\1import prettier from "prettier";\n',
-              format_text,
-              count=1,
-          )
-          if import_count != 1 and 'import prettier from "prettier";' not in format_text:
-              raise SystemExit("Failed to add Prettier import")
+          if 'import prettier from "prettier";' not in format_text:
+              import_marker = 'import path from "node:path";\n'
+              import_index = format_text.index(import_marker) + len(import_marker)
+              format_text = (
+                  format_text[:import_index]
+                  + 'import prettier from "prettier";\n'
+                  + format_text[import_index:]
+              )
 
           new_writer = r'''  const content = [
             'import type { DirectRfpPortal } from "./directRfpPortals";',
@@ -158,14 +152,21 @@ jobs:
             path.join(prunedDir, chunk.sourceFile),
             formattedContent,
           );'''
-          format_text, writer_count = re.subn(
-              r'  const content = \[[\s\S]*?  fs\.writeFileSync\(path\.join\(prunedDir, chunk\.sourceFile\), content\);',
-              new_writer,
-              format_text,
-              count=1,
+          export_index = format_text.index(
+              "  const exportName = `GENERATED_DIRECT_RFP_PORTALS_${chunkNumber}`;"
           )
-          if writer_count != 1:
-              raise SystemExit("Failed to replace generated writer exactly once")
+          writer_start = format_text.index("  const content = [", export_index)
+          writer_end_marker = (
+              "  fs.writeFileSync(path.join(prunedDir, chunk.sourceFile), content);"
+          )
+          writer_end = format_text.index(writer_end_marker, writer_start) + len(
+              writer_end_marker
+          )
+          format_text = (
+              format_text[:writer_start]
+              + new_writer
+              + format_text[writer_end:]
+          )
           format_file.write_text(format_text)
           PY
 
