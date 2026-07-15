@@ -1,0 +1,137 @@
+name: Euna PR validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-validate:
+    if: github.head_ref == 'agent/add-euna-supplier-network'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/add-euna-supplier-network
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Patch remaining Euna wiring
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}: {old!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "api-server/src/lib/search/unifiedSearch.ts",
+              'import { publicPortalProvidersProvider } from "../providers/publicPortalProviders";\nimport { tangoProvider } from "../providers/tango";',
+              'import { publicPortalProvidersProvider } from "../providers/publicPortalProviders";\nimport { eunaBonfireProvider } from "../providers/eunaBonfire";\nimport { tangoProvider } from "../providers/tango";',
+          )
+          replace_once(
+              "api-server/src/lib/search/unifiedSearch.ts",
+              '  await runProvider("publicPortalProviders", publicPortalProvidersProvider);\n  await runProvider("grantsGov", grantsGovProvider);',
+              '  await runProvider("publicPortalProviders", publicPortalProvidersProvider);\n  await runProvider("eunaBonfire", eunaBonfireProvider);\n  await runProvider("grantsGov", grantsGovProvider);',
+          )
+
+          replace_once(
+              "api-server/src/lib/search/scheduler.ts",
+              '["samGov", "grantsGov", "publicPortalProviders", "serper", "tavily"]',
+              '["samGov", "grantsGov", "publicPortalProviders", "eunaBonfire", "serper", "tavily"]',
+          )
+          replace_once(
+              "render.yaml",
+              'value: samGov,grantsGov,publicPortalProviders,serper,tavily',
+              'value: samGov,grantsGov,publicPortalProviders,eunaBonfire,serper,tavily',
+          )
+
+          replace_once(
+              "api-server/src/routes/opportunities.ts",
+              '      public_portals: "publicPortalProviders",\n      usaSpending: "usaSpending",',
+              '      public_portals: "publicPortalProviders",\n      eunaBonfire: "eunaBonfire",\n      euna_bonfire: "eunaBonfire",\n      eunaSupplierNetwork: "eunaBonfire",\n      usaSpending: "usaSpending",',
+          )
+
+          replace_once(
+              "intel-suite/src/pages/portal/opportunities.tsx",
+              '  { key: "publicPortalProviders", label: "Public Portal Providers", desc: "Direct parsers + Serper official-portal discovery", stub: false },\n  { key: "olostep",',
+              '  { key: "publicPortalProviders", label: "Public Portal Providers", desc: "Direct parsers + Serper official-portal discovery", stub: false },\n  { key: "eunaBonfire", label: "Euna Supplier Network", desc: "Separate public Bonfire/Euna opportunity discovery", stub: false },\n  { key: "olostep",',
+          )
+          replace_once(
+              "intel-suite/src/pages/portal/opportunities.tsx",
+              '["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "publicPortalProviders"]',
+              '["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "publicPortalProviders", "eunaBonfire"]',
+          )
+          PY
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Verify provider separation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          required = {
+              "api-server/src/lib/providers/eunaBonfire.ts": [
+                  'readonly name = "eunaBonfire"',
+                  'source: "eunaBonfire"',
+                  'serper_public_euna',
+                  'no supplier credentials were used',
+              ],
+              "api-server/src/lib/config/providerConfig.ts": [
+                  '| "eunaBonfire"',
+                  'eunaBonfire: provider(',
+                  'No Euna credentials are stored',
+              ],
+              "api-server/src/lib/providers/index.ts": [
+                  'eunaBonfire: eunaBonfireProvider',
+              ],
+              "api-server/src/lib/search/unifiedSearch.ts": [
+                  'runProvider("eunaBonfire", eunaBonfireProvider)',
+              ],
+              "intel-suite/src/pages/portal/opportunities.tsx": [
+                  'key: "eunaBonfire"',
+                  'Separate public Bonfire/Euna opportunity discovery',
+              ],
+          }
+          for path, needles in required.items():
+              text = Path(path).read_text()
+              for needle in needles:
+                  if needle not in text:
+                      raise SystemExit(f"Missing {needle!r} in {path}")
+
+          public_portal = Path("api-server/src/lib/providers/publicPortalProviders/index.ts").read_text()
+          if "eunaBonfire" in public_portal:
+              raise SystemExit("Euna was incorrectly folded into Public Portal Providers")
+          PY
+
+      - name: Commit validated wiring and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/euna-pr-validation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete standalone Euna Supplier Network integration"
+          git push origin HEAD:agent/add-euna-supplier-network
