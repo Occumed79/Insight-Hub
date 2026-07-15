@@ -1,0 +1,53 @@
+name: Audit core direct RFP portals
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate retained core catalog
+        run: |
+          rm -rf audit-output/core-direct-rfp-portals
+          node scripts/run-core-direct-rfp-audit.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const report = JSON.parse(
+            fs.readFileSync("audit-output/core-direct-rfp-portals/audit.json", "utf8"),
+          );
+          const nonLive = Object.entries(report.summary.statusCounts)
+            .filter(([status, count]) => status !== "live" && count > 0);
+          if (nonLive.length > 0) {
+            throw new Error(`Retained core catalog contains non-live records: ${JSON.stringify(nonLive)}`);
+          }
+          console.log(`Core validation passed: ${report.summary.retained} retained records are live.`);
+          NODE
+
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f audit-output/core-direct-rfp-portals/audit.md ]; then
+            cat audit-output/core-direct-rfp-portals/audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-direct-rfp-portals-audit
+          path: audit-output/core-direct-rfp-portals/
+          if-no-files-found: error
+          retention-days: 14

@@ -91,5 +91,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_025: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official Syracuse University procurement or business opportunities page.",
-  },
+  }
 ];

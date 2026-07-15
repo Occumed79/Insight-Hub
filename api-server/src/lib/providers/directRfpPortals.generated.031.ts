@@ -2,24 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_031: DirectRfpPortal[] = [
   {
-    id: "ca-octa-procurement",
-    name: "OCTA Contracts Administration and Materials Management",
-    jurisdiction: "Orange County Transportation Authority",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.octa.net/about/business/",
-    searchUrl: "https://www.octa.net/about/business/",
-    domain: "www.octa.net",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Orange County Transportation Authority procurement or business opportunities page.",
-  },
-  {
     id: "ca-sandag-contracts",
     name: "SANDAG Contracts",
     jurisdiction: "San Diego Association of Governments",
@@ -36,60 +18,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_031: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official San Diego Association of Governments procurement or business opportunities page.",
-  },
-  {
-    id: "tx-dart-procurement",
-    name: "DART Procurement",
-    jurisdiction: "Dallas Area Rapid Transit",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.dart.org/business/procurement",
-    searchUrl: "https://www.dart.org/business/procurement",
-    domain: "www.dart.org",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Dallas Area Rapid Transit procurement or business opportunities page.",
-  },
-  {
-    id: "tx-metro-houston-procurement",
-    name: "METRO Houston Procurement",
-    jurisdiction: "Metropolitan Transit Authority of Harris County",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.ridemetro.org/about/metrobusiness/procurement",
-    searchUrl: "https://www.ridemetro.org/about/metrobusiness/procurement",
-    domain: "www.ridemetro.org",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Metropolitan Transit Authority of Harris County procurement or business opportunities page.",
-  },
-  {
-    id: "fl-miami-dade-transit-procurement",
-    name: "Miami-Dade Transit Procurement",
-    jurisdiction: "Miami-Dade Transit",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.miamidade.gov/global/transportation/business-procurement.page",
-    searchUrl:
-      "https://www.miamidade.gov/global/transportation/business-procurement.page",
-    domain: "www.miamidade.gov",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Miami-Dade Transit procurement or business opportunities page.",
-  },
+  }
 ];

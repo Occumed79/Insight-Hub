@@ -1,0 +1,50 @@
+name: Validate full direct RFP catalog
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - api-server/src/lib/providers/directRfpPortals.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.ts
+      - api-server/src/lib/providers/directRfpPortals.generated.*.ts
+      - scripts/validate-direct-rfp-catalog.mjs
+      - .github/workflows/validate-direct-rfp-full-catalog.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate full catalog structure and uniqueness
+        run: node scripts/validate-direct-rfp-catalog.mjs
+
+      - name: Publish validation summary
+        if: always()
+        run: |
+          if [ -f audit-output/direct-rfp-full-catalog/validation.md ]; then
+            cat audit-output/direct-rfp-full-catalog/validation.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-rfp-full-catalog-validation
+          path: audit-output/direct-rfp-full-catalog/
+          if-no-files-found: error
+          retention-days: 14

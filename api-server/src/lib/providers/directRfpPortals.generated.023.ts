@@ -2,24 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_023: DirectRfpPortal[] = [
   {
-    id: "fl-fiu-purchasing",
-    name: "Florida International University Purchasing Services",
-    jurisdiction: "Florida International University",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://finance.fiu.edu/controller/purchasing/",
-    searchUrl: "https://finance.fiu.edu/controller/purchasing/",
-    domain: "finance.fiu.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Florida International University procurement or business opportunities page.",
-  },
-  {
     id: "fl-fau-procurement",
     name: "Florida Atlantic University Procurement Services",
     jurisdiction: "Florida Atlantic University",
@@ -54,42 +36,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_023: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official University of North Florida procurement or business opportunities page.",
-  },
-  {
-    id: "fl-fgcu-procurement",
-    name: "Florida Gulf Coast University Procurement Services",
-    jurisdiction: "Florida Gulf Coast University",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.fgcu.edu/adminservices/procurement/",
-    searchUrl: "https://www.fgcu.edu/adminservices/procurement/",
-    domain: "www.fgcu.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Florida Gulf Coast University procurement or business opportunities page.",
-  },
-  {
-    id: "fl-famu-procurement",
-    name: "Florida A&M University Procurement Services",
-    jurisdiction: "Florida A&M University",
-    state: "FL",
-    country: "US",
-    level: "district",
-    url: "https://www.famu.edu/administration/campus-services/procurement-services/",
-    searchUrl:
-      "https://www.famu.edu/administration/campus-services/procurement-services/",
-    domain: "www.famu.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Florida A&M University procurement or business opportunities page.",
-  },
+  }
 ];

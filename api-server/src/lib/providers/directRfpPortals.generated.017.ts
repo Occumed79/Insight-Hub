@@ -85,5 +85,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_017: DirectRfpPortal[] = [
     tier: 3,
     parserStatus: "catalog_only",
     notes: "Official UC Irvine procurement or business opportunities page.",
-  },
+  }
 ];

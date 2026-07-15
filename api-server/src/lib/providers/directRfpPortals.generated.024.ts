@@ -20,25 +20,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_024: DirectRfpPortal[] = [
       "Official Nova Southeastern University procurement or business opportunities page.",
   },
   {
-    id: "ny-cuny-procurement",
-    name: "CUNY Procurement",
-    jurisdiction: "City University of New York",
-    state: "NY",
-    country: "US",
-    level: "district",
-    url: "https://www.cuny.edu/about/administration/offices/cis/core-functions/procurement/",
-    searchUrl:
-      "https://www.cuny.edu/about/administration/offices/cis/core-functions/procurement/",
-    domain: "www.cuny.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official City University of New York procurement or business opportunities page.",
-  },
-  {
     id: "ny-cornell-procurement",
     name: "Cornell Procurement Services",
     jurisdiction: "Cornell University",
@@ -55,42 +36,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_024: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official Cornell University procurement or business opportunities page.",
-  },
-  {
-    id: "ny-columbia-procurement",
-    name: "Columbia University Purchasing",
-    jurisdiction: "Columbia University",
-    state: "NY",
-    country: "US",
-    level: "district",
-    url: "https://procurement.columbia.edu/",
-    searchUrl: "https://procurement.columbia.edu/",
-    domain: "procurement.columbia.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Columbia University procurement or business opportunities page.",
-  },
-  {
-    id: "ny-nyu-procurement",
-    name: "NYU Procurement",
-    jurisdiction: "New York University",
-    state: "NY",
-    country: "US",
-    level: "district",
-    url: "https://www.nyu.edu/about/leadership-university-administration/office-of-the-president/office-of-the-executive-vice-president/finance-and-budget/procurement.html",
-    searchUrl:
-      "https://www.nyu.edu/about/leadership-university-administration/office-of-the-president/office-of-the-executive-vice-president/finance-and-budget/procurement.html",
-    domain: "www.nyu.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official New York University procurement or business opportunities page.",
-  },
+  }
 ];

@@ -38,24 +38,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_021: DirectRfpPortal[] = [
       "Official Texas Tech University procurement or business opportunities page.",
   },
   {
-    id: "tx-utd-procurement",
-    name: "UT Dallas Procurement Management",
-    jurisdiction: "University of Texas at Dallas",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://procurement.utdallas.edu/",
-    searchUrl: "https://procurement.utdallas.edu/",
-    domain: "procurement.utdallas.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official University of Texas at Dallas procurement or business opportunities page.",
-  },
-  {
     id: "tx-utsa-purchasing",
     name: "UTSA Purchasing and Distribution Services",
     jurisdiction: "University of Texas at San Antonio",
@@ -72,23 +54,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_021: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official University of Texas at San Antonio procurement or business opportunities page.",
-  },
-  {
-    id: "tx-utep-purchasing",
-    name: "UTEP Purchasing and General Services",
-    jurisdiction: "University of Texas at El Paso",
-    state: "TX",
-    country: "US",
-    level: "district",
-    url: "https://www.utep.edu/vpba/purchasing/",
-    searchUrl: "https://www.utep.edu/vpba/purchasing/",
-    domain: "www.utep.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official University of Texas at El Paso procurement or business opportunities page.",
-  },
+  }
 ];

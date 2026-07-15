@@ -2,24 +2,6 @@ import type { DirectRfpPortal } from "./directRfpPortals";
 
 export const GENERATED_DIRECT_RFP_PORTALS_019: DirectRfpPortal[] = [
   {
-    id: "ca-calpoly-procurement",
-    name: "Cal Poly Procurement Services",
-    jurisdiction: "Cal Poly San Luis Obispo",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://afd.calpoly.edu/procurement/",
-    searchUrl: "https://afd.calpoly.edu/procurement/",
-    domain: "afd.calpoly.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Cal Poly San Luis Obispo procurement or business opportunities page.",
-  },
-  {
     id: "ca-sdsu-procurement",
     name: "San Diego State University Procurement",
     jurisdiction: "San Diego State University",
@@ -36,24 +18,6 @@ export const GENERATED_DIRECT_RFP_PORTALS_019: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official San Diego State University procurement or business opportunities page.",
-  },
-  {
-    id: "ca-sjsu-procurement",
-    name: "San Jose State University Procurement",
-    jurisdiction: "San Jose State University",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.sjsu.edu/fabs/services/procurement/",
-    searchUrl: "https://www.sjsu.edu/fabs/services/procurement/",
-    domain: "www.sjsu.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official San Jose State University procurement or business opportunities page.",
   },
   {
     id: "ca-csulb-procurement",
@@ -73,23 +37,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_019: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official Cal State Long Beach procurement or business opportunities page.",
-  },
-  {
-    id: "ca-csuf-procurement",
-    name: "Cal State Fullerton Procurement",
-    jurisdiction: "Cal State Fullerton",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://finance.fullerton.edu/procurement/",
-    searchUrl: "https://finance.fullerton.edu/procurement/",
-    domain: "finance.fullerton.edu",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes:
-      "Official Cal State Fullerton procurement or business opportunities page.",
-  },
+  }
 ];
