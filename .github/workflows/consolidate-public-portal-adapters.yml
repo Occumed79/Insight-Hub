@@ -1,0 +1,100 @@
+name: Consolidate public portal adapters
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate-validate-cleanup:
+    if: github.head_ref == 'agent/consolidate-public-portal-adapters'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consolidate-public-portal-adapters
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Consolidate Texas and New York under public portals
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          unified_file = Path("api-server/src/lib/search/unifiedSearch.ts")
+          unified = unified_file.read_text()
+
+          removals = [
+              'import { texasEsbdProvider } from "../providers/texasEsbd";\n',
+              'import { nyScrProvider } from "../providers/nyScr";\n',
+              '  await runProvider("texasEsbd", texasEsbdProvider);\n',
+              '  await runProvider("nyScr", nyScrProvider);\n',
+          ]
+          for text in removals:
+              if unified.count(text) != 1:
+                  raise SystemExit(f"Expected exactly one occurrence: {text!r}")
+              unified = unified.replace(text, "", 1)
+          unified_file.write_text(unified)
+
+          providers_file = Path("api-server/src/routes/providers.ts")
+          providers = providers_file.read_text()
+          old = 'const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[];'
+          new = '''const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>([
+            "texasEsbd",
+            "nyScr",
+          ]);
+
+          const PROVIDER_NAMES = (Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]).filter(
+            (name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name),
+          );'''
+          if providers.count(old) != 1:
+              raise SystemExit("Expected exactly one provider list declaration")
+          providers = providers.replace(old, new, 1)
+          providers_file.write_text(providers)
+          PY
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format changed files
+        run: pnpm exec prettier --write api-server/src/lib/search/unifiedSearch.ts api-server/src/routes/providers.ts
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Verify consolidation
+        shell: bash
+        run: |
+          grep -q '"tx-esbd": texasEsbdProvider' api-server/src/lib/providers/publicPortalProviders/index.ts
+          grep -q '"ny-contract-reporter": nyScrProvider' api-server/src/lib/providers/publicPortalProviders/index.ts
+          ! grep -q 'runProvider("texasEsbd"' api-server/src/lib/search/unifiedSearch.ts
+          ! grep -q 'runProvider("nyScr"' api-server/src/lib/search/unifiedSearch.ts
+
+      - name: Commit consolidation and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/consolidate-public-portal-adapters.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server/src/lib/search/unifiedSearch.ts api-server/src/routes/providers.ts .github/workflows/consolidate-public-portal-adapters.yml
+          git commit -m "Consolidate Texas and New York public portal adapters"
+          git push origin HEAD:agent/consolidate-public-portal-adapters
