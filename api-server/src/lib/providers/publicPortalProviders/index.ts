@@ -1,5 +1,6 @@
 import { nyScrProvider } from "../nyScr";
 import { texasEsbdProvider } from "../texasEsbd";
+import { statePortalsProvider } from "../statePortals";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
 import { extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
@@ -26,6 +27,24 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = {
 
 function isOccuMedMatch(record: NormalizedOpportunity): boolean {
   return Boolean(record.rawData?.occuMedMatched);
+}
+
+function sourceIdForRecord(record: NormalizedOpportunity): string | undefined {
+  const value = record.rawData?.sourceId ?? record.rawData?.parsedPortalSourceId;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function opportunityKey(record: NormalizedOpportunity): string {
+  if (record.sourceUrl) {
+    try {
+      const parsed = new URL(record.sourceUrl);
+      return `url:${parsed.hostname.replace(/^www\./, "").toLowerCase()}${parsed.pathname.replace(/\/$/, "").toLowerCase()}`;
+    } catch {
+      return `url:${record.sourceUrl.toLowerCase()}`;
+    }
+  }
+  if (record.solicitationNumber) return `sol:${record.solicitationNumber.replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
+  return `id:${record.externalId.toLowerCase()}`;
 }
 
 async function waitForDomainRateLimit(domain: string): Promise<void> {
@@ -104,12 +123,72 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
       }
     }
 
+    // Second pass: search the same official portal catalog through Serper.
+    // This recovers opportunity pages that a portal landing-page parser misses,
+    // while keeping direct parsing authoritative and avoiding duplicate records.
+    if (await statePortalsProvider.isConfigured()) {
+      try {
+        const discoveredPages = await statePortalsProvider.search({ keywords: options.keywords });
+        const sourceById = new Map(this.sources.map((source) => [source.id, source]));
+        const seen = new Set(records.map(opportunityKey));
+        const discoveredRecords = statePortalsProvider.toOpportunities(discoveredPages);
+
+        for (const discovered of discoveredRecords) {
+          const sourceId = sourceIdForRecord(discovered);
+          const source = sourceId ? sourceById.get(sourceId) : undefined;
+          const normalized: NormalizedOpportunity = source
+            ? withPublicPortalMetadata({
+                ...discovered,
+                source: "publicPortalProviders",
+                providerName: "publicPortalProviders",
+                rawData: { ...(discovered.rawData ?? {}), discoveryMethod: "serper_official_portal", serperFallback: true },
+              }, source)
+            : {
+                ...discovered,
+                source: "publicPortalProviders",
+                providerName: "publicPortalProviders",
+                rawData: {
+                  ...(discovered.rawData ?? {}),
+                  providerFamily: "public_portal",
+                  providerType: "serper_official_portal",
+                  sourceBadge: "Public Portal Search",
+                  discoveryMethod: "serper_official_portal",
+                  serperFallback: true,
+                },
+              };
+
+          const key = opportunityKey(normalized);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          records.push(normalized);
+
+          if (sourceId) {
+            const prior = sourceStatuses.get(sourceId);
+            const succeededAt = new Date();
+            sourceStatuses.set(sourceId, {
+              sourceId,
+              lastCheckedAt: prior?.lastCheckedAt ?? succeededAt,
+              lastSuccessAt: succeededAt,
+              lastFailureAt: prior?.lastFailureAt,
+              lastFailureReason: prior?.lastFailureReason,
+              resultCount: (prior?.resultCount ?? 0) + 1,
+              matchedCount: (prior?.matchedCount ?? 0) + (isOccuMedMatch(normalized) ? 1 : 0),
+            });
+          }
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        errors.push(`serper-official-portal-discovery: ${reason}`);
+      }
+    }
+
     return { records, total: records.length, errors };
   }
 
   async getStatus(): Promise<ProviderStatus> {
     const statuses = Array.from(sourceStatuses.values());
-    return { name: this.name, configured: true, healthy: !statuses.some((status) => status.lastFailureAt), recordCount: statuses.reduce((sum, status) => sum + status.resultCount, 0) };
+    const hasCurrentFailure = statuses.some((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
+    return { name: this.name, configured: true, healthy: !hasCurrentFailure, recordCount: statuses.reduce((sum, status) => sum + status.resultCount, 0) };
   }
 }
 
