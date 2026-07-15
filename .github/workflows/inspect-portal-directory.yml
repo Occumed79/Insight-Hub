@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect:
@@ -13,14 +13,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate portal directory files
+        with:
+          ref: agent/expand-portal-directory-international
+          fetch-depth: 0
+      - name: Capture portal directory wiring
         shell: bash
         run: |
-          echo '=== FILES WITH RFP/SOURCE/PORTAL NAMES ==='
-          find intel-suite/src api-server/src -type f | grep -Ei '(rfp|source|portal)' | sort
-          echo '=== REFERENCES TO /rfp-sources ==='
-          grep -RIn --exclude-dir=node_modules --exclude='*.map' 'rfp-sources' intel-suite/src api-server/src || true
-          echo '=== REFERENCES TO ENRICHED_DIRECT_RFP_PORTALS ==='
-          grep -RIn --exclude-dir=node_modules 'ENRICHED_DIRECT_RFP_PORTALS' intel-suite/src api-server/src || true
-          echo '=== ROUTE REGISTRATION ==='
-          grep -RIn --exclude-dir=node_modules 'rfpSources\|rfp-sources' api-server/src | head -80 || true
+          if [ -f tmp/portal-directory-inspection.txt ]; then
+            echo 'Inspection file already exists.'
+            exit 0
+          fi
+          mkdir -p tmp
+          {
+            echo '=== FILES WITH RFP/SOURCE/PORTAL NAMES ==='
+            find intel-suite/src api-server/src -type f | grep -Ei '(rfp|source|portal)' | sort
+            echo '=== REFERENCES TO /rfp-sources ==='
+            grep -RIn --exclude-dir=node_modules --exclude='*.map' 'rfp-sources' intel-suite/src api-server/src || true
+            echo '=== REFERENCES TO ENRICHED_DIRECT_RFP_PORTALS ==='
+            grep -RIn --exclude-dir=node_modules 'ENRICHED_DIRECT_RFP_PORTALS' intel-suite/src api-server/src || true
+            echo '=== ROUTE REGISTRATION ==='
+            grep -RIn --exclude-dir=node_modules 'rfpSources\|rfp-sources' api-server/src | head -80 || true
+          } > tmp/portal-directory-inspection.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tmp/portal-directory-inspection.txt
+          git commit -m 'Capture portal directory wiring for integration'
+          git push origin HEAD:agent/expand-portal-directory-international
