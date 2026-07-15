@@ -1,0 +1,92 @@
+name: Minimize PR 93 diff
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  minimize-validate-cleanup:
+    if: github.event.pull_request.number == 93
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consolidate-public-portal-adapters
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Restore main formatting and apply only intended edits
+        shell: bash
+        run: |
+          git fetch origin main
+          git show origin/main:api-server/src/lib/search/unifiedSearch.ts > api-server/src/lib/search/unifiedSearch.ts
+          git show origin/main:api-server/src/routes/providers.ts > api-server/src/routes/providers.ts
+          python3 - <<'PY'
+          from pathlib import Path
+
+          unified_file = Path("api-server/src/lib/search/unifiedSearch.ts")
+          unified = unified_file.read_text()
+          for text in [
+              'import { texasEsbdProvider } from "../providers/texasEsbd";\n',
+              'import { nyScrProvider } from "../providers/nyScr";\n',
+              '  await runProvider("texasEsbd", texasEsbdProvider);\n',
+              '  await runProvider("nyScr", nyScrProvider);\n',
+          ]:
+              if unified.count(text) != 1:
+                  raise SystemExit(f"Expected exactly one occurrence: {text!r}")
+              unified = unified.replace(text, "", 1)
+          unified_file.write_text(unified)
+
+          providers_file = Path("api-server/src/routes/providers.ts")
+          providers = providers_file.read_text()
+          old = 'const PROVIDER_NAMES = Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[];'
+          new = '''const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>(["texasEsbd", "nyScr"]);
+          const PROVIDER_NAMES = (Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]).filter(
+            (name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name),
+          );'''
+          if providers.count(old) != 1:
+              raise SystemExit("Expected exactly one provider list declaration")
+          providers_file.write_text(providers.replace(old, new, 1))
+          PY
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Verify surgical diff
+        shell: bash
+        run: |
+          git diff --check
+          grep -q '"tx-esbd": texasEsbdProvider' api-server/src/lib/providers/publicPortalProviders/index.ts
+          grep -q '"ny-contract-reporter": nyScrProvider' api-server/src/lib/providers/publicPortalProviders/index.ts
+          ! grep -q 'runProvider("texasEsbd"' api-server/src/lib/search/unifiedSearch.ts
+          ! grep -q 'runProvider("nyScr"' api-server/src/lib/search/unifiedSearch.ts
+
+      - name: Commit cleanup and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/minimize-pr-93-diff.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server/src/lib/search/unifiedSearch.ts api-server/src/routes/providers.ts .github/workflows/minimize-pr-93-diff.yml
+          git commit -m "Keep public portal consolidation diff surgical"
+          git push origin HEAD:agent/consolidate-public-portal-adapters
