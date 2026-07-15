@@ -5,6 +5,7 @@ export * from "./nyScr";
 export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
+export * from "./eunaBonfire";
 export * from "./gemini";
 export * from "./serper";
 export * from "./tavily";
@@ -35,6 +36,7 @@ import { nyScrProvider } from "./nyScr";
 import { usaSpendingProvider } from "./usaSpending";
 import { federalRegisterProvider } from "./federalRegister";
 import { publicPortalProvidersProvider } from "./publicPortalProviders";
+import { eunaBonfireProvider } from "./eunaBonfire";
 import { geminiProvider } from "./gemini";
 import { serperProvider } from "./serper";
 import { tavilyProvider } from "./tavily";
@@ -71,6 +73,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   texasEsbd: texasEsbdProvider,
   nyScr: nyScrProvider,
   publicPortalProviders: publicPortalProvidersProvider,
+  eunaBonfire: eunaBonfireProvider,
   usaSpending: usaSpendingProvider,
   federalRegister: federalRegisterProvider,
   gemini: geminiProvider,

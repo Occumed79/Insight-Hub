@@ -24,7 +24,7 @@ services:
       - key: INGESTION_DATE_RANGE_DAYS
         value: "30"
       - key: INGESTION_PROVIDERS
-        value: samGov,grantsGov,publicPortalProviders,serper,tavily
+        value: samGov,grantsGov,publicPortalProviders,eunaBonfire,serper,tavily
       - key: SAM_GOV_API_KEY
         sync: false
       - key: GEMINI_API_KEY
