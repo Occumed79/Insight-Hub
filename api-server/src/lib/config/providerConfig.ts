@@ -7,6 +7,7 @@ export type ProviderName =
   | "texasEsbd"
   | "nyScr"
   | "publicPortalProviders"
+  | "eunaBonfire"
   | "gemini"
   | "serper"
   | "tavily"
@@ -106,6 +107,7 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Direct parser for official Texas ESBD / Texas SmartBuy public solicitations. No API key required."),
   nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Direct parser for the official New York State Contract Reporter public open-opportunity listing. No API key required."),
   publicPortalProviders: provider("publicPortalProviders", "Public Portal Providers", "procurement", "direct_source", [], ["Verified public procurement source catalog", "Direct parser and public-page extraction", "Serper official-domain discovery fallback", "Existing Texas ESBD and NYSCR parsers", "Cross-path deduplication", "Per-domain rate limiting"], "live", "Unified public procurement provider: direct parsing first, then Serper discovery across the same official portal catalog."),
+  eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Standalone Euna/Bonfire opportunity discovery", "Public agency portal results", "Occu-Med relevance filtering", "Cross-provider deduplication"], "live", "Separate Euna Supplier Network / Bonfire provider that discovers public opportunity pages through the configured Serper key. No Euna credentials are stored."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
   tavily: provider("tavily", "Tavily", "search", "research_analysis", [secretField("tavilyApiKey", "TAVILY_API_KEY")], ["Research API", "RFP discovery", "Market intelligence"], "partial"),
