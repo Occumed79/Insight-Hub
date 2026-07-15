@@ -410,7 +410,7 @@ router.post("/opportunities/fetch", async (req, res) => {
       groq: "groq",
       openrouter: "openrouter",
       minimax: "minimax",
-      statePortals: "statePortals",
+      statePortals: "publicPortalProviders",
       olostep: "olostep",
       browseAi: "browseAi",
       browserUse: "browserUse",

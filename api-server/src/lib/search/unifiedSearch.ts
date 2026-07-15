@@ -43,9 +43,10 @@ export interface UnifiedFetchResult {
 }
 
 const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister"]);
+const PROVIDER_ALIASES = new Map([["statePortals", "publicPortalProviders"]]);
 
 export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
-  const requestedProviders = (options.providers ?? ["samGov"]).filter((provider) => !INTEL_ONLY_PROVIDERS.has(provider));
+  const requestedProviders = Array.from(new Set((options.providers ?? ["samGov"]).map((provider) => PROVIDER_ALIASES.get(provider) ?? provider))).filter((provider) => !INTEL_ONLY_PROVIDERS.has(provider));
 
   const result: UnifiedFetchResult = {
     fetched: 0,
@@ -109,15 +110,14 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     }
   }
 
-  // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl + State Portals) ──
-  const webProviders = ["serper", "tavily", "gemini", "statePortals", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker", "clod", "olostep"];
+  // ── Web Intelligence (Serper + Exa + Tavily + Gemini + FireCrawl) ──
+  const webProviders = ["serper", "tavily", "gemini", "exa", "firecrawl", "you", "langsearch", "websearch", "groq", "openrouter", "minimax", "cerebras", "deepseek", "mistral", "nvidia", "cloudflareWorker", "clod", "olostep"];
   const useWebIntel = requestedProviders.some((p) => webProviders.includes(p));
 
   if (useWebIntel) {
     const useSerper = requestedProviders.includes("serper");
     const useTavily = requestedProviders.includes("tavily");
     const useGemini = requestedProviders.includes("gemini");
-    const useStatePortals = requestedProviders.includes("statePortals");
     const useExa = requestedProviders.includes("exa");
     const useFirecrawl = requestedProviders.includes("firecrawl");
     const useYou = requestedProviders.includes("you");
@@ -132,7 +132,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
         useSerper,
         useTavily,
         useGemini,
-        useStatePortals,
         useExa,
         useFirecrawl,
         useYou,
@@ -148,7 +147,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       if (useSerper) result.providerResults.push({ provider: "serper", fetched: stats.serperResults, errors: errors.filter((e) => e.startsWith("Serper")) });
       if (useTavily) result.providerResults.push({ provider: "tavily", fetched: stats.tavilyResults, errors: errors.filter((e) => e.startsWith("Tavily")) });
       if (useGemini) result.providerResults.push({ provider: "gemini", fetched: stats.extracted, errors: errors.filter((e) => e.startsWith("Gemini")) });
-      if (useStatePortals) result.providerResults.push({ provider: "statePortals", fetched: stats.statePortalResults, errors: errors.filter((e) => e.startsWith("State Portals")) });
       for (const aiName of ["cerebras", "deepseek", "mistral", "nvidia", "clod"]) {
         if (requestedProviders.includes(aiName)) result.providerResults.push({ provider: aiName, fetched: stats.extracted, errors: errors.filter((e) => e.includes(aiName)) });
       }

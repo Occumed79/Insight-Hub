@@ -3,7 +3,6 @@ import { geminiProvider } from "../providers/gemini";
 import { serperProvider } from "../providers/serper";
 import type { SerperSearchResult } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
-import { statePortalsProvider } from "../providers/statePortals";
 import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
@@ -81,7 +80,6 @@ export interface WebIntelligenceResult {
     serperResults: number;
     exaResults: number;
     tavilyResults: number;
-    statePortalResults: number;
     youResults: number;
     langsearchResults: number;
     websearchResults: number;
@@ -216,7 +214,6 @@ export async function webIntelligenceFetch(options: {
   useSerper?: boolean;
   useTavily?: boolean;
   useGemini?: boolean;
-  useStatePortals?: boolean;
   useExa?: boolean;
   useFirecrawl?: boolean;
   useYou?: boolean;
@@ -230,7 +227,6 @@ export async function webIntelligenceFetch(options: {
     serperResults: 0,
     exaResults: 0,
     tavilyResults: 0,
-    statePortalResults: 0,
     youResults: 0,
     langsearchResults: 0,
     websearchResults: 0,
@@ -252,7 +248,6 @@ export async function webIntelligenceFetch(options: {
   const useSerper = options.useSerper === true;
   const useTavily = options.useTavily === true;
   const useGemini = options.useGemini === true;
-  const useStatePortals = options.useStatePortals === true;
   const useExa = options.useExa === true;
   const useFirecrawl = options.useFirecrawl === true;
   const useYou = options.useYou === true;
@@ -347,7 +342,6 @@ export async function webIntelligenceFetch(options: {
     serperRaw,
     exaRaw,
     tavilyRaw,
-    statePortalRaw,
     youRaw,
     langsearchRaw,
     websearchRaw,
@@ -396,14 +390,6 @@ export async function webIntelligenceFetch(options: {
           .researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY)
           .catch((err: any) => {
             errors.push(`Tavily: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
-    useStatePortals
-      ? statePortalsProvider
-          .search({ keywords: options.keywords })
-          .catch((err: any) => {
-            errors.push(`State Portals: ${err.message}`);
             return [];
           })
       : Promise.resolve([]),
@@ -459,14 +445,8 @@ export async function webIntelligenceFetch(options: {
     );
   }
 
-  const statePortalOpportunities =
-    statePortalsProvider.toOpportunities(statePortalRaw);
-  stats.statePortalResults = statePortalOpportunities.length;
-
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
-  for (const opp of statePortalOpportunities)
-    if (opp.sourceUrl) seen.add(opp.sourceUrl);
 
   for (const r of serperRaw)
     addCandidate(candidates, seen, {
@@ -523,7 +503,7 @@ export async function webIntelligenceFetch(options: {
   stats.rejected = candidates.length - filtered.length;
 
   if (filtered.length === 0)
-    return { opportunities: statePortalOpportunities, stats, errors };
+    return { opportunities: [], stats, errors };
 
   const enrichedCandidates = [...filtered];
 
@@ -776,7 +756,7 @@ export async function webIntelligenceFetch(options: {
   }
 
   return {
-    opportunities: [...statePortalOpportunities, ...opportunities],
+    opportunities,
     stats,
     errors,
   };
