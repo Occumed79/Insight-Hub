@@ -1,0 +1,134 @@
+=== FILES WITH RFP/SOURCE/PORTAL NAMES ===
+api-server/src/lib/providers/__tests__/directRfpPortalRelevanceCatalog.test.ts
+api-server/src/lib/providers/__tests__/portalEvidenceScanner.test.ts
+api-server/src/lib/providers/__tests__/portalRelevance.test.ts
+api-server/src/lib/providers/__tests__/statePortalQueryPlanner.test.ts
+api-server/src/lib/providers/directRfpPortalRelevanceCatalog.ts
+api-server/src/lib/providers/directRfpPortals.generated.001.ts
+api-server/src/lib/providers/directRfpPortals.generated.002.ts
+api-server/src/lib/providers/directRfpPortals.generated.003.ts
+api-server/src/lib/providers/directRfpPortals.generated.004.ts
+api-server/src/lib/providers/directRfpPortals.generated.005.ts
+api-server/src/lib/providers/directRfpPortals.generated.006.ts
+api-server/src/lib/providers/directRfpPortals.generated.007.ts
+api-server/src/lib/providers/directRfpPortals.generated.008.ts
+api-server/src/lib/providers/directRfpPortals.generated.009.ts
+api-server/src/lib/providers/directRfpPortals.generated.010.ts
+api-server/src/lib/providers/directRfpPortals.generated.011.ts
+api-server/src/lib/providers/directRfpPortals.generated.012.ts
+api-server/src/lib/providers/directRfpPortals.generated.013.ts
+api-server/src/lib/providers/directRfpPortals.generated.014.ts
+api-server/src/lib/providers/directRfpPortals.generated.015.ts
+api-server/src/lib/providers/directRfpPortals.generated.016.ts
+api-server/src/lib/providers/directRfpPortals.generated.017.ts
+api-server/src/lib/providers/directRfpPortals.generated.018.ts
+api-server/src/lib/providers/directRfpPortals.generated.019.ts
+api-server/src/lib/providers/directRfpPortals.generated.020.ts
+api-server/src/lib/providers/directRfpPortals.generated.021.ts
+api-server/src/lib/providers/directRfpPortals.generated.022.ts
+api-server/src/lib/providers/directRfpPortals.generated.023.ts
+api-server/src/lib/providers/directRfpPortals.generated.024.ts
+api-server/src/lib/providers/directRfpPortals.generated.025.ts
+api-server/src/lib/providers/directRfpPortals.generated.026.ts
+api-server/src/lib/providers/directRfpPortals.generated.027.ts
+api-server/src/lib/providers/directRfpPortals.generated.028.ts
+api-server/src/lib/providers/directRfpPortals.generated.029.ts
+api-server/src/lib/providers/directRfpPortals.generated.030.ts
+api-server/src/lib/providers/directRfpPortals.generated.031.ts
+api-server/src/lib/providers/directRfpPortals.generated.032.ts
+api-server/src/lib/providers/directRfpPortals.generated.033.ts
+api-server/src/lib/providers/directRfpPortals.generated.034.ts
+api-server/src/lib/providers/directRfpPortals.generated.035.ts
+api-server/src/lib/providers/directRfpPortals.generated.036.ts
+api-server/src/lib/providers/directRfpPortals.generated.037.ts
+api-server/src/lib/providers/directRfpPortals.generated.038.ts
+api-server/src/lib/providers/directRfpPortals.generated.039.ts
+api-server/src/lib/providers/directRfpPortals.generated.040.ts
+api-server/src/lib/providers/directRfpPortals.generated.041.ts
+api-server/src/lib/providers/directRfpPortals.generated.042.ts
+api-server/src/lib/providers/directRfpPortals.generated.043.ts
+api-server/src/lib/providers/directRfpPortals.generated.044.ts
+api-server/src/lib/providers/directRfpPortals.generated.045.ts
+api-server/src/lib/providers/directRfpPortals.generated.046.ts
+api-server/src/lib/providers/directRfpPortals.generated.047.ts
+api-server/src/lib/providers/directRfpPortals.generated.ts
+api-server/src/lib/providers/directRfpPortals.ts
+api-server/src/lib/providers/portal-parsers/californiaCalEprocure.ts
+api-server/src/lib/providers/portal-parsers/fixtures/samples.ts
+api-server/src/lib/providers/portal-parsers/floridaMfmp.ts
+api-server/src/lib/providers/portal-parsers/generic.ts
+api-server/src/lib/providers/portal-parsers/helpers.ts
+api-server/src/lib/providers/portal-parsers/index.ts
+api-server/src/lib/providers/portal-parsers/marylandEmma.ts
+api-server/src/lib/providers/portal-parsers/michiganSigma.ts
+api-server/src/lib/providers/portal-parsers/northCarolinaEvp.ts
+api-server/src/lib/providers/portal-parsers/nyContractReporter.ts
+api-server/src/lib/providers/portal-parsers/ohioProcurement.ts
+api-server/src/lib/providers/portal-parsers/pennsylvaniaEmarketplace.ts
+api-server/src/lib/providers/portal-parsers/samGov.ts
+api-server/src/lib/providers/portal-parsers/texasEsbd.ts
+api-server/src/lib/providers/portal-parsers/types.ts
+api-server/src/lib/providers/portal-parsers/virginiaEva.ts
+api-server/src/lib/providers/portalEvidenceScanner.ts
+api-server/src/lib/providers/portalRelevance.ts
+api-server/src/lib/providers/publicPortalProviders/catalog.ts
+api-server/src/lib/providers/publicPortalProviders/genericExtractors.ts
+api-server/src/lib/providers/publicPortalProviders/index.ts
+api-server/src/lib/providers/statePortals.ts
+api-server/src/lib/source-monitor/registry.ts
+api-server/src/lib/source-monitor/scraper.ts
+api-server/src/routes/rfp-sources.ts
+api-server/src/routes/source-monitor.ts
+intel-suite/src/assets/portal-buttons/hiring-compass.png
+intel-suite/src/assets/portal-buttons/hiring-compass.svg
+intel-suite/src/assets/portal-buttons/outreach-galaxy.png
+intel-suite/src/assets/portal-buttons/outreach-galaxy.svg
+intel-suite/src/assets/portal-buttons/relationship-planet.png
+intel-suite/src/assets/portal-buttons/relationship-planet.svg
+intel-suite/src/components/portal-layout.tsx
+intel-suite/src/components/portal/ClientDossierPanel.tsx
+intel-suite/src/pages/portal/clients-types.ts
+intel-suite/src/pages/portal/clients.tsx
+intel-suite/src/pages/portal/competitors.tsx
+intel-suite/src/pages/portal/contractor-newsroom.tsx
+intel-suite/src/pages/portal/entities.tsx
+intel-suite/src/pages/portal/federal-agencies.tsx
+intel-suite/src/pages/portal/intelligence-feed.tsx
+intel-suite/src/pages/portal/opportunities.tsx
+intel-suite/src/pages/portal/prospect-detail.tsx
+intel-suite/src/pages/portal/prospects.tsx
+intel-suite/src/pages/portal/settings.tsx
+intel-suite/src/pages/portal/state-agencies.tsx
+=== REFERENCES TO /rfp-sources ===
+api-server/src/routes/rfp-sources.ts:14:router.get("/rfp-sources", async (req, res) => {
+api-server/src/routes/rfp-sources.ts:105:router.get("/rfp-sources/evidence-scan/plan", async (req, res) => {
+api-server/src/routes/rfp-sources.ts:140:router.post("/rfp-sources/evidence-scan", async (req, res) => {
+api-server/src/routes/index.ts:8:import rfpSourcesRouter from "./rfp-sources";
+=== REFERENCES TO ENRICHED_DIRECT_RFP_PORTALS ===
+api-server/src/lib/providers/publicPortalProviders/catalog.ts:3:  ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/lib/providers/publicPortalProviders/catalog.ts:127:  portals: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/lib/providers/statePortals.ts:12:  ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/lib/providers/statePortals.ts:117:  return ENRICHED_DIRECT_RFP_PORTALS.find((portal) =>
+api-server/src/lib/providers/portalEvidenceScanner.ts:2:  ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/lib/providers/portalEvidenceScanner.ts:148:  return ENRICHED_DIRECT_RFP_PORTALS.filter(
+api-server/src/lib/providers/portalEvidenceScanner.ts:189:    ENRICHED_DIRECT_RFP_PORTALS.map((portal) => portal.id),
+api-server/src/lib/providers/portalEvidenceScanner.ts:367:    ENRICHED_DIRECT_RFP_PORTALS.map((portal) => [portal.id, portal]),
+api-server/src/lib/providers/directRfpPortalRelevanceCatalog.ts:400:export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
+api-server/src/lib/providers/directRfpPortalRelevanceCatalog.ts:437:  return ENRICHED_DIRECT_RFP_PORTALS.filter(
+api-server/src/lib/providers/__tests__/portalEvidenceScanner.test.ts:4:import { ENRICHED_DIRECT_RFP_PORTALS } from "../directRfpPortalRelevanceCatalog";
+api-server/src/lib/providers/__tests__/portalEvidenceScanner.test.ts:13:    const portalIds = ENRICHED_DIRECT_RFP_PORTALS.slice(0, 2).map(
+api-server/src/lib/providers/__tests__/portalEvidenceScanner.test.ts:40:    const portalIds = ENRICHED_DIRECT_RFP_PORTALS.slice(0, 4).map(
+api-server/src/lib/providers/__tests__/portalEvidenceScanner.test.ts:85:    const portal = ENRICHED_DIRECT_RFP_PORTALS.find(
+api-server/src/lib/providers/__tests__/directRfpPortalRelevanceCatalog.test.ts:6:  ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/lib/providers/__tests__/directRfpPortalRelevanceCatalog.test.ts:17:    assert.equal(ENRICHED_DIRECT_RFP_PORTALS.length, DIRECT_RFP_PORTALS.length);
+api-server/src/lib/providers/__tests__/directRfpPortalRelevanceCatalog.test.ts:29:      const enriched = ENRICHED_DIRECT_RFP_PORTALS.find(
+api-server/src/lib/providers/__tests__/directRfpPortalRelevanceCatalog.test.ts:44:    const verified = ENRICHED_DIRECT_RFP_PORTALS.filter(
+api-server/src/routes/rfp-sources.ts:3:  ENRICHED_DIRECT_RFP_PORTALS,
+api-server/src/routes/rfp-sources.ts:26:  const totals = ENRICHED_DIRECT_RFP_PORTALS.reduce(
+api-server/src/routes/rfp-sources.ts:65:    sources: ENRICHED_DIRECT_RFP_PORTALS,
+=== ROUTE REGISTRATION ===
+api-server/src/routes/rfp-sources.ts:14:router.get("/rfp-sources", async (req, res) => {
+api-server/src/routes/rfp-sources.ts:105:router.get("/rfp-sources/evidence-scan/plan", async (req, res) => {
+api-server/src/routes/rfp-sources.ts:140:router.post("/rfp-sources/evidence-scan", async (req, res) => {
+api-server/src/routes/index.ts:8:import rfpSourcesRouter from "./rfp-sources";
+api-server/src/routes/index.ts:29:router.use(rfpSourcesRouter);
