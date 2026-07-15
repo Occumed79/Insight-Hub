@@ -38,7 +38,7 @@ function opportunityKey(record: NormalizedOpportunity): string {
   if (record.sourceUrl) {
     try {
       const parsed = new URL(record.sourceUrl);
-      return `url:${parsed.hostname.replace(/^www\./, "").toLowerCase()}${parsed.pathname.replace(/\/$/, "").toLowerCase()}`;
+      return `url:${parsed.hostname.replace(/^www\./, "").toLowerCase()}${parsed.pathname.replace(/\/$/, "").toLowerCase()}${parsed.search.toLowerCase()}`;
     } catch {
       return `url:${record.sourceUrl.toLowerCase()}`;
     }
