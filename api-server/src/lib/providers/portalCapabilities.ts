@@ -82,7 +82,7 @@ export function portalConnectorCapability(
       return {
         connectorStatus: "generic_extraction",
         connectorLabel: "Generic public-page extraction",
-        connectorDescription: "One public page is fetched with generic link/text extraction; this is not a portal-specific parser or complete pagination.",
+        connectorDescription: "A bounded set of same-domain public listing pages is fetched with generic link/text extraction. This is still not a portal-specific parser and does not guarantee complete portal coverage.",
         directCollection: true,
         requiresSerper: false,
       };
