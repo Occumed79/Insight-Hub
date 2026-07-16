@@ -139,7 +139,7 @@ export function successfulPortalStatus(
   const foundResults = resultCount > 0;
   return {
     sourceId: source.id,
-    sourceName: source.name,
+    sourceName: source.agencyName,
     domain: source.domain,
     lastCheckedAt: checkedAt,
     lastSuccessAt: checkedAt,
@@ -164,7 +164,7 @@ export function failedPortalStatus(
 ): PublicPortalSourceRunStatus {
   return {
     sourceId: source.id,
-    sourceName: source.name,
+    sourceName: source.agencyName,
     domain: source.domain,
     lastCheckedAt: checkedAt,
     lastSuccessAt: prior?.lastSuccessAt,
