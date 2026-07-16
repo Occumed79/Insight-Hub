@@ -9,6 +9,7 @@ import {
 } from "../lib/providers/portalEvidenceScanner";
 import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/publicPortalDiscovery";
 import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
+import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
 
 const router = Router();
 
@@ -24,7 +25,11 @@ router.get("/rfp-sources", async (req, res) => {
       ? req.query.rotationKey
       : undefined;
 
-  const totals = ENRICHED_DIRECT_RFP_PORTALS.reduce(
+  const sources = ENRICHED_DIRECT_RFP_PORTALS.map(
+    withPortalConnectorCapability,
+  );
+
+  const totals = sources.reduce(
     (acc, source) => {
       acc.total += 1;
       acc.byTier[source.tier] = (acc.byTier[source.tier] ?? 0) + 1;
@@ -33,6 +38,8 @@ router.get("/rfp-sources", async (req, res) => {
         (acc.byAccessMode[source.accessMode] ?? 0) + 1;
       acc.byParserStatus[source.parserStatus] =
         (acc.byParserStatus[source.parserStatus] ?? 0) + 1;
+      acc.byConnectorStatus[source.connectorStatus] =
+        (acc.byConnectorStatus[source.connectorStatus] ?? 0) + 1;
       acc.byOccumedFit[source.occumedFit] =
         (acc.byOccumedFit[source.occumedFit] ?? 0) + 1;
       acc.byBuyerSector[source.buyerSector] =
@@ -47,6 +54,7 @@ router.get("/rfp-sources", async (req, res) => {
       byLevel: {} as Record<string, number>,
       byAccessMode: {} as Record<string, number>,
       byParserStatus: {} as Record<string, number>,
+      byConnectorStatus: {} as Record<string, number>,
       byOccumedFit: {} as Record<string, number>,
       byBuyerSector: {} as Record<string, number>,
       withEvidence: 0,
@@ -61,12 +69,10 @@ router.get("/rfp-sources", async (req, res) => {
     executionBudget,
     rotationKey,
   });
-  const directory = buildProcurementPortalDirectory(
-    ENRICHED_DIRECT_RFP_PORTALS,
-  );
+  const directory = buildProcurementPortalDirectory(sources);
 
   return res.json({
-    sources: ENRICHED_DIRECT_RFP_PORTALS,
+    sources,
     directory,
     totals: {
       ...totals,
@@ -101,8 +107,16 @@ router.get("/rfp-sources", async (req, res) => {
         "insufficient_evidence",
         "irrelevant",
       ],
+      connectorStatusPolicy: {
+        direct_api: "Dedicated official structured API",
+        direct_adapter: "Portal-specific official listing adapter",
+        generic_extraction: "Generic one-page link/text extraction without portal-specific pagination",
+        serper_discovery: "Official-domain discovery through Serper; not a direct connector",
+        directory_only: "Manual directory link with no automated collection",
+        stub: "Scaffold only; collection is not implemented",
+      },
       coveragePolicy:
-        "A finite execution query budget rotates deterministically through the complete eligible portal and ontology-query plan; fullCoverage=true returns the complete execution plan without introducing a permanent source cap.",
+        "Catalog inclusion proves an official source link only. connectorStatus reports the automation that actually exists; parserStatus remains legacy catalog-planning metadata and must not be presented as completed coverage.",
     },
   });
 });
