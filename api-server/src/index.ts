@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
+import { runRfpStartupMigrations } from "./lib/rfp-startup-migrate";
 import { getDatabaseConfigSummary, runWithDbContext } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
@@ -25,9 +26,13 @@ app.listen(port, (err) => {
   }
   logger.info({ port, databases: getDatabaseConfigSummary() }, "Server listening");
 
-  // Run non-RFP startup migrations against the intel DB after server is up.
-  // Non-fatal if they fail.
+  // Keep migrations explicitly scoped to their own Neon databases.
+  // Both migration paths are non-fatal if they fail.
   runWithDbContext("intel", () => runStartupMigrations()).catch((err) => {
-    logger.error({ err }, "Unexpected error in startup migrations");
+    logger.error({ err }, "Unexpected error in intelligence startup migrations");
+  });
+
+  runWithDbContext("rfp", () => runRfpStartupMigrations()).catch((err) => {
+    logger.error({ err }, "Unexpected error in RFP startup migrations");
   });
 });
