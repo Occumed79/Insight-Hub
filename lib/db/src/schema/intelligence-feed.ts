@@ -29,6 +29,7 @@ export const intelSourceEnum = pgEnum("intel_source", [
   "regulations_gov",
   "sam_awards",
   "usaspending",
+  "grants_gov",
   "dol_osha",
   "acquisition_gov",
   "ecfr",
