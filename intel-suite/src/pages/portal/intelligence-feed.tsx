@@ -4,7 +4,7 @@ import {
   Rss, RefreshCw, ExternalLink, Bookmark, X, Loader2,
   AlertCircle, ChevronDown, Filter, Zap, Globe, Building2,
   TrendingUp, FileText, DollarSign, ShieldAlert, BarChart2,
-  MapPin, Layers, Check,
+  MapPin, Layers, Check, Users,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,8 @@ function api(path: string) { return `${BASE}api/${path}`; }
 type SignalType =
   | "regulatory_change" | "procurement_forecast" | "expiring_contract"
   | "new_rulemaking" | "enforcement_action" | "budget_funding"
-  | "grant_program" | "industry_trend" | "state_procurement" | "other";
+  | "grant_program" | "workforce_hiring" | "industry_trend"
+  | "state_procurement" | "other";
 
 type Feedback = "saved" | "dismissed" | "new";
 type Scope = "federal" | "state";
@@ -100,6 +101,7 @@ const SIGNAL_TYPES: { value: SignalType | "all"; label: string; icon: React.Reac
   { value: "enforcement_action", label: "Enforcement Action",   icon: <AlertCircle className="w-3.5 h-3.5" />,color: "text-red-400" },
   { value: "budget_funding",     label: "Budget / Funding",     icon: <DollarSign className="w-3.5 h-3.5" />, color: "text-purple-400" },
   { value: "grant_program",      label: "Grant Program",        icon: <Zap className="w-3.5 h-3.5" />,       color: "text-cyan-400" },
+  { value: "workforce_hiring",   label: "Federal Workforce Hiring", icon: <Users className="w-3.5 h-3.5" />, color: "text-teal-400" },
   { value: "state_procurement",  label: "State Procurement",    icon: <Building2 className="w-3.5 h-3.5" />, color: "text-sky-400" },
   { value: "industry_trend",     label: "Industry Trend",       icon: <BarChart2 className="w-3.5 h-3.5" />, color: "text-violet-400" },
   { value: "other",              label: "Other",                icon: <Globe className="w-3.5 h-3.5" />,     color: "text-white/40" },
@@ -118,6 +120,7 @@ function signalBadgeClass(type: string): string {
     enforcement_action:  "bg-red-500/15 text-red-300 border-red-500/30",
     budget_funding:      "bg-purple-500/15 text-purple-300 border-purple-500/30",
     grant_program:       "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+    workforce_hiring:    "bg-teal-500/15 text-teal-300 border-teal-500/30",
     state_procurement:   "bg-sky-500/15 text-sky-300 border-sky-500/30",
     industry_trend:      "bg-violet-500/15 text-violet-300 border-violet-500/30",
     other:               "bg-white/5 text-white/40 border-white/10",
