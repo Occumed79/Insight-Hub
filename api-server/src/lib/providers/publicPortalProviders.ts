@@ -7,6 +7,10 @@ import type {
 } from "./types";
 import { bsoPortalProviders } from "./bsoPortal";
 import {
+  JAGGAER_SCIQUEST_TENANTS,
+  jaggaerSciQuestProviders,
+} from "./jaggaerSciQuest";
+import {
   publicPortalProvidersProvider as catalogPortalProvider,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/index";
@@ -20,6 +24,7 @@ import {
 
 export * from "./publicPortalProviders/index";
 export * from "./bsoPortal";
+export * from "./jaggaerSciQuest";
 
 const BSO_SOURCES: PublicPortalSource[] = [
   {
@@ -75,18 +80,47 @@ const BSO_SOURCES: PublicPortalSource[] = [
   },
 ];
 
-const bsoStatuses = new Map<string, PublicPortalSourceRunStatus>();
+const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS
+  .filter((tenant) => tenant.capability === "dedicated_listing")
+  .map((tenant) => ({
+    id: tenant.portalId,
+    agencyName: tenant.buyerName,
+    agencyType: "state",
+    state: tenant.state,
+    sourceUrl: tenant.listingUrl,
+    searchUrl: tenant.listingUrl,
+    domain: new URL(tenant.listingUrl).hostname,
+    portalPlatform: "Jaggaer / SciQuest",
+    sourceLevel: "state",
+    level: "state",
+    accessMode: "portal",
+    scraperType: "existing_parser",
+    enabled: true,
+    verificationStatus: "verified",
+    notes: "Dedicated public Jaggaer/SciQuest event-listing adapter.",
+  }));
 
-async function hydrateBsoStatuses(): Promise<void> {
+const bsoStatuses = new Map<string, PublicPortalSourceRunStatus>();
+const jaggaerStatuses = new Map<string, PublicPortalSourceRunStatus>();
+
+async function hydrateDedicatedStatuses(): Promise<void> {
   const persisted = await loadPublicPortalHealth();
   for (const source of BSO_SOURCES) {
     const status = persisted.get(source.id);
     if (status) bsoStatuses.set(source.id, status);
   }
+  for (const source of JAGGAER_SOURCES) {
+    const status = persisted.get(source.id);
+    if (status) jaggaerStatuses.set(source.id, status);
+  }
 }
 
-async function saveBsoStatus(status: PublicPortalSourceRunStatus, errors: string[]): Promise<void> {
-  bsoStatuses.set(status.sourceId, status);
+async function saveDedicatedStatus(
+  status: PublicPortalSourceRunStatus,
+  target: Map<string, PublicPortalSourceRunStatus>,
+  errors: string[],
+): Promise<void> {
+  target.set(status.sourceId, status);
   try {
     await savePublicPortalHealth(status);
   } catch (error) {
@@ -113,26 +147,40 @@ function recordKey(record: NormalizedOpportunity): string {
 function mergedSources(): PublicPortalSource[] {
   const byId = new Map(catalogPortalProvider.getSources().map((source) => [source.id, source]));
   for (const source of BSO_SOURCES) byId.set(source.id, source);
+  for (const source of JAGGAER_SOURCES) byId.set(source.id, source);
   return Array.from(byId.values());
 }
 
-async function runBsoSource(source: PublicPortalSource, options: FetchOptions, limit: number): Promise<ProviderFetchResult> {
-  const provider = bsoPortalProviders[source.id];
-  if (!provider) return { records: [], total: 0, errors: [`${source.id}: dedicated BSO provider is not registered`] };
-  const prior = bsoStatuses.get(source.id);
+async function runDedicatedSource(
+  source: PublicPortalSource,
+  provider: DataSourceProvider | undefined,
+  statuses: Map<string, PublicPortalSourceRunStatus>,
+  options: FetchOptions,
+  limit: number,
+): Promise<ProviderFetchResult> {
+  if (!provider) return { records: [], total: 0, errors: [`${source.id}: dedicated provider is not registered`] };
+  const prior = statuses.get(source.id);
   const checkedAt = new Date();
   try {
     const result = await provider.fetch({ ...options, limit });
     if (result.records.length === 0 && result.errors.length > 0) {
-      await saveBsoStatus(failedPortalStatus(source, prior, checkedAt, result.errors.join("; ")), result.errors);
+      await saveDedicatedStatus(
+        failedPortalStatus(source, prior, checkedAt, result.errors.join("; ")),
+        statuses,
+        result.errors,
+      );
     } else {
-      await saveBsoStatus(successfulPortalStatus(source, prior, new Date(), result.records.length, 0), result.errors);
+      await saveDedicatedStatus(
+        successfulPortalStatus(source, prior, new Date(), result.records.length, 0),
+        statuses,
+        result.errors,
+      );
     }
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const errors = [`${source.id}: ${reason}`];
-    await saveBsoStatus(failedPortalStatus(source, prior, checkedAt, reason), errors);
+    await saveDedicatedStatus(failedPortalStatus(source, prior, checkedAt, reason), statuses, errors);
     return { records: [], total: 0, errors };
   }
 }
@@ -141,7 +189,9 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
 
   async isConfigured(): Promise<boolean> {
-    return (await catalogPortalProvider.isConfigured().catch(() => false)) || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]));
+    return (await catalogPortalProvider.isConfigured().catch(() => false))
+      || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]))
+      || JAGGAER_SOURCES.some((source) => Boolean(jaggaerSciQuestProviders[source.id]));
   }
 
   getSources(): PublicPortalSource[] {
@@ -151,23 +201,39 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   getSourceStatuses(): PublicPortalSourceRunStatus[] {
     const byId = new Map(catalogPortalProvider.getSourceStatuses().map((status) => [status.sourceId, status]));
     for (const status of bsoStatuses.values()) byId.set(status.sourceId, status);
+    for (const status of jaggaerStatuses.values()) byId.set(status.sourceId, status);
     return Array.from(byId.values()).sort((left, right) => right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime());
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const perBsoSource = Math.max(1, Math.ceil(limit / BSO_SOURCES.length));
+    const dedicatedSourceCount = Math.max(BSO_SOURCES.length + JAGGAER_SOURCES.length, 1);
+    const perDedicatedSource = Math.max(1, Math.ceil(limit / dedicatedSourceCount));
     const errors: string[] = [];
     try {
-      await hydrateBsoStatuses();
+      await hydrateDedicatedStatuses();
     } catch (error) {
-      errors.push(`bso-health-load: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`dedicated-portal-health-load: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     const settled = await Promise.allSettled([
-      ...BSO_SOURCES.map((source) => runBsoSource(source, options, perBsoSource)),
+      ...BSO_SOURCES.map((source) => runDedicatedSource(
+        source,
+        bsoPortalProviders[source.id],
+        bsoStatuses,
+        options,
+        perDedicatedSource,
+      )),
+      ...JAGGAER_SOURCES.map((source) => runDedicatedSource(
+        source,
+        jaggaerSciQuestProviders[source.id],
+        jaggaerStatuses,
+        options,
+        perDedicatedSource,
+      )),
       catalogPortalProvider.fetch({ ...options, limit }),
     ]);
+
     const candidates: NormalizedOpportunity[] = [];
     for (const result of settled) {
       if (result.status === "fulfilled") {
@@ -189,17 +255,20 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   }
 
   async getStatus(): Promise<ProviderStatus> {
-    try { await hydrateBsoStatuses(); } catch { /* retain in-memory health */ }
+    try { await hydrateDedicatedStatuses(); } catch { /* retain in-memory health */ }
     const base = await catalogPortalProvider.getStatus().catch(() => undefined);
-    const statuses = Array.from(bsoStatuses.values());
+    const statuses = [...bsoStatuses.values(), ...jaggaerStatuses.values()];
     const failures = statuses.filter((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
     const dates = statuses.map((status) => status.lastCheckedAt).concat(base?.lastAttempt ? [base.lastAttempt] : []);
     const successes = statuses.flatMap((status) => status.lastSuccessAt ? [status.lastSuccessAt] : []).concat(base?.lastSuccess ? [base.lastSuccess] : []);
     return {
       name: this.name,
-      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0,
+      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0 || JAGGAER_SOURCES.length > 0,
       healthy: failures.length === 0 && (base?.healthy ?? true),
-      errorMessage: [base?.errorMessage, failures.length ? `${failures.length} BSO-family portal${failures.length === 1 ? " is" : "s are"} currently failing` : undefined].filter(Boolean).join("; ") || undefined,
+      errorMessage: [
+        base?.errorMessage,
+        failures.length ? `${failures.length} dedicated portal${failures.length === 1 ? " is" : "s are"} currently failing` : undefined,
+      ].filter(Boolean).join("; ") || undefined,
       recordCount: (base?.recordCount ?? 0) + statuses.reduce((sum, status) => sum + status.resultCount, 0),
       lastAttempt: dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : undefined,
       lastSuccess: successes.length ? new Date(Math.max(...successes.map((date) => date.getTime()))) : undefined,
