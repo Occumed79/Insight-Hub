@@ -4,16 +4,16 @@ import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
 import { extractPaginationUrls, extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
+import {
+  failedPortalStatus,
+  loadPublicPortalHealth,
+  savePublicPortalHealth,
+  selectFairPortalSources,
+  successfulPortalStatus,
+  type PublicPortalSourceRunStatus,
+} from "./portalHealthStore";
 
-export interface PublicPortalSourceRunStatus {
-  sourceId: string;
-  lastCheckedAt: Date;
-  lastSuccessAt?: Date;
-  lastFailureAt?: Date;
-  lastFailureReason?: string;
-  resultCount: number;
-  matchedCount: number;
-}
+export type { PublicPortalSourceRunStatus } from "./portalHealthStore";
 
 const DEFAULT_LIMIT = 100;
 const MIN_DOMAIN_INTERVAL_MS = 1_000;
@@ -21,6 +21,7 @@ const DEFAULT_SOURCE_TIMEOUT_MS = 25_000;
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_MAX_PAGES = 3;
+const DEFAULT_ROTATION_BATCH_SIZE = 10;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
@@ -28,11 +29,18 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = {
   "tx-esbd": texasEsbdProvider,
   "ny-contract-reporter": nyScrProvider,
 };
+const DEDICATED_SOURCE_IDS = new Set(Object.keys(SOURCE_ADAPTERS));
 
 function positiveIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
+function isRunnableSource(source: PublicPortalSource): boolean {
+  return Boolean(SOURCE_ADAPTERS[source.id])
+    || source.scraperType === "static_html"
+    || source.scraperType === "pdf_links";
 }
 
 function isOccuMedMatch(record: NormalizedOpportunity): boolean {
@@ -64,6 +72,25 @@ function normalizedPageUrl(value: string): string {
     return parsed.toString().toLowerCase();
   } catch {
     return value.toLowerCase().replace(/#.*$/, "");
+  }
+}
+
+async function hydrateSourceStatuses(): Promise<void> {
+  const persisted = await loadPublicPortalHealth();
+  for (const [sourceId, status] of persisted) sourceStatuses.set(sourceId, status);
+}
+
+async function rememberSourceStatus(
+  status: PublicPortalSourceRunStatus,
+  errors: string[],
+): Promise<void> {
+  sourceStatuses.set(status.sourceId, status);
+  try {
+    await savePublicPortalHealth(status);
+  } catch (error) {
+    errors.push(
+      `${status.sourceId}: portal health persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -215,10 +242,7 @@ async function runSource(
   if (source.scraperType === "pdf_links") {
     return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractPdfLinkOpportunities);
   }
-  if (source.scraperType === "scrapy") throw new Error(`Scrapy source ${source.id} is reserved until a real spider is added`);
-  if (source.scraperType === "playwright_public") throw new Error(`Playwright source ${source.id} is reserved until a real public-page runner is added`);
-  if (source.scraperType === "rss" || source.scraperType === "public_json") throw new Error(`${source.scraperType} source ${source.id} needs a concrete adapter before it can run`);
-  return [];
+  throw new Error(`Source ${source.id} does not have a runnable direct or generic public-page adapter`);
 }
 
 async function runWithConcurrency<T>(
@@ -247,40 +271,73 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
 
   constructor(private readonly sources: PublicPortalSource[] = PUBLIC_PORTAL_SOURCES) {}
 
-  async isConfigured(): Promise<boolean> { return true; }
+  async isConfigured(): Promise<boolean> {
+    return this.sources.some(
+      (source) => source.enabled
+        && source.verificationStatus === "verified"
+        && isRunnableSource(source),
+    );
+  }
 
   getSources(): PublicPortalSource[] { return this.sources; }
 
-  getSourceStatuses(): PublicPortalSourceRunStatus[] { return Array.from(sourceStatuses.values()); }
+  getSourceStatuses(): PublicPortalSourceRunStatus[] {
+    return Array.from(sourceStatuses.values()).sort(
+      (left, right) => right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime(),
+    );
+  }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const enabledSources = this.sources.filter(
-      (source) => source.enabled && source.verificationStatus === "verified",
-    );
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
+
+    try {
+      await hydrateSourceStatuses();
+    } catch (error) {
+      errors.push(`portal-health-load: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const enabledSources = this.sources.filter(
+      (source) => source.enabled
+        && source.verificationStatus === "verified"
+        && isRunnableSource(source),
+    );
     const sourceTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_SOURCE_TIMEOUT_MS", DEFAULT_SOURCE_TIMEOUT_MS, 5_000, 120_000);
     const runTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_RUN_TIMEOUT_MS", DEFAULT_RUN_TIMEOUT_MS, 15_000, 300_000);
     const concurrency = positiveIntegerEnv("PUBLIC_PORTAL_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 10);
     const maxPages = positiveIntegerEnv("PUBLIC_PORTAL_MAX_PAGES", DEFAULT_MAX_PAGES, 1, 10);
+    const rotationBatchSize = positiveIntegerEnv(
+      "PUBLIC_PORTAL_ROTATION_BATCH_SIZE",
+      DEFAULT_ROTATION_BATCH_SIZE,
+      1,
+      100,
+    );
+    const { selected: selectedSources } = selectFairPortalSources(
+      enabledSources,
+      sourceStatuses,
+      rotationBatchSize,
+      DEDICATED_SOURCE_IDS,
+    );
     const runDeadlineAt = Date.now() + runTimeoutMs;
     const resultLimit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
 
-    await runWithConcurrency(enabledSources, concurrency, async (source) => {
-      const lastCheckedAt = new Date();
+    await runWithConcurrency(selectedSources, concurrency, async (source) => {
+      const checkedAt = new Date();
+      const prior = sourceStatuses.get(source.id);
       const validationErrors = validatePublicPortalSource(source);
       if (validationErrors.length) {
         const reason = validationErrors.join("; ");
         errors.push(`${source.id}: ${reason}`);
-        sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: lastCheckedAt, lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
+        await rememberSourceStatus(
+          failedPortalStatus(source, prior, checkedAt, reason, "validation_failed"),
+          errors,
+        );
         return;
       }
 
       const remainingMs = runDeadlineAt - Date.now();
       if (remainingMs <= 0) {
-        const reason = "provider run deadline reached before this source started";
-        errors.push(`${source.id}: ${reason}`);
-        sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: lastCheckedAt, lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
+        errors.push(`${source.id}: provider run deadline reached before this source started; it remains first in the next rotation`);
         return;
       }
 
@@ -292,11 +349,24 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
           source.id,
         );
         records.push(...sourceRecords);
-        sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastSuccessAt: new Date(), resultCount: sourceRecords.length, matchedCount: sourceRecords.filter(isOccuMedMatch).length });
+        const completedAt = new Date();
+        await rememberSourceStatus(
+          successfulPortalStatus(
+            source,
+            prior,
+            completedAt,
+            sourceRecords.length,
+            sourceRecords.filter(isOccuMedMatch).length,
+          ),
+          errors,
+        );
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         errors.push(`${source.id}: ${reason}`);
-        sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: new Date(), lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
+        await rememberSourceStatus(
+          failedPortalStatus(source, prior, new Date(), reason),
+          errors,
+        );
       }
     });
 
@@ -342,20 +412,6 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
           if (seen.has(key)) continue;
           seen.add(key);
           records.push(normalized);
-
-          if (sourceId) {
-            const prior = sourceStatuses.get(sourceId);
-            const succeededAt = new Date();
-            sourceStatuses.set(sourceId, {
-              sourceId,
-              lastCheckedAt: prior?.lastCheckedAt ?? succeededAt,
-              lastSuccessAt: succeededAt,
-              lastFailureAt: prior?.lastFailureAt,
-              lastFailureReason: prior?.lastFailureReason,
-              resultCount: (prior?.resultCount ?? 0) + 1,
-              matchedCount: (prior?.matchedCount ?? 0) + (isOccuMedMatch(normalized) ? 1 : 0),
-            });
-          }
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -368,9 +424,35 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
   }
 
   async getStatus(): Promise<ProviderStatus> {
+    try {
+      await hydrateSourceStatuses();
+    } catch {
+      // Status can still use the in-process cache when durable health is temporarily unavailable.
+    }
     const statuses = Array.from(sourceStatuses.values());
-    const hasCurrentFailure = statuses.some((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
-    return { name: this.name, configured: true, healthy: !hasCurrentFailure, recordCount: statuses.reduce((sum, status) => sum + status.resultCount, 0) };
+    const configured = await this.isConfigured();
+    const currentFailures = statuses.filter(
+      (status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt),
+    );
+    const lastAttempt = statuses.reduce<Date | undefined>(
+      (latest, status) => !latest || status.lastCheckedAt > latest ? status.lastCheckedAt : latest,
+      undefined,
+    );
+    const lastSuccess = statuses.reduce<Date | undefined>(
+      (latest, status) => status.lastSuccessAt && (!latest || status.lastSuccessAt > latest) ? status.lastSuccessAt : latest,
+      undefined,
+    );
+    return {
+      name: this.name,
+      configured,
+      healthy: configured && currentFailures.length === 0,
+      errorMessage: currentFailures.length > 0
+        ? `${currentFailures.length} runnable portal source${currentFailures.length === 1 ? " is" : "s are"} currently failing`
+        : undefined,
+      recordCount: statuses.reduce((sum, status) => sum + status.resultCount, 0),
+      lastAttempt,
+      lastSuccess,
+    };
   }
 }
 
