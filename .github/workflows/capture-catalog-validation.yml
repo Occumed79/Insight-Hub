@@ -1,0 +1,54 @@
+name: Capture catalog validation output
+
+on:
+  push:
+    branches:
+      - agent/provider-boundary-cleanup
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/provider-boundary-cleanup
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.10.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Capture validator output
+        shell: bash
+        run: |
+          set +e
+          {
+            echo '=== rfp:sources:validate ==='
+            pnpm run rfp:sources:validate
+            echo "RFP_VALIDATE_EXIT=$?"
+            echo
+            echo '=== public-portals:validate ==='
+            pnpm run public-portals:validate
+            echo "PUBLIC_PORTAL_VALIDATE_EXIT=$?"
+          } > catalog-validation-errors.txt 2>&1
+          exit 0
+
+      - name: Commit diagnostics and remove workflow
+        shell: bash
+        run: |
+          rm .github/workflows/capture-catalog-validation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog-validation-errors.txt .github/workflows/capture-catalog-validation.yml
+          git commit -m "Capture catalog validation output"
+          git push origin HEAD:agent/provider-boundary-cleanup
