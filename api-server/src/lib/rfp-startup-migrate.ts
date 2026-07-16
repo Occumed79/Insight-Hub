@@ -71,6 +71,47 @@ export async function runRfpStartupMigrations(): Promise<void> {
         WHERE provider_key IS NOT NULL AND notice_id IS NOT NULL
     `);
 
+    // 6. Index feedback lookups and enforce that all new/updated feedback points
+    // to a real opportunity. NOT VALID preserves any historical orphan rows.
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_opportunity_feedback_opportunity_id
+        ON opportunity_feedback (opportunity_id)
+    `);
+
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'opportunity_feedback_opportunity_id_fkey'
+        ) THEN
+          ALTER TABLE opportunity_feedback
+            ADD CONSTRAINT opportunity_feedback_opportunity_id_fkey
+            FOREIGN KEY (opportunity_id)
+            REFERENCES opportunities (id)
+            ON DELETE CASCADE
+            NOT VALID;
+        END IF;
+      END $$
+    `);
+
+    // Validate only when the existing data is already clean. The constraint
+    // still protects all new and updated rows while legacy orphans are reviewed.
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM opportunity_feedback feedback
+          LEFT JOIN opportunities opportunity
+            ON opportunity.id = feedback.opportunity_id
+          WHERE opportunity.id IS NULL
+        ) THEN
+          ALTER TABLE opportunity_feedback
+            VALIDATE CONSTRAINT opportunity_feedback_opportunity_id_fkey;
+        END IF;
+      END $$
+    `);
+
     logger.info("RFP startup migrations complete.");
   } catch (err) {
     logger.error({ err }, "RFP startup migration failed — server will continue");
