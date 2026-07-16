@@ -30,9 +30,13 @@ export class BidNetProvider implements DataSourceProvider {
     return resolveCredential("bidnetBaseUrl", "BIDNET_BASE_URL");
   }
 
+  /**
+   * BidNet is a configuration scaffold only — always returns false until the
+   * endpoint contract is confirmed and the real HTTP call is implemented.
+   * Having an API key or base URL stored does NOT make this provider operational.
+   */
   async isConfigured(): Promise<boolean> {
-    const [key, url] = await Promise.all([this.getApiKey(), this.getBaseUrl()]);
-    return !!(key && url);
+    return false;
   }
 
   /**
@@ -75,20 +79,13 @@ export class BidNetProvider implements DataSourceProvider {
   }
 
   async getStatus(): Promise<ProviderStatus> {
-    const configured = await this.isConfigured();
-    const key = await this.getApiKey();
-    const url = await this.getBaseUrl();
-
-    if (!configured) {
-      // Not configured → not an error, just inactive (optional provider)
-      return { name: this.name, configured: false, healthy: false, errorMessage: undefined };
-    }
-
+    // Always reports as not configured — stub only, never operational.
+    // Credentials in DB or env are accepted for future use but do not activate the provider.
     return {
       name: this.name,
-      configured,
+      configured: false,
       healthy: false,
-      errorMessage: "API key set — endpoint integration pending implementation.",
+      errorMessage: "BidNet integration is a configuration scaffold. The endpoint, authentication contract, and response mapping are not yet implemented.",
     };
   }
 }
