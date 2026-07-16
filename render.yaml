@@ -33,6 +33,10 @@ services:
         value: "90000"
       - key: SAM_GOV_API_KEY
         sync: false
+      - key: USAJOBS_API_KEY
+        sync: false
+      - key: USAJOBS_USER_AGENT
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: SERPER_API_KEY
