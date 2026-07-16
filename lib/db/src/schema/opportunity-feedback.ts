@@ -12,10 +12,16 @@ export const feedbackGradeEnum = pgEnum("feedback_grade", [
 /**
  * Stores user grades on individual opportunities.
  * Each grade feeds the learning model to improve future results.
+ *
+ * Data-integrity invariant: opportunityId references opportunitiesTable.id and
+ * must remain stable for the lifetime of the row.  The ingestion pipeline
+ * guarantees this by never regenerating an existing opportunity's primary key
+ * on refresh — see normalizedToDbRecord (normalization.ts) and the UPDATE
+ * branch in unifiedSearch.ts.
  */
 export const opportunityFeedbackTable = pgTable("opportunity_feedback", {
   id:            text("id").primaryKey(),
-  opportunityId: text("opportunity_id").notNull(),   // FK → opportunitiesTable.id
+  opportunityId: text("opportunity_id").notNull(),   // stable FK → opportunitiesTable.id (never changes on refresh)
   grade:         feedbackGradeEnum("grade").notNull(),
   notes:         text("notes"),
   // Signal fields extracted from the rated opportunity (denormalized for fast model training)
