@@ -3,7 +3,7 @@ import { texasEsbdProvider } from "../texasEsbd";
 import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
-import { extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
+import { extractPaginationUrls, extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
 
 export interface PublicPortalSourceRunStatus {
   sourceId: string;
@@ -20,6 +20,7 @@ const MIN_DOMAIN_INTERVAL_MS = 1_000;
 const DEFAULT_SOURCE_TIMEOUT_MS = 25_000;
 const DEFAULT_RUN_TIMEOUT_MS = 90_000;
 const DEFAULT_CONCURRENCY = 4;
+const DEFAULT_MAX_PAGES = 3;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
@@ -56,6 +57,16 @@ function opportunityKey(record: NormalizedOpportunity): string {
   return `id:${record.externalId.toLowerCase()}`;
 }
 
+function normalizedPageUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = "";
+    return parsed.toString().toLowerCase();
+  } catch {
+    return value.toLowerCase().replace(/#.*$/, "");
+  }
+}
+
 async function waitForDomainRateLimit(domain: string): Promise<void> {
   const lastFetchAt = lastDomainFetchAt.get(domain) ?? 0;
   const waitMs = Math.max(0, MIN_DOMAIN_INTERVAL_MS - (Date.now() - lastFetchAt));
@@ -77,22 +88,30 @@ async function withTimeout<T>(task: () => Promise<T>, timeoutMs: number, label: 
   }
 }
 
-async function fetchHtml(source: PublicPortalSource, timeoutMs: number): Promise<string> {
-  await waitForDomainRateLimit(source.domain);
+async function fetchHtml(source: PublicPortalSource, pageUrl: string, timeoutMs: number): Promise<string> {
+  let domain = source.domain;
+  try {
+    domain = new URL(pageUrl).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    // The catalog validator already checks the source URL. Keep the catalog
+    // domain as a safe rate-limit key if a discovered pagination URL is invalid.
+  }
+
+  await waitForDomainRateLimit(domain);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(source.sourceUrl, {
+    const response = await fetch(pageUrl, {
       signal: controller.signal,
       headers: {
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "user-agent": "OccuMed-InsightHub/1.0 public procurement catalog crawler (+https://www.occumed.com)",
       },
     });
-    if (!response.ok) throw new Error(`${source.id} returned HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`${source.id} returned HTTP ${response.status} for ${pageUrl}`);
     return response.text();
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`${source.id} timed out after ${timeoutMs}ms`);
+    if (controller.signal.aborted) throw new Error(`${source.id} timed out after ${timeoutMs}ms for ${pageUrl}`);
     throw error;
   } finally {
     clearTimeout(timer);
@@ -102,15 +121,100 @@ async function fetchHtml(source: PublicPortalSource, timeoutMs: number): Promise
 async function runExistingParser(source: PublicPortalSource, options: FetchOptions): Promise<NormalizedOpportunity[]> {
   const adapter = SOURCE_ADAPTERS[source.id];
   if (adapter) return (await adapter.fetch(options)).records.map((record) => withPublicPortalMetadata(record, source));
-  throw new Error(`No existing parser is registered for public portal source ${source.id}`);
+  throw new Error(`No dedicated source adapter is registered for public portal source ${source.id}`);
 }
 
-async function runSource(source: PublicPortalSource, options: FetchOptions, timeoutMs: number): Promise<NormalizedOpportunity[]> {
+type PortalPageExtractor = (
+  html: string,
+  source: PublicPortalSource,
+  limit: number,
+) => NormalizedOpportunity[];
+
+async function runPaginatedHtmlSource(
+  source: PublicPortalSource,
+  limit: number,
+  timeoutMs: number,
+  maxPages: number,
+  extractor: PortalPageExtractor,
+): Promise<NormalizedOpportunity[]> {
+  const startedAt = Date.now();
+  const queue: string[] = [source.sourceUrl];
+  const seenPages = new Set<string>();
+  const seenRecords = new Set<string>();
+  const records: NormalizedOpportunity[] = [];
+  let pagesFetched = 0;
+
+  while (queue.length > 0 && pagesFetched < maxPages && records.length < limit) {
+    const pageUrl = queue.shift();
+    if (!pageUrl) break;
+    const pageKey = normalizedPageUrl(pageUrl);
+    if (seenPages.has(pageKey)) continue;
+    seenPages.add(pageKey);
+
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) break;
+
+    let html: string;
+    try {
+      html = await fetchHtml(source, pageUrl, remainingMs);
+    } catch (error) {
+      if (records.length === 0) throw error;
+      break;
+    }
+
+    pagesFetched += 1;
+    const pageSource: PublicPortalSource = { ...source, sourceUrl: pageUrl };
+    const pageRecords = extractor(html, pageSource, Math.max(1, limit - records.length));
+
+    for (const record of pageRecords) {
+      const key = opportunityKey(record);
+      if (seenRecords.has(key)) continue;
+      seenRecords.add(key);
+      records.push({
+        ...record,
+        rawData: {
+          ...(record.rawData ?? {}),
+          listingPageUrl: pageUrl,
+          listingPageNumber: pagesFetched,
+          paginationMode: "bounded_same_domain",
+        },
+      });
+      if (records.length >= limit) break;
+    }
+
+    if (pagesFetched >= maxPages || records.length >= limit) continue;
+    const nextUrls = extractPaginationUrls(
+      html,
+      pageUrl,
+      source.domain,
+      Math.max(maxPages * 3, 6),
+    );
+    for (const nextUrl of nextUrls) {
+      const nextKey = normalizedPageUrl(nextUrl);
+      if (!seenPages.has(nextKey) && !queue.some((queued) => normalizedPageUrl(queued) === nextKey)) {
+        queue.push(nextUrl);
+      }
+    }
+  }
+
+  return records.slice(0, limit);
+}
+
+async function runSource(
+  source: PublicPortalSource,
+  options: FetchOptions,
+  timeoutMs: number,
+  maxPages: number,
+): Promise<NormalizedOpportunity[]> {
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
   if (SOURCE_ADAPTERS[source.id]) return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "existing_parser") return runExistingParser(source, { ...options, limit });
-  if (source.scraperType === "static_html") return extractStaticHtmlOpportunities(await fetchHtml(source, timeoutMs), source, limit);
-  if (source.scraperType === "pdf_links") return extractPdfLinkOpportunities(await fetchHtml(source, timeoutMs), source, limit);
+  if (source.scraperType === "static_html") {
+    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractStaticHtmlOpportunities);
+  }
+  if (source.scraperType === "pdf_links") {
+    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractPdfLinkOpportunities);
+  }
   if (source.scraperType === "scrapy") throw new Error(`Scrapy source ${source.id} is reserved until a real spider is added`);
   if (source.scraperType === "playwright_public") throw new Error(`Playwright source ${source.id} is reserved until a real public-page runner is added`);
   if (source.scraperType === "rss" || source.scraperType === "public_json") throw new Error(`${source.scraperType} source ${source.id} needs a concrete adapter before it can run`);
@@ -158,6 +262,7 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
     const sourceTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_SOURCE_TIMEOUT_MS", DEFAULT_SOURCE_TIMEOUT_MS, 5_000, 120_000);
     const runTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_RUN_TIMEOUT_MS", DEFAULT_RUN_TIMEOUT_MS, 15_000, 300_000);
     const concurrency = positiveIntegerEnv("PUBLIC_PORTAL_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 10);
+    const maxPages = positiveIntegerEnv("PUBLIC_PORTAL_MAX_PAGES", DEFAULT_MAX_PAGES, 1, 10);
     const runDeadlineAt = Date.now() + runTimeoutMs;
     const resultLimit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
 
@@ -182,7 +287,7 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
       const effectiveTimeout = Math.min(sourceTimeoutMs, remainingMs);
       try {
         const sourceRecords = await withTimeout(
-          () => runSource(source, options, effectiveTimeout),
+          () => runSource(source, options, effectiveTimeout, maxPages),
           effectiveTimeout,
           source.id,
         );

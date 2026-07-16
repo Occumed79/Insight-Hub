@@ -23,6 +23,8 @@ services:
         value: "25000"
       - key: PUBLIC_PORTAL_RUN_TIMEOUT_MS
         value: "90000"
+      - key: PUBLIC_PORTAL_MAX_PAGES
+        value: "3"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: USAJOBS_API_KEY
