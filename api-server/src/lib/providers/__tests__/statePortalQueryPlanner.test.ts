@@ -3,9 +3,9 @@ import { describe, it } from "node:test";
 import {
   buildPublicPortalSearchPlan,
   PUBLIC_PORTAL_DISCOVERY_SOURCES,
-} from "../statePortals";
+} from "../publicPortalDiscovery";
 
-describe("state portal query planner", () => {
+describe("public portal discovery query planner", () => {
   it("keeps every eligible portal in the complete plan", () => {
     const plan = buildPublicPortalSearchPlan({
       includeTier3: true,
@@ -15,7 +15,9 @@ describe("state portal query planner", () => {
     const plannedIds = new Set(
       plan.allQueries.flatMap((query) => query.portalIds),
     );
-    const eligibleIds = new Set(PUBLIC_PORTAL_DISCOVERY_SOURCES.map((portal) => portal.sourceId));
+    const eligibleIds = new Set(
+      PUBLIC_PORTAL_DISCOVERY_SOURCES.map((portal) => portal.sourceId),
+    );
 
     assert.equal(plan.diagnostics.eligiblePortalCount, eligibleIds.size);
     assert.equal(plan.diagnostics.deferredPortalCount, 0);
