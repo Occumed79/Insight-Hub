@@ -1,5 +1,6 @@
 import { nyScrProvider } from "../nyScr";
 import { texasEsbdProvider } from "../texasEsbd";
+import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "../openGov";
 import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
@@ -24,10 +25,20 @@ const DEFAULT_MAX_PAGES = 3;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
-const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = {
-  "tx-esbd": texasEsbdProvider,
-  "ny-contract-reporter": nyScrProvider,
-};
+// Build the SOURCE_ADAPTERS map. OpenGov portal IDs are registered lazily via
+// openGovTenantProvider() so each portal ID gets a single-tenant provider
+// instance without listing them all inline again.
+const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = (() => {
+  const adapters: Record<string, DataSourceProvider> = {
+    "tx-esbd": texasEsbdProvider,
+    "ny-contract-reporter": nyScrProvider,
+  };
+  for (const portalId of OPENGOV_PORTAL_IDS) {
+    const provider = openGovTenantProvider(portalId);
+    if (provider) adapters[portalId] = provider;
+  }
+  return adapters;
+})();
 
 function positiveIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
   const value = Number(process.env[name]);

@@ -30,6 +30,25 @@ const DIRECT_API_PORTAL_IDS = new Set(["us-sam-gov"]);
 const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "tx-esbd",
   "ny-contract-reporter",
+  // OpenGov shared adapter — all 18 confirmed tenants
+  "ca-city-of-santa-cruz-opengov",
+  "ca-city-of-palm-desert-opengov",
+  "ca-city-of-west-sacramento-opengov",
+  "pa-scranton-city-school-district-opengov",
+  "fl-monroe-county-school-district-opengov",
+  "nj-passaic-city-school-district-opengov",
+  "fl-volusia-county-opengov",
+  "fl-pinellas-county-school-district-opengov",
+  "nj-jersey-city-public-schools-opengov",
+  "fl-santa-rosa-county-opengov",
+  "oh-cleveland-metropolitan-school-district-opengov",
+  "ca-san-bernardino-city-unified-school-district-opengov",
+  "fl-alachua-county-opengov",
+  "va-richmond-public-schools-opengov",
+  "fl-clay-county-opengov",
+  "az-chandler-unified-school-district-opengov",
+  "md-wicomico-county-opengov",
+  "sc-richland-school-district-two-opengov",
 ]);
 
 /**
