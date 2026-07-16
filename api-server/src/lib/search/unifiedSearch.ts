@@ -8,8 +8,8 @@
 
 import { db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
-import { randomUUID } from "crypto";
+import { and, eq, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "crypto";
 
 import { samGovProvider } from "../providers/samGov";
 import { publicPortalProvidersProvider } from "../providers/publicPortalProviders";
@@ -45,6 +45,119 @@ export interface UnifiedFetchResult {
 
 const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister", "grantsGov"]);
 const PROVIDER_ALIASES = new Map([["statePortals", "publicPortalProviders"]]);
+
+type PersistenceOutcome = "created" | "updated";
+
+function stableHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalSourceUrl(value?: string): string | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    url.hash = "";
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
+    }
+    url.searchParams.sort();
+    return url.toString();
+  } catch {
+    return value.trim();
+  }
+}
+
+function persistenceNoticeId(opportunity: NormalizedOpportunity): string {
+  const externalId = opportunity.externalId?.trim();
+  if (externalId) return externalId;
+
+  const sourceUrl = canonicalSourceUrl(opportunity.sourceUrl);
+  if (sourceUrl) return `generated-url-${stableHash(sourceUrl).slice(0, 32)}`;
+
+  const solicitationNumber = opportunity.solicitationNumber
+    ?.replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+  if (solicitationNumber && solicitationNumber.length >= 4) {
+    return `generated-sol-${stableHash(solicitationNumber).slice(0, 32)}`;
+  }
+
+  const fingerprint = [
+    opportunity.title,
+    opportunity.agency ?? "",
+    opportunity.responseDeadline?.toISOString() ?? "",
+  ]
+    .map((value) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
+    .join("|");
+  return `generated-row-${stableHash(fingerprint).slice(0, 32)}`;
+}
+
+async function persistOpportunityAtomically(
+  opportunity: NormalizedOpportunity,
+): Promise<PersistenceOutcome> {
+  const normalized = normalizedToDbRecord(opportunity);
+  const providerKey = normalized.providerKey ?? "manual";
+  const noticeId = persistenceNoticeId(opportunity);
+  const canonicalUrl = canonicalSourceUrl(opportunity.sourceUrl);
+  const lockKey = `${providerKey}::${noticeId}`;
+  const now = new Date();
+
+  return db.transaction(async (transaction) => {
+    // Transaction-scoped advisory locking serializes competing manual fetches for
+    // the same provider notice without blocking unrelated opportunity records.
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+    );
+
+    const existing = await transaction
+      .select({ id: opportunitiesTable.id })
+      .from(opportunitiesTable)
+      .where(
+        and(
+          eq(opportunitiesTable.providerKey, providerKey),
+          eq(opportunitiesTable.noticeId, noticeId),
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      // Provider refreshes may update only source-derived fields. User grades,
+      // learned confidence, and user notes remain untouched.
+      const {
+        userGrade: _userGrade,
+        userConfidence: _userConfidence,
+        notes: _notes,
+        ...sourceFields
+      } = normalized as typeof normalized & {
+        userGrade?: unknown;
+        userConfidence?: unknown;
+        notes?: unknown;
+      };
+
+      await transaction
+        .update(opportunitiesTable)
+        .set({
+          ...sourceFields,
+          noticeId,
+          providerKey,
+          samUrl: canonicalUrl ?? sourceFields.samUrl,
+          updatedAt: now,
+        })
+        .where(eq(opportunitiesTable.id, existing[0].id));
+      return "updated";
+    }
+
+    await transaction.insert(opportunitiesTable).values({
+      ...normalized,
+      id: randomUUID(),
+      noticeId,
+      providerKey,
+      samUrl: canonicalUrl ?? normalized.samUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return "created";
+  });
+}
 
 export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
   const requestedProviders = Array.from(new Set((options.providers ?? ["samGov"]).map((provider) => PROVIDER_ALIASES.get(provider) ?? provider))).filter((provider) => !INTEL_ONLY_PROVIDERS.has(provider));
@@ -182,61 +295,19 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   const seenKeys = new Set<string>();
   const deduped = qualityFiltered.filter(({ opportunity }) => {
     const keys = dedupeKeys(opportunity);
-    if (keys.some((k) => seenKeys.has(k))) {
+    if (keys.some((key) => seenKeys.has(key))) {
       result.skipped++;
       return false;
     }
-    keys.forEach((k) => seenKeys.add(k));
+    keys.forEach((key) => seenKeys.add(key));
     return true;
   });
 
   const persistedForIndex: NormalizedOpportunity[] = [];
   for (const { opportunity } of deduped) {
-    const externalId = opportunity.externalId;
-
-    // Build the source-derived record once per opportunity.
-    const dbRecord = normalizedToDbRecord(opportunity);
-
-    if (externalId) {
-      // Look up by (provider_key, notice_id) — genuine provider-scoped identity.
-      // The same external ID from two different providers will never match.
-      const providerKey = dbRecord.providerKey ?? "manual";
-
-      const existing = await db
-        .select({ id: opportunitiesTable.id })
-        .from(opportunitiesTable)
-        .where(
-          and(
-            eq(opportunitiesTable.providerKey, providerKey),
-            eq(opportunitiesTable.noticeId, externalId),
-          ),
-        );
-
-      if (existing.length > 0) {
-        // Preserve user-controlled columns; update only source-derived fields.
-        const { userGrade: _g, userConfidence: _c, notes: _n, ...sourceFields } = dbRecord as typeof dbRecord & {
-          userGrade?: unknown;
-          userConfidence?: unknown;
-          notes?: unknown;
-        };
-        await db
-          .update(opportunitiesTable)
-          .set({ ...sourceFields, updatedAt: new Date() })
-          .where(eq(opportunitiesTable.id, existing[0].id));
-        result.updated++;
-        persistedForIndex.push(opportunity);
-        continue;
-      }
-    }
-
-    // New record — generate the primary key here (and only here).
-    await db.insert(opportunitiesTable).values({
-      ...dbRecord,
-      id: randomUUID(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    result.created++;
+    const outcome = await persistOpportunityAtomically(opportunity);
+    if (outcome === "created") result.created++;
+    else result.updated++;
     persistedForIndex.push(opportunity);
   }
 
@@ -258,23 +329,17 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   return result;
 }
 
-function dedupeKeys(opp: NormalizedOpportunity): string[] {
+function dedupeKeys(opportunity: NormalizedOpportunity): string[] {
   const keys: string[] = [];
-  if (opp.externalId) keys.push(`id:${opp.externalId.toLowerCase()}`);
-  if (opp.solicitationNumber) {
-    const sol = opp.solicitationNumber.replace(/[^a-z0-9]/gi, "").toLowerCase();
-    if (sol.length >= 4) keys.push(`sol:${sol}`);
+  if (opportunity.externalId) keys.push(`id:${opportunity.externalId.toLowerCase()}`);
+  if (opportunity.solicitationNumber) {
+    const solicitationNumber = opportunity.solicitationNumber.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (solicitationNumber.length >= 4) keys.push(`sol:${solicitationNumber}`);
   }
-  const host = hostFromUrl(opp.sourceUrl);
-  if (opp.sourceUrl) {
-    try {
-      const u = new URL(opp.sourceUrl.startsWith("http") ? opp.sourceUrl : `https://${opp.sourceUrl}`);
-      keys.push(`url:${(u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "")).toLowerCase()}`);
-    } catch {
-      keys.push(`url:${opp.sourceUrl.toLowerCase()}`);
-    }
-  }
-  const normTitle = opp.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
-  if (normTitle.length >= 8) keys.push(`title:${normTitle}|${host ?? (opp.agency ?? "").toLowerCase()}`);
+  const host = hostFromUrl(opportunity.sourceUrl);
+  const sourceUrl = canonicalSourceUrl(opportunity.sourceUrl);
+  if (sourceUrl) keys.push(`url:${sourceUrl.toLowerCase()}`);
+  const normalizedTitle = opportunity.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+  if (normalizedTitle.length >= 8) keys.push(`title:${normalizedTitle}|${host ?? (opportunity.agency ?? "").toLowerCase()}`);
   return keys;
 }
