@@ -30,6 +30,7 @@ const DIRECT_API_PORTAL_IDS = new Set(["us-sam-gov"]);
 const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "tx-esbd",
   "ny-contract-reporter",
+  "ia-das",
   // OpenGov shared adapter — all 18 confirmed tenants
   "ca-city-of-santa-cruz-opengov",
   "ca-city-of-palm-desert-opengov",
