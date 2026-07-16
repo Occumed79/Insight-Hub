@@ -33,10 +33,15 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_source AS ENUM (
-          'federal_register','regulations_gov','sam_awards','usaspending',
+          'federal_register','regulations_gov','sam_awards','usaspending','grants_gov',
           'dol_osha','acquisition_gov','ecfr','state_serper','state_portal','other'
         );
       EXCEPTION WHEN duplicate_object THEN NULL; END $$
+    `);
+
+    // Existing databases already have intel_source, so add the new value separately.
+    await db.execute(sql`
+      ALTER TYPE intel_source ADD VALUE IF NOT EXISTS 'grants_gov'
     `);
 
     await db.execute(sql`
@@ -181,6 +186,7 @@ export async function runStartupMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_source_monitor_runs_source_id
         ON source_monitor_runs (source_id)
     `);
+
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_source_monitor_runs_started_at
         ON source_monitor_runs (started_at DESC)
