@@ -77,9 +77,13 @@ function retryDelayMs(response: Response, attempt: number): number {
   const retryAfter = response.headers.get("retry-after");
   if (retryAfter) {
     const seconds = Number(retryAfter);
-    if (Number.isFinite(seconds)) return Math.min(10_000, Math.max(250, seconds * 1000));
+    if (Number.isFinite(seconds)) {
+      return Math.min(10_000, Math.max(250, seconds * 1000));
+    }
     const retryAt = new Date(retryAfter).getTime();
-    if (Number.isFinite(retryAt)) return Math.min(10_000, Math.max(250, retryAt - Date.now()));
+    if (Number.isFinite(retryAt)) {
+      return Math.min(10_000, Math.max(250, retryAt - Date.now()));
+    }
   }
   return Math.min(5_000, 500 * 2 ** attempt);
 }
@@ -246,17 +250,17 @@ export class TangoProvider implements DataSourceProvider {
     const dateRange = Math.max(1, options.dateRange ?? 30);
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - dateRange);
-    const requestedLimit = Math.min(
-      MAX_RECORD_LIMIT,
+    const pageSize = Math.min(
+      MAX_PAGE_SIZE,
       Math.max(1, options.limit ?? 50),
     );
-    const pageSize = Math.min(MAX_PAGE_SIZE, requestedLimit);
     const maxPages = integerEnv(
       "TANGO_MAX_PAGES",
       DEFAULT_MAX_PAGES,
       1,
       25,
     );
+    const recordLimit = Math.min(MAX_RECORD_LIMIT, pageSize * maxPages);
     const timeoutMs = integerEnv(
       "TANGO_REQUEST_TIMEOUT_MS",
       DEFAULT_REQUEST_TIMEOUT_MS,
@@ -296,7 +300,7 @@ export class TangoProvider implements DataSourceProvider {
     while (
       currentUrl &&
       pageNumber < maxPages &&
-      records.length < requestedLimit
+      records.length < recordLimit
     ) {
       const pageKey = currentUrl.toString();
       if (seenPageUrls.has(pageKey)) {
@@ -331,14 +335,13 @@ export class TangoProvider implements DataSourceProvider {
         if (seenOpportunityIds.has(opportunity.opportunity_id)) continue;
         seenOpportunityIds.add(opportunity.opportunity_id);
         records.push(this.normalize(opportunity, pageNumber));
-        if (records.length >= requestedLimit) break;
+        if (records.length >= recordLimit) break;
       }
 
-      if (!page.next || records.length >= requestedLimit) {
+      if (!page.next || records.length >= recordLimit) {
         currentUrl = null;
       } else {
-        const nextUrl = new URL(page.next, currentUrl);
-        currentUrl = nextUrl;
+        currentUrl = new URL(page.next, currentUrl);
       }
     }
 
