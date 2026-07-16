@@ -132,7 +132,7 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   samGov: provider("samGov", "SAM.gov", "primary", "direct_source", [secretField("samApiKey", "SAM_GOV_API_KEY")], ["Federal solicitations", "Awards", "Presolicitations"], "live", "Direct source for U.S. federal contracting opportunities from System for Award Management."),
   texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Dedicated parser for the official Texas ESBD / Texas SmartBuy public listing. It does not yet provide complete pagination or document collection."),
   nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Dedicated parser for the official New York State Contract Reporter public listing. It does not yet provide complete pagination or document collection."),
-  publicPortalProviders: provider("publicPortalProviders", "U.S. Public Portals", "procurement", "hybrid", [], ["Two dedicated official listing adapters", "Generic one-page extraction for eligible public pages", "Serper official-domain discovery fallback", "Cross-path deduplication", "Per-domain rate limiting"], "partial", "Hybrid U.S. portal source. Texas ESBD and NYSCR have dedicated adapters; other eligible public pages use generic extraction, while unsupported portals rely on Serper discovery. Catalog inclusion is not equivalent to a completed connector."),
+  publicPortalProviders: provider("publicPortalProviders", "U.S. Public Portals", "procurement", "hybrid", [], ["Two dedicated official listing adapters", "Bounded generic extraction (default 3-page cap) for eligible public pages", "Serper official-domain discovery fallback", "Cross-path deduplication", "Per-domain rate limiting"], "partial", "Hybrid U.S. portal source. Texas ESBD and NYSCR have dedicated adapters; other eligible public pages use bounded generic extraction (default 3-page cap), while unsupported portals rely on Serper discovery. Catalog inclusion is not equivalent to a completed connector."),
   eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Serper discovery of public Bonfire/Euna pages", "Occu-Med relevance filtering", "Cross-provider deduplication"], "partial", "Search-discovery source using the configured Serper key. It is not a direct Euna API or supplier-feed integration, and no Euna credentials are stored."),
   internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Serper discovery on official international domains", "Canada, United Kingdom, Europe, and multilateral directory coverage", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "partial", "Search-discovery source covering the official international portal directory. Direct CanadaBuys, Contracts Finder, TED, and other portal connectors are not yet implemented."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
@@ -172,8 +172,8 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   langsearch: provider("langsearch", "Langsearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing"], "partial"),
   websearch: provider("websearch", "WebSearch API", "search", "web_discovery", [secretField("websearchApiKey", "WEBSEARCH_API_KEY")], ["Broad web search", "Opportunity sourcing"], "partial"),
   grantsGov: {
-    ...provider("grantsGov", "Grants.gov", "primary", "research_analysis", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
-    notes: "Funding and program intelligence only. Grants.gov is excluded from RFP opportunity ingestion and cards.",
+    ...provider("grantsGov", "Grants.gov", "primary", "research_analysis", [], ["Federal grants funding intelligence", "Health program funding discovery"], "live", "Public federal grants database — no API key required. Intelligence and funding context only; not an RFP ingestion source."),
+    notes: "Funding and program intelligence only. Grants.gov records feed the intel database, not the RFP opportunity list.",
   },
 
   cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "active"),
@@ -196,14 +196,42 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Embeddings", "Model inference", "Vector indexing fallback"], "active"),
 };
 
+/**
+ * Resolve a provider credential.
+ *
+ * Precedence (env-first):
+ *   1. Environment variable — Render secrets and process-level env take priority.
+ *      This ensures that secrets deployed via Render dashboard are never silently
+ *      overridden by an older database setting.
+ *   2. Database setting — used only when the environment variable is absent or empty.
+ *      Useful for credentials entered through the Settings UI in local/dev deployments.
+ *
+ * Returns null when neither source provides a non-empty value.
+ * Never logs or exposes the resolved secret value.
+ */
 export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
-  const rows = await db.select().from(settingsTable).where(eq(settingsTable.key, dbKey));
-  if (rows[0]?.value) return rows[0].value;
-
+  // 1. Environment variable takes priority.
   if (envKey) {
-    const val = process.env[envKey];
-    if (val) return val;
+    const envVal = process.env[envKey];
+    if (envVal && envVal.trim()) return envVal.trim();
+  }
+
+  // 2. Database fallback — only reached when env var is absent/empty.
+  try {
+    const rows = await db.select().from(settingsTable).where(eq(settingsTable.key, dbKey));
+    const dbVal = rows[0]?.value;
+    if (dbVal && dbVal.trim()) return dbVal.trim();
+  } catch {
+    // DB may be unavailable during early startup; treat as unconfigured.
   }
 
   return null;
+}
+
+/**
+ * Check whether a credential is configured without returning its value.
+ * Safe to use in API responses — returns a boolean only.
+ */
+export async function isCredentialConfigured(dbKey: string, envKey?: string): Promise<boolean> {
+  return (await resolveCredential(dbKey, envKey)) !== null;
 }

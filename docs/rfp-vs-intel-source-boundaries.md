@@ -7,9 +7,8 @@ The RFP section should publish direct, actionable opportunities only. Broader in
 These sources can create records in `opportunities` when they pass validation and dedupe gates:
 
 - SAM.gov opportunities
-- Grants.gov opportunities if directly actionable
 - Official state and local procurement portals after source-page verification
-- BidNet/DemandStar/Tango-style bid portals only when the underlying listing is verified and has enough metadata
+- Tango (direct API, when configured and the endpoint contract is confirmed)
 
 ## Discovery-only sources
 
@@ -34,11 +33,19 @@ search/discovery result
 → opportunity publish
 ```
 
+## Never-RFP sources
+
+These must not produce RFP opportunity cards under any circumstances:
+
+- **BidNet Direct** — configuration scaffold only; endpoint integration is not implemented.
+- **DemandStar** — not integrated.
+
 ## Intel-only sources
 
 These are useful, but they do not represent direct RFP opportunities by default:
 
-- USAspending
+- USAspending (award history, incumbents, re-compete signals — intel DB only)
+- Grants.gov (federal funding intelligence — intel DB only; not an RFP ingestion source)
 - Federal Register
 - Oversight.gov
 - GAO/OIG sources
@@ -50,7 +57,7 @@ They belong in the intel DB, not the RFP DB.
 
 ## USAspending boundary
 
-USAspending is for award history, incumbents, recurring demand, re-compete prediction, and agency spend patterns.
+USAspending is for award history, incumbents, recurring demand, re-compete prediction, and agency spend patterns. It feeds the intel database only.
 
 It should answer:
 
@@ -59,7 +66,7 @@ It should answer:
 - Which NAICS/PSC codes matter?
 - Which contracts may become recompetes?
 
-It should not publish direct RFP cards unless another authoritative opportunity source confirms an active solicitation.
+It must not publish RFP opportunity cards. USAspending award records are intel signals, not active solicitations.
 
 ## Federal Register boundary
 

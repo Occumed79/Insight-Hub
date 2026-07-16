@@ -93,8 +93,19 @@ router.get("/providers", async (req, res) => {
 
 /**
  * PUT /api/providers/:name
- * Save credentials for a specific RFP/opportunity provider.
- * Body is a key-value map of dbKey -> value.
+ * Save or remove credentials for a specific provider.
+ *
+ * Field handling rules:
+ *   - A field key that is absent from the body → current stored value is PRESERVED.
+ *   - A field key present with a non-empty string value → stored/updated.
+ *   - A field key present with an empty string OR explicitly listed in the
+ *     top-level `remove` array → the stored database value is DELETED (cleared).
+ *
+ * The `remove` array is the unambiguous removal path:
+ *   { "remove": ["bidnetApiKey", "bidnetBaseUrl"] }
+ * An empty string value is also treated as an explicit clear to match form behaviour.
+ *
+ * Environment-variable credentials are never touched — only DB overrides are removed.
  */
 router.put("/providers/:name", async (req, res) => {
   try {
@@ -110,40 +121,105 @@ router.put("/providers/:name", async (req, res) => {
     }
 
     const body = req.body as Record<string, unknown>;
+
+    // Build the explicit removal set from the optional `remove` array.
+    const explicitRemove = new Set<string>(
+      Array.isArray(body.remove)
+        ? (body.remove as unknown[]).filter((v): v is string => typeof v === "string")
+        : [],
+    );
+
     const allFields = [...def.requiredFields, ...def.optionalFields];
+    const removedKeys: string[] = [];
+    const savedKeys: string[] = [];
 
     for (const field of allFields) {
-      const value = body[field.dbKey];
-      if (value === undefined || value === null) {
+      const shouldRemove =
+        explicitRemove.has(field.dbKey) ||
+        (field.dbKey in body && (body[field.dbKey] === null || body[field.dbKey] === ""));
+
+      if (shouldRemove) {
+        // Delete the stored DB override. Env-variable credentials are unaffected.
+        await db.delete(settingsTable).where(eq(settingsTable.key, field.dbKey));
+        removedKeys.push(field.dbKey);
         continue;
       }
 
-      if (typeof value === "object") {
+      // Field absent from body → preserve current value (no-op).
+      if (!(field.dbKey in body) || body[field.dbKey] === undefined) {
+        continue;
+      }
+
+      const rawValue = body[field.dbKey];
+      if (typeof rawValue === "object" && rawValue !== null) {
         return res.status(400).json({ error: `Invalid value for ${field.dbKey}` });
       }
 
-      const normalized = String(value).trim();
+      const normalized = String(rawValue).trim();
       if (normalized !== "") {
         await db
           .insert(settingsTable)
           .values({ key: field.dbKey, value: normalized })
           .onConflictDoUpdate({ target: settingsTable.key, set: { value: normalized } });
+        savedKeys.push(field.dbKey);
       }
     }
 
     // Return updated status — wrap in try/catch so a failing status check
-    // doesn't prevent the credential from being saved successfully.
+    // doesn't prevent the save/remove from being reported successfully.
     const provider = providerRegistry[providerName];
     let status: Awaited<ReturnType<typeof provider.getStatus>>;
     try {
       status = await provider.getStatus();
     } catch {
-      status = { name: providerName, configured: true, healthy: false, errorMessage: "Status check unavailable" };
+      status = { name: providerName, configured: false, healthy: false, errorMessage: "Status check unavailable" };
     }
-    return res.json({ name, status });
+    return res.json({
+      name,
+      status,
+      ...(removedKeys.length > 0 && {
+        removed: removedKeys,
+        removedNote: "The stored database override was removed for the listed keys. Any matching Render environment variable is unaffected and will continue to be used.",
+      }),
+      ...(savedKeys.length > 0 && { saved: savedKeys }),
+    });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to save provider credentials" });
+  }
+});
+
+/**
+ * DELETE /api/providers/:name/credential/:dbKey
+ * Explicitly remove a single stored database credential override.
+ * The corresponding environment variable (if any) is unaffected.
+ */
+router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
+  try {
+    const { name, dbKey } = req.params;
+    const providerName = name as RfpProviderName;
+    const def = PROVIDER_DEFINITIONS[providerName];
+    if (!def) {
+      return res.status(404).json({ error: `Unknown RFP provider: ${name}` });
+    }
+
+    const allFields = [...def.requiredFields, ...def.optionalFields];
+    const fieldDef = allFields.find((f) => f.dbKey === dbKey);
+    if (!fieldDef) {
+      return res.status(404).json({ error: `Unknown credential field: ${dbKey}` });
+    }
+
+    await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));
+
+    return res.json({
+      name,
+      dbKey,
+      removed: true,
+      note: "The stored database override was removed. Any matching Render environment variable is unaffected and will continue to be used.",
+    });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to remove credential" });
   }
 });
 

@@ -22,9 +22,9 @@ All providers live in `artifacts/api-server/src/lib/providers/`:
 - **Tavily** — fully wired (deep research, requires `TAVILY_API_KEY`); powers web intelligence pipeline
 - **Gemini AI** — fully wired (query gen + opportunity extraction, requires `GEMINI_API_KEY`); free tier has strict daily quota limits
 - **Tango** — stub (direct source, requires API endpoint confirmation from Tango support)
-- **BidNet** — stub (direct source, requires API endpoint + `BIDNET_API_KEY` + BidNet support confirmation)
+- **BidNet** — configuration scaffold only; never operational. The endpoint contract, authentication method, and response mapping are not implemented. `isConfigured()` always returns false.
 
-Credential resolution: DB first (`settingsTable`), then env var fallback (`resolveCredential()` in `providerConfig.ts`).
+Credential resolution: env var first, DB fallback (`resolveCredential()` in `providerConfig.ts`). Environment variables (Render dashboard secrets) always take precedence over database settings. Database settings are used only when the env var is absent or empty.
 
 ## Web Intelligence Pipeline
 
