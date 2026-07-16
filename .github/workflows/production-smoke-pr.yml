@@ -1,0 +1,119 @@
+name: Production smoke test PR
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    if: github.head_ref == 'agent/production-smoke-test-20260716'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test live deployment and controlled ingestion
+        shell: bash
+        run: |
+          set -uo pipefail
+          candidates=(
+            "https://insight-hub-eyza.onrender.com"
+            "https://insight-hub.onrender.com"
+            "https://insight-hub-new.onrender.com"
+          )
+          active=""
+          echo "SMOKE_START=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          for base in "${candidates[@]}"; do
+            echo "CANDIDATE=$base"
+            getent ahosts "${base#https://}" | head -n 2 || true
+            body="$(mktemp)"
+            code=$(curl -sS -L --connect-timeout 15 --max-time 120 \
+              -H 'Accept: application/json' -o "$body" -w '%{http_code}' \
+              "$base/api/rfp-sources?includeTier3=true" || echo 000)
+            echo "RFP_SOURCES_HTTP=$code"
+            if [[ "$code" == "200" ]] && jq -e '.directory and .sources and .totals' "$body" >/dev/null 2>&1; then
+              active="$base"
+              echo "ACTIVE_BASE=$active"
+              echo "US_DIRECTORY_COUNT=$(jq -r '.directory.unitedStates.sources | length' "$body")"
+              echo "INTERNATIONAL_DIRECTORY_COUNT=$(jq -r '[.directory.international.groups[].sources[]] | length' "$body")"
+              echo "INTERNATIONAL_GROUPS=$(jq -r '[.directory.international.groups[].title] | join(", ")' "$body")"
+              break
+            fi
+            head -c 600 "$body" || true
+            echo
+          done
+
+          if [[ -z "$active" ]]; then
+            echo "SMOKE_RESULT=FAIL_NO_ACTIVE_DEPLOYMENT"
+            exit 1
+          fi
+
+          check_get() {
+            label="$1"
+            path="$2"
+            file="$(mktemp)"
+            code=$(curl -sS -L --connect-timeout 15 --max-time 150 \
+              -H 'Accept: */*' -o "$file" -w '%{http_code}' "$active$path" || echo 000)
+            bytes=$(wc -c < "$file")
+            echo "${label}_HTTP=$code BYTES=$bytes"
+            [[ "$code" == "200" ]] || { head -c 600 "$file" || true; echo; return 1; }
+            printf '%s' "$file"
+          }
+
+          page_file=$(check_get OPPORTUNITIES_PAGE '/portal/opportunities') || exit 1
+          providers_file=$(check_get PROVIDERS_API '/api/providers') || exit 1
+          opportunities_file=$(check_get OPPORTUNITIES_API '/api/opportunities?status=active&page=1&limit=5') || exit 1
+
+          jq -e 'type == "array" or .providers or .data' "$providers_file" >/dev/null
+          grep -q 'eunaBonfire' "$providers_file"
+          echo "EUNA_PROVIDER_PRESENT=true"
+
+          jq -e '.total != null and .data != null' "$opportunities_file" >/dev/null
+          before_total=$(jq -r '.total' "$opportunities_file")
+          echo "ACTIVE_TOTAL_BEFORE=$before_total"
+
+          payload='{"keywords":"\"occupational health services\"","dateRange":30,"providers":["publicPortalProviders"]}'
+          run_fetch() {
+            label="$1"
+            body="$(mktemp)"
+            code=$(curl -sS -L --connect-timeout 15 --max-time 360 \
+              -H 'Accept: application/json' -H 'Content-Type: application/json' \
+              -X POST --data "$payload" -o "$body" -w '%{http_code}' \
+              "$active/api/opportunities/fetch" || echo 000)
+            echo "${label}_HTTP=$code"
+            jq -c '.' "$body" 2>/dev/null || { head -c 1000 "$body"; echo; }
+            [[ "$code" == "200" ]] || return 1
+            jq -e '.fetched != null and .created != null and .updated != null and .skipped != null' "$body" >/dev/null
+            cp "$body" "$RUNNER_TEMP/$label.json"
+          }
+
+          run_fetch FETCH_FIRST || { echo 'SMOKE_RESULT=FAIL_FIRST_FETCH'; exit 1; }
+          first_fetched=$(jq -r '.fetched' "$RUNNER_TEMP/FETCH_FIRST.json")
+          first_created=$(jq -r '.created' "$RUNNER_TEMP/FETCH_FIRST.json")
+          first_updated=$(jq -r '.updated' "$RUNNER_TEMP/FETCH_FIRST.json")
+          echo "FIRST_FETCH fetched=$first_fetched created=$first_created updated=$first_updated"
+
+          run_fetch FETCH_REPEAT || { echo 'SMOKE_RESULT=FAIL_REPEAT_FETCH'; exit 1; }
+          repeat_fetched=$(jq -r '.fetched' "$RUNNER_TEMP/FETCH_REPEAT.json")
+          repeat_created=$(jq -r '.created' "$RUNNER_TEMP/FETCH_REPEAT.json")
+          repeat_updated=$(jq -r '.updated' "$RUNNER_TEMP/FETCH_REPEAT.json")
+          echo "REPEAT_FETCH fetched=$repeat_fetched created=$repeat_created updated=$repeat_updated"
+
+          after_file="$(mktemp)"
+          after_code=$(curl -sS -L --connect-timeout 15 --max-time 150 \
+            -H 'Accept: application/json' -o "$after_file" -w '%{http_code}' \
+            "$active/api/opportunities?status=active&page=1&limit=5" || echo 000)
+          [[ "$after_code" == "200" ]] && jq -e '.total != null' "$after_file" >/dev/null
+          after_total=$(jq -r '.total' "$after_file")
+          echo "ACTIVE_TOTAL_AFTER=$after_total"
+
+          if [[ "$repeat_created" -ne 0 ]]; then
+            echo "SMOKE_RESULT=FAIL_DUPLICATES_CREATED_$repeat_created"
+            exit 1
+          fi
+
+          echo "SMOKE_RESULT=PASS"
