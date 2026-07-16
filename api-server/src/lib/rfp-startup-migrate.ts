@@ -113,6 +113,33 @@ export async function runRfpStartupMigrations(): Promise<void> {
       END $$
     `);
 
+    // 7. Persist keyword-training text on opportunity_feedback so the learning
+    // model can extract title/description keywords without re-fetching the
+    // opportunity table at scoring time.
+    await db.execute(sql`
+      ALTER TABLE opportunity_feedback
+        ADD COLUMN IF NOT EXISTS title text
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE opportunity_feedback
+        ADD COLUMN IF NOT EXISTS description text
+    `);
+
+    // 8. Backfill title and description from the matched opportunity row for
+    // every feedback record that does not yet have them. Only rows where the
+    // opportunity still exists are updated; orphan feedback rows are left as-is
+    // (both new columns remain NULL there, which is safe).
+    await db.execute(sql`
+      UPDATE opportunity_feedback AS feedback
+      SET
+        title       = opportunity.title,
+        description = opportunity.description
+      FROM opportunities AS opportunity
+      WHERE opportunity.id = feedback.opportunity_id
+        AND (feedback.title IS NULL OR feedback.description IS NULL)
+    `);
+
     logger.info("[rfp] RFP startup migrations complete.");
   } catch (err) {
     logger.error({ err, db: "rfp" }, "[rfp] RFP startup migration failed");

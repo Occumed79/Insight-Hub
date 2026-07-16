@@ -32,6 +32,10 @@ export const opportunityFeedbackTable = pgTable(
     naicsCode: text("naics_code"),
     providerName: text("provider_name"),
     tags: text("tags"), // JSON array text (mirrors opportunity.tags)
+    // Keyword training text — persisted so the model can learn from title/description
+    // without re-fetching the opportunity at scoring time.
+    title: text("title"),
+    description: text("description"),
     // Timestamps
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

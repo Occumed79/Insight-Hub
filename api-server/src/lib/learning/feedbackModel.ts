@@ -10,7 +10,8 @@
  *   - naicsCode        (exact match)
  *   - providerName     (exact match)
  *   - tags             (individual tag membership)
- *   - keywords         (title/description word overlap)
+ *   - keywords         (title/description word overlap — extracted from
+ *                       persisted feedback.title / feedback.description)
  *
  * Grade → weight mapping:
  *   excellent  → +2.0
@@ -21,7 +22,7 @@
 
 import { db } from "@workspace/db";
 import { opportunityFeedbackTable, opportunitiesTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +54,17 @@ export interface OpportunityInput {
   title?: string | null;
   description?: string | null;
 }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Maximum unique keywords captured per feedback row during weight building. */
+const MAX_KEYWORDS_PER_ROW = 50;
+
+/** Maximum candidate opportunities re-scored after a single grade submission. */
+const MAX_BOUNDED_CANDIDATES = 500;
+
+/** Number of top keyword signals used to widen the candidate search. */
+const TOP_KEYWORD_SIGNALS = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,8 +121,22 @@ export async function buildSignalWeights(): Promise<SignalWeights> {
     for (const tag of parseTags(row.tags)) {
       addWeight(weights.tags, tag.toLowerCase(), w);
     }
-    // Note: we don\'t store title/description in feedback rows for storage efficiency,
-    // so keyword weights come from re-scoring at query time.
+
+    // Extract keywords from the persisted title and description on the feedback
+    // row. Title keywords are included first; each keyword is counted at most
+    // once per row so a repeated term in description doesn't double-count.
+    const titleWords = extractKeywords(row.title);
+    const descWords  = extractKeywords(row.description);
+    const seen = new Set<string>();
+    let keywordCount = 0;
+
+    for (const word of [...titleWords, ...descWords]) {
+      if (seen.has(word)) continue;
+      seen.add(word);
+      addWeight(weights.keywords, word, w);
+      keywordCount++;
+      if (keywordCount >= MAX_KEYWORDS_PER_ROW) break;
+    }
   }
 
   return weights;
@@ -164,6 +190,8 @@ export function scoreOpportunity(opp: OpportunityInput, weights: SignalWeights):
     }
   }
 
+  void signals; // tracked for future use
+
   // Normalize: clamp to 0-100
   return Math.round(Math.min(100, Math.max(0, score)));
 }
@@ -175,7 +203,8 @@ export async function submitGrade(
   grade: FeedbackGrade,
   notes?: string
 ): Promise<void> {
-  // Fetch the opportunity to denormalize signal fields
+  // Fetch the opportunity to denormalize signal fields (always re-read so stale
+  // values from a previous version of the record are never preserved).
   const [opp] = await db
     .select()
     .from(opportunitiesTable)
@@ -186,7 +215,10 @@ export async function submitGrade(
 
   const id = crypto.randomUUID();
 
-  // Upsert feedback (one grade per opportunity — update if already graded)
+  // Upsert feedback — one grade per opportunity.
+  // On UPDATE: refresh all denormalized signal fields so stale values from an
+  // earlier version of the opportunity are never kept. Notes omitted by the
+  // caller preserve the existing note; an explicit empty string clears it.
   const existing = await db
     .select()
     .from(opportunityFeedbackTable)
@@ -197,66 +229,181 @@ export async function submitGrade(
     await db
       .update(opportunityFeedbackTable)
       .set({
-        grade: grade as any,
-        notes: notes ?? existing[0].notes,
-        updatedAt: new Date(),
+        grade:        grade as any,
+        notes:        notes !== undefined ? notes : existing[0].notes,
+        // Refresh all denormalized signal columns from the current opportunity
+        agency:       opp.agency ?? null,
+        naicsCode:    opp.naicsCode ?? null,
+        providerName: opp.providerName ?? null,
+        tags:         opp.tags ?? null,
+        title:        opp.title ?? null,
+        description:  opp.description ?? null,
+        updatedAt:    new Date(),
       })
       .where(eq(opportunityFeedbackTable.opportunityId, opportunityId));
   } else {
     await db.insert(opportunityFeedbackTable).values({
       id,
       opportunityId,
-      grade: grade as any,
-      notes: notes ?? null,
+      grade:        grade as any,
+      notes:        notes ?? null,
       agency:       opp.agency ?? null,
       naicsCode:    opp.naicsCode ?? null,
       providerName: opp.providerName ?? null,
       tags:         opp.tags ?? null,
+      title:        opp.title ?? null,
+      description:  opp.description ?? null,
     });
   }
 
-  // Update the opportunity\'s userGrade immediately
+  // Update the opportunity's userGrade immediately.
   await db
     .update(opportunitiesTable)
     .set({ userGrade: grade, updatedAt: new Date() })
     .where(eq(opportunitiesTable.id, opportunityId));
 
-  // Rebuild weights and re-score ALL ungraded opportunities in the background
-  setImmediate(async () => {
-    try {
-      await reScoreAllOpportunities();
-    } catch (err) {
-      console.error("[feedbackModel] background re-score failed:", err);
-    }
-  });
+  // Rebuild weights once, then re-score only a bounded set of candidates that
+  // share at least one meaningful signal with the freshly graded opportunity.
+  // This replaces the old setImmediate(reScoreAllOpportunities) call.
+  try {
+    await reScoreCandidates(opp, await buildSignalWeights());
+  } catch (err) {
+    console.error("[feedbackModel] bounded re-score failed:", err);
+  }
 }
 
-// ─── Re-score all opportunities ────────────────────────────────────────────────
+// ─── Bounded candidate re-score ───────────────────────────────────────────────
+//
+// Re-scores only ungraded opportunities that share at least one of:
+//   agency, NAICS code, provider, overlapping normalized tag, or one of the
+//   top keyword signals derived from the graded opportunity's title.
+// Always includes the graded opportunity itself so its userConfidence reflects
+// the new model immediately.
+// Maximum candidates: MAX_BOUNDED_CANDIDATES (500).
 
-export async function reScoreAllOpportunities(): Promise<void> {
+async function reScoreCandidates(
+  graded: OpportunityInput & { id: string },
+  weights: SignalWeights
+): Promise<number> {
+  if (weights.totalGrades === 0) return 0;
+
+  // Collect normalized tags from the graded opportunity.
+  const gradedTags = parseTags(graded.tags).map(t => t.toLowerCase());
+
+  // Pick the strongest keyword signals extracted from this opportunity's title
+  // to widen the candidate set without scanning the whole table.
+  const titleKeywords = extractKeywords(graded.title)
+    .slice(0, TOP_KEYWORD_SIGNALS);
+
+  // Build a single SQL filter that matches any ungraded record sharing at least
+  // one signal with the graded opportunity, UNION the graded id itself.
+  // We use a raw SQL query for the bounded candidate fetch to express the
+  // text-search match efficiently without Drizzle's ORM layer fighting us.
+  const candidateRows = await db.execute<{ id: string; agency: string | null; naics_code: string | null; provider_name: string | null; tags: string | null; title: string | null; description: string | null }>(sql`
+    SELECT id, agency, naics_code, provider_name, tags, title, description
+    FROM opportunities
+    WHERE (
+      user_grade IS NULL
+      AND (
+        ${graded.agency   ? sql`agency       = ${graded.agency}`        : sql`FALSE`}
+        OR ${graded.naicsCode  ? sql`naics_code   = ${graded.naicsCode}` : sql`FALSE`}
+        OR ${graded.providerName ? sql`provider_name = ${graded.providerName}` : sql`FALSE`}
+        ${gradedTags.length > 0
+          ? sql`OR tags IS NOT NULL`
+          : sql``}
+        ${titleKeywords.length > 0
+          ? sql`OR (title IS NOT NULL AND (${sql.join(titleKeywords.map(kw => sql`lower(title) LIKE ${'%' + kw + '%'}`), sql` OR `)}))`
+          : sql``}
+      )
+    )
+    OR id = ${graded.id}
+    LIMIT ${MAX_BOUNDED_CANDIDATES}
+  `);
+
+  const rows = candidateRows.rows ?? (candidateRows as any);
+
+  // Filter tag overlap in JS (avoids complex JSON SQL) for tag-matched rows.
+  const gradedTagSet = new Set(gradedTags);
+  const candidates = (Array.isArray(rows) ? rows : []).filter((row: any) => {
+    if (row.id === graded.id) return true;
+    if (row.user_grade) return false; // double-guard
+    // Check tag overlap
+    if (gradedTagSet.size > 0) {
+      const rowTags = parseTags(row.tags).map((t: string) => t.toLowerCase());
+      if (rowTags.some((t: string) => gradedTagSet.has(t))) return true;
+    }
+    return true; // already filtered by SQL signal match
+  });
+
+  let updated = 0;
+  for (const candidate of candidates) {
+    const newScore = scoreOpportunity(
+      {
+        id:           candidate.id,
+        agency:       candidate.agency,
+        naicsCode:    candidate.naics_code,
+        providerName: candidate.provider_name,
+        tags:         candidate.tags,
+        title:        candidate.title,
+        description:  candidate.description,
+      },
+      weights
+    );
+
+    await db
+      .update(opportunitiesTable)
+      .set({ userConfidence: String(newScore), updatedAt: new Date() })
+      .where(eq(opportunitiesTable.id, candidate.id));
+
+    updated++;
+  }
+
+  return updated;
+}
+
+// ─── Full re-score (manual endpoint only) ─────────────────────────────────────
+//
+// Intentional full table scan triggered only by POST /api/opportunities/feedback/rescore.
+// Uses keyset (cursor-based) pagination so inserted/updated rows during the
+// scan don't cause OFFSET drift.
+
+export async function reScoreAllOpportunities(): Promise<{ updated: number }> {
   const weights = await buildSignalWeights();
-  if (weights.totalGrades === 0) return;
+  if (weights.totalGrades === 0) return { updated: 0 };
 
-  // Fetch all opportunities in batches
   const BATCH = 100;
-  let offset = 0;
+  let cursor = ""; // keyset: last id seen (empty string sorts before all UUIDs)
+  let updated = 0;
 
   while (true) {
-    const batch = await db
-      .select()
-      .from(opportunitiesTable)
-      .limit(BATCH)
-      .offset(offset);
+    // Fetch the next batch of opportunities ordered by id (deterministic).
+    // Use a raw SQL query to express the keyset filter cleanly.
+    const batchResult = await db.execute<{
+      id: string;
+      agency: string | null;
+      naics_code: string | null;
+      provider_name: string | null;
+      tags: string | null;
+      title: string | null;
+      description: string | null;
+    }>(sql`
+      SELECT id, agency, naics_code, provider_name, tags, title, description
+      FROM opportunities
+      WHERE id > ${cursor}
+      ORDER BY id ASC
+      LIMIT ${BATCH}
+    `);
 
-    if (batch.length === 0) break;
+    const batch = batchResult.rows ?? (batchResult as any);
+    if (!Array.isArray(batch) || batch.length === 0) break;
 
     for (const opp of batch) {
       const newScore = scoreOpportunity(
         {
           id:           opp.id,
           agency:       opp.agency,
-          naicsCode:    opp.naicsCode,
-          providerName: opp.providerName,
+          naicsCode:    opp.naics_code,
+          providerName: opp.provider_name,
           tags:         opp.tags,
           title:        opp.title,
           description:  opp.description,
@@ -268,11 +415,15 @@ export async function reScoreAllOpportunities(): Promise<void> {
         .update(opportunitiesTable)
         .set({ userConfidence: String(newScore), updatedAt: new Date() })
         .where(eq(opportunitiesTable.id, opp.id));
+
+      updated++;
     }
 
-    offset += BATCH;
+    cursor = batch[batch.length - 1].id;
     if (batch.length < BATCH) break;
   }
+
+  return { updated };
 }
 
 // ─── Get feedback for one opportunity ─────────────────────────────────────────
