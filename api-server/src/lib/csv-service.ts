@@ -3,6 +3,8 @@ import { opportunitiesTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
+const UNKNOWN_POSTED_DATE = new Date(0);
+
 export async function importFromCsv(
   csvContent: string
 ): Promise<{ imported: number; skipped: number; errors: string[] }> {
@@ -49,6 +51,9 @@ export async function importFromCsv(
       }
     }
 
+    const parsedPostedDate = parseDate(data["posted date"] || data["posteddate"]);
+    const dateUnknown = !parsedPostedDate;
+
     try {
       await db.insert(opportunitiesTable).values({
         id: randomUUID(),
@@ -59,7 +64,7 @@ export async function importFromCsv(
         type: data["type"] || data["opportunity type"] || data["notice type"] || "Solicitation",
         status: "active",
         naicsCode: data["naics code"] || data["naics"] || null,
-        postedDate: parseDate(data["posted date"] || data["posteddate"]) ?? new Date(),
+        postedDate: parsedPostedDate ?? UNKNOWN_POSTED_DATE,
         responseDeadline: parseDate(data["response deadline"] || data["response date"] || data["deadline"]),
         setAside: data["set aside"] || data["setaside"] || null,
         placeOfPerformance: data["place of performance"] || data["location"] || null,
@@ -67,6 +72,15 @@ export async function importFromCsv(
         solicitationNumber: data["solicitation number"] || data["sol number"] || null,
         samUrl: data["url"] || data["link"] || data["sam url"] || null,
         source: "csv_import",
+        providerName: "csvImport",
+        sourceConfidence: "medium",
+        tags: JSON.stringify([
+          "csv-import",
+          ...(dateUnknown ? ["date-unknown"] : []),
+        ]),
+        notes: dateUnknown
+          ? "Imported from CSV without a posted date; date remains unknown."
+          : "Imported from CSV.",
         createdAt: new Date(),
         updatedAt: new Date(),
       });
