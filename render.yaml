@@ -25,6 +25,8 @@ services:
         value: "90000"
       - key: PUBLIC_PORTAL_MAX_PAGES
         value: "3"
+      - key: PUBLIC_PORTAL_ROTATION_BATCH_SIZE
+        value: "10"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: USAJOBS_API_KEY
