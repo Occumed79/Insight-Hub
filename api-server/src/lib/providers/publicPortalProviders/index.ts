@@ -41,6 +41,8 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = (() => {
   return adapters;
 })();
 
+const DEDICATED_SOURCE_IDS = new Set(Object.keys(SOURCE_ADAPTERS));
+
 function positiveIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;

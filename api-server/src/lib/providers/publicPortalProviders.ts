@@ -6,6 +6,9 @@ import type {
   ProviderStatus,
 } from "./types";
 import { bsoPortalProviders } from "./bsoPortal";
+import { bonfirePortalProvider, BONFIRE_TENANTS } from "./bonfirePortal";
+import { ionWavePortalProvider, IONWAVE_TENANTS } from "./ionWavePortal";
+import { bidExpressPortalProvider, BIDEXPRESS_TENANTS } from "./bidExpressPortal";
 import {
   publicPortalProvidersProvider as catalogPortalProvider,
   type PublicPortalSourceRunStatus,
@@ -75,6 +78,80 @@ const BSO_SOURCES: PublicPortalSource[] = [
   },
 ];
 
+// ─── Platform family sources (Bonfire, IonWave, BidExpress) ───────────────────
+//
+// Each platform's source list is derived from its TENANTS array.
+// When a catalog entry is added with a direct platform URL, add the tenant
+// to the relevant *Portal.ts TENANTS array and it will appear here automatically.
+
+function bonfireSources(): PublicPortalSource[] {
+  return BONFIRE_TENANTS.map((t) => ({
+    id: t.portalId,
+    agencyName: t.buyerName,
+    agencyType: "special_district" as const,
+    state: t.jurisdiction,
+    sourceUrl: `https://${t.tenantSlug}.bonfirehub.com/opportunities`,
+    searchUrl: `https://${t.tenantSlug}.bonfirehub.com/opportunities?status=open`,
+    domain: "bonfirehub.com",
+    portalPlatform: "Bonfire / Euna Supplier Network",
+    sourceLevel: "district" as const,
+    level: "district" as const,
+    accessMode: "portal" as const,
+    scraperType: "existing_parser" as const,
+    enabled: t.publicListing,
+    verificationStatus: t.publicListing ? "verified" as const : "needs_review" as const,
+    notes: t.skipReason
+      ? `Bonfire tenant ${t.tenantSlug} — skipped: ${t.skipReason}`
+      : `Dedicated Bonfire direct adapter for ${t.buyerName}.`,
+  }));
+}
+
+function ionWaveSources(): PublicPortalSource[] {
+  return IONWAVE_TENANTS.map((t) => ({
+    id: t.portalId,
+    agencyName: t.buyerName,
+    agencyType: "special_district" as const,
+    state: t.jurisdiction,
+    sourceUrl: `https://go.ionwave.net/${t.tenantId}/bids`,
+    searchUrl: `https://go.ionwave.net/${t.tenantId}/bids`,
+    domain: "go.ionwave.net",
+    portalPlatform: "IonWave",
+    sourceLevel: "district" as const,
+    level: "district" as const,
+    accessMode: "portal" as const,
+    scraperType: "existing_parser" as const,
+    enabled: t.publicListing,
+    verificationStatus: t.publicListing ? "verified" as const : "needs_review" as const,
+    notes: t.skipReason
+      ? `IonWave tenant ${t.tenantId} — skipped: ${t.skipReason}`
+      : `Dedicated IonWave direct adapter for ${t.buyerName}.`,
+  }));
+}
+
+function bidExpressSources(): PublicPortalSource[] {
+  return BIDEXPRESS_TENANTS.map((t) => ({
+    id: t.portalId,
+    agencyName: t.buyerName,
+    agencyType: "special_district" as const,
+    state: t.jurisdiction,
+    sourceUrl: `https://www.bidexpress.com/businesses/${t.businessId}/bids`,
+    searchUrl: `https://www.bidexpress.com/businesses/${t.businessId}/bids`,
+    domain: "bidexpress.com",
+    portalPlatform: "BidExpress",
+    sourceLevel: "district" as const,
+    level: "district" as const,
+    accessMode: "portal" as const,
+    scraperType: "existing_parser" as const,
+    enabled: t.publicListing,
+    verificationStatus: t.publicListing ? "verified" as const : "needs_review" as const,
+    notes: t.skipReason
+      ? `BidExpress tenant ${t.businessId} — skipped: ${t.skipReason}`
+      : `Dedicated BidExpress direct adapter for ${t.buyerName}.`,
+  }));
+}
+
+// ─── Persistent health ────────────────────────────────────────────────────────
+
 const bsoStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
 async function hydrateBsoStatuses(): Promise<void> {
@@ -113,6 +190,9 @@ function recordKey(record: NormalizedOpportunity): string {
 function mergedSources(): PublicPortalSource[] {
   const byId = new Map(catalogPortalProvider.getSources().map((source) => [source.id, source]));
   for (const source of BSO_SOURCES) byId.set(source.id, source);
+  for (const source of bonfireSources()) byId.set(source.id, source);
+  for (const source of ionWaveSources()) byId.set(source.id, source);
+  for (const source of bidExpressSources()) byId.set(source.id, source);
   return Array.from(byId.values());
 }
 
@@ -141,7 +221,11 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
 
   async isConfigured(): Promise<boolean> {
-    return (await catalogPortalProvider.isConfigured().catch(() => false)) || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]));
+    return (await catalogPortalProvider.isConfigured().catch(() => false))
+      || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]))
+      || BONFIRE_TENANTS.length > 0
+      || IONWAVE_TENANTS.length > 0
+      || BIDEXPRESS_TENANTS.length > 0;
   }
 
   getSources(): PublicPortalSource[] {
@@ -156,7 +240,7 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const perBsoSource = Math.max(1, Math.ceil(limit / BSO_SOURCES.length));
+    const perBsoSource = Math.max(1, Math.ceil(limit / Math.max(BSO_SOURCES.length, 1)));
     const errors: string[] = [];
     try {
       await hydrateBsoStatuses();
@@ -166,6 +250,10 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
 
     const settled = await Promise.allSettled([
       ...BSO_SOURCES.map((source) => runBsoSource(source, options, perBsoSource)),
+      // Platform family adapters — each runs its own bounded per-tenant fetch
+      bonfirePortalProvider.fetch({ ...options, limit }),
+      ionWavePortalProvider.fetch({ ...options, limit }),
+      bidExpressPortalProvider.fetch({ ...options, limit }),
       catalogPortalProvider.fetch({ ...options, limit }),
     ]);
     const candidates: NormalizedOpportunity[] = [];
@@ -195,11 +283,15 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     const failures = statuses.filter((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
     const dates = statuses.map((status) => status.lastCheckedAt).concat(base?.lastAttempt ? [base.lastAttempt] : []);
     const successes = statuses.flatMap((status) => status.lastSuccessAt ? [status.lastSuccessAt] : []).concat(base?.lastSuccess ? [base.lastSuccess] : []);
+    const platformTenantCount = BONFIRE_TENANTS.length + IONWAVE_TENANTS.length + BIDEXPRESS_TENANTS.length;
     return {
       name: this.name,
-      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0,
+      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0 || platformTenantCount > 0,
       healthy: failures.length === 0 && (base?.healthy ?? true),
-      errorMessage: [base?.errorMessage, failures.length ? `${failures.length} BSO-family portal${failures.length === 1 ? " is" : "s are"} currently failing` : undefined].filter(Boolean).join("; ") || undefined,
+      errorMessage: [
+        base?.errorMessage,
+        failures.length ? `${failures.length} BSO-family portal${failures.length === 1 ? " is" : "s are"} currently failing` : undefined,
+      ].filter(Boolean).join("; ") || undefined,
       recordCount: (base?.recordCount ?? 0) + statuses.reduce((sum, status) => sum + status.resultCount, 0),
       lastAttempt: dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : undefined,
       lastSuccess: successes.length ? new Date(Math.max(...successes.map((date) => date.getTime()))) : undefined,
