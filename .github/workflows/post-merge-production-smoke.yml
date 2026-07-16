@@ -1,0 +1,152 @@
+name: Post-merge production smoke test
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    if: github.head_ref == 'agent/post-merge-production-smoke'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for deployment and verify production
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          candidates=(
+            "https://insight-hub-eyza.onrender.com"
+            "https://insight-hub.onrender.com"
+            "https://insight-hub-new.onrender.com"
+          )
+
+          active_base=""
+          providers_body="$(mktemp)"
+          echo "SMOKE_STARTED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "EXPECTED_MAIN_COMMIT=d2db66dcab854d6315ef171fdb05e22d1f3480fd"
+
+          for attempt in $(seq 1 24); do
+            echo "DEPLOYMENT_POLL_ATTEMPT=$attempt"
+            for base in "${candidates[@]}"; do
+              code=$(curl -sS -L --connect-timeout 12 --max-time 90 \
+                -H 'Accept: application/json' \
+                -o "$providers_body" -w '%{http_code}' \
+                "$base/api/providers" || echo 000)
+              echo "CANDIDATE=$base PROVIDERS_HTTP=$code"
+              if [[ "$code" != "200" ]]; then
+                continue
+              fi
+              if jq -e '
+                (.providers | type == "array") and
+                ([.providers[].name] | index("publicPortalProviders") != null) and
+                ([.providers[].name] | index("eunaBonfire") != null) and
+                ([.providers[].name] | index("internationalPublicPortals") != null) and
+                ([.providers[].name] | index("statePortals") == null)
+              ' "$providers_body" >/dev/null 2>&1; then
+                active_base="$base"
+                break 2
+              fi
+            done
+            sleep 30
+          done
+
+          if [[ -z "$active_base" ]]; then
+            echo "SMOKE_RESULT=FAIL_DEPLOYMENT_NOT_UPDATED"
+            echo "The live candidates never exposed the completed provider architecture."
+            exit 1
+          fi
+
+          echo "ACTIVE_BASE=$active_base"
+          echo "PROVIDER_COUNT=$(jq -r '.providers | length' "$providers_body")"
+          echo "INTERNATIONAL_PROVIDER_PRESENT=true"
+          echo "LEGACY_STATE_PROVIDER_HIDDEN=true"
+
+          rfp_body="$(mktemp)"
+          rfp_code=$(curl -sS -L --connect-timeout 12 --max-time 120 \
+            -H 'Accept: application/json' \
+            -o "$rfp_body" -w '%{http_code}' \
+            "$active_base/api/rfp-sources?includeTier3=true" || echo 000)
+          echo "RFP_SOURCES_HTTP=$rfp_code"
+          [[ "$rfp_code" == "200" ]]
+          jq -e '.directory and .sources and .totals' "$rfp_body" >/dev/null
+          us_count=$(jq -r '.directory.unitedStates.sources | length' "$rfp_body")
+          international_count=$(jq -r '[.directory.international.groups[].sources[]] | length' "$rfp_body")
+          international_groups=$(jq -r '[.directory.international.groups[].title] | join(", ")' "$rfp_body")
+          echo "US_DIRECTORY_COUNT=$us_count"
+          echo "INTERNATIONAL_DIRECTORY_COUNT=$international_count"
+          echo "INTERNATIONAL_GROUPS=$international_groups"
+          [[ "$us_count" -eq 6 ]]
+          [[ "$international_count" -ge 20 ]]
+          jq -e '[.directory.international.groups[].id] | index("canada") != null and index("united_kingdom") != null and index("europe") != null' "$rfp_body" >/dev/null
+
+          page_body="$(mktemp)"
+          page_code=$(curl -sS -L --connect-timeout 12 --max-time 120 \
+            -H 'Accept: text/html' -o "$page_body" -w '%{http_code}' \
+            "$active_base/portal/opportunities" || echo 000)
+          echo "OPPORTUNITIES_PAGE_HTTP=$page_code BYTES=$(wc -c < "$page_body")"
+          [[ "$page_code" == "200" ]]
+
+          opportunities_before="$(mktemp)"
+          before_code=$(curl -sS -L --connect-timeout 12 --max-time 120 \
+            -H 'Accept: application/json' \
+            -o "$opportunities_before" -w '%{http_code}' \
+            "$active_base/api/opportunities?status=active&page=1&limit=5" || echo 000)
+          echo "OPPORTUNITIES_READ_BEFORE_HTTP=$before_code"
+          [[ "$before_code" == "200" ]]
+          jq -e '.data and (.total != null)' "$opportunities_before" >/dev/null
+          before_total=$(jq -r '.total' "$opportunities_before")
+          echo "ACTIVE_TOTAL_BEFORE=$before_total"
+
+          payload='{"keywords":"occupational health services","dateRange":30,"providers":["publicPortalProviders"]}'
+
+          run_fetch() {
+            local label="$1"
+            local output="$2"
+            local code
+            code=$(curl -sS -L --connect-timeout 12 --max-time 360 \
+              -H 'Accept: application/json' \
+              -H 'Content-Type: application/json' \
+              -X POST --data "$payload" \
+              -o "$output" -w '%{http_code}' \
+              "$active_base/api/opportunities/fetch" || echo 000)
+            echo "${label}_HTTP=$code"
+            if [[ "$code" != "200" ]]; then
+              head -c 1200 "$output" || true
+              echo
+              return 1
+            fi
+            jq -e '.fetched != null and .created != null and .updated != null and .skipped != null and (.providers | type == "array")' "$output" >/dev/null
+            echo "${label}_SUMMARY=$(jq -c '{fetched,created,updated,skipped,providers}' "$output")"
+          }
+
+          first_fetch="$(mktemp)"
+          repeat_fetch="$(mktemp)"
+          run_fetch "FETCH_FIRST" "$first_fetch"
+          run_fetch "FETCH_REPEAT" "$repeat_fetch"
+
+          first_fetched=$(jq -r '.fetched' "$first_fetch")
+          first_created=$(jq -r '.created' "$first_fetch")
+          first_updated=$(jq -r '.updated' "$first_fetch")
+          repeat_fetched=$(jq -r '.fetched' "$repeat_fetch")
+          repeat_created=$(jq -r '.created' "$repeat_fetch")
+          repeat_updated=$(jq -r '.updated' "$repeat_fetch")
+          echo "FIRST_FETCH fetched=$first_fetched created=$first_created updated=$first_updated"
+          echo "REPEAT_FETCH fetched=$repeat_fetched created=$repeat_created updated=$repeat_updated"
+          [[ "$repeat_created" -eq 0 ]]
+
+          opportunities_after="$(mktemp)"
+          after_code=$(curl -sS -L --connect-timeout 12 --max-time 120 \
+            -H 'Accept: application/json' \
+            -o "$opportunities_after" -w '%{http_code}' \
+            "$active_base/api/opportunities?status=active&page=1&limit=5" || echo 000)
+          echo "OPPORTUNITIES_READ_AFTER_HTTP=$after_code"
+          [[ "$after_code" == "200" ]]
+          jq -e '.data and (.total != null)' "$opportunities_after" >/dev/null
+          after_total=$(jq -r '.total' "$opportunities_after")
+          echo "ACTIVE_TOTAL_AFTER=$after_total"
+
+          echo "SMOKE_RESULT=PASS"
