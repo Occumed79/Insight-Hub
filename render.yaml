@@ -18,7 +18,7 @@ services:
       - key: INTEL_DATABASE_URL
         sync: false
       - key: ENABLE_SCHEDULED_INGESTION
-        value: "false"
+        value: "true"
       - key: INGESTION_INTERVAL_MINUTES
         value: "360"
       - key: INGESTION_DATE_RANGE_DAYS
