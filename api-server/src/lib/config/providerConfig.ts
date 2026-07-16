@@ -45,6 +45,32 @@ export type ProviderName =
 
 export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegister">;
 
+/** Providers that are valid inputs to the RFP ingestion pipeline. */
+export const RFP_INGESTION_PROVIDER_NAMES = [
+  "samGov",
+  "publicPortalProviders",
+  "eunaBonfire",
+  "internationalPublicPortals",
+  "tango",
+  "bidnet",
+  "serper",
+  "tavily",
+  "exa",
+] as const satisfies readonly ProviderName[];
+
+export type RfpIngestionProviderName =
+  (typeof RFP_INGESTION_PROVIDER_NAMES)[number];
+
+const RFP_INGESTION_PROVIDER_SET = new Set<string>(
+  RFP_INGESTION_PROVIDER_NAMES,
+);
+
+export function isRfpIngestionProviderName(
+  value: string,
+): value is RfpIngestionProviderName {
+  return RFP_INGESTION_PROVIDER_SET.has(value);
+}
+
 export type ProviderUseCase = "direct_source" | "web_discovery" | "research_analysis" | "hybrid";
 
 export interface ProviderDefinition {
@@ -104,20 +130,20 @@ const provider = (
 
 export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> = {
   samGov: provider("samGov", "SAM.gov", "primary", "direct_source", [secretField("samApiKey", "SAM_GOV_API_KEY")], ["Federal solicitations", "Awards", "Presolicitations"], "live", "Direct source for U.S. federal contracting opportunities from System for Award Management."),
-  texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Direct parser for official Texas ESBD / Texas SmartBuy public solicitations. No API key required."),
-  nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Direct parser for the official New York State Contract Reporter public open-opportunity listing. No API key required."),
-  publicPortalProviders: provider("publicPortalProviders", "Public Portal Providers", "procurement", "direct_source", [], ["Verified public procurement source catalog", "Direct parser and public-page extraction", "Serper official-domain discovery fallback", "Existing Texas ESBD and NYSCR parsers", "Cross-path deduplication", "Per-domain rate limiting"], "live", "Unified public procurement provider: direct parsing first, then Serper discovery across the same official portal catalog."),
-  eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Standalone Euna/Bonfire opportunity discovery", "Public agency portal results", "Occu-Med relevance filtering", "Cross-provider deduplication"], "live", "Separate Euna Supplier Network / Bonfire provider that discovers public opportunity pages through the configured Serper key. No Euna credentials are stored."),
-  internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Canada, United Kingdom, Europe, and multilateral portals", "Official-domain opportunity discovery", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "live", "Separate international opportunity provider covering the official portals in the International Opportunities directory. It uses the configured Serper key and does not automate supplier logins."),
+  texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Dedicated parser for the official Texas ESBD / Texas SmartBuy public listing. It does not yet provide complete pagination or document collection."),
+  nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Dedicated parser for the official New York State Contract Reporter public listing. It does not yet provide complete pagination or document collection."),
+  publicPortalProviders: provider("publicPortalProviders", "U.S. Public Portals", "procurement", "hybrid", [], ["Two dedicated official listing adapters", "Generic one-page extraction for eligible public pages", "Serper official-domain discovery fallback", "Cross-path deduplication", "Per-domain rate limiting"], "partial", "Hybrid U.S. portal source. Texas ESBD and NYSCR have dedicated adapters; other eligible public pages use generic extraction, while unsupported portals rely on Serper discovery. Catalog inclusion is not equivalent to a completed connector."),
+  eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Serper discovery of public Bonfire/Euna pages", "Occu-Med relevance filtering", "Cross-provider deduplication"], "partial", "Search-discovery source using the configured Serper key. It is not a direct Euna API or supplier-feed integration, and no Euna credentials are stored."),
+  internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Serper discovery on official international domains", "Canada, United Kingdom, Europe, and multilateral directory coverage", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "partial", "Search-discovery source covering the official international portal directory. Direct CanadaBuys, Contracts Finder, TED, and other portal connectors are not yet implemented."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
   tavily: provider("tavily", "Tavily", "search", "research_analysis", [secretField("tavilyApiKey", "TAVILY_API_KEY")], ["Research API", "RFP discovery", "Market intelligence"], "partial"),
   tango: {
-    ...provider("tango", "Tango", "procurement", "direct_source", [secretField("tangoApiKey", "TANGO_API_KEY")], ["Direct procurement source"], "partial"),
+    ...provider("tango", "Tango", "procurement", "direct_source", [secretField("tangoApiKey", "TANGO_API_KEY")], ["Direct procurement API", "Structured opportunity metadata"], "partial", "Direct Tango by MakeGov API integration. Current collection requests the first result page only."),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "https://tango.makegov.com/api/", dbKey: "tangoBaseUrl", envKey: "TANGO_BASE_URL" }],
   },
   bidnet: {
-    ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["State and local bids"], "partial"),
+    ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["Planned state and local bid access"], "coming_soon", "Configuration scaffold only. The direct endpoint, authentication contract, and response mapping are not implemented."),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "BidNet API base URL", dbKey: "bidnetBaseUrl", envKey: "BIDNET_BASE_URL" }],
   },
   firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),
