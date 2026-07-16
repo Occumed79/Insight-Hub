@@ -1,0 +1,69 @@
+name: Validate provider architecture
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/provider-boundary-cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/provider-boundary-cleanup
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.10.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Production build
+        run: pnpm run build:prod
+
+      - name: Validate portal catalogs
+        run: |
+          pnpm run rfp:sources:validate
+          pnpm run public-portals:validate
+
+      - name: Verify architecture boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q '| "statePortals"' api-server/src/lib/config/providerConfig.ts
+          ! grep -q 'statePortals:' api-server/src/lib/providers/index.ts
+          grep -q '\["statePortals", "publicPortalProviders"\]' api-server/src/lib/search/unifiedSearch.ts
+          grep -q 'statePortals: "publicPortalProviders"' api-server/src/routes/opportunities.ts
+          grep -q 'internationalPublicPortals' api-server/src/lib/providers/internationalPublicPortals.ts
+          grep -q 'internationalPublicPortals: internationalPublicPortalsProvider' api-server/src/lib/providers/index.ts
+          grep -q '"grantsGov"' api-server/src/lib/search/unifiedSearch.ts
+          ! grep -q 'grantsGov.*label' intel-suite/src/pages/portal/opportunities.tsx
+          ! grep -q 'usaSpending.*label' intel-suite/src/pages/portal/opportunities.tsx
+          grep -q 'PUBLIC_PORTAL_CONCURRENCY' render.yaml
+          grep -q 'PUBLIC_PORTAL_SOURCE_TIMEOUT_MS' render.yaml
+          grep -q 'PUBLIC_PORTAL_RUN_TIMEOUT_MS' render.yaml
+          test ! -e api-server/src/lib/providers/statePortals.ts
+          test -e api-server/src/lib/providers/publicPortalDiscovery.ts
+
+      - name: Remove one-time validation workflow
+        shell: bash
+        run: |
+          rm .github/workflows/validate-provider-architecture.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove one-time provider validation workflow"
+          git push origin HEAD:agent/provider-boundary-cleanup
