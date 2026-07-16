@@ -280,7 +280,7 @@ export function getPublicPortalSearchPlanDiagnostics(
 function normalizeResultKey(title: string, url: string): string {
   try {
     const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`.toLowerCase();
+    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}${parsed.search}`.toLowerCase();
   } catch {
     return `${title}|${url}`.toLowerCase();
   }

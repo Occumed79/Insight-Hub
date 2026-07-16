@@ -130,7 +130,9 @@ async function runWithConcurrency<T>(
         const index = cursor;
         cursor += 1;
         if (index >= items.length) return;
-        await worker(items[index], index);
+        const item = items[index];
+        if (item === undefined) return;
+        await worker(item, index);
       }
     }),
   );

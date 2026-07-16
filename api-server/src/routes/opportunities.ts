@@ -313,7 +313,16 @@ router.get("/opportunities", async (req, res) => {
     }
 
     if (source) {
-      conditions.push(ilike(opportunitiesTable.providerName, source));
+      if (source === "publicPortalProviders") {
+        conditions.push(
+          or(
+            ilike(opportunitiesTable.providerName, "publicPortalProviders"),
+            ilike(opportunitiesTable.providerName, "statePortals"),
+          )!,
+        );
+      } else {
+        conditions.push(ilike(opportunitiesTable.providerName, source));
+      }
     }
 
     if (dateCutoff) {

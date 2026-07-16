@@ -19,11 +19,11 @@ const MAX_DOMAINS_PER_QUERY = 5;
 const PROCUREMENT_EXPRESSION = "(RFP OR RFQ OR tender OR bid OR solicitation OR procurement)";
 const SERVICE_EXPRESSION = '("occupational health" OR "occupational medicine" OR "employee health" OR "medical surveillance" OR "fitness for duty" OR "pre-employment physical" OR "drug testing" OR "alcohol testing" OR audiometric OR spirometry OR "respirator fit testing")';
 
-const INTERNATIONAL_PORTAL_IDS = new Set(
-  INTERNATIONAL_PORTAL_GROUPS.flatMap((group) => group.portalIds),
+const INTERNATIONAL_PORTAL_IDS = new Set<string>(
+  INTERNATIONAL_PORTAL_GROUPS.flatMap((group) => [...group.portalIds]),
 );
 const INTERNATIONAL_PORTALS = ENRICHED_DIRECT_RFP_PORTALS.filter((portal) =>
-  INTERNATIONAL_PORTAL_IDS.has(portal.id as never),
+  INTERNATIONAL_PORTAL_IDS.has(portal.id),
 );
 
 function normalizedHost(hostname: string): string {
@@ -44,7 +44,7 @@ function portalForUrl(url: string): EnrichedDirectRfpPortal | undefined {
 
 function groupForPortal(portalId: string): string | undefined {
   return INTERNATIONAL_PORTAL_GROUPS.find((group) =>
-    group.portalIds.includes(portalId as never),
+    [...group.portalIds].includes(portalId),
   )?.title;
 }
 

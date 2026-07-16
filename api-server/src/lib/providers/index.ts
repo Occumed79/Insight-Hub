@@ -5,6 +5,7 @@ export * from "./nyScr";
 export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
+export * from "./publicPortalDiscovery";
 export * from "./eunaBonfire";
 export * from "./internationalPublicPortals";
 export * from "./gemini";

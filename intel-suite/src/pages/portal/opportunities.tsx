@@ -403,70 +403,26 @@ export default function OpportunitiesDashboard() {
 
   const getSourceBadge = (source: string | null | undefined, name: string | null | undefined) => {
     const rawName = name || source || "manual";
-    // Normalize providerName keys to display labels
-    const providerLabelMap: Record<string, string> = {
-      statePortals: "State Portals",
-      samGov: "SAM.gov",
-      sam_gov: "SAM.gov",
-      serper: "Serper",
-      tavily: "Tavily",
-      gemini: "Gemini",
-      exa: "Exa",
-      firecrawl: "Firecrawl",
-      manual: "Manual",
+    const providerMeta: Record<string, { label: string; classes: string }> = {
+      samGov: { label: "SAM.gov", classes: "bg-amber-500/10 text-amber-300 border-amber-500/20" },
+      sam_gov: { label: "SAM.gov", classes: "bg-amber-500/10 text-amber-300 border-amber-500/20" },
+      publicPortalProviders: { label: "U.S. Public Portals", classes: "bg-blue-500/10 text-blue-300 border-blue-500/20" },
+      statePortals: { label: "U.S. Public Portals", classes: "bg-blue-500/10 text-blue-300 border-blue-500/20" },
+      eunaBonfire: { label: "Euna Supplier Network", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },
+      internationalPublicPortals: { label: "International Portals", classes: "bg-violet-500/10 text-violet-300 border-violet-500/20" },
+      serper: { label: "Serper", classes: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" },
+      tavily: { label: "Tavily", classes: "bg-pink-500/10 text-pink-300 border-pink-500/20" },
+      exa: { label: "Exa", classes: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20" },
+      tango: { label: "Tango", classes: "bg-orange-500/10 text-orange-300 border-orange-500/20" },
+      bidnet: { label: "BidNet", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },
+      csv_import: { label: "CSV Import", classes: "bg-white/5 text-muted-foreground border-white/10" },
+      manual: { label: "Manual", classes: "bg-white/5 text-muted-foreground border-white/10" },
     };
-    if (providerLabelMap[rawName]) {
-      const colorMap: Record<string, string> = {
-        statePortals: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-        samGov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-        sam_gov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-        serper: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-        tavily: "bg-pink-500/10 text-pink-300 border-pink-500/20",
-        gemini: "bg-purple-500/10 text-purple-300 border-purple-500/20",
-        exa: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
-        firecrawl: "bg-orange-500/10 text-orange-300 border-orange-500/20",
-        manual: "bg-slate-500/10 text-slate-300 border-slate-500/20",
-      };
-      return (
-        <Badge className={"text-[10px] font-medium border " + (colorMap[rawName] ?? "bg-slate-500/10 text-slate-300 border-slate-500/20")}>
-          {providerLabelMap[rawName]}
-        </Badge>
-      );
-    }
-    const displayNames: Record<string, string> = {
-      sam_gov: "SAM.gov",
-      samGov: "SAM.gov",
-      statePortals: "State Portals",
-      serper: "Serper",
-      tavily: "Tavily",
-      exa: "Exa",
-      you: "You.com",
-      langsearch: "Langsearch",
-      websearch: "WebSearch",
-      tango: "Tango",
-      bidnet: "BidNet",
-      csv_import: "CSV Import",
-      manual: "Manual",
-      gemini: "Gemini AI",
+    const meta = providerMeta[rawName] ?? {
+      label: rawName.charAt(0).toUpperCase() + rawName.slice(1),
+      classes: "bg-white/5 text-muted-foreground border-white/10",
     };
-    const displayName = displayNames[rawName] ?? (rawName.charAt(0).toUpperCase() + rawName.slice(1));
-    const colors: Record<string, string> = {
-      sam_gov: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-      samGov: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-      statePortals: "bg-violet-500/10 text-violet-300 border-violet-500/20",
-      serper: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-      tavily: "bg-pink-500/10 text-pink-300 border-pink-500/20",
-      exa: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
-      you: "bg-sky-500/10 text-sky-300 border-sky-500/20",
-      langsearch: "bg-purple-500/10 text-purple-300 border-purple-500/20",
-      websearch: "bg-teal-500/10 text-teal-300 border-teal-500/20",
-      tango: "bg-orange-500/10 text-orange-300 border-orange-500/20",
-      bidnet: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
-      csv_import: "bg-white/5 text-muted-foreground border-white/10",
-      manual: "bg-white/5 text-muted-foreground border-white/10",
-    };
-
-    return <Badge variant="outline" className={`font-normal ${colors[rawName] || "bg-white/5 text-muted-foreground border-white/10"}`}>{displayName}</Badge>;
+    return <Badge variant="outline" className={`font-normal ${meta.classes}`}>{meta.label}</Badge>;
   };
 
   const getOpportunityUrl = (opp: any) => opp.samUrl || opp.sourceUrl || opp.url || null;

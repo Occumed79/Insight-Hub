@@ -7,7 +7,7 @@ import {
   buildPortalEvidenceScanPlan,
   scanPortalEvidence,
 } from "../lib/providers/portalEvidenceScanner";
-import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
+import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/publicPortalDiscovery";
 import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
 
 const router = Router();
