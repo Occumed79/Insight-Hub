@@ -55,6 +55,10 @@ function validDate(value?: string): Date | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
+function finiteNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefined {
   try {
     const stored = JSON.parse(value) as Partial<StoredPortalSourceRunStatus>;
@@ -69,12 +73,12 @@ function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefin
       lastSuccessAt: validDate(stored.lastSuccessAt),
       lastFailureAt: validDate(stored.lastFailureAt),
       lastFailureReason: stored.lastFailureReason,
-      resultCount: Number.isFinite(stored.resultCount) ? Number(stored.resultCount) : 0,
-      matchedCount: Number.isFinite(stored.matchedCount) ? Number(stored.matchedCount) : 0,
-      totalAttempts: Number.isFinite(stored.totalAttempts) ? Number(stored.totalAttempts) : 0,
-      totalSuccesses: Number.isFinite(stored.totalSuccesses) ? Number(stored.totalSuccesses) : 0,
-      totalFailures: Number.isFinite(stored.totalFailures) ? Number(stored.totalFailures) : 0,
-      consecutiveFailures: Number.isFinite(stored.consecutiveFailures) ? Number(stored.consecutiveFailures) : 0,
+      resultCount: finiteNumber(stored.resultCount),
+      matchedCount: finiteNumber(stored.matchedCount),
+      totalAttempts: finiteNumber(stored.totalAttempts),
+      totalSuccesses: finiteNumber(stored.totalSuccesses),
+      totalFailures: finiteNumber(stored.totalFailures),
+      consecutiveFailures: finiteNumber(stored.consecutiveFailures),
       lastOutcome: stored.lastOutcome,
     };
   } catch {
@@ -84,10 +88,20 @@ function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefin
 
 function serializeStatus(status: PublicPortalSourceRunStatus): string {
   const stored: StoredPortalSourceRunStatus = {
-    ...status,
+    sourceId: status.sourceId,
+    sourceName: status.sourceName,
+    domain: status.domain,
     lastCheckedAt: status.lastCheckedAt.toISOString(),
     lastSuccessAt: status.lastSuccessAt?.toISOString(),
     lastFailureAt: status.lastFailureAt?.toISOString(),
+    lastFailureReason: status.lastFailureReason,
+    resultCount: status.resultCount,
+    matchedCount: status.matchedCount,
+    totalAttempts: status.totalAttempts,
+    totalSuccesses: status.totalSuccesses,
+    totalFailures: status.totalFailures,
+    consecutiveFailures: status.consecutiveFailures,
+    lastOutcome: status.lastOutcome,
   };
   return JSON.stringify(stored);
 }
@@ -183,9 +197,8 @@ export function selectFairPortalSources(
     });
 
   const selectedRotating = rotating.slice(0, Math.max(0, rotatingBatchSize));
-  const selectedIds = new Set([...dedicated, ...selectedRotating].map((source) => source.id));
   return {
-    selected: sources.filter((source) => selectedIds.has(source.id)),
-    deferred: sources.filter((source) => !selectedIds.has(source.id)),
+    selected: [...dedicated, ...selectedRotating],
+    deferred: rotating.slice(selectedRotating.length),
   };
 }
