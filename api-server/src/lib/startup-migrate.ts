@@ -5,8 +5,9 @@ import { db } from "@workspace/db";
 import { logger } from "./logger";
 
 export async function runStartupMigrations(): Promise<void> {
+  logger.info("[intel] Running startup migrations…");
+
   try {
-    logger.info("Running startup migrations…");
 
     // ── Enums (idempotent via DO $$ blocks) ──────────────────────────────────
 
@@ -196,9 +197,9 @@ export async function runStartupMigrations(): Promise<void> {
         ON source_monitor_runs (started_at DESC)
     `);
 
-    logger.info("Startup migrations complete.");
+    logger.info("[intel] Startup migrations complete.");
   } catch (err) {
-    // Non-critical: server routes will return a grounded error if a migration is unavailable.
-    logger.error({ err }, "Startup migration failed — server will continue");
+    logger.error({ err, db: "intel" }, "[intel] Startup migration failed");
+    throw err;
   }
 }

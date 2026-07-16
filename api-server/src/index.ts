@@ -18,21 +18,28 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Start server first, then run migrations in background (non-blocking)
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-  logger.info({ port, databases: getDatabaseConfigSummary() }, "Server listening");
+async function bootstrap(): Promise<void> {
+  // Run both migration paths sequentially, each scoped to its own database
+  // context. If either fails the error propagates here and the HTTP listener
+  // is never started.
+  await runWithDbContext("intel", () => runStartupMigrations());
+  await runWithDbContext("rfp", () => runRfpStartupMigrations());
 
-  // Keep migrations explicitly scoped to their own Neon databases.
-  // Both migration paths are non-fatal if they fail.
-  runWithDbContext("intel", () => runStartupMigrations()).catch((err) => {
-    logger.error({ err }, "Unexpected error in intelligence startup migrations");
+  // Only start accepting traffic after all migrations have completed.
+  await new Promise<void>((resolve, reject) => {
+    app.listen(port, (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        logger.info({ port, databases: getDatabaseConfigSummary() }, "Server listening");
+        resolve();
+      }
+    });
   });
+}
 
-  runWithDbContext("rfp", () => runRfpStartupMigrations()).catch((err) => {
-    logger.error({ err }, "Unexpected error in RFP startup migrations");
-  });
+bootstrap().catch((err) => {
+  logger.error({ err }, "Bootstrap failed — exiting");
+  process.exitCode = 1;
+  process.exit(1);
 });

@@ -5,8 +5,9 @@ import { db } from "@workspace/db";
 import { logger } from "./logger";
 
 export async function runRfpStartupMigrations(): Promise<void> {
+  logger.info("[rfp] Running RFP startup migrations…");
+
   try {
-    logger.info("Running RFP startup migrations…");
 
     // 1. Add the provider identity column if it is not already present.
     await db.execute(sql`
@@ -112,8 +113,9 @@ export async function runRfpStartupMigrations(): Promise<void> {
       END $$
     `);
 
-    logger.info("RFP startup migrations complete.");
+    logger.info("[rfp] RFP startup migrations complete.");
   } catch (err) {
-    logger.error({ err }, "RFP startup migration failed — server will continue");
+    logger.error({ err, db: "rfp" }, "[rfp] RFP startup migration failed");
+    throw err;
   }
 }
