@@ -1,32 +1,21 @@
-import type { PortalParser } from "./types";
-import { parseCaliforniaCalEprocure } from "./californiaCalEprocure";
-import { parseFloridaMfmp } from "./floridaMfmp";
-import { parseMarylandEmma } from "./marylandEmma";
-import { parseMichiganSigma } from "./michiganSigma";
-import { parseNewYorkContractReporter } from "./nyContractReporter";
-import { parseNorthCarolinaEvp } from "./northCarolinaEvp";
-import { parseOhioProcurement } from "./ohioProcurement";
-import { parsePennsylvaniaEmarketplace } from "./pennsylvaniaEmarketplace";
-import { parseSamGov } from "./samGov";
-import { parseTexasEsbd } from "./texasEsbd";
-import { parseVirginiaEva } from "./virginiaEva";
+import {
+  normalizerForPortalSource,
+  PORTAL_SEARCH_RESULT_NORMALIZER_IDS,
+} from "./searchResultNormalizers";
 
-export const PORTAL_PARSER_REGISTRY: Record<string, PortalParser> = {
-  "us-sam-gov": parseSamGov,
-  "ca-caleprocure": parseCaliforniaCalEprocure,
-  "tx-esbd": parseTexasEsbd,
-  "ny-contract-reporter": parseNewYorkContractReporter,
-  "fl-vbs": parseFloridaMfmp,
-  "pa-emarketplace": parsePennsylvaniaEmarketplace,
-  "va-eva": parseVirginiaEva,
-  "oh-ohiobuys": parseOhioProcurement,
-  "mi-sigma": parseMichiganSigma,
-  "md-emma": parseMarylandEmma,
-  "nc-evp": parseNorthCarolinaEvp,
+export {
+  normalizerForPortalSource,
+  PORTAL_SEARCH_RESULT_NORMALIZER_IDS,
 };
 
-export function parserForPortalSource(sourceId?: string): PortalParser | undefined {
-  return sourceId ? PORTAL_PARSER_REGISTRY[sourceId] : undefined;
-}
+/**
+ * Backward-compatible alias. This returns a generic search-result normalizer,
+ * not a direct portal parser or crawler.
+ */
+export const parserForPortalSource = normalizerForPortalSource;
 
-export type { PortalCandidateOpportunity, PortalParseInput, PortalParser } from "./types";
+export type {
+  PortalCandidateOpportunity,
+  PortalParseInput,
+  PortalParser,
+} from "./types";
