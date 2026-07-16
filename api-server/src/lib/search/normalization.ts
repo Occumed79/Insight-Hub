@@ -2,52 +2,52 @@ import type { NormalizedOpportunity } from "../providers/types";
 import type { InsertOpportunity, ProviderKey } from "@workspace/db/schema";
 
 /**
- * Maps every ProviderName that can appear on a NormalizedOpportunity to a
+ * Maps every provider name that can appear on a NormalizedOpportunity to a
  * canonical ProviderKey stored in the provider_key DB column.
  *
  * The provider_key is the primary identity scope used for duplicate detection
- * (together with notice_id).  It is intentionally more granular than the broad
- * 3-value source enum, which is kept separately for display/category use.
+ * together with notice_id. It is intentionally more granular than the broad
+ * three-value source enum, which is kept separately for display/category use.
  */
 const PROVIDER_KEY_MAP: Record<string, ProviderKey> = {
-  samGov:                      "samGov",
-  texasEsbd:                   "texasEsbd",
-  nyScr:                       "nyScr",
-  statePortals:                "csvImport",   // legacy alias → generic csv bucket
-  publicPortalProviders:       "publicPortalProviders",
-  eunaBonfire:                 "eunaBonfire",
-  internationalPublicPortals:  "internationalPublicPortals",
-  tango:                       "tango",
-  bidnet:                      "bidnet",
-  serper:                      "serper",
-  tavily:                      "tavily",
-  exa:                         "exa",
-  gemini:                      "gemini",
-  firecrawl:                   "manual",
-  openrouter:                  "manual",
-  groq:                        "manual",
-  browseAi:                    "manual",
-  browserUse:                  "manual",
-  olostep:                     "manual",
-  clod:                        "manual",
-  jina:                        "manual",
-  minimax:                     "manual",
-  you:                         "manual",
-  langsearch:                  "manual",
-  websearch:                   "manual",
-  cerebras:                    "manual",
-  cohere:                      "manual",
-  deepseek:                    "manual",
-  mistral:                     "manual",
-  nvidia:                      "manual",
-  cloudflareWorker:            "manual",
+  samGov: "samGov",
+  texasEsbd: "texasEsbd",
+  nyScr: "nyScr",
+  statePortals: "publicPortalProviders", // retired alias for the unified public-portal provider
+  publicPortalProviders: "publicPortalProviders",
+  eunaBonfire: "eunaBonfire",
+  internationalPublicPortals: "internationalPublicPortals",
+  tango: "tango",
+  bidnet: "bidnet",
+  serper: "serper",
+  tavily: "tavily",
+  exa: "exa",
+  gemini: "gemini",
+  firecrawl: "manual",
+  openrouter: "manual",
+  groq: "manual",
+  browseAi: "manual",
+  browserUse: "manual",
+  olostep: "manual",
+  clod: "manual",
+  jina: "manual",
+  minimax: "manual",
+  you: "manual",
+  langsearch: "manual",
+  websearch: "manual",
+  cerebras: "manual",
+  cohere: "manual",
+  deepseek: "manual",
+  mistral: "manual",
+  nvidia: "manual",
+  cloudflareWorker: "manual",
 };
 
 /**
  * Convert a NormalizedOpportunity into a DB record for storage.
  * The primary `id` is intentionally excluded — callers are responsible for
- * assigning a stable UUID (at INSERT time) or for omitting it (on UPDATE) so
- * that an existing row's primary key is never overwritten.
+ * assigning a stable UUID at INSERT time or omitting it on UPDATE so an
+ * existing row's primary key is never overwritten.
  *
  * Web-sourced records are stored with source = manual unless they map to an
  * explicit first-party source bucket in the current RFP schema.

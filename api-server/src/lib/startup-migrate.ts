@@ -196,50 +196,6 @@ export async function runStartupMigrations(): Promise<void> {
         ON source_monitor_runs (started_at DESC)
     `);
 
-    // ── Opportunities: provider_key identity column (PR #104) ────────────────
-    // Safe to run more than once — all statements are guarded.
-
-    // 1. Add column if absent.
-    await db.execute(sql`
-      ALTER TABLE opportunities
-        ADD COLUMN IF NOT EXISTS provider_key text
-    `);
-
-    // 2. Backfill provider_key for any rows that still lack it.
-    await db.execute(sql`
-      UPDATE opportunities
-      SET provider_key = CASE
-        WHEN provider_name IN (
-          'samGov','publicPortalProviders','eunaBonfire','internationalPublicPortals',
-          'tango','bidnet','serper','tavily','exa','gemini',
-          'texasEsbd','nyScr','csvImport','manual'
-        ) THEN provider_name
-        WHEN source = 'sam_gov'    THEN 'samGov'
-        WHEN source = 'csv_import' AND lower(coalesce(provider_name,'')) LIKE '%texas%'    THEN 'texasEsbd'
-        WHEN source = 'csv_import' AND lower(coalesce(provider_name,'')) LIKE '%nyscr%'    THEN 'nyScr'
-        WHEN source = 'csv_import' AND lower(coalesce(provider_name,'')) LIKE '%new york%' THEN 'nyScr'
-        WHEN source = 'csv_import' THEN 'csvImport'
-        ELSE 'manual'
-      END
-      WHERE provider_key IS NULL
-    `);
-
-    // 3. Drop the old global notice_id unique constraint if it still exists.
-    await db.execute(sql`
-      DO $$ BEGIN
-        ALTER TABLE opportunities
-          DROP CONSTRAINT IF EXISTS opportunities_notice_id_unique;
-      EXCEPTION WHEN undefined_object THEN NULL;
-      END $$
-    `);
-
-    // 4. Create the provider-scoped partial unique index (idempotent).
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_opportunities_provider_notice
-        ON opportunities (provider_key, notice_id)
-        WHERE provider_key IS NOT NULL AND notice_id IS NOT NULL
-    `);
-
     logger.info("Startup migrations complete.");
   } catch (err) {
     // Non-critical: server routes will return a grounded error if a migration is unavailable.
