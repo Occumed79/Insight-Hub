@@ -1,0 +1,224 @@
+name: Production smoke test
+
+on:
+  push:
+    branches:
+      - agent/production-smoke-test-20260716
+
+permissions:
+  contents: write
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/production-smoke-test-20260716
+          fetch-depth: 0
+
+      - name: Probe production candidates and APIs
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          REPORT="$RUNNER_TEMP/production-smoke-report.txt"
+          : > "$REPORT"
+
+          candidates=(
+            "https://insight-hub-eyza.onrender.com"
+            "https://insight-hub.onrender.com"
+            "https://insight-hub-new.onrender.com"
+          )
+
+          active_base=""
+          echo "Production smoke test — $(date -u +'%Y-%m-%dT%H:%M:%SZ')" | tee -a "$REPORT"
+          echo "Main commit under test: 4679466615c915f35ece9d63e822e720610f6dc0" | tee -a "$REPORT"
+          echo | tee -a "$REPORT"
+
+          for base in "${candidates[@]}"; do
+            echo "=== Candidate: $base ===" | tee -a "$REPORT"
+            getent ahosts "${base#https://}" | head -n 3 | tee -a "$REPORT" || true
+
+            rfp_body="$RUNNER_TEMP/rfp-$(echo "$base" | tr -cd '[:alnum:]').json"
+            rfp_code=$(curl -sS -L --connect-timeout 15 --max-time 90 \
+              -H 'Accept: application/json' \
+              -o "$rfp_body" -w '%{http_code}' \
+              "$base/api/rfp-sources?includeTier3=true" || echo "000")
+            echo "rfp-sources HTTP: $rfp_code" | tee -a "$REPORT"
+
+            if [[ "$rfp_code" == "200" ]] && jq -e '.directory and .sources and .totals' "$rfp_body" >/dev/null 2>&1; then
+              us_count=$(jq -r '.directory.unitedStates.sources | length' "$rfp_body")
+              international_count=$(jq -r '[.directory.international.groups[].sources[]] | length' "$rfp_body")
+              group_names=$(jq -r '[.directory.international.groups[].title] | join(", ")' "$rfp_body")
+              echo "Directory valid: U.S.=$us_count, International=$international_count" | tee -a "$REPORT"
+              echo "International groups: $group_names" | tee -a "$REPORT"
+              active_base="$base"
+              cp "$rfp_body" "$RUNNER_TEMP/active-rfp-sources.json"
+              break
+            else
+              echo "Directory response was unavailable or invalid." | tee -a "$REPORT"
+              head -c 500 "$rfp_body" 2>/dev/null | tee -a "$REPORT" || true
+              echo | tee -a "$REPORT"
+            fi
+          done
+
+          if [[ -z "$active_base" ]]; then
+            echo "RESULT: FAIL — no candidate served a valid /api/rfp-sources response." | tee -a "$REPORT"
+            echo "REPORT_PATH=$REPORT" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          echo "ACTIVE_BASE=$active_base" >> "$GITHUB_ENV"
+          echo "REPORT_PATH=$REPORT" >> "$GITHUB_ENV"
+          echo | tee -a "$REPORT"
+          echo "Selected active deployment: $active_base" | tee -a "$REPORT"
+
+          check_endpoint() {
+            local label="$1"
+            local path="$2"
+            local expected="$3"
+            local output="$RUNNER_TEMP/${label//[^a-zA-Z0-9]/-}.out"
+            local code
+            code=$(curl -sS -L --connect-timeout 15 --max-time 120 \
+              -H 'Accept: */*' -o "$output" -w '%{http_code}' \
+              "$active_base$path" || echo "000")
+            local size
+            size=$(wc -c < "$output" 2>/dev/null || echo 0)
+            echo "$label HTTP=$code bytes=$size path=$path" | tee -a "$REPORT"
+            if [[ "$code" != "$expected" ]]; then
+              echo "$label expected HTTP $expected but received $code" | tee -a "$REPORT"
+              head -c 500 "$output" 2>/dev/null | tee -a "$REPORT" || true
+              echo | tee -a "$REPORT"
+              return 1
+            fi
+          }
+
+          failures=0
+          check_endpoint "opportunities-page" "/portal/opportunities" "200" || failures=$((failures + 1))
+          check_endpoint "providers-api" "/api/providers" "200" || failures=$((failures + 1))
+          check_endpoint "opportunities-api" "/api/opportunities?status=active&page=1&limit=5" "200" || failures=$((failures + 1))
+
+          providers_file="$RUNNER_TEMP/providers-api.out"
+          opportunities_file="$RUNNER_TEMP/opportunities-api.out"
+
+          if jq -e 'type == "array" or .providers or .data' "$providers_file" >/dev/null 2>&1; then
+            echo "Providers response is valid JSON." | tee -a "$REPORT"
+            if grep -q 'eunaBonfire' "$providers_file"; then
+              echo "Euna provider is present in the live provider response." | tee -a "$REPORT"
+            else
+              echo "WARNING: Euna provider was not found in the live provider response." | tee -a "$REPORT"
+              failures=$((failures + 1))
+            fi
+          else
+            echo "Providers response is not recognized JSON." | tee -a "$REPORT"
+            failures=$((failures + 1))
+          fi
+
+          if jq -e '.total != null and .data != null' "$opportunities_file" >/dev/null 2>&1; then
+            before_total=$(jq -r '.total' "$opportunities_file")
+            echo "Database-backed opportunity read succeeded; active total before fetch: $before_total" | tee -a "$REPORT"
+            echo "BEFORE_TOTAL=$before_total" >> "$GITHUB_ENV"
+          else
+            echo "Opportunity response did not contain expected data/total fields." | tee -a "$REPORT"
+            failures=$((failures + 1))
+          fi
+
+          if [[ "$failures" -gt 0 ]]; then
+            echo "RESULT: FAIL — $failures read-side smoke checks failed." | tee -a "$REPORT"
+            exit 1
+          fi
+
+          echo "RESULT: PASS — live UI, directory, providers, and database reads are healthy." | tee -a "$REPORT"
+
+      - name: Run one controlled fetch and deduplication check
+        if: success()
+        shell: bash
+        run: |
+          set -u
+          REPORT="$REPORT_PATH"
+          payload='{"keywords":"\"occupational health services\"","dateRange":30,"providers":["publicPortalProviders"]}'
+
+          run_fetch() {
+            local label="$1"
+            local body="$RUNNER_TEMP/$label.json"
+            local code
+            code=$(curl -sS -L --connect-timeout 15 --max-time 300 \
+              -H 'Accept: application/json' \
+              -H 'Content-Type: application/json' \
+              -X POST --data "$payload" \
+              -o "$body" -w '%{http_code}' \
+              "$ACTIVE_BASE/api/opportunities/fetch" || echo "000")
+            echo "$label HTTP=$code" | tee -a "$REPORT"
+            cat "$body" | jq -c '.' 2>/dev/null | tee -a "$REPORT" || head -c 1000 "$body" | tee -a "$REPORT"
+            echo | tee -a "$REPORT"
+            if [[ "$code" != "200" ]]; then
+              return 1
+            fi
+            jq -e '.fetched != null and .created != null and .updated != null and .skipped != null' "$body" >/dev/null
+          }
+
+          echo | tee -a "$REPORT"
+          echo "=== Controlled production fetch ===" | tee -a "$REPORT"
+          if ! run_fetch "fetch-first"; then
+            echo "RESULT: FAIL — controlled fetch did not complete successfully." | tee -a "$REPORT"
+            exit 1
+          fi
+
+          first_created=$(jq -r '.created' "$RUNNER_TEMP/fetch-first.json")
+          first_updated=$(jq -r '.updated' "$RUNNER_TEMP/fetch-first.json")
+          first_fetched=$(jq -r '.fetched' "$RUNNER_TEMP/fetch-first.json")
+          echo "First fetch summary: fetched=$first_fetched created=$first_created updated=$first_updated" | tee -a "$REPORT"
+
+          if ! run_fetch "fetch-repeat"; then
+            echo "RESULT: FAIL — repeat fetch did not complete successfully." | tee -a "$REPORT"
+            exit 1
+          fi
+
+          repeat_created=$(jq -r '.created' "$RUNNER_TEMP/fetch-repeat.json")
+          repeat_updated=$(jq -r '.updated' "$RUNNER_TEMP/fetch-repeat.json")
+          repeat_fetched=$(jq -r '.fetched' "$RUNNER_TEMP/fetch-repeat.json")
+          echo "Repeat fetch summary: fetched=$repeat_fetched created=$repeat_created updated=$repeat_updated" | tee -a "$REPORT"
+
+          after_body="$RUNNER_TEMP/opportunities-after.json"
+          after_code=$(curl -sS -L --connect-timeout 15 --max-time 120 \
+            -H 'Accept: application/json' \
+            -o "$after_body" -w '%{http_code}' \
+            "$ACTIVE_BASE/api/opportunities?status=active&page=1&limit=5" || echo "000")
+          if [[ "$after_code" != "200" ]] || ! jq -e '.total != null' "$after_body" >/dev/null 2>&1; then
+            echo "RESULT: FAIL — post-fetch database read failed (HTTP $after_code)." | tee -a "$REPORT"
+            exit 1
+          fi
+
+          after_total=$(jq -r '.total' "$after_body")
+          echo "Active opportunity total after fetches: $after_total" | tee -a "$REPORT"
+
+          if [[ "$repeat_created" -gt 0 ]]; then
+            echo "RESULT: FAIL — repeat fetch created $repeat_created additional records; deduplication is not clean." | tee -a "$REPORT"
+            exit 1
+          fi
+
+          echo "RESULT: PASS — controlled fetch saved successfully and repeat fetch created no duplicate records." | tee -a "$REPORT"
+
+      - name: Print final smoke report
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${REPORT_PATH:-}" && -f "$REPORT_PATH" ]]; then
+            echo "========== PRODUCTION SMOKE REPORT =========="
+            cat "$REPORT_PATH"
+            echo "============================================="
+          else
+            echo "No smoke report was produced."
+          fi
+
+      - name: Remove one-time workflow from branch
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/production-smoke-test.yml
+          git commit -m "Remove one-time production smoke workflow"
+          git push origin HEAD:agent/production-smoke-test-20260716
