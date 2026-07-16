@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq, ilike, and, or, sql, isNull, lt } from "drizzle-orm";
+import { eq, ilike, and, or, sql, isNull, lt, desc, count as countFn } from "drizzle-orm";
 import { unifiedFetch } from "../lib/search/unifiedSearch";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
@@ -268,22 +268,27 @@ router.get("/opportunities", async (req, res) => {
   try {
     await archiveExpiredOpportunities();
 
-    const { search, status, type, naicsCode, agency, source, dateRange, freshOnly, page = "1", limit = "50" } = req.query as Record<string, string>;
+    const {
+      search, status, type, naicsCode, agency, source,
+      dateRange, freshOnly,
+      page = "1", limit = "50",
+    } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(200, parseInt(limit) || 50);
     const offset = (pageNum - 1) * limitNum;
 
-    // Date window: how many days back to consider "current". Reaches the DB-level
-    // postedDate filter so the frontend date control actually constrains results.
     const days = dateRange != null ? parseInt(dateRange) : NaN;
     const dateCutoff = Number.isFinite(days) && days > 0
       ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       : null;
     const onlyFresh = freshOnly === "true" || freshOnly === "1";
 
-    const conditions: any[] = [];
+    // ── Build WHERE conditions ────────────────────────────────────────────────
 
+    const conditions: ReturnType<typeof and>[] = [];
+
+    // Free-text search across title, agency, description, solicitation number.
     if (search?.trim()) {
       const term = `%${search.trim()}%`;
       conditions.push(
@@ -291,8 +296,8 @@ router.get("/opportunities", async (req, res) => {
           ilike(opportunitiesTable.title, term),
           ilike(opportunitiesTable.agency, term),
           ilike(opportunitiesTable.description, term),
-          ilike(opportunitiesTable.solicitationNumber, term)
-        )
+          ilike(opportunitiesTable.solicitationNumber, term),
+        )!,
       );
     }
 
@@ -313,7 +318,8 @@ router.get("/opportunities", async (req, res) => {
     }
 
     if (source) {
-      if (source === "publicPortalProviders") {
+      // statePortals is a legacy alias for publicPortalProviders.
+      if (source === "publicPortalProviders" || source === "statePortals") {
         conditions.push(
           or(
             ilike(opportunitiesTable.providerName, "publicPortalProviders"),
@@ -326,53 +332,121 @@ router.get("/opportunities", async (req, res) => {
     }
 
     if (dateCutoff) {
-      conditions.push(sql`${opportunitiesTable.postedDate} >= ${dateCutoff}`);
+      conditions.push(sql`${opportunitiesTable.postedDate} >= ${dateCutoff}` as any);
+    }
+
+    // ── Quality filter pushed into SQL ────────────────────────────────────────
+    //
+    // shouldShowOpportunity() runs at write time (unifiedSearch) to block junk
+    // before it enters the DB. The SQL conditions below enforce the same gate
+    // at read time so that any legacy rows that predate the write-time filter
+    // are also hidden without requiring a destructive purge.
+    //
+    // Rule 1: title must be >= 10 characters (catches untitled stubs).
+    conditions.push(sql`length(${opportunitiesTable.title}) >= 10` as any);
+
+    // Rule 2: The combined text (title + description + agency) must contain at
+    // least one Occu-Med service signal.
+    // Pattern: lower(concat) LIKE ANY(ARRAY['%signal1%','%signal2%',...])
+    // The patterns array is passed as a single bound parameter ($N) so the
+    // query is safe from SQL injection and compact in the wire format.
+    {
+      const servicePatterns = OCCUMED_SERVICE_SIGNALS.map((s) => `%${s}%`);
+      conditions.push(
+        sql`(
+          lower(${opportunitiesTable.title}) || ' ' ||
+          lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
+          lower(coalesce(${opportunitiesTable.agency}, ''))
+        ) LIKE ANY(${servicePatterns})` as any,
+      );
+    }
+
+    // Rule 3: Hard-reject signals — none may appear in the combined text.
+    // NOT (... LIKE ANY(ARRAY[...])) — same safe bound-parameter pattern.
+    {
+      const rejectPatterns = HARD_REJECT_SIGNALS.map((s) => `%${s}%`);
+      conditions.push(
+        sql`NOT (
+          lower(${opportunitiesTable.title}) || ' ' ||
+          lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
+          lower(coalesce(${opportunitiesTable.agency}, '')) || ' ' ||
+          lower(coalesce(${opportunitiesTable.providerName}, '')) || ' ' ||
+          lower(coalesce(${opportunitiesTable.samUrl}, ''))
+        ) LIKE ANY(${rejectPatterns})` as any,
+      );
+    }
+
+    // ── freshOnly: exclude stale/date-unknown rows ────────────────────────────
+    // These flags are stored in the JSON tags column. A simple LIKE check is
+    // sufficient since the tags field is controlled output ("stale", "date-unknown").
+    if (onlyFresh) {
+      conditions.push(
+        and(
+          sql`coalesce(${opportunitiesTable.tags}, '') NOT LIKE '%stale%'` as any,
+          sql`coalesce(${opportunitiesTable.tags}, '') NOT LIKE '%date-unknown%'` as any,
+        )!,
+      );
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Pull a larger window, quality-filter it in the API, then paginate the clean set.
-    // This immediately hides bad historical records already saved in Neon without requiring manual cleanup.
-    const rawRows = await db
+    // ── Ranking expression ────────────────────────────────────────────────────
+    //
+    // Primary: COALESCE(relevance_score, 50) + feedback adjustment
+    //   relevance_score is stored 0-100; 50 is the neutral fallback for legacy rows.
+    //   feedback adjustment = ((user_confidence - 50) / 50) * FEEDBACK_RANK_WEIGHT
+    //   clamped to [-FEEDBACK_RANK_WEIGHT, +FEEDBACK_RANK_WEIGHT], 0 when null.
+    //
+    // Secondary: date-unknown rows are pushed below clearly-dated rows at the
+    //   same score (CASE ... THEN 0 ELSE 1 END DESC).
+    //
+    // Tertiary: posted_date DESC (most recent first).
+    const feedbackWeight = FEEDBACK_RANK_WEIGHT; // 15
+    const rankExpr = sql<number>`(
+      COALESCE(${opportunitiesTable.relevanceScore}::numeric, 50) +
+      LEAST(${feedbackWeight}, GREATEST(-${feedbackWeight},
+        CASE
+          WHEN ${opportunitiesTable.userConfidence} IS NOT NULL
+          THEN ((${opportunitiesTable.userConfidence}::numeric - 50.0) / 50.0) * ${feedbackWeight}
+          ELSE 0
+        END
+      ))
+    )`;
+
+    const dateKnownExpr = sql<number>`
+      CASE WHEN coalesce(${opportunitiesTable.tags}, '') LIKE '%date-unknown%' THEN 0 ELSE 1 END
+    `;
+
+    // ── Accurate total count (same WHERE, no LIMIT) ───────────────────────────
+    const [{ value: totalCount }] = await db
+      .select({ value: countFn() })
+      .from(opportunitiesTable)
+      .where(where);
+
+    // ── Paginated data query ──────────────────────────────────────────────────
+    const rows = await db
       .select()
       .from(opportunitiesTable)
       .where(where)
-      .limit(1000)
-      .orderBy(sql`${opportunitiesTable.postedDate} desc`);
+      .orderBy(desc(rankExpr), desc(dateKnownExpr), desc(opportunitiesTable.postedDate))
+      .limit(limitNum)
+      .offset(offset);
 
-    let mappedAll = rawRows.filter(shouldShowOpportunity).map(mapOpportunity);
+    let page_data = rows.map(mapOpportunity);
 
-    // Drop results flagged stale / date-unknown when the caller wants only fresh.
-    if (onlyFresh) {
-      mappedAll = mappedAll.filter((o) => !o.relevance.stale && !o.relevance.dateUnknown);
-    }
-
-    // Rank by transparent relevance score blended with the feedback-learned
-    // signal, then by recency. Records with an unknown date never sort above
-    // clearly-dated ones at the same score. feedbackAdj is 0 when no grades exist,
-    // so ranking is unchanged until the user starts grading results.
-    const rankBase = (o: any) => o.relevance.score + (o.relevance.feedbackAdj ?? 0);
-    mappedAll.sort((a, b) => {
-      const diff = rankBase(b) - rankBase(a);
-      if (diff !== 0) return diff;
-      const at = a.relevance.dateUnknown ? 0 : new Date(a.postedDate).getTime();
-      const bt = b.relevance.dateUnknown ? 0 : new Date(b.postedDate).getTime();
-      return bt - at;
-    });
-
-    // Optional semantic re-rank of the top slice by embedding similarity to an
-    // ideal Occu-Med profile (opt-in via ENABLE_SEMANTIC_RERANK + Jina key).
-    // Falls back to the order above on any failure.
-    if (isSemanticRerankEnabled() && mappedAll.length > 0) {
+    // Optional semantic re-rank applied only to the returned page (not the full DB).
+    // Falls back to the SQL order on any failure.
+    if (isSemanticRerankEnabled() && page_data.length > 0) {
       try {
+        const rankBase = (o: any) => o.relevance.score + (o.relevance.feedbackAdj ?? 0);
         const reranked = await semanticRerank(
-          mappedAll.map((o) => ({
+          page_data.map((o) => ({
             item: o,
             baseScore: rankBase(o),
             text: `${o.title ?? ""}. ${o.description ?? ""}`.trim(),
-          }))
+          })),
         );
-        mappedAll = reranked.map((r) => {
+        page_data = reranked.map((r) => {
           if (r.similarity != null) r.item.relevance.semanticSimilarity = Math.round(r.similarity * 100);
           return r.item;
         });
@@ -381,9 +455,7 @@ router.get("/opportunities", async (req, res) => {
       }
     }
 
-    const data = mappedAll.slice(offset, offset + limitNum);
-
-    return res.json({ data, total: mappedAll.length, page: pageNum, limit: limitNum });
+    return res.json({ data: page_data, total: Number(totalCount), page: pageNum, limit: limitNum });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to fetch opportunities" });
