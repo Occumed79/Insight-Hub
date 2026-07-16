@@ -376,6 +376,52 @@ router.get("/opportunities", async (req, res) => {
       );
     }
 
+    // Rule 4: Stale-year-only records.
+    // hasStaleYearOnly() rejects records whose concatenated text mentions ONLY
+    // years before the current year, with no current or near-future year present.
+    // SQL equivalent: if the text contains any 20XX year at all, it must also
+    // contain at least one year >= CURRENT_YEAR.
+    //
+    // Pattern: text ~ '\y20\d{2}\y' (has some year) AND
+    //          text !~ '\y(CURRENT_YEAR|CURRENT_YEAR+1|CURRENT_YEAR+2)\y'
+    // means stale-year-only → reject.
+    // We express this as NOT (has_old_year AND NOT has_current_or_future_year).
+    //
+    // CURRENT_YEAR is evaluated once at module load; the literals are safe
+    // integers injected into the sql template (no user input involved).
+    {
+      const wideText = sql`(
+        coalesce(${opportunitiesTable.title}, '') || ' ' ||
+        coalesce(${opportunitiesTable.description}, '') || ' ' ||
+        coalesce(${opportunitiesTable.agency}, '') || ' ' ||
+        coalesce(${opportunitiesTable.providerName}, '') || ' ' ||
+        coalesce(${opportunitiesTable.solicitationNumber}, '') || ' ' ||
+        coalesce(${opportunitiesTable.samUrl}, '')
+      )`;
+      // A record has a stale-year-only problem when:
+      //   it mentions some past year  AND  it mentions NO current/future year.
+      // We reject those by requiring: NOT (past_year_present AND NOT future_year_present).
+      conditions.push(
+        sql`NOT (
+          ${wideText} ~ '\\m20[0-9]{2}\\M'
+          AND NOT ${wideText} ~ ${`\\m(${CURRENT_YEAR}|${CURRENT_YEAR + 1}|${CURRENT_YEAR + 2})\\M`}
+        )` as any,
+      );
+    }
+
+    // Rule 5: Job-advertisement title signals (title-only check, mirrors the
+    // JS JOB_TITLE_SIGNALS check in shouldShowOpportunity).
+    // The normalised title is lower-cased and padded with a leading/trailing
+    // space to match the original ` signal ` boundary logic.
+    {
+      const jobTitlePatterns = [" wanted", " needed", "apply ", "we are hiring", "position ", "vacancy"].map(
+        (s) => `%${s}%`,
+      );
+      conditions.push(
+        sql`NOT (' ' || lower(${opportunitiesTable.title}) || ' ') LIKE ANY(${jobTitlePatterns})` as any,
+      );
+    }
+
     // ── freshOnly: exclude stale/date-unknown rows ────────────────────────────
     // These flags are stored in the JSON tags column. A simple LIKE check is
     // sufficient since the tags field is controlled output ("stale", "date-unknown").
