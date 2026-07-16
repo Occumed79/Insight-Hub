@@ -1,13 +1,16 @@
 import type { NormalizedOpportunity } from "../providers/types";
 import type { InsertOpportunity } from "@workspace/db/schema";
-import { randomUUID } from "crypto";
 
 /**
- * Convert a NormalizedOpportunity into an InsertOpportunity for DB storage.
+ * Convert a NormalizedOpportunity into a DB record for storage.
+ * The primary `id` is intentionally excluded — callers are responsible for
+ * assigning a stable UUID (at INSERT time) or for omitting it (on UPDATE) so
+ * that an existing row's primary key is never overwritten.
+ *
  * Web-sourced records are stored with source = manual unless they map to an
  * explicit first-party source bucket in the current RFP schema.
  */
-export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOpportunity {
+export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<InsertOpportunity, "id"> {
   const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
     samGov: "sam_gov",
     texasEsbd: "csv_import",
@@ -46,7 +49,6 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): InsertOppor
   const resolvedStatus = isExpired ? "archived" : record.status;
 
   return {
-    id: randomUUID(),
     noticeId: record.externalId || undefined,
     title: record.title,
     agency: record.agency,

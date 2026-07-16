@@ -8,7 +8,7 @@
 
 import { db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 import { samGovProvider } from "../providers/samGov";
@@ -195,16 +195,45 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     const externalId = opportunity.externalId;
 
     if (externalId) {
+      // Use provider + externalId together for a scoped identity check.
+      // This prevents a noticeId collision across unrelated providers and
+      // ensures each provider's external IDs are treated as an independent
+      // namespace.
+      const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
+        samGov: "sam_gov",
+        texasEsbd: "csv_import",
+        nyScr: "csv_import",
+        statePortals: "csv_import",
+        gemini: "manual",
+        serper: "manual",
+        tavily: "manual",
+        tango: "manual",
+        bidnet: "manual",
+      };
+      const mappedSource = sourceMap[opportunity.source] ?? "manual";
+
       const existing = await db
         .select({ id: opportunitiesTable.id })
         .from(opportunitiesTable)
-        .where(eq(opportunitiesTable.noticeId, externalId));
+        .where(
+          and(
+            eq(opportunitiesTable.noticeId, externalId),
+            eq(opportunitiesTable.source, mappedSource),
+          ),
+        );
 
       if (existing.length > 0) {
+        // Build the source-derived fields only; never touch the primary key,
+        // userGrade, userConfidence, or notes (user-controlled columns).
         const dbRecord = normalizedToDbRecord(opportunity);
+        const { userGrade: _g, userConfidence: _c, notes: _n, ...sourceFields } = dbRecord as typeof dbRecord & {
+          userGrade?: unknown;
+          userConfidence?: unknown;
+          notes?: unknown;
+        };
         await db
           .update(opportunitiesTable)
-          .set({ ...dbRecord, updatedAt: new Date() })
+          .set({ ...sourceFields, updatedAt: new Date() })
           .where(eq(opportunitiesTable.id, existing[0].id));
         result.updated++;
         persistedForIndex.push(opportunity);
@@ -212,6 +241,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
       }
     }
 
+    // New record — generate the primary key here (and only here).
     const dbRecord = normalizedToDbRecord(opportunity);
     await db.insert(opportunitiesTable).values({
       ...dbRecord,
