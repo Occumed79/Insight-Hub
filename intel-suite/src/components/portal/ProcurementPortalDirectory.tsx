@@ -11,6 +11,14 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 
+type PortalConnectorStatus =
+  | "direct_api"
+  | "direct_adapter"
+  | "generic_extraction"
+  | "serper_discovery"
+  | "directory_only"
+  | "stub";
+
 type PortalSource = {
   id: string;
   name: string;
@@ -23,6 +31,11 @@ type PortalSource = {
   parserStatus: string;
   notes: string;
   occumedFit?: string;
+  connectorStatus: PortalConnectorStatus;
+  connectorLabel: string;
+  connectorDescription: string;
+  directCollection: boolean;
+  requiresSerper: boolean;
 };
 
 type DirectoryGroup = {
@@ -52,13 +65,21 @@ function accessLabel(source: PortalSource): string {
   if (source.accessMode === "api") return "Public API / search";
   if (source.accessMode === "public_html") return "Public listings";
   if (source.accessMode === "dynamic_html") return "Interactive portal";
+  if (source.accessMode === "csv") return "Structured public listing";
   return "Supplier portal";
 }
 
-function coverageLabel(source: PortalSource): string {
-  if (source.parserStatus === "ready_to_parse") return "Automated coverage";
-  if (source.parserStatus === "needs_parser") return "Discovery / directory";
-  return "Directory listing";
+function connectorBadgeClass(status: PortalConnectorStatus): string {
+  if (status === "direct_api" || status === "direct_adapter") {
+    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  }
+  if (status === "generic_extraction") {
+    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+  }
+  if (status === "serper_discovery") {
+    return "border-sky-300/25 bg-sky-300/10 text-sky-100";
+  }
+  return "border-white/10 bg-white/5 text-white/55";
 }
 
 function PortalCard({ source }: { source: PortalSource }) {
@@ -68,6 +89,7 @@ function PortalCard({ source }: { source: PortalSource }) {
       href={href}
       target="_blank"
       rel="noreferrer"
+      title={source.connectorDescription}
       className="group rounded-xl border border-white/10 bg-white/[0.035] p-3.5 transition-all hover:border-primary/35 hover:bg-white/[0.06]"
     >
       <div className="flex items-start justify-between gap-3">
@@ -86,10 +108,16 @@ function PortalCard({ source }: { source: PortalSource }) {
         <Badge variant="outline" className="border-white/10 bg-white/5 text-[9px] font-normal text-white/65">
           {accessLabel(source)}
         </Badge>
-        <Badge variant="outline" className="border-primary/20 bg-primary/10 text-[9px] font-normal text-primary/90">
-          {coverageLabel(source)}
+        <Badge
+          variant="outline"
+          className={`text-[9px] font-normal ${connectorBadgeClass(source.connectorStatus)}`}
+        >
+          {source.connectorLabel}
         </Badge>
       </div>
+      <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
+        {source.connectorDescription}
+      </p>
     </a>
   );
 }
@@ -149,7 +177,7 @@ export function ProcurementPortalDirectory() {
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-white">Official Procurement Portal Directory</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Direct access to featured U.S. systems and international opportunity portals.
+              Official portal links with the collection method that is actually implemented.
             </p>
           </div>
         </div>
@@ -233,7 +261,7 @@ export function ProcurementPortalDirectory() {
               </div>
 
               <p className="text-[10px] leading-relaxed text-white/40">
-                Portal-directory inclusion identifies an official procurement source. Some systems require free supplier registration to download documents or submit responses; automated collection is only enabled where a supported public parser or discovery path exists.
+                A directory entry confirms an official source link, not a completed connector. Direct API and dedicated adapter labels indicate source-specific collection. Generic extraction reads one public page without full portal pagination. Serper discovery searches the official domain and requires source-page verification.
               </p>
             </div>
           )}

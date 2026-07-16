@@ -13,6 +13,7 @@ import { classifyResult } from "../search/relevance";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_RESULT_LIMIT = 50;
+const UNKNOWN_POSTED_DATE = new Date(0);
 const EUNA_DOMAIN_EXPRESSION = "(site:bonfirehub.com OR site:bonfirehub.ca)";
 const PROCUREMENT_EXPRESSION = "(RFP OR RFQ OR bid OR solicitation OR tender OR procurement)";
 
@@ -153,7 +154,7 @@ function resultToOpportunity(result: SerperSearchResult): NormalizedOpportunity 
     agency: agencyFromResult(result, metadata.agencyHint),
     type: "Solicitation",
     status: "active",
-    postedDate: searchDate ?? new Date(),
+    postedDate: searchDate ?? UNKNOWN_POSTED_DATE,
     responseDeadline: metadata.deadline,
     estimatedValue: metadata.estimatedValue,
     description: result.snippet,
@@ -161,15 +162,22 @@ function resultToOpportunity(result: SerperSearchResult): NormalizedOpportunity 
     source: "eunaBonfire",
     providerName: "eunaBonfire",
     rawData: {
+      providerName: "eunaBonfire",
       providerFamily: "euna_supplier_network",
-      providerType: "public_euna_bonfire_discovery",
+      providerType: "serper_public_euna_discovery",
       platform: "Euna Supplier Network / Bonfire",
       discoveryMethod: "serper_public_euna",
-      sourceConfidence: "medium",
+      sourceConfidence: "low",
       searchResultDate: result.date,
       dateUnknown: !searchDate,
-      tags: ["euna-supplier-network", "bonfire", "public-opportunity"],
-      notes: "Discovered from a public Euna Supplier Network / Bonfire opportunity page; no supplier credentials were used.",
+      tags: [
+        "euna-supplier-network",
+        "bonfire",
+        "serper-discovery",
+        "verification-required",
+        ...(!searchDate ? ["date-unknown"] : []),
+      ],
+      notes: "Search-discovered from a public Euna Supplier Network / Bonfire page through Serper. This is not a direct Euna feed and the source page must be verified.",
     },
   };
 }

@@ -19,6 +19,7 @@ import { INTERNATIONAL_PORTAL_GROUPS } from "./portalDirectory";
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_LIMIT = 75;
 const MAX_DOMAINS_PER_QUERY = 5;
+const UNKNOWN_POSTED_DATE = new Date(0);
 const PROCUREMENT_EXPRESSION =
   "(RFP OR RFQ OR tender OR bid OR solicitation OR procurement)";
 const SERVICE_EXPRESSION =
@@ -130,7 +131,7 @@ function resultToOpportunity(
     agency: metadata.agencyHint ?? portal.jurisdiction,
     type: "Solicitation",
     status: "active",
-    postedDate: postedDate ?? new Date(),
+    postedDate: postedDate ?? UNKNOWN_POSTED_DATE,
     responseDeadline: metadata.deadline,
     estimatedValue: metadata.estimatedValue,
     description: result.snippet,
@@ -139,6 +140,7 @@ function resultToOpportunity(
     source: "internationalPublicPortals",
     providerName: "internationalPublicPortals",
     rawData: {
+      providerName: "internationalPublicPortals",
       providerFamily: "international_public_portal",
       providerType: "serper_official_international_portal",
       discoveryMethod: "serper_official_domain",
@@ -147,17 +149,19 @@ function resultToOpportunity(
       jurisdiction: portal.jurisdiction,
       country: portal.country,
       regionGroup: groupForPortal(portal.id),
-      sourceConfidence:
-        portal.parserStatus === "ready_to_parse" ? "high" : "medium",
+      sourceConfidence: "low",
       occumedFit: portal.occumedFit,
       dateUnknown: !postedDate,
       tags: [
         "international-opportunity",
         `country:${portal.country}`,
         "official-procurement-portal",
+        "serper-discovery",
+        "verification-required",
+        ...(!postedDate ? ["date-unknown"] : []),
       ],
       notes:
-        "Discovered from an official portal in the International Opportunities directory; no supplier login was automated.",
+        "Search-discovered through Serper on an official international procurement domain. No direct portal connector or supplier login automation is used; verify the source page before relying on the card.",
     },
   };
 }
