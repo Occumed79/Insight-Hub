@@ -10,14 +10,19 @@ import type {
 import { serperProvider, type SerperSearchResult } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import { classifyResult } from "../search/relevance";
-import { ENRICHED_DIRECT_RFP_PORTALS, type EnrichedDirectRfpPortal } from "./directRfpPortalRelevanceCatalog";
+import {
+  ENRICHED_DIRECT_RFP_PORTALS,
+  type EnrichedDirectRfpPortal,
+} from "./directRfpPortalRelevanceCatalog";
 import { INTERNATIONAL_PORTAL_GROUPS } from "./portalDirectory";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_LIMIT = 75;
 const MAX_DOMAINS_PER_QUERY = 5;
-const PROCUREMENT_EXPRESSION = "(RFP OR RFQ OR tender OR bid OR solicitation OR procurement)";
-const SERVICE_EXPRESSION = '("occupational health" OR "occupational medicine" OR "employee health" OR "medical surveillance" OR "fitness for duty" OR "pre-employment physical" OR "drug testing" OR "alcohol testing" OR audiometric OR spirometry OR "respirator fit testing")';
+const PROCUREMENT_EXPRESSION =
+  "(RFP OR RFQ OR tender OR bid OR solicitation OR procurement)";
+const SERVICE_EXPRESSION =
+  '("occupational health" OR "occupational medicine" OR "employee health" OR "medical surveillance" OR "fitness for duty" OR "pre-employment physical" OR "drug testing" OR "alcohol testing" OR audiometric OR spirometry OR "respirator fit testing")';
 
 const INTERNATIONAL_PORTAL_IDS = new Set<string>(
   INTERNATIONAL_PORTAL_GROUPS.flatMap((group) => [...group.portalIds]),
@@ -35,7 +40,11 @@ function portalForUrl(url: string): EnrichedDirectRfpPortal | undefined {
     const host = normalizedHost(new URL(url).hostname);
     return INTERNATIONAL_PORTALS.find((portal) => {
       const domain = normalizedHost(portal.domain);
-      return host === domain || host.endsWith(`.${domain}`) || domain.endsWith(`.${host}`);
+      return (
+        host === domain ||
+        host.endsWith(`.${domain}`) ||
+        domain.endsWith(`.${host}`)
+      );
     });
   } catch {
     return undefined;
@@ -44,14 +53,18 @@ function portalForUrl(url: string): EnrichedDirectRfpPortal | undefined {
 
 function groupForPortal(portalId: string): string | undefined {
   return INTERNATIONAL_PORTAL_GROUPS.find((group) =>
-    [...group.portalIds].includes(portalId),
+    group.portalIds.some((id) => id === portalId),
   )?.title;
 }
 
 function hasStaleYearOnly(text: string): boolean {
-  const years = Array.from(text.matchAll(/\b20\d{2}\b/g)).map((match) => Number(match[0]));
+  const years = Array.from(text.matchAll(/\b20\d{2}\b/g)).map((match) =>
+    Number(match[0]),
+  );
   if (years.length === 0) return false;
-  const hasCurrentOrFuture = years.some((year) => year >= CURRENT_YEAR && year <= CURRENT_YEAR + 2);
+  const hasCurrentOrFuture = years.some(
+    (year) => year >= CURRENT_YEAR && year <= CURRENT_YEAR + 2,
+  );
   return years.some((year) => year < CURRENT_YEAR) && !hasCurrentOrFuture;
 }
 
@@ -70,7 +83,10 @@ function normalizedResultKey(url: string): string {
   }
 }
 
-function isUsefulResult(result: SerperSearchResult, portal: EnrichedDirectRfpPortal): boolean {
+function isUsefulResult(
+  result: SerperSearchResult,
+  portal: EnrichedDirectRfpPortal,
+): boolean {
   const raw = `${result.title} ${result.snippet} ${result.link}`;
   if (hasStaleYearOnly(raw)) return false;
   const classification = classifyResult({
@@ -80,8 +96,16 @@ function isUsefulResult(result: SerperSearchResult, portal: EnrichedDirectRfpPor
     allowHistorical: false,
   });
   if (classification.rejected) return false;
-  if (!/\b(rfp|rfq|tender|bid|solicitation|procurement)\b/i.test(raw)) return false;
-  if (!/(occupational|employee health|medical surveillance|fitness for duty|pre[- ]employment|drug testing|alcohol testing|audiometric|spirometry|respirator fit)/i.test(raw)) return false;
+  if (!/\b(rfp|rfq|tender|bid|solicitation|procurement)\b/i.test(raw)) {
+    return false;
+  }
+  if (
+    !/(occupational|employee health|medical surveillance|fitness for duty|pre[- ]employment|drug testing|alcohol testing|audiometric|spirometry|respirator fit)/i.test(
+      raw,
+    )
+  ) {
+    return false;
+  }
   return portal.country !== "US";
 }
 
@@ -94,11 +118,15 @@ function resultToOpportunity(
   if (metadata.deadline && metadata.deadline < new Date()) return null;
   const postedDate = parsedDate(result.date);
   const resultKey = normalizedResultKey(result.link);
-  const urlHash = createHash("sha256").update(resultKey).digest("hex").slice(0, 20);
+  const urlHash = createHash("sha256")
+    .update(resultKey)
+    .digest("hex")
+    .slice(0, 20);
 
   return {
     externalId: `international-${urlHash}`,
-    title: result.title.trim() || "International Public Procurement Opportunity",
+    title:
+      result.title.trim() || "International Public Procurement Opportunity",
     agency: metadata.agencyHint ?? portal.jurisdiction,
     type: "Solicitation",
     status: "active",
@@ -119,18 +147,28 @@ function resultToOpportunity(
       jurisdiction: portal.jurisdiction,
       country: portal.country,
       regionGroup: groupForPortal(portal.id),
-      sourceConfidence: portal.parserStatus === "ready_to_parse" ? "high" : "medium",
+      sourceConfidence:
+        portal.parserStatus === "ready_to_parse" ? "high" : "medium",
       occumedFit: portal.occumedFit,
       dateUnknown: !postedDate,
-      tags: ["international-opportunity", `country:${portal.country}`, "official-procurement-portal"],
-      notes: "Discovered from an official portal in the International Opportunities directory; no supplier login was automated.",
+      tags: [
+        "international-opportunity",
+        `country:${portal.country}`,
+        "official-procurement-portal",
+      ],
+      notes:
+        "Discovered from an official portal in the International Opportunities directory; no supplier login was automated.",
     },
   };
 }
 
 function domainGroups(): EnrichedDirectRfpPortal[][] {
   const groups: EnrichedDirectRfpPortal[][] = [];
-  for (let index = 0; index < INTERNATIONAL_PORTALS.length; index += MAX_DOMAINS_PER_QUERY) {
+  for (
+    let index = 0;
+    index < INTERNATIONAL_PORTALS.length;
+    index += MAX_DOMAINS_PER_QUERY
+  ) {
     groups.push(INTERNATIONAL_PORTALS.slice(index, index + MAX_DOMAINS_PER_QUERY));
   }
   return groups;
@@ -139,12 +177,16 @@ function domainGroups(): EnrichedDirectRfpPortal[][] {
 export function buildInternationalPortalQueries(keywords?: string): string[] {
   const keywordExpression = keywords?.trim() ? ` (${keywords.trim()})` : "";
   return domainGroups().map((portals) => {
-    const domains = portals.map((portal) => `site:${portal.domain}`).join(" OR ");
+    const domains = portals
+      .map((portal) => `site:${portal.domain}`)
+      .join(" OR ");
     return `(${domains}) ${SERVICE_EXPRESSION} ${PROCUREMENT_EXPRESSION}${keywordExpression} (${CURRENT_YEAR} OR ${CURRENT_YEAR + 1}) -awarded -\"award notice\"`;
   });
 }
 
-export class InternationalPublicPortalsProvider implements DataSourceProvider {
+export class InternationalPublicPortalsProvider
+  implements DataSourceProvider
+{
   readonly name = "internationalPublicPortals" as const;
 
   async isConfigured(): Promise<boolean> {
@@ -156,7 +198,9 @@ export class InternationalPublicPortalsProvider implements DataSourceProvider {
       return {
         records: [],
         total: 0,
-        errors: ["Serper API key not configured; international official-portal discovery is disabled."],
+        errors: [
+          "Serper API key not configured; international official-portal discovery is disabled.",
+        ],
       };
     }
 
@@ -164,7 +208,10 @@ export class InternationalPublicPortalsProvider implements DataSourceProvider {
     const results = await serperProvider.searchMultiple(queries, 10);
     const seen = new Set<string>();
     const records: NormalizedOpportunity[] = [];
-    const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
+    const limit = Math.min(
+      Math.max(options.limit ?? DEFAULT_LIMIT, 1),
+      DEFAULT_LIMIT,
+    );
 
     for (const result of results) {
       if (!result.link) continue;
@@ -196,4 +243,5 @@ export class InternationalPublicPortalsProvider implements DataSourceProvider {
   }
 }
 
-export const internationalPublicPortalsProvider = new InternationalPublicPortalsProvider();
+export const internationalPublicPortalsProvider =
+  new InternationalPublicPortalsProvider();
