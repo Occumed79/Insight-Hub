@@ -1,13 +1,14 @@
 /**
  * Intelligence Feed Routes
  *
- * Stable recovery version. Provides list, feedback, signals, and fetch endpoints
- * without duplicate helper declarations.
+ * Provides list, feedback, signals, and source-backed fetch endpoints.
+ * Grants.gov is ingested here as funding intelligence and is intentionally kept
+ * out of the RFP Opportunities pipeline.
  */
 
 import { Router } from "express";
 import { createHash } from "crypto";
-import { eq, and, desc, sql, count as countFn } from "drizzle-orm";
+import { eq, and, desc, sql, count as countFn, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   intelFeedItemsTable,
@@ -15,8 +16,11 @@ import {
   type IntelSignalType,
   type IntelSource,
 } from "@workspace/db/schema";
+import { grantsGovProvider } from "../lib/providers/grantsGov";
+import type { NormalizedOpportunity } from "../lib/providers/types";
 
 const router = Router();
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function safeDate(value: string | number | Date | null | undefined): Date | null {
   if (!value) return null;
@@ -29,6 +33,72 @@ function makeId(scope: string, stateCode: string | null, externalId: string): st
     .update(`${scope}::${stateCode ?? "federal"}::${externalId}`)
     .digest("hex");
   return [hash.slice(0, 8), hash.slice(8, 12), "5" + hash.slice(13, 16), hash.slice(16, 20), hash.slice(20, 32)].join("-");
+}
+
+function grantSignalType(record: NormalizedOpportunity): IntelSignalType {
+  const status = String(record.rawData?.["opportunity_status"] ?? "").toLowerCase();
+  const text = `${record.title} ${record.description ?? ""}`.toLowerCase();
+  if (status.includes("forecast") || /\b(forecast|anticipated funding|notice of intent)\b/.test(text)) {
+    return "budget_funding";
+  }
+  return "grant_program";
+}
+
+function grantRelevanceScore(record: NormalizedOpportunity): number {
+  const text = `${record.title} ${record.description ?? ""} ${record.agency ?? ""}`.toLowerCase();
+  const signalGroups = [
+    /occupational health|occupational medicine|employee health/,
+    /drug test|drug screen|alcohol test|substance abuse testing/,
+    /pre[- ]employment|fitness for duty|fit for duty|medical examination/,
+    /medical surveillance|health surveillance|workplace health/,
+    /audiometric|hearing conservation|spirometry|pulmonary function|respirator fit/,
+    /deployment medical|periodic health assessment|military physical/,
+  ];
+  const matchedGroups = signalGroups.filter((pattern) => pattern.test(text)).length;
+  const priorityAgency = /department of labor|occupational safety|cdc|hrsa|department of defense|veterans affairs|homeland security/.test(text);
+  return Math.min(95, 55 + matchedGroups * 7 + (priorityAgency ? 5 : 0));
+}
+
+function formatFunding(value: number | undefined): string | null {
+  if (!Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value as number);
+}
+
+function grantSummary(record: NormalizedOpportunity): string | null {
+  const details: string[] = [];
+  const description = record.description?.replace(/\s+/g, " ").trim();
+  if (description) details.push(description);
+
+  const deadline = safeDate(record.responseDeadline);
+  if (deadline) {
+    details.push(`Application deadline: ${deadline.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    })}.`);
+  }
+
+  const funding = formatFunding(record.estimatedValue);
+  if (funding) details.push(`Estimated program funding: ${funding}.`);
+  if (record.solicitationNumber) details.push(`Opportunity number: ${record.solicitationNumber}.`);
+
+  return details.length > 0 ? details.join(" ") : null;
+}
+
+function isCurrentGrant(record: NormalizedOpportunity, dateRange: number, now: Date): boolean {
+  const deadline = safeDate(record.responseDeadline);
+  if (deadline && deadline.getTime() < now.getTime()) return false;
+
+  const postedDate = safeDate(record.postedDate);
+  if (!postedDate) return true;
+
+  const cutoff = new Date(now.getTime() - Math.max(1, dateRange) * DAY_MS);
+  return postedDate >= cutoff || Boolean(deadline && deadline >= now);
 }
 
 router.get("/intel-feed", async (req, res) => {
@@ -117,9 +187,111 @@ router.get("/intel-feed/signals", async (_req, res) => {
 });
 
 router.post("/intel-feed/fetch", async (req, res) => {
-  const { scope = "federal", stateCode } = req.body as { scope?: "federal" | "state"; stateCode?: string };
+  const {
+    scope = "federal",
+    stateCode,
+    dateRange = 30,
+    keywords,
+  } = req.body as {
+    scope?: "federal" | "state";
+    stateCode?: string;
+    dateRange?: number;
+    keywords?: string;
+  };
 
   try {
+    if (scope === "federal") {
+      const now = new Date();
+      const normalizedDateRange = Number.isFinite(dateRange)
+        ? Math.min(365, Math.max(1, Math.floor(dateRange)))
+        : 30;
+      const fetchResult = await grantsGovProvider.fetch({
+        keywords,
+        dateRange: normalizedDateRange,
+        limit: 250,
+      });
+      const records = fetchResult.records.filter((record) =>
+        isCurrentGrant(record, normalizedDateRange, now),
+      );
+      const ids = records.map((record) => makeId("federal", null, record.externalId));
+      const existingRows = ids.length > 0
+        ? await db
+            .select({ id: intelFeedItemsTable.id })
+            .from(intelFeedItemsTable)
+            .where(inArray(intelFeedItemsTable.id, ids))
+        : [];
+      const existingIds = new Set(existingRows.map((row) => row.id));
+
+      let created = 0;
+      let updated = 0;
+
+      for (const record of records) {
+        const id = makeId("federal", null, record.externalId);
+        const publishedDate = safeDate(record.postedDate) ?? now;
+        const signalType = grantSignalType(record);
+        const values = {
+          id,
+          scope: "federal" as const,
+          stateCode: null,
+          signalType,
+          source: "grants_gov" as const,
+          agency: record.agency ?? "Federal Agency",
+          title: record.title,
+          summary: grantSummary(record),
+          sourceUrl: record.sourceUrl ?? null,
+          publishedDate,
+          relevanceScore: grantRelevanceScore(record),
+          externalId: record.externalId,
+          rawJson: JSON.stringify({
+            ...(record.rawData ?? {}),
+            responseDeadline: safeDate(record.responseDeadline)?.toISOString() ?? null,
+            estimatedValue: record.estimatedValue ?? null,
+            solicitationNumber: record.solicitationNumber ?? null,
+          }),
+          fetchedAt: now,
+          updatedAt: now,
+        };
+
+        await db
+          .insert(intelFeedItemsTable)
+          .values({ ...values, feedback: "new", createdAt: now })
+          .onConflictDoUpdate({
+            target: intelFeedItemsTable.id,
+            set: {
+              scope: values.scope,
+              stateCode: values.stateCode,
+              signalType: values.signalType,
+              source: values.source,
+              agency: values.agency,
+              title: values.title,
+              summary: values.summary,
+              sourceUrl: values.sourceUrl,
+              publishedDate: values.publishedDate,
+              relevanceScore: values.relevanceScore,
+              externalId: values.externalId,
+              rawJson: values.rawJson,
+              fetchedAt: values.fetchedAt,
+              updatedAt: values.updatedAt,
+            },
+          });
+
+        if (existingIds.has(id)) updated += 1;
+        else created += 1;
+      }
+
+      return res.json({
+        fetched: records.length,
+        created,
+        updated,
+        scope,
+        stateCode: null,
+        sources: ["grants_gov"],
+        errors: fetchResult.errors,
+      });
+    }
+
+    // Preserve the existing state-scope recovery behavior until state fetchers are
+    // addressed as their own feature. Federal Grants.gov ingestion does not alter it.
     const now = new Date();
     const externalId = `${scope}::${stateCode ?? "federal"}::manual-fetch::${now.toISOString().slice(0, 10)}`;
     const id = makeId(scope, stateCode ?? null, externalId);
@@ -135,7 +307,7 @@ router.post("/intel-feed/fetch", async (req, res) => {
         source: "other",
         agency: "Insight Hub",
         title: "Manual intel fetch completed",
-        summary: "The intel feed fetch endpoint is active. Source fetchers can be re-enabled after the recovery build is stable.",
+        summary: "The state intel feed fetch endpoint is active. State source fetchers remain a separate feature.",
         sourceUrl: null,
         publishedDate,
         feedback: "new",
