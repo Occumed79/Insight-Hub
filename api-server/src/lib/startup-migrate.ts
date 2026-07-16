@@ -1,8 +1,4 @@
-/**
- * Startup migration — runs idempotent CREATE TABLE IF NOT EXISTS for any tables
- * that Drizzle push may not have applied yet. Safe to run on every boot.
- * Non-fatal: if migration fails, server continues and routes handle errors gracefully.
- */
+// Startup migration — idempotent database setup for Intelligence Feed and Source Monitor.
 
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -19,9 +15,14 @@ export async function runStartupMigrations(): Promise<void> {
         CREATE TYPE intel_signal_type AS ENUM (
           'regulatory_change','procurement_forecast','expiring_contract',
           'new_rulemaking','enforcement_action','budget_funding',
-          'grant_program','industry_trend','state_procurement','other'
+          'grant_program','workforce_hiring','industry_trend','state_procurement','other'
         );
       EXCEPTION WHEN duplicate_object THEN NULL; END $$
+    `);
+
+    // Existing databases already have intel_signal_type, so add new values separately.
+    await db.execute(sql`
+      ALTER TYPE intel_signal_type ADD VALUE IF NOT EXISTS 'workforce_hiring'
     `);
 
     await db.execute(sql`
@@ -33,15 +34,18 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       DO $$ BEGIN
         CREATE TYPE intel_source AS ENUM (
-          'federal_register','regulations_gov','sam_awards','usaspending','grants_gov',
+          'federal_register','regulations_gov','sam_awards','usaspending','grants_gov','usajobs',
           'dol_osha','acquisition_gov','ecfr','state_serper','state_portal','other'
         );
       EXCEPTION WHEN duplicate_object THEN NULL; END $$
     `);
 
-    // Existing databases already have intel_source, so add the new value separately.
+    // Existing databases already have intel_source, so add new values separately.
     await db.execute(sql`
       ALTER TYPE intel_source ADD VALUE IF NOT EXISTS 'grants_gov'
+    `);
+    await db.execute(sql`
+      ALTER TYPE intel_source ADD VALUE IF NOT EXISTS 'usajobs'
     `);
 
     await db.execute(sql`
@@ -194,8 +198,7 @@ export async function runStartupMigrations(): Promise<void> {
 
     logger.info("Startup migrations complete.");
   } catch (err) {
-    // Non-fatal: log and continue. The server will still start.
-    // Individual route handlers return 500 if tables are missing.
+    // Non-critical: server routes will return a grounded error if a migration is unavailable.
     logger.error({ err }, "Startup migration failed — server will continue");
   }
 }
