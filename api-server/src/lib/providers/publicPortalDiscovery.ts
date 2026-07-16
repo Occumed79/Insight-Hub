@@ -21,6 +21,7 @@ const DEFAULT_EXECUTION_QUERY_BUDGET = 6;
 const DEFAULT_RESULT_LIMIT = 25;
 const MAX_DOMAINS_PER_QUERY = 6;
 const MAX_DOMAIN_EXPRESSION_LENGTH = 1_250;
+const UNKNOWN_POSTED_DATE = new Date(0);
 
 type PortalGroup = "state" | "district";
 
@@ -294,7 +295,8 @@ function resultToOpportunity(
 ): NormalizedOpportunity | null {
   if (!isUsefulPortalResult(title, url, snippet)) return null;
 
-  const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 20);
+  const resultKey = normalizeResultKey(title, parsed?.sourceUrl ?? url);
+  const urlHash = createHash("sha256").update(resultKey).digest("hex").slice(0, 20);
   const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(
     snippet,
     title,
@@ -312,6 +314,7 @@ function resultToOpportunity(
   const portalName =
     directPortal?.name ?? matchedPortal?.name ?? "Official Public RFP Portal";
   const portalState = directPortal?.state ?? matchedPortal?.state ?? "";
+  const postedDate = parsed?.postedDate;
 
   return {
     externalId: `public-portal-${urlHash}`,
@@ -324,7 +327,7 @@ function resultToOpportunity(
         : (directPortal?.jurisdiction ?? "Unknown")),
     type: "Solicitation",
     status: "active",
-    postedDate: parsed?.postedDate ?? new Date(),
+    postedDate: postedDate ?? UNKNOWN_POSTED_DATE,
     responseDeadline: effectiveDeadline ?? undefined,
     estimatedValue: estimatedValue ?? undefined,
     description: parsed?.description ?? snippet,
@@ -332,28 +335,35 @@ function resultToOpportunity(
     location: parsed?.location ?? parsed?.state,
     sourceUrl: parsed?.sourceUrl ?? url,
     source: "publicPortalProviders" as const,
+    providerName: "publicPortalProviders",
     rawData: {
-      providerName: "direct_official_public_rfp_portals",
+      providerName: "publicPortalProviders",
+      providerFamily: "public_portal",
+      providerType: "serper_official_portal_discovery",
+      discoveryMethod: "serper_official_domain",
       portalName,
       portalState,
       portalGroup: matchedPortal?.group ?? directPortal?.level ?? "unknown",
       sourceId: directPortal?.id ?? matchedPortal?.sourceId,
-      sourceConfidence:
-        directPortal?.parserStatus === "ready_to_parse" ? "high" : "medium",
+      sourceConfidence: parsed ? "medium" : "low",
       occumedFit: directPortal?.occumedFit ?? matchedPortal?.occumedFit,
       buyerSector: directPortal?.buyerSector ?? matchedPortal?.buyerSector,
       occumedServiceCategories:
         directPortal?.occumedServiceCategories ??
         matchedPortal?.occumedServiceCategories ??
         [],
+      dateUnknown: !postedDate,
       tags: [
-        "direct-official-portal",
+        "official-procurement-portal",
+        "serper-discovery",
+        "verification-required",
         portalState ? `state:${portalState}` : "state:unknown",
+        ...(!postedDate ? ["date-unknown"] : []),
       ],
-      notes: `Discovered via official direct portal ${portalName}; passed ontology-based procurement relevance and staleness filters`,
+      notes: `Search-discovered through Serper on the official portal domain for ${portalName}. This is not direct portal ingestion; verify the source page before relying on the card.`,
       parserApplied: Boolean(parsed),
       parsedPortalSourceId: parsed?.portalSourceId,
-      fallback: !parsed,
+      fallback: true,
     },
   };
 }
