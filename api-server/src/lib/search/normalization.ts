@@ -1,5 +1,47 @@
 import type { NormalizedOpportunity } from "../providers/types";
-import type { InsertOpportunity } from "@workspace/db/schema";
+import type { InsertOpportunity, ProviderKey } from "@workspace/db/schema";
+
+/**
+ * Maps every ProviderName that can appear on a NormalizedOpportunity to a
+ * canonical ProviderKey stored in the provider_key DB column.
+ *
+ * The provider_key is the primary identity scope used for duplicate detection
+ * (together with notice_id).  It is intentionally more granular than the broad
+ * 3-value source enum, which is kept separately for display/category use.
+ */
+const PROVIDER_KEY_MAP: Record<string, ProviderKey> = {
+  samGov:                      "samGov",
+  texasEsbd:                   "texasEsbd",
+  nyScr:                       "nyScr",
+  statePortals:                "csvImport",   // legacy alias → generic csv bucket
+  publicPortalProviders:       "publicPortalProviders",
+  eunaBonfire:                 "eunaBonfire",
+  internationalPublicPortals:  "internationalPublicPortals",
+  tango:                       "tango",
+  bidnet:                      "bidnet",
+  serper:                      "serper",
+  tavily:                      "tavily",
+  exa:                         "exa",
+  gemini:                      "gemini",
+  firecrawl:                   "manual",
+  openrouter:                  "manual",
+  groq:                        "manual",
+  browseAi:                    "manual",
+  browserUse:                  "manual",
+  olostep:                     "manual",
+  clod:                        "manual",
+  jina:                        "manual",
+  minimax:                     "manual",
+  you:                         "manual",
+  langsearch:                  "manual",
+  websearch:                   "manual",
+  cerebras:                    "manual",
+  cohere:                      "manual",
+  deepseek:                    "manual",
+  mistral:                     "manual",
+  nvidia:                      "manual",
+  cloudflareWorker:            "manual",
+};
 
 /**
  * Convert a NormalizedOpportunity into a DB record for storage.
@@ -74,6 +116,7 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
     awardAmount: record.awardAmount != null ? String(record.awardAmount) : null,
     awardee: record.awardee ?? null,
     source: sourceMap[record.source] ?? "manual",
+    providerKey: PROVIDER_KEY_MAP[record.source] ?? "manual",
     providerName,
     relevanceScore: relevanceScore != null ? String(relevanceScore) : null,
     sourceConfidence,

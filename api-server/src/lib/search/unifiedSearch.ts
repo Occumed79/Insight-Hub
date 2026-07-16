@@ -194,38 +194,26 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   for (const { opportunity } of deduped) {
     const externalId = opportunity.externalId;
 
+    // Build the source-derived record once per opportunity.
+    const dbRecord = normalizedToDbRecord(opportunity);
+
     if (externalId) {
-      // Use provider + externalId together for a scoped identity check.
-      // This prevents a noticeId collision across unrelated providers and
-      // ensures each provider's external IDs are treated as an independent
-      // namespace.
-      const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
-        samGov: "sam_gov",
-        texasEsbd: "csv_import",
-        nyScr: "csv_import",
-        statePortals: "csv_import",
-        gemini: "manual",
-        serper: "manual",
-        tavily: "manual",
-        tango: "manual",
-        bidnet: "manual",
-      };
-      const mappedSource = sourceMap[opportunity.source] ?? "manual";
+      // Look up by (provider_key, notice_id) — genuine provider-scoped identity.
+      // The same external ID from two different providers will never match.
+      const providerKey = dbRecord.providerKey ?? "manual";
 
       const existing = await db
         .select({ id: opportunitiesTable.id })
         .from(opportunitiesTable)
         .where(
           and(
+            eq(opportunitiesTable.providerKey, providerKey),
             eq(opportunitiesTable.noticeId, externalId),
-            eq(opportunitiesTable.source, mappedSource),
           ),
         );
 
       if (existing.length > 0) {
-        // Build the source-derived fields only; never touch the primary key,
-        // userGrade, userConfidence, or notes (user-controlled columns).
-        const dbRecord = normalizedToDbRecord(opportunity);
+        // Preserve user-controlled columns; update only source-derived fields.
         const { userGrade: _g, userConfidence: _c, notes: _n, ...sourceFields } = dbRecord as typeof dbRecord & {
           userGrade?: unknown;
           userConfidence?: unknown;
@@ -242,7 +230,6 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
     }
 
     // New record — generate the primary key here (and only here).
-    const dbRecord = normalizedToDbRecord(opportunity);
     await db.insert(opportunitiesTable).values({
       ...dbRecord,
       id: randomUUID(),
