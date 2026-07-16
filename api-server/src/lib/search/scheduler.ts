@@ -22,9 +22,9 @@
 import { logger } from "../logger";
 import { unifiedFetch } from "./unifiedSearch";
 
-// RFP-only defaults. USAspending and Federal Register are intentionally excluded:
-// they are intel/award/regulatory sources and should not publish direct RFP cards.
-const DEFAULT_INGESTION_PROVIDERS = ["samGov", "grantsGov", "publicPortalProviders", "eunaBonfire", "serper", "tavily"];
+// Opportunity-source defaults only. Grants.gov, USAspending, Federal Register,
+// broad research tools, and AI enrichment providers are intentionally excluded.
+const DEFAULT_INGESTION_PROVIDERS = ["samGov", "publicPortalProviders", "eunaBonfire", "internationalPublicPortals"];
 const DEFAULT_INTERVAL_MINUTES = 360;
 const MIN_INTERVAL_MINUTES = 15;
 const DEFAULT_DATE_RANGE_DAYS = 30;

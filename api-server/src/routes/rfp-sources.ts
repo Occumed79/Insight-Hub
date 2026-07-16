@@ -7,7 +7,7 @@ import {
   buildPortalEvidenceScanPlan,
   scanPortalEvidence,
 } from "../lib/providers/portalEvidenceScanner";
-import { getStatePortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
+import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/statePortals";
 import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
 
 const router = Router();
@@ -55,7 +55,7 @@ router.get("/rfp-sources", async (req, res) => {
   );
 
   const catalogValidation = validateDirectRfpPortalRelevanceCatalog();
-  const runtimePlan = getStatePortalSearchPlanDiagnostics({
+  const runtimePlan = getPublicPortalSearchPlanDiagnostics({
     includeTier3,
     fullCoverage,
     executionBudget,
