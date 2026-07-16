@@ -37,6 +37,7 @@ const NAVIGATION_PATH_TOKENS = [
   "/terms",
   "/vendor-registration",
 ];
+const NEXT_PAGE_TEXT = /^(?:next|next page|older|older notices|more results|continue|›|»|→)$/i;
 const UNKNOWN_POSTED_DATE = new Date(0);
 
 function stripTags(html: string): string {
@@ -45,6 +46,20 @@ function stripTags(html: string): string {
 
 function absolutize(href: string, baseUrl: string): string | undefined {
   try { return new URL(href, baseUrl).toString(); } catch { return undefined; }
+}
+
+function normalizedHost(value: string): string {
+  return value.toLowerCase().replace(/^www\./, "");
+}
+
+function samePortalDomain(url: string, sourceDomain: string): boolean {
+  try {
+    const host = normalizedHost(new URL(url).hostname);
+    const expected = normalizedHost(sourceDomain);
+    return host === expected || host.endsWith(`.${expected}`) || expected.endsWith(`.${host}`);
+  } catch {
+    return false;
+  }
 }
 
 function containsAny(value: string, terms: string[]): boolean {
@@ -125,6 +140,51 @@ export function withPublicPortalMetadata(record: NormalizedOpportunity, source: 
       occuMedMatchTerms: OCCU_MED_TERMS.filter((term) => haystack.toLowerCase().includes(term.toLowerCase())),
     },
   };
+}
+
+/**
+ * Find bounded same-domain pagination links. This intentionally ignores broad
+ * "more" navigation unless the link is explicitly marked as pagination or
+ * rel=next, preventing the crawler from wandering into unrelated site pages.
+ */
+export function extractPaginationUrls(
+  html: string,
+  pageUrl: string,
+  sourceDomain: string,
+  limit = 10,
+): string[] {
+  const current = pageUrl.toLowerCase().replace(/#.*$/, "");
+  const candidates: { url: string; priority: number }[] = [];
+  const anchors = Array.from(html.matchAll(/<a\b([^>]*)href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi));
+
+  for (const anchor of anchors) {
+    const attributes = anchor[1] ?? "";
+    const href = anchor[2] ?? "";
+    const text = stripTags(anchor[3] ?? "").trim();
+    const url = absolutize(href, pageUrl);
+    if (!url || !samePortalDomain(url, sourceDomain)) continue;
+    const normalized = url.toLowerCase().replace(/#.*$/, "");
+    if (normalized === current || isNavigationLink(text || "pagination", url)) continue;
+
+    const relNext = /\brel\s*=\s*["'][^"']*\bnext\b/i.test(attributes);
+    const paginationMarkup = /\b(?:pagination|pager|page-link|next)\b/i.test(attributes);
+    const nextText = NEXT_PAGE_TEXT.test(text);
+    const numberedPage = /^\d{1,3}$/.test(text) && paginationMarkup;
+    if (!relNext && !nextText && !numberedPage) continue;
+
+    candidates.push({
+      url,
+      priority: relNext ? 0 : nextText ? 1 : 2,
+    });
+  }
+
+  return Array.from(
+    new Map(
+      candidates
+        .sort((left, right) => left.priority - right.priority)
+        .map((candidate) => [candidate.url.toLowerCase().replace(/#.*$/, ""), candidate.url]),
+    ).values(),
+  ).slice(0, Math.max(0, limit));
 }
 
 export function extractStaticHtmlOpportunities(html: string, source: PublicPortalSource, limit: number): NormalizedOpportunity[] {
