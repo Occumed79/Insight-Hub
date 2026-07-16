@@ -17,14 +17,6 @@ services:
         sync: false
       - key: INTEL_DATABASE_URL
         sync: false
-      - key: ENABLE_SCHEDULED_INGESTION
-        value: "true"
-      - key: INGESTION_INTERVAL_MINUTES
-        value: "360"
-      - key: INGESTION_DATE_RANGE_DAYS
-        value: "30"
-      - key: INGESTION_PROVIDERS
-        value: samGov,publicPortalProviders,eunaBonfire,internationalPublicPortals
       - key: PUBLIC_PORTAL_CONCURRENCY
         value: "4"
       - key: PUBLIC_PORTAL_SOURCE_TIMEOUT_MS
