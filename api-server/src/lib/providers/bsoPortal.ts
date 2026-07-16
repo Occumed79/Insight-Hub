@@ -91,8 +91,12 @@ function decodeHtml(value: string): string {
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_match, decimal: string) => String.fromCodePoint(Number.parseInt(decimal, 10)));
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_match, decimal: string) =>
+      String.fromCodePoint(Number.parseInt(decimal, 10)),
+    );
 }
 
 function stripTags(value: string): string {
@@ -127,7 +131,11 @@ function parseDate(value?: string): Date | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-function sameOriginAbsolute(href: string, pageUrl: string, expectedOrigin: string): string | undefined {
+function sameOriginAbsolute(
+  href: string,
+  pageUrl: string,
+  expectedOrigin: string,
+): string | undefined {
   try {
     const url = new URL(decodeHtml(href), pageUrl);
     if (url.origin !== expectedOrigin) return undefined;
@@ -139,8 +147,10 @@ function sameOriginAbsolute(href: string, pageUrl: string, expectedOrigin: strin
 }
 
 function looksLikeDate(value: string): boolean {
-  return /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(value)
-    && /(?:\d{1,2}:\d{2}|\bAM\b|\bPM\b)/i.test(value);
+  return (
+    /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(value) &&
+    /(?:\d{1,2}:\d{2}|\bAM\b|\bPM\b)/i.test(value)
+  );
 }
 
 function parseListingRows(html: string, config: BsoPortalConfig): BsoListingRow[] {
@@ -157,15 +167,23 @@ function parseListingRows(html: string, config: BsoPortalConfig): BsoListingRow[
     const bidNumber = normalizeCell(detailAnchor[2] ?? "");
     if (!bidNumber || seen.has(bidNumber.toLowerCase())) continue;
 
-    const sourceUrl = sameOriginAbsolute(detailAnchor[1] ?? "", config.listingUrl, config.origin);
+    const sourceUrl = sameOriginAbsolute(
+      detailAnchor[1] ?? "",
+      config.listingUrl,
+      config.origin,
+    );
     if (!sourceUrl) continue;
 
     const cells = Array.from(rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi))
       .map((match) => normalizeCell(match[1] ?? ""))
       .filter(Boolean);
-    const bidIndex = cells.findIndex((cell) => cell === bidNumber || cell.includes(bidNumber));
+    const bidIndex = cells.findIndex(
+      (cell) => cell === bidNumber || cell.includes(bidNumber),
+    );
     const trailing = bidIndex >= 0 ? cells.slice(bidIndex + 1) : cells;
-    const distinct = trailing.filter((cell, index) => cell !== bidNumber && trailing.indexOf(cell) === index);
+    const distinct = trailing.filter(
+      (cell, index) => cell !== bidNumber && trailing.indexOf(cell) === index,
+    );
     const dateIndex = distinct.findIndex(looksLikeDate);
     if (dateIndex < 1) continue;
 
@@ -174,7 +192,9 @@ function parseListingRows(html: string, config: BsoPortalConfig): BsoListingRow[
     const organization = beforeDate[0] ?? config.portalName;
     const description = beforeDate[beforeDate.length - 1] ?? bidNumber;
     const buyer = beforeDate.length >= 3 ? beforeDate[beforeDate.length - 2] : undefined;
-    const statusIndex = afterDate.findIndex((value) => /^(?:sent|open|ready|released|posted)$/i.test(value));
+    const statusIndex = afterDate.findIndex((value) =>
+      /^(?:sent|open|ready|released|posted)$/i.test(value),
+    );
     const status = statusIndex >= 0 ? afterDate[statusIndex] : undefined;
     const alternateId = statusIndex >= 0 ? afterDate[statusIndex + 1] : undefined;
 
@@ -208,20 +228,33 @@ function detailValue(text: string, label: string): string | undefined {
   return value || undefined;
 }
 
-function parseAttachments(text: string): string[] {
-  const block = detailValue(text, "File Attachments");
-  if (!block) return [];
-  return block
-    .split(/\n|(?<=\.(?:pdf|docx?|xlsx?|csv|zip))\s+/i)
-    .map((value) => value.trim())
-    .filter((value) => /\.(?:pdf|docx?|xlsx?|csv|zip)(?:\s|$)/i.test(value))
-    .slice(0, 50);
+function parseAttachments(html: string): string[] {
+  const attachments = new Set<string>();
+  for (const match of html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const name = normalizeCell(match[1] ?? "");
+    if (/\.(?:pdf|docx?|xlsx?|csv|zip)(?:\s|$)/i.test(name)) {
+      attachments.add(name.slice(0, 240));
+    }
+  }
+  if (attachments.size === 0) {
+    for (const line of stripTags(html).split("\n")) {
+      const name = line.trim();
+      if (/\.(?:pdf|docx?|xlsx?|csv|zip)(?:\s|$)/i.test(name)) {
+        attachments.add(name.slice(0, 240));
+      }
+    }
+  }
+  return Array.from(attachments).slice(0, 50);
 }
 
 function parseCommodityCodes(text: string): string[] {
   const codes = new Set<string>();
-  for (const match of text.matchAll(/(?:NIGP|U\s*N\s*S\s*P\s*S\s*C)\s*Code\s*:\s*([0-9][0-9\s-]{2,20})/gi)) {
-    const code = (match[1] ?? "").replace(/\s+/g, "").replace(/-+$/, "");
+  for (const match of text.matchAll(
+    /(?:NIGP|U\s*N\s*S\s*P\s*S\s*C)\s*Code\s*:\s*([0-9][0-9\s-]{2,20})/gi,
+  )) {
+    const code = (match[1] ?? "")
+      .replace(/\s+/g, "")
+      .replace(/-+$/, "");
     if (code) codes.add(code);
   }
   return Array.from(codes).slice(0, 25);
@@ -247,7 +280,7 @@ function parseDetail(html: string): BsoDetail {
     endDate: detailValue(text, "End Date"),
     preBidConference: detailValue(text, "Pre Bid Conference"),
     bulletinDescription: detailValue(text, "Bulletin Desc"),
-    attachmentNames: parseAttachments(text),
+    attachmentNames: parseAttachments(html),
     commodityCodes: parseCommodityCodes(text),
   };
 }
@@ -265,29 +298,34 @@ function rowToOpportunity(
   const postedDate = parsedPostedDate ?? UNKNOWN_POSTED_DATE;
   const organization = detail?.organization ?? row.organization ?? config.portalName;
   const title = detail?.description ?? row.description ?? bidNumber;
+  const purchaser = detail?.purchaser ?? row.buyer;
   const description = [
     detail?.bulletinDescription,
     title,
     detail?.department ? `Department: ${detail.department}` : null,
     detail?.location ? `Location: ${detail.location}` : null,
-    detail?.purchaser ?? row.buyer ? `Purchaser: ${detail?.purchaser ?? row.buyer}` : null,
+    purchaser ? `Purchaser: ${purchaser}` : null,
     detail?.infoContact ? `Info Contact: ${detail.infoContact}` : null,
     detail?.purchaseMethod ? `Purchase Method: ${detail.purchaseMethod}` : null,
-    detail?.preBidConference ? `Pre-Bid Conference: ${detail.preBidConference}` : null,
+    detail?.preBidConference
+      ? `Pre-Bid Conference: ${detail.preBidConference}`
+      : null,
     detail?.beginDate || detail?.endDate
       ? `Contract Period: ${detail?.beginDate ?? "unknown"} through ${detail?.endDate ?? "unknown"}`
       : null,
     detail?.attachmentNames.length
       ? `Public Attachments: ${detail.attachmentNames.join("; ")}`
       : null,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return {
     externalId: `bso-${config.sourceId}-${bidNumber}`,
     title,
     agency: organization,
     subAgency: detail?.department,
-    type: detail?.bidType || "Bid Solicitation",
+    type: "Bid Solicitation",
     status: "active",
     postedDate,
     responseDeadline,
@@ -309,8 +347,10 @@ function rowToOpportunity(
       listingPageNumber: 1,
       paginationMode: "public_first_page",
       detailFetched: Boolean(detail),
+      listingStatus: row.status,
+      bidType: detail?.bidType,
       alternateId: detail?.alternateId ?? row.alternateId,
-      buyer: detail?.purchaser ?? row.buyer,
+      buyer: purchaser,
       requiredDate: detail?.requiredDate,
       availableDate: detail?.availableDate,
       beginDate: detail?.beginDate,
@@ -345,9 +385,14 @@ class BsoPortalProvider implements DataSourceProvider {
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), 250);
-    const timeoutMs = positiveIntegerEnv("BSO_REQUEST_TIMEOUT_MS", 20_000, 3_000, 60_000);
+    const timeoutMs = positiveIntegerEnv(
+      "BSO_REQUEST_TIMEOUT_MS",
+      20_000,
+      3_000,
+      60_000,
+    );
     const maxRetries = positiveIntegerEnv("BSO_MAX_RETRIES", 2, 0, 5);
-    const detailLimit = positiveIntegerEnv("BSO_DETAIL_LIMIT", 25, 0, 100);
+    const detailLimit = positiveIntegerEnv("BSO_DETAIL_LIMIT", 10, 0, 100);
     const errors: string[] = [];
 
     let listingHtml: string;
@@ -368,7 +413,9 @@ class BsoPortalProvider implements DataSourceProvider {
 
     const rows = parseListingRows(listingHtml, this.config).slice(0, limit);
     if (rows.length === 0) {
-      errors.push(`${this.config.portalName}: the public open-bid page returned no recognizable BSO bid rows.`);
+      errors.push(
+        `${this.config.portalName}: the public open-bid page returned no recognizable BSO bid rows.`,
+      );
     }
 
     const records: NormalizedOpportunity[] = [];
@@ -385,7 +432,9 @@ class BsoPortalProvider implements DataSourceProvider {
           detail = parseDetail(detailHtml);
         } catch (error) {
           errors.push(
-            `${this.config.portalName} bid ${row.bidNumber}: ${error instanceof Error ? error.message : String(error)}`,
+            `${this.config.portalName} bid ${row.bidNumber}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
       }
@@ -424,18 +473,36 @@ function bsoConfig(
     portalName,
     state,
     origin: root.origin,
-    listingUrl: new URL("view/search/external/advancedSearchBid.xhtml?openBids=true", root).toString(),
+    listingUrl: new URL(
+      "view/search/external/advancedSearchBid.xhtml?openBids=true",
+      root,
+    ).toString(),
   };
 }
 
 export const bsoPortalProviders: Record<string, DataSourceProvider> = {
   "ma-commbuys": new BsoPortalProvider(
-    bsoConfig("ma-commbuys", "Massachusetts COMMBUYS", "MA", "https://www.commbuys.com/bso/"),
+    bsoConfig(
+      "ma-commbuys",
+      "Massachusetts COMMBUYS",
+      "MA",
+      "https://www.commbuys.com/bso/",
+    ),
   ),
   "nv-epro": new BsoPortalProvider(
-    bsoConfig("nv-epro", "NevadaEPro", "NV", "https://nevadaepro.com/bso/"),
+    bsoConfig(
+      "nv-epro",
+      "NevadaEPro",
+      "NV",
+      "https://nevadaepro.com/bso/",
+    ),
   ),
   "nj-start": new BsoPortalProvider(
-    bsoConfig("nj-start", "New Jersey START", "NJ", "https://www.njstart.gov/bso/"),
+    bsoConfig(
+      "nj-start",
+      "New Jersey START",
+      "NJ",
+      "https://www.njstart.gov/bso/",
+    ),
   ),
 };
