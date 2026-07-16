@@ -75,8 +75,8 @@ router.get("/opportunities/feedback/model-summary", async (_req, res) => {
  */
 router.post("/opportunities/feedback/rescore", async (req, res) => {
   try {
-    await reScoreAllOpportunities();
-    return res.json({ success: true, message: "All opportunities re-scored." });
+    const { updated } = await reScoreAllOpportunities();
+    return res.json({ success: true, message: "All opportunities re-scored.", updated });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Re-score failed" });
