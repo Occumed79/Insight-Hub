@@ -5,13 +5,14 @@ export * from "./nyScr";
 export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
+export * from "./publicPortalDiscovery";
 export * from "./eunaBonfire";
+export * from "./internationalPublicPortals";
 export * from "./gemini";
 export * from "./serper";
 export * from "./tavily";
 export * from "./tango";
 export * from "./bidnet";
-export * from "./statePortals";
 export * from "./firecrawl";
 export * from "./jina";
 export * from "./openrouter";
@@ -37,12 +38,12 @@ import { usaSpendingProvider } from "./usaSpending";
 import { federalRegisterProvider } from "./federalRegister";
 import { publicPortalProvidersProvider } from "./publicPortalProviders";
 import { eunaBonfireProvider } from "./eunaBonfire";
+import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
 import { serperProvider } from "./serper";
 import { tavilyProvider } from "./tavily";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
-import { statePortalsProvider } from "./statePortals";
 import { firecrawlProvider } from "./firecrawl";
 import { jinaProvider } from "./jina";
 import { openrouterProvider } from "./openrouter";
@@ -74,6 +75,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   nyScr: nyScrProvider,
   publicPortalProviders: publicPortalProvidersProvider,
   eunaBonfire: eunaBonfireProvider,
+  internationalPublicPortals: internationalPublicPortalsProvider,
   usaSpending: usaSpendingProvider,
   federalRegister: federalRegisterProvider,
   gemini: geminiProvider,
@@ -81,7 +83,6 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   tavily: tavilyProvider,
   tango: tangoProvider,
   bidnet: bidnetProvider,
-  statePortals: statePortalsProvider as unknown as DataSourceProvider,
   firecrawl: firecrawlProvider,
   jina: jinaProvider,
   openrouter: openrouterProvider,

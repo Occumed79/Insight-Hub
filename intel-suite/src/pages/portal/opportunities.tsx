@@ -63,29 +63,48 @@ const GRADE_CONFIGS: GradeConfig[] = [
   { grade: "spam", label: "Not relevant", short: "N/A" },
 ];
 
-const FETCH_PROVIDER_OPTIONS = [
-  { key: "sam_gov", label: "SAM.gov", desc: "Federal solicitations", stub: false },
-  { key: "grantsGov", label: "Grants.gov", desc: "Federal grants & programs", stub: false },
-  { key: "usaSpending", label: "USASpending", desc: "Expiring contracts / re-competes", stub: false },
-  { key: "serper", label: "Serper", desc: "Web search", stub: false },
-  { key: "tavily", label: "Tavily", desc: "Deep AI research", stub: false },
-  { key: "exa", label: "Exa", desc: "Semantic search", stub: false },
-  { key: "jina", label: "Jina AI", desc: "URL extraction", stub: false },
-  { key: "gemini", label: "Gemini AI", desc: "AI scoring", stub: false },
-  { key: "groq", label: "Groq", desc: "Fast AI scoring", stub: false },
-  { key: "openrouter", label: "OpenRouter", desc: "Multi-model AI", stub: false },
-  { key: "publicPortalProviders", label: "Public Portal Providers", desc: "Direct parsers + Serper official-portal discovery", stub: false },
-  { key: "eunaBonfire", label: "Euna Supplier Network", desc: "Separate public Bonfire/Euna opportunity discovery", stub: false },
-  { key: "olostep", label: "Olostep", desc: "Web crawling", stub: false },
-  { key: "browseAi", label: "Browse AI", desc: "Automated extraction", stub: false },
-  { key: "firecrawl", label: "Firecrawl", desc: "Deep crawling", stub: false },
-  { key: "you", label: "You.com", desc: "AI web search", stub: false },
-  { key: "langsearch", label: "Langsearch", desc: "LLM search", stub: false },
-  { key: "websearch", label: "WebSearch", desc: "Broad web search", stub: false },
-  { key: "minimax", label: "Minimax AI", desc: "AI scoring", stub: false },
-  { key: "tango", label: "Tango", desc: "Federal procurement opportunities", stub: false },
-  { key: "bidnet", label: "BidNet", desc: "Pending direct API", stub: true },
+type FetchProviderOption = {
+  key: string;
+  label: string;
+  desc: string;
+  stub: boolean;
+};
+
+const FETCH_PROVIDER_GROUPS: { id: string; label: string; options: FetchProviderOption[] }[] = [
+  {
+    id: "opportunity_sources",
+    label: "Opportunity Sources",
+    options: [
+      { key: "sam_gov", label: "SAM.gov", desc: "U.S. federal solicitations", stub: false },
+      { key: "publicPortalProviders", label: "U.S. Public Portals", desc: "Official state and local portal coverage", stub: false },
+      { key: "eunaBonfire", label: "Euna Supplier Network", desc: "Separate public Bonfire/Euna discovery", stub: false },
+      { key: "internationalPublicPortals", label: "International Public Portals", desc: "Canada, United Kingdom, Europe, and multilateral portals", stub: false },
+      { key: "tango", label: "Tango", desc: "Direct procurement opportunities", stub: false },
+      { key: "bidnet", label: "BidNet", desc: "Inactive until the direct API credentials are added", stub: true },
+    ],
+  },
+  {
+    id: "web_discovery",
+    label: "Optional Web Discovery",
+    options: [
+      { key: "serper", label: "Serper", desc: "Broad public-web opportunity discovery", stub: false },
+      { key: "tavily", label: "Tavily", desc: "Research-oriented opportunity discovery", stub: false },
+      { key: "exa", label: "Exa", desc: "Semantic public-web discovery", stub: false },
+    ],
+  },
 ];
+
+const OPPORTUNITY_PROVIDER_NAMES = new Set([
+  "samGov",
+  "publicPortalProviders",
+  "eunaBonfire",
+  "internationalPublicPortals",
+  "tango",
+  "bidnet",
+  "serper",
+  "tavily",
+  "exa",
+]);
 
 export default function OpportunitiesDashboard() {
   const { toast } = useToast();
@@ -106,9 +125,7 @@ export default function OpportunitiesDashboard() {
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
-  // grantsGov + usaSpending are free (no key) and fully implemented — enable them by
-  // default so a stock fetch pulls federal grants and expiring/re-compete contracts too.
-  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "grantsGov", "usaSpending", "serper", "tavily", "publicPortalProviders", "eunaBonfire"]);
+  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "publicPortalProviders", "eunaBonfire", "internationalPublicPortals"]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
 
@@ -386,70 +403,26 @@ export default function OpportunitiesDashboard() {
 
   const getSourceBadge = (source: string | null | undefined, name: string | null | undefined) => {
     const rawName = name || source || "manual";
-    // Normalize providerName keys to display labels
-    const providerLabelMap: Record<string, string> = {
-      statePortals: "State Portals",
-      samGov: "SAM.gov",
-      sam_gov: "SAM.gov",
-      serper: "Serper",
-      tavily: "Tavily",
-      gemini: "Gemini",
-      exa: "Exa",
-      firecrawl: "Firecrawl",
-      manual: "Manual",
+    const providerMeta: Record<string, { label: string; classes: string }> = {
+      samGov: { label: "SAM.gov", classes: "bg-amber-500/10 text-amber-300 border-amber-500/20" },
+      sam_gov: { label: "SAM.gov", classes: "bg-amber-500/10 text-amber-300 border-amber-500/20" },
+      publicPortalProviders: { label: "U.S. Public Portals", classes: "bg-blue-500/10 text-blue-300 border-blue-500/20" },
+      statePortals: { label: "U.S. Public Portals", classes: "bg-blue-500/10 text-blue-300 border-blue-500/20" },
+      eunaBonfire: { label: "Euna Supplier Network", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },
+      internationalPublicPortals: { label: "International Portals", classes: "bg-violet-500/10 text-violet-300 border-violet-500/20" },
+      serper: { label: "Serper", classes: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" },
+      tavily: { label: "Tavily", classes: "bg-pink-500/10 text-pink-300 border-pink-500/20" },
+      exa: { label: "Exa", classes: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20" },
+      tango: { label: "Tango", classes: "bg-orange-500/10 text-orange-300 border-orange-500/20" },
+      bidnet: { label: "BidNet", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },
+      csv_import: { label: "CSV Import", classes: "bg-white/5 text-muted-foreground border-white/10" },
+      manual: { label: "Manual", classes: "bg-white/5 text-muted-foreground border-white/10" },
     };
-    if (providerLabelMap[rawName]) {
-      const colorMap: Record<string, string> = {
-        statePortals: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-        samGov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-        sam_gov: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-        serper: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-        tavily: "bg-pink-500/10 text-pink-300 border-pink-500/20",
-        gemini: "bg-purple-500/10 text-purple-300 border-purple-500/20",
-        exa: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
-        firecrawl: "bg-orange-500/10 text-orange-300 border-orange-500/20",
-        manual: "bg-slate-500/10 text-slate-300 border-slate-500/20",
-      };
-      return (
-        <Badge className={"text-[10px] font-medium border " + (colorMap[rawName] ?? "bg-slate-500/10 text-slate-300 border-slate-500/20")}>
-          {providerLabelMap[rawName]}
-        </Badge>
-      );
-    }
-    const displayNames: Record<string, string> = {
-      sam_gov: "SAM.gov",
-      samGov: "SAM.gov",
-      statePortals: "State Portals",
-      serper: "Serper",
-      tavily: "Tavily",
-      exa: "Exa",
-      you: "You.com",
-      langsearch: "Langsearch",
-      websearch: "WebSearch",
-      tango: "Tango",
-      bidnet: "BidNet",
-      csv_import: "CSV Import",
-      manual: "Manual",
-      gemini: "Gemini AI",
+    const meta = providerMeta[rawName] ?? {
+      label: rawName.charAt(0).toUpperCase() + rawName.slice(1),
+      classes: "bg-white/5 text-muted-foreground border-white/10",
     };
-    const displayName = displayNames[rawName] ?? (rawName.charAt(0).toUpperCase() + rawName.slice(1));
-    const colors: Record<string, string> = {
-      sam_gov: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-      samGov: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-      statePortals: "bg-violet-500/10 text-violet-300 border-violet-500/20",
-      serper: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-      tavily: "bg-pink-500/10 text-pink-300 border-pink-500/20",
-      exa: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
-      you: "bg-sky-500/10 text-sky-300 border-sky-500/20",
-      langsearch: "bg-purple-500/10 text-purple-300 border-purple-500/20",
-      websearch: "bg-teal-500/10 text-teal-300 border-teal-500/20",
-      tango: "bg-orange-500/10 text-orange-300 border-orange-500/20",
-      bidnet: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
-      csv_import: "bg-white/5 text-muted-foreground border-white/10",
-      manual: "bg-white/5 text-muted-foreground border-white/10",
-    };
-
-    return <Badge variant="outline" className={`font-normal ${colors[rawName] || "bg-white/5 text-muted-foreground border-white/10"}`}>{displayName}</Badge>;
+    return <Badge variant="outline" className={`font-normal ${meta.classes}`}>{meta.label}</Badge>;
   };
 
   const getOpportunityUrl = (opp: any) => opp.samUrl || opp.sourceUrl || opp.url || null;
@@ -492,7 +465,7 @@ export default function OpportunitiesDashboard() {
           >
             All
           </button>
-          {providersData?.providers.map((p) => {
+          {providersData?.providers.filter((p) => OPPORTUNITY_PROVIDER_NAMES.has(p.name)).map((p) => {
             const isStub = p.name === "bidnet";
             const dotClass = isStub ? "bg-amber-500/40 border border-amber-500/40" : p.status?.configured ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" : "bg-white/20";
             const providerKey = p.name === "sam_gov" ? "samGov" : p.name;
@@ -796,29 +769,36 @@ export default function OpportunitiesDashboard() {
           <form onSubmit={handleFetchSubmit}>
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Fetch Intelligence</DialogTitle>
-              <DialogDescription className="text-muted-foreground">Choose sources and enter a search-style query for this intelligence run.</DialogDescription>
+              <DialogDescription className="text-muted-foreground">Choose official opportunity sources and, when needed, optional web-discovery services.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-5 py-6">
               <div className="grid gap-2">
-                <Label className="text-xs uppercase tracking-widest text-muted-foreground">Data Sources</Label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[340px] overflow-y-auto pr-1">
-                  {FETCH_PROVIDER_OPTIONS.map(({ key, label, desc, stub }) => {
-                    const checked = fetchProviders.includes(key);
-                    return (
-                      <button key={key} type="button" disabled={stub} onClick={() => !stub && toggleFetchProvider(key)} className={`flex items-start gap-2.5 p-2.5 rounded-lg border text-left transition-colors ${stub ? "border-white/5 bg-white/2 opacity-40 cursor-not-allowed" : checked ? "border-primary/40 bg-primary/10 cursor-pointer" : "border-white/10 bg-white/3 hover:bg-white/5 cursor-pointer"}`}>
-                        <div className={`mt-0.5 w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${stub ? "border-white/20" : checked ? "border-primary bg-primary" : "border-white/20"}`}>
-                          {checked && !stub && <svg className="w-2 h-2 text-white" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium leading-none">{label}</span>
-                            {stub && <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-500/70 font-medium"><Clock className="w-2.5 h-2.5" /> Pending</span>}
-                          </div>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{desc}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <Label className="text-xs uppercase tracking-widest text-muted-foreground">Sources</Label>
+                <div className="grid gap-4 max-h-[390px] overflow-y-auto pr-1">
+                  {FETCH_PROVIDER_GROUPS.map((group) => (
+                    <div key={group.id} className="grid gap-2">
+                      <div className="text-[10px] uppercase tracking-wider text-white/45">{group.label}</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {group.options.map(({ key, label, desc, stub }) => {
+                          const checked = fetchProviders.includes(key);
+                          return (
+                            <button key={key} type="button" disabled={stub} onClick={() => !stub && toggleFetchProvider(key)} className={`flex items-start gap-2.5 p-2.5 rounded-lg border text-left transition-colors ${stub ? "border-white/5 bg-white/2 opacity-40 cursor-not-allowed" : checked ? "border-primary/40 bg-primary/10 cursor-pointer" : "border-white/10 bg-white/3 hover:bg-white/5 cursor-pointer"}`}>
+                              <div className={`mt-0.5 w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${stub ? "border-white/20" : checked ? "border-primary bg-primary" : "border-white/20"}`}>
+                                {checked && !stub && <svg className="w-2 h-2 text-white" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium leading-none">{label}</span>
+                                  {stub && <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-500/70 font-medium"><Clock className="w-2.5 h-2.5" /> Pending</span>}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{desc}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 {fetchProviders.length === 0 && <p className="text-[11px] text-amber-400">Select at least one source to fetch from.</p>}
               </div>

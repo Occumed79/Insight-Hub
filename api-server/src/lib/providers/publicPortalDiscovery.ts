@@ -1,11 +1,5 @@
 import { createHash } from "crypto";
-import type {
-  DataSourceProvider,
-  FetchOptions,
-  NormalizedOpportunity,
-  ProviderFetchResult,
-  ProviderStatus,
-} from "./types";
+import type { NormalizedOpportunity } from "./types";
 import { serperProvider } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import {
@@ -30,7 +24,7 @@ const MAX_DOMAIN_EXPRESSION_LENGTH = 1_250;
 
 type PortalGroup = "state" | "district";
 
-export interface StatePortal {
+export interface PublicPortalDiscoverySource {
   domain: string;
   name: string;
   state: string;
@@ -43,7 +37,7 @@ export interface StatePortal {
   occumedServiceCategories: string[];
 }
 
-export interface StatePortalPlannedQuery {
+export interface PublicPortalPlannedQuery {
   query: string;
   portalIds: string[];
   domains: string[];
@@ -51,7 +45,7 @@ export interface StatePortalPlannedQuery {
   fitCounts: Record<string, number>;
 }
 
-export interface StatePortalSearchPlanDiagnostics {
+export interface PublicPortalSearchPlanDiagnostics {
   eligiblePortalCount: number;
   selectedPortalCount: number;
   deferredPortalCount: number;
@@ -66,13 +60,13 @@ export interface StatePortalSearchPlanDiagnostics {
   countsByFitInCompletePlan: Record<string, number>;
 }
 
-export interface StatePortalSearchPlan {
-  selectedQueries: StatePortalPlannedQuery[];
-  allQueries: StatePortalPlannedQuery[];
-  diagnostics: StatePortalSearchPlanDiagnostics;
+export interface PublicPortalSearchPlan {
+  selectedQueries: PublicPortalPlannedQuery[];
+  allQueries: PublicPortalPlannedQuery[];
+  diagnostics: PublicPortalSearchPlanDiagnostics;
 }
 
-function toStatePortal(portal: EnrichedDirectRfpPortal): StatePortal | null {
+function toPublicPortalDiscoverySource(portal: EnrichedDirectRfpPortal): PublicPortalDiscoverySource | null {
   if (portal.country !== "US") return null;
   if (portal.level !== "state" && portal.level !== "district") return null;
   return {
@@ -89,13 +83,13 @@ function toStatePortal(portal: EnrichedDirectRfpPortal): StatePortal | null {
   };
 }
 
-export const STATE_PORTALS: StatePortal[] =
+export const PUBLIC_PORTAL_DISCOVERY_SOURCES: PublicPortalDiscoverySource[] =
   enrichedDirectRfpPortalsForOccuMedSearch({ includeTier3: true })
-    .map(toStatePortal)
-    .filter((portal): portal is StatePortal => Boolean(portal));
+    .map(toPublicPortalDiscoverySource)
+    .filter((portal): portal is PublicPortalDiscoverySource => Boolean(portal));
 
-function eligiblePortals(includeTier3 = true): StatePortal[] {
-  return STATE_PORTALS.filter((portal) => includeTier3 || portal.tier !== 3);
+function eligiblePortals(includeTier3 = true): PublicPortalDiscoverySource[] {
+  return PUBLIC_PORTAL_DISCOVERY_SOURCES.filter((portal) => includeTier3 || portal.tier !== 3);
 }
 
 function hasStaleYearOnly(text: string): boolean {
@@ -145,7 +139,7 @@ function isUsefulPortalResult(
   return !classification.rejected;
 }
 
-function countByFit(portals: StatePortal[]): Record<string, number> {
+function countByFit(portals: PublicPortalDiscoverySource[]): Record<string, number> {
   return portals.reduce<Record<string, number>>((counts, portal) => {
     counts[portal.occumedFit] = (counts[portal.occumedFit] ?? 0) + 1;
     return counts;
@@ -169,9 +163,9 @@ function defaultRotationKey(): string {
   return new Date().toISOString().slice(0, 13);
 }
 
-function buildDomainGroups(portals: StatePortal[]): StatePortal[][] {
-  const groups: StatePortal[][] = [];
-  let current: StatePortal[] = [];
+function buildDomainGroups(portals: PublicPortalDiscoverySource[]): PublicPortalDiscoverySource[][] {
+  const groups: PublicPortalDiscoverySource[][] = [];
+  let current: PublicPortalDiscoverySource[] = [];
 
   for (const portal of portals) {
     const candidate = [...current, portal];
@@ -194,11 +188,11 @@ function buildDomainGroups(portals: StatePortal[]): StatePortal[][] {
 }
 
 function makePlannedQuery(
-  portals: StatePortal[],
+  portals: PublicPortalDiscoverySource[],
   queryBundle: string,
   queryBundleIndex: number,
   keywords?: string,
-): StatePortalPlannedQuery {
+): PublicPortalPlannedQuery {
   const domainExpression = portals
     .map((portal) => `site:${portal.domain}`)
     .join(" OR ");
@@ -214,7 +208,7 @@ function makePlannedQuery(
   };
 }
 
-export function buildStatePortalSearchPlan(
+export function buildPublicPortalSearchPlan(
   options: {
     keywords?: string;
     includeTier3?: boolean;
@@ -222,7 +216,7 @@ export function buildStatePortalSearchPlan(
     executionBudget?: number;
     rotationKey?: string;
   } = {},
-): StatePortalSearchPlan {
+): PublicPortalSearchPlan {
   const portals = eligiblePortals(options.includeTier3 ?? true);
   const domainGroups = buildDomainGroups(portals);
   const queryBundles = buildOccuMedSearchQueries(CURRENT_YEAR);
@@ -277,16 +271,16 @@ export function buildStatePortalSearchPlan(
   };
 }
 
-export function getStatePortalSearchPlanDiagnostics(
-  options: Parameters<typeof buildStatePortalSearchPlan>[0] = {},
-): StatePortalSearchPlanDiagnostics {
-  return buildStatePortalSearchPlan(options).diagnostics;
+export function getPublicPortalSearchPlanDiagnostics(
+  options: Parameters<typeof buildPublicPortalSearchPlan>[0] = {},
+): PublicPortalSearchPlanDiagnostics {
+  return buildPublicPortalSearchPlan(options).diagnostics;
 }
 
 function normalizeResultKey(title: string, url: string): string {
   try {
     const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`.toLowerCase();
+    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}${parsed.search}`.toLowerCase();
   } catch {
     return `${title}|${url}`.toLowerCase();
   }
@@ -316,11 +310,11 @@ function resultToOpportunity(
       .includes(portal.domain.toLowerCase()),
   );
   const portalName =
-    directPortal?.name ?? matchedPortal?.name ?? "Official State RFP Portal";
+    directPortal?.name ?? matchedPortal?.name ?? "Official Public RFP Portal";
   const portalState = directPortal?.state ?? matchedPortal?.state ?? "";
 
   return {
-    externalId: `direct-state-${urlHash}`,
+    externalId: `public-portal-${urlHash}`,
     title: parsed?.title ?? title,
     agency:
       parsed?.agency ??
@@ -337,9 +331,9 @@ function resultToOpportunity(
     solicitationNumber: parsed?.solicitationNumber,
     location: parsed?.location ?? parsed?.state,
     sourceUrl: parsed?.sourceUrl ?? url,
-    source: "statePortals" as const,
+    source: "publicPortalProviders" as const,
     rawData: {
-      providerName: "direct_official_state_rfp_portals",
+      providerName: "direct_official_public_rfp_portals",
       portalName,
       portalState,
       portalGroup: matchedPortal?.group ?? directPortal?.level ?? "unknown",
@@ -364,54 +358,9 @@ function resultToOpportunity(
   };
 }
 
-export class StatePortalsProvider implements DataSourceProvider {
-  readonly name = "statePortals" as const;
-
+export class PublicPortalDiscovery {
   async isConfigured(): Promise<boolean> {
     return serperProvider.isConfigured();
-  }
-
-  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const configured = await this.isConfigured();
-    if (!configured) {
-      return {
-        records: [],
-        total: 0,
-        errors: [
-          "Serper API key not configured; official portal discovery is disabled.",
-        ],
-      };
-    }
-
-    const extended = options as FetchOptions & {
-      includeTier3?: boolean;
-      fullCoverage?: boolean;
-      executionBudget?: number;
-      rotationKey?: string;
-    };
-    const searchResults = await this.search({
-      keywords: options.keywords,
-      includeTier3: extended.includeTier3,
-      fullCoverage: extended.fullCoverage,
-      executionBudget: extended.executionBudget,
-      rotationKey: extended.rotationKey,
-    });
-    const records = this.toOpportunities(searchResults).slice(
-      0,
-      options.limit ?? DEFAULT_RESULT_LIMIT,
-    );
-
-    return { records, total: records.length, errors: [] };
-  }
-
-  async getStatus(): Promise<ProviderStatus> {
-    const configured = await this.isConfigured();
-    return {
-      name: "statePortals" as any,
-      configured,
-      healthy: configured,
-      recordCount: eligiblePortals(true).length,
-    };
   }
 
   async search(
@@ -425,7 +374,7 @@ export class StatePortalsProvider implements DataSourceProvider {
   ): Promise<
     { title: string; url: string; snippet: string; portal: string }[]
   > {
-    const plan = buildStatePortalSearchPlan(options);
+    const plan = buildPublicPortalSearchPlan(options);
     if (plan.selectedQueries.length === 0) return [];
 
     const results = await serperProvider.searchMultiple(
@@ -442,7 +391,7 @@ export class StatePortalsProvider implements DataSourceProvider {
           title: result.title,
           url: result.link,
           snippet: result.snippet,
-          portal: directPortal?.name ?? "Official State RFP Portal",
+          portal: directPortal?.name ?? "Official Public RFP Portal",
         };
       })
       .filter((result) =>
@@ -496,4 +445,4 @@ export class StatePortalsProvider implements DataSourceProvider {
   }
 }
 
-export const statePortalsProvider = new StatePortalsProvider();
+export const publicPortalDiscovery = new PublicPortalDiscovery();

@@ -313,7 +313,16 @@ router.get("/opportunities", async (req, res) => {
     }
 
     if (source) {
-      conditions.push(ilike(opportunitiesTable.providerName, source));
+      if (source === "publicPortalProviders") {
+        conditions.push(
+          or(
+            ilike(opportunitiesTable.providerName, "publicPortalProviders"),
+            ilike(opportunitiesTable.providerName, "statePortals"),
+          )!,
+        );
+      } else {
+        conditions.push(ilike(opportunitiesTable.providerName, source));
+      }
     }
 
     if (dateCutoff) {
@@ -400,6 +409,9 @@ router.post("/opportunities/fetch", async (req, res) => {
       eunaBonfire: "eunaBonfire",
       euna_bonfire: "eunaBonfire",
       eunaSupplierNetwork: "eunaBonfire",
+      internationalPublicPortals: "internationalPublicPortals",
+      international_public_portals: "internationalPublicPortals",
+      internationalOpportunities: "internationalPublicPortals",
       usaSpending: "usaSpending",
       usa_spending: "usaSpending",
       gemini: "gemini",

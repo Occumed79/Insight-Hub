@@ -8,12 +8,12 @@ export type ProviderName =
   | "nyScr"
   | "publicPortalProviders"
   | "eunaBonfire"
+  | "internationalPublicPortals"
   | "gemini"
   | "serper"
   | "tavily"
   | "tango"
   | "bidnet"
-  | "statePortals"
   | "firecrawl"
   | "openrouter"
   | "groq"
@@ -108,6 +108,7 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Direct parser for the official New York State Contract Reporter public open-opportunity listing. No API key required."),
   publicPortalProviders: provider("publicPortalProviders", "Public Portal Providers", "procurement", "direct_source", [], ["Verified public procurement source catalog", "Direct parser and public-page extraction", "Serper official-domain discovery fallback", "Existing Texas ESBD and NYSCR parsers", "Cross-path deduplication", "Per-domain rate limiting"], "live", "Unified public procurement provider: direct parsing first, then Serper discovery across the same official portal catalog."),
   eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Standalone Euna/Bonfire opportunity discovery", "Public agency portal results", "Occu-Med relevance filtering", "Cross-provider deduplication"], "live", "Separate Euna Supplier Network / Bonfire provider that discovers public opportunity pages through the configured Serper key. No Euna credentials are stored."),
+  internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Canada, United Kingdom, Europe, and multilateral portals", "Official-domain opportunity discovery", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "live", "Separate international opportunity provider covering the official portals in the International Opportunities directory. It uses the configured Serper key and does not automate supplier logins."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
   tavily: provider("tavily", "Tavily", "search", "research_analysis", [secretField("tavilyApiKey", "TAVILY_API_KEY")], ["Research API", "RFP discovery", "Market intelligence"], "partial"),
@@ -119,7 +120,6 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
     ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["State and local bids"], "partial"),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "BidNet API base URL", dbKey: "bidnetBaseUrl", envKey: "BIDNET_BASE_URL" }],
   },
-  statePortals: provider("statePortals", "State / Local Procurement Sources", "procurement", "web_discovery", [], ["State procurement portals", "County bid sources", "City and municipal portals", "University bid portals"], "live", "Curated public procurement portal discovery controlled by Render feature flags."),
   firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),
   openrouter: {
     ...provider("openrouter", "OpenRouter", "ai", "hybrid", [secretField("openrouterApiKey", "OPENROUTER_API_KEY")], ["AI model routing", "Extraction", "Scoring"], "partial"),
@@ -145,7 +145,10 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   you: provider("you", "You.com", "search", "web_discovery", [secretField("youApiKey", "YOU_API_KEY")], ["Web search", "Opportunity sourcing"], "partial"),
   langsearch: provider("langsearch", "Langsearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing"], "partial"),
   websearch: provider("websearch", "WebSearch API", "search", "web_discovery", [secretField("websearchApiKey", "WEBSEARCH_API_KEY")], ["Broad web search", "Opportunity sourcing"], "partial"),
-  grantsGov: provider("grantsGov", "Grants.gov", "primary", "direct_source", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
+  grantsGov: {
+    ...provider("grantsGov", "Grants.gov", "primary", "research_analysis", [], ["Federal grants search", "Health program funding discovery"], "live", "Public federal grants database — no API key required."),
+    notes: "Funding and program intelligence only. Grants.gov is excluded from RFP opportunity ingestion and cards.",
+  },
 
   cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "active"),
   cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Semantic reranking", "Opportunity relevance scoring"], "active"),

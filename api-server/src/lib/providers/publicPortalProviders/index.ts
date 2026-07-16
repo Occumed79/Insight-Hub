@@ -1,6 +1,6 @@
 import { nyScrProvider } from "../nyScr";
 import { texasEsbdProvider } from "../texasEsbd";
-import { statePortalsProvider } from "../statePortals";
+import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
 import { extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
@@ -17,6 +17,9 @@ export interface PublicPortalSourceRunStatus {
 
 const DEFAULT_LIMIT = 100;
 const MIN_DOMAIN_INTERVAL_MS = 1_000;
+const DEFAULT_SOURCE_TIMEOUT_MS = 25_000;
+const DEFAULT_RUN_TIMEOUT_MS = 90_000;
+const DEFAULT_CONCURRENCY = 4;
 const lastDomainFetchAt = new Map<string, number>();
 const sourceStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
@@ -24,6 +27,12 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = {
   "tx-esbd": texasEsbdProvider,
   "ny-contract-reporter": nyScrProvider,
 };
+
+function positiveIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
 
 function isOccuMedMatch(record: NormalizedOpportunity): boolean {
   return Boolean(record.rawData?.occuMedMatched);
@@ -54,16 +63,40 @@ async function waitForDomainRateLimit(domain: string): Promise<void> {
   lastDomainFetchAt.set(domain, Date.now());
 }
 
-async function fetchHtml(source: PublicPortalSource): Promise<string> {
+async function withTimeout<T>(task: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function fetchHtml(source: PublicPortalSource, timeoutMs: number): Promise<string> {
   await waitForDomainRateLimit(source.domain);
-  const response = await fetch(source.sourceUrl, {
-    headers: {
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "user-agent": "OccuMed-InsightHub/1.0 public procurement catalog crawler (+https://www.occumed.com)",
-    },
-  });
-  if (!response.ok) throw new Error(`${source.id} returned HTTP ${response.status}`);
-  return response.text();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(source.sourceUrl, {
+      signal: controller.signal,
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "user-agent": "OccuMed-InsightHub/1.0 public procurement catalog crawler (+https://www.occumed.com)",
+      },
+    });
+    if (!response.ok) throw new Error(`${source.id} returned HTTP ${response.status}`);
+    return response.text();
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`${source.id} timed out after ${timeoutMs}ms`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function runExistingParser(source: PublicPortalSource, options: FetchOptions): Promise<NormalizedOpportunity[]> {
@@ -72,16 +105,37 @@ async function runExistingParser(source: PublicPortalSource, options: FetchOptio
   throw new Error(`No existing parser is registered for public portal source ${source.id}`);
 }
 
-async function runSource(source: PublicPortalSource, options: FetchOptions): Promise<NormalizedOpportunity[]> {
+async function runSource(source: PublicPortalSource, options: FetchOptions, timeoutMs: number): Promise<NormalizedOpportunity[]> {
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
   if (SOURCE_ADAPTERS[source.id]) return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "existing_parser") return runExistingParser(source, { ...options, limit });
-  if (source.scraperType === "static_html") return extractStaticHtmlOpportunities(await fetchHtml(source), source, limit);
-  if (source.scraperType === "pdf_links") return extractPdfLinkOpportunities(await fetchHtml(source), source, limit);
+  if (source.scraperType === "static_html") return extractStaticHtmlOpportunities(await fetchHtml(source, timeoutMs), source, limit);
+  if (source.scraperType === "pdf_links") return extractPdfLinkOpportunities(await fetchHtml(source, timeoutMs), source, limit);
   if (source.scraperType === "scrapy") throw new Error(`Scrapy source ${source.id} is reserved until a real spider is added`);
   if (source.scraperType === "playwright_public") throw new Error(`Playwright source ${source.id} is reserved until a real public-page runner is added`);
   if (source.scraperType === "rss" || source.scraperType === "public_json") throw new Error(`${source.scraperType} source ${source.id} needs a concrete adapter before it can run`);
   return [];
+}
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), Math.max(items.length, 1));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= items.length) return;
+        const item = items[index];
+        if (item === undefined) return;
+        await worker(item, index);
+      }
+    }),
+  );
 }
 
 export class PublicPortalProvidersProvider implements DataSourceProvider {
@@ -101,19 +155,37 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
     );
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
+    const sourceTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_SOURCE_TIMEOUT_MS", DEFAULT_SOURCE_TIMEOUT_MS, 5_000, 120_000);
+    const runTimeoutMs = positiveIntegerEnv("PUBLIC_PORTAL_RUN_TIMEOUT_MS", DEFAULT_RUN_TIMEOUT_MS, 15_000, 300_000);
+    const concurrency = positiveIntegerEnv("PUBLIC_PORTAL_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 10);
+    const runDeadlineAt = Date.now() + runTimeoutMs;
+    const resultLimit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
 
-    for (const source of enabledSources) {
-      const validationErrors = validatePublicPortalSource(source);
+    await runWithConcurrency(enabledSources, concurrency, async (source) => {
       const lastCheckedAt = new Date();
+      const validationErrors = validatePublicPortalSource(source);
       if (validationErrors.length) {
         const reason = validationErrors.join("; ");
         errors.push(`${source.id}: ${reason}`);
         sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: lastCheckedAt, lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
-        continue;
+        return;
       }
 
+      const remainingMs = runDeadlineAt - Date.now();
+      if (remainingMs <= 0) {
+        const reason = "provider run deadline reached before this source started";
+        errors.push(`${source.id}: ${reason}`);
+        sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: lastCheckedAt, lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
+        return;
+      }
+
+      const effectiveTimeout = Math.min(sourceTimeoutMs, remainingMs);
       try {
-        const sourceRecords = await runSource(source, options);
+        const sourceRecords = await withTimeout(
+          () => runSource(source, options, effectiveTimeout),
+          effectiveTimeout,
+          source.id,
+        );
         records.push(...sourceRecords);
         sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastSuccessAt: new Date(), resultCount: sourceRecords.length, matchedCount: sourceRecords.filter(isOccuMedMatch).length });
       } catch (error) {
@@ -121,17 +193,21 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
         errors.push(`${source.id}: ${reason}`);
         sourceStatuses.set(source.id, { sourceId: source.id, lastCheckedAt, lastFailureAt: new Date(), lastFailureReason: reason, resultCount: 0, matchedCount: 0 });
       }
-    }
+    });
 
-    // Second pass: search the same official portal catalog through Serper.
-    // This recovers opportunity pages that a portal landing-page parser misses,
-    // while keeping direct parsing authoritative and avoiding duplicate records.
-    if (await statePortalsProvider.isConfigured()) {
+    const remainingForDiscovery = runDeadlineAt - Date.now();
+    if (remainingForDiscovery <= 0) {
+      errors.push("serper-official-portal-discovery: skipped because the provider run deadline was reached");
+    } else if (await publicPortalDiscovery.isConfigured()) {
       try {
-        const discoveredPages = await statePortalsProvider.search({ keywords: options.keywords });
+        const discoveredPages = await withTimeout(
+          () => publicPortalDiscovery.search({ keywords: options.keywords }),
+          Math.min(sourceTimeoutMs, remainingForDiscovery),
+          "serper-official-portal-discovery",
+        );
         const sourceById = new Map(this.sources.map((source) => [source.id, source]));
         const seen = new Set(records.map(opportunityKey));
-        const discoveredRecords = statePortalsProvider.toOpportunities(discoveredPages);
+        const discoveredRecords = publicPortalDiscovery.toOpportunities(discoveredPages);
 
         for (const discovered of discoveredRecords) {
           const sourceId = sourceIdForRecord(discovered);
@@ -182,7 +258,8 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
       }
     }
 
-    return { records, total: records.length, errors };
+    const limitedRecords = records.slice(0, resultLimit);
+    return { records: limitedRecords, total: limitedRecords.length, errors };
   }
 
   async getStatus(): Promise<ProviderStatus> {

@@ -14,9 +14,9 @@ import { randomUUID } from "crypto";
 import { samGovProvider } from "../providers/samGov";
 import { publicPortalProvidersProvider } from "../providers/publicPortalProviders";
 import { eunaBonfireProvider } from "../providers/eunaBonfire";
+import { internationalPublicPortalsProvider } from "../providers/internationalPublicPortals";
 import { tangoProvider } from "../providers/tango";
 import { bidnetProvider } from "../providers/bidnet";
-import { grantsGovProvider } from "../providers/grantsGov";
 import { normalizedToDbRecord } from "./normalization";
 import { scoreOpportunities } from "./scoring";
 import { webIntelligenceFetch } from "./webIntelligence";
@@ -43,7 +43,7 @@ export interface UnifiedFetchResult {
   }[];
 }
 
-const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister"]);
+const INTEL_ONLY_PROVIDERS = new Set(["usaSpending", "federalRegister", "grantsGov"]);
 const PROVIDER_ALIASES = new Map([["statePortals", "publicPortalProviders"]]);
 
 export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
@@ -93,7 +93,7 @@ export async function unifiedFetch(options: UnifiedFetchOptions = {}): Promise<U
   await runProvider("samGov", samGovProvider);
   await runProvider("publicPortalProviders", publicPortalProvidersProvider);
   await runProvider("eunaBonfire", eunaBonfireProvider);
-  await runProvider("grantsGov", grantsGovProvider);
+  await runProvider("internationalPublicPortals", internationalPublicPortalsProvider);
   await runProvider("tango", tangoProvider);
 
   // ── Direct Stub Providers (BidNet) ───────────────────────────────────────

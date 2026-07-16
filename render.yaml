@@ -24,7 +24,13 @@ services:
       - key: INGESTION_DATE_RANGE_DAYS
         value: "30"
       - key: INGESTION_PROVIDERS
-        value: samGov,grantsGov,publicPortalProviders,eunaBonfire,serper,tavily
+        value: samGov,publicPortalProviders,eunaBonfire,internationalPublicPortals
+      - key: PUBLIC_PORTAL_CONCURRENCY
+        value: "4"
+      - key: PUBLIC_PORTAL_SOURCE_TIMEOUT_MS
+        value: "25000"
+      - key: PUBLIC_PORTAL_RUN_TIMEOUT_MS
+        value: "90000"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: GEMINI_API_KEY

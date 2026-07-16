@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  buildStatePortalSearchPlan,
-  STATE_PORTALS,
-} from "../statePortals";
+  buildPublicPortalSearchPlan,
+  PUBLIC_PORTAL_DISCOVERY_SOURCES,
+} from "../publicPortalDiscovery";
 
-describe("state portal query planner", () => {
+describe("public portal discovery query planner", () => {
   it("keeps every eligible portal in the complete plan", () => {
-    const plan = buildStatePortalSearchPlan({
+    const plan = buildPublicPortalSearchPlan({
       includeTier3: true,
       fullCoverage: true,
       rotationKey: "coverage-test",
@@ -15,7 +15,9 @@ describe("state portal query planner", () => {
     const plannedIds = new Set(
       plan.allQueries.flatMap((query) => query.portalIds),
     );
-    const eligibleIds = new Set(STATE_PORTALS.map((portal) => portal.sourceId));
+    const eligibleIds = new Set(
+      PUBLIC_PORTAL_DISCOVERY_SOURCES.map((portal) => portal.sourceId),
+    );
 
     assert.equal(plan.diagnostics.eligiblePortalCount, eligibleIds.size);
     assert.equal(plan.diagnostics.deferredPortalCount, 0);
@@ -24,12 +26,12 @@ describe("state portal query planner", () => {
   });
 
   it("uses a finite rotating execution budget without imposing a source cap", () => {
-    const first = buildStatePortalSearchPlan({
+    const first = buildPublicPortalSearchPlan({
       includeTier3: true,
       executionBudget: 6,
       rotationKey: "2026-07-12T01",
     });
-    const second = buildStatePortalSearchPlan({
+    const second = buildPublicPortalSearchPlan({
       includeTier3: true,
       executionBudget: 6,
       rotationKey: "2026-07-12T02",
@@ -52,7 +54,7 @@ describe("state portal query planner", () => {
   });
 
   it("supplements ontology queries with user keywords", () => {
-    const plan = buildStatePortalSearchPlan({
+    const plan = buildPublicPortalSearchPlan({
       includeTier3: true,
       executionBudget: 1,
       keywords: "Fresno County",
@@ -64,7 +66,7 @@ describe("state portal query planner", () => {
   });
 
   it("batches domains into bounded search expressions", () => {
-    const plan = buildStatePortalSearchPlan({
+    const plan = buildPublicPortalSearchPlan({
       includeTier3: true,
       fullCoverage: true,
       rotationKey: "length-test",
