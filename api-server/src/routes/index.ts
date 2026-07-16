@@ -15,13 +15,14 @@ import clientContactsRouter from "./client-contacts";
 import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
-import sourceMonitorRouter from "./source-monitor";
 import searchRouter from "./search";
+import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(opportunitySummaryRouter);
+router.use(rfpProviderBoundaryRouter);
 router.use(opportunitiesRouter);
 router.use(opportunityFeedbackRouter);
 router.use(settingsRouter);
@@ -36,7 +37,6 @@ router.use(clientContactsRouter);
 router.use(federalIntelRouter);
 router.use(stateAgenciesRouter);
 router.use(intelligenceFeedRouter);
-router.use(sourceMonitorRouter);
 router.use(searchRouter);
 
 export default router;
