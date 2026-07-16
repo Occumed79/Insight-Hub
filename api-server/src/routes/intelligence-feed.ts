@@ -1,11 +1,10 @@
 /**
  * Intelligence Feed Routes
  *
- * Provides list, feedback, signals, and source-backed fetch endpoints.
- * Grants.gov is ingested as federal funding intelligence. State intelligence is
- * collected from official state procurement portals and official government
- * pages through the configured Serper connection. Neither path writes to the
- * RFP Opportunities feed.
+ * Federal intelligence combines Grants.gov funding signals with USAJOBS
+ * workforce-hiring signals. State intelligence is collected from official state
+ * procurement portals and official government pages through Serper. None of
+ * these paths write to the RFP Opportunities feed.
  */
 
 import { Router } from "express";
@@ -26,6 +25,10 @@ import {
   STATE_NAMES,
   type StateIntelligenceRecord,
 } from "../lib/intelligence/stateIntelligence";
+import {
+  fetchUsaJobsWorkforceIntelligence,
+  type UsaJobsWorkforceRecord,
+} from "../lib/intelligence/usaJobsIntelligence";
 
 const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -239,6 +242,21 @@ function grantToFeedRecord(record: NormalizedOpportunity, now: Date): FeedRecord
   };
 }
 
+function usaJobsToFeedRecord(record: UsaJobsWorkforceRecord): FeedRecordInput {
+  return {
+    externalId: record.externalId,
+    signalType: "workforce_hiring",
+    source: "usajobs",
+    agency: record.agency,
+    title: record.title,
+    summary: record.summary,
+    sourceUrl: record.sourceUrl,
+    publishedDate: record.publishedDate,
+    relevanceScore: record.relevanceScore,
+    rawJson: JSON.stringify(record.rawData),
+  };
+}
+
 function stateToFeedRecord(record: StateIntelligenceRecord): FeedRecordInput {
   return {
     externalId: record.externalId,
@@ -373,28 +391,53 @@ router.post("/intel-feed/fetch", async (req, res) => {
     const range = normalizedDateRange(dateRange);
 
     if (scope === "federal") {
-      const fetchResult = await grantsGovProvider.fetch({
-        keywords,
-        dateRange: range,
-        limit: 250,
-      });
-      const records = fetchResult.records.filter((record) =>
+      const [grantResult, workforceResult] = await Promise.all([
+        grantsGovProvider.fetch({
+          keywords,
+          dateRange: range,
+          limit: 250,
+        }),
+        fetchUsaJobsWorkforceIntelligence({
+          keywords,
+          dateRange: range,
+          limit: 150,
+        }),
+      ]);
+
+      const grantRecords = grantResult.records.filter((record) =>
         isCurrentGrant(record, range, now),
       );
+      const feedRecords = [
+        ...grantRecords.map((record) => grantToFeedRecord(record, now)),
+        ...workforceResult.records.map(usaJobsToFeedRecord),
+      ];
       const counts = await upsertFeedRecords({
         scope: "federal",
         stateCode: null,
-        records: records.map((record) => grantToFeedRecord(record, now)),
+        records: feedRecords,
         now,
       });
 
       return res.json({
-        fetched: records.length,
+        fetched: feedRecords.length,
         ...counts,
         scope,
         stateCode: null,
-        sources: ["grants_gov"],
-        errors: fetchResult.errors,
+        sources: ["grants_gov", "usajobs"],
+        sourceResults: [
+          {
+            source: "grants_gov",
+            fetched: grantRecords.length,
+            errors: grantResult.errors,
+          },
+          {
+            source: "usajobs",
+            fetched: workforceResult.records.length,
+            configured: workforceResult.configured,
+            errors: workforceResult.errors,
+          },
+        ],
+        errors: [...grantResult.errors, ...workforceResult.errors],
       });
     }
 
