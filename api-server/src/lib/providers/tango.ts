@@ -12,6 +12,7 @@ import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderF
 import { resolveCredential } from "../config/providerConfig";
 
 const TANGO_DEFAULT_BASE = "https://tango.makegov.com/api/";
+const UNKNOWN_POSTED_DATE = new Date(0);
 
 interface TangoOpportunity {
   opportunity_id: string;
@@ -44,6 +45,12 @@ interface TangoListResponse {
   results: TangoOpportunity[];
 }
 
+function parsedDate(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 export class TangoProvider implements DataSourceProvider {
   readonly name = "tango" as const;
 
@@ -72,6 +79,7 @@ export class TangoProvider implements DataSourceProvider {
       if (pop.state) placeParts.push(pop.state);
       if (pop.country && pop.country !== "United States" && pop.country !== "USA") placeParts.push(pop.country);
     }
+    const postedDate = parsedDate(o.first_notice_date);
 
     return {
       externalId: o.opportunity_id,
@@ -81,15 +89,30 @@ export class TangoProvider implements DataSourceProvider {
       type: o.set_aside || "Unknown",
       status: o.active ? "active" : "archived",
       naicsCode: o.naics_code || undefined,
-      postedDate: o.first_notice_date ? new Date(o.first_notice_date) : new Date(),
-      responseDeadline: o.response_deadline ? new Date(o.response_deadline) : undefined,
+      postedDate: postedDate ?? UNKNOWN_POSTED_DATE,
+      responseDeadline: parsedDate(o.response_deadline),
       setAside: o.set_aside || undefined,
       placeOfPerformance: placeParts.length > 0 ? placeParts.join(", ") : undefined,
       description: o.description || undefined,
       solicitationNumber: o.solicitation_number || undefined,
       sourceUrl: o.sam_url || undefined,
       source: this.name,
-      rawData: o as unknown as Record<string, unknown>,
+      providerName: this.name,
+      rawData: {
+        providerName: "tango",
+        providerFamily: "direct_procurement_api",
+        providerType: "tango_makegov_api",
+        discoveryMethod: "direct_api",
+        sourceConfidence: "high",
+        dateUnknown: !postedDate,
+        tags: [
+          "direct-api",
+          "tango",
+          ...(!postedDate ? ["date-unknown"] : []),
+        ],
+        notes: "Collected directly from the configured Tango by MakeGov opportunity API.",
+        tango: o,
+      },
     };
   }
 
