@@ -11,6 +11,14 @@ import {
   jaggaerSciQuestProviders,
 } from "./jaggaerSciQuest";
 import {
+  BONFIRE_TENANTS,
+  bonfirePortalProviders,
+} from "./bonfirePortal";
+import {
+  IONWAVE_TENANTS,
+  ionWavePortalProviders,
+} from "./ionWavePortal";
+import {
   publicPortalProvidersProvider as catalogPortalProvider,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/index";
@@ -25,6 +33,8 @@ import {
 export * from "./publicPortalProviders/index";
 export * from "./bsoPortal";
 export * from "./jaggaerSciQuest";
+export * from "./bonfirePortal";
+export * from "./ionWavePortal";
 
 const BSO_SOURCES: PublicPortalSource[] = [
   {
@@ -100,8 +110,44 @@ const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS
     notes: "Dedicated public Jaggaer/SciQuest event-listing adapter.",
   }));
 
+const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({
+  id: tenant.portalId,
+  agencyName: tenant.buyerName,
+  agencyType: "county" as const,
+  state: tenant.state,
+  sourceUrl: tenant.listingUrl,
+  searchUrl: tenant.listingUrl,
+  domain: new URL(tenant.listingUrl).hostname,
+  portalPlatform: "Bonfire / Euna",
+  sourceLevel: "county" as const,
+  accessMode: "portal" as const,
+  scraperType: "existing_parser" as const,
+  enabled: true,
+  verificationStatus: "verified" as const,
+  notes: "Dedicated public Bonfire/Euna opportunity-listing adapter.",
+}));
+
+const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({
+  id: tenant.portalId,
+  agencyName: tenant.buyerName,
+  agencyType: "county" as const,
+  state: tenant.state,
+  sourceUrl: tenant.listingUrl,
+  searchUrl: tenant.listingUrl,
+  domain: new URL(tenant.listingUrl).hostname,
+  portalPlatform: "IonWave / Euna",
+  sourceLevel: "county" as const,
+  accessMode: "portal" as const,
+  scraperType: "existing_parser" as const,
+  enabled: true,
+  verificationStatus: "verified" as const,
+  notes: "Dedicated public IonWave/Euna bid-listing adapter.",
+}));
+
 const bsoStatuses = new Map<string, PublicPortalSourceRunStatus>();
 const jaggaerStatuses = new Map<string, PublicPortalSourceRunStatus>();
+const bonfireStatuses = new Map<string, PublicPortalSourceRunStatus>();
+const ionwaveStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
 async function hydrateDedicatedStatuses(): Promise<void> {
   const persisted = await loadPublicPortalHealth();
@@ -112,6 +158,14 @@ async function hydrateDedicatedStatuses(): Promise<void> {
   for (const source of JAGGAER_SOURCES) {
     const status = persisted.get(source.id);
     if (status) jaggaerStatuses.set(source.id, status);
+  }
+  for (const source of BONFIRE_SOURCES) {
+    const status = persisted.get(source.id);
+    if (status) bonfireStatuses.set(source.id, status);
+  }
+  for (const source of IONWAVE_SOURCES) {
+    const status = persisted.get(source.id);
+    if (status) ionwaveStatuses.set(source.id, status);
   }
 }
 
@@ -148,6 +202,8 @@ function mergedSources(): PublicPortalSource[] {
   const byId = new Map(catalogPortalProvider.getSources().map((source) => [source.id, source]));
   for (const source of BSO_SOURCES) byId.set(source.id, source);
   for (const source of JAGGAER_SOURCES) byId.set(source.id, source);
+  for (const source of BONFIRE_SOURCES) byId.set(source.id, source);
+  for (const source of IONWAVE_SOURCES) byId.set(source.id, source);
   return Array.from(byId.values());
 }
 
@@ -191,7 +247,9 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   async isConfigured(): Promise<boolean> {
     return (await catalogPortalProvider.isConfigured().catch(() => false))
       || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]))
-      || JAGGAER_SOURCES.some((source) => Boolean(jaggaerSciQuestProviders[source.id]));
+      || JAGGAER_SOURCES.some((source) => Boolean(jaggaerSciQuestProviders[source.id]))
+      || BONFIRE_SOURCES.some((source) => Boolean(bonfirePortalProviders[source.id]))
+      || IONWAVE_SOURCES.some((source) => Boolean(ionWavePortalProviders[source.id]));
   }
 
   getSources(): PublicPortalSource[] {
@@ -202,12 +260,17 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     const byId = new Map(catalogPortalProvider.getSourceStatuses().map((status) => [status.sourceId, status]));
     for (const status of bsoStatuses.values()) byId.set(status.sourceId, status);
     for (const status of jaggaerStatuses.values()) byId.set(status.sourceId, status);
+    for (const status of bonfireStatuses.values()) byId.set(status.sourceId, status);
+    for (const status of ionwaveStatuses.values()) byId.set(status.sourceId, status);
     return Array.from(byId.values()).sort((left, right) => right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime());
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const dedicatedSourceCount = Math.max(BSO_SOURCES.length + JAGGAER_SOURCES.length, 1);
+    const dedicatedSourceCount = Math.max(
+      BSO_SOURCES.length + JAGGAER_SOURCES.length + BONFIRE_SOURCES.length + IONWAVE_SOURCES.length,
+      1,
+    );
     const perDedicatedSource = Math.max(1, Math.ceil(limit / dedicatedSourceCount));
     const errors: string[] = [];
     try {
@@ -228,6 +291,20 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
         source,
         jaggaerSciQuestProviders[source.id],
         jaggaerStatuses,
+        options,
+        perDedicatedSource,
+      )),
+      ...BONFIRE_SOURCES.map((source) => runDedicatedSource(
+        source,
+        bonfirePortalProviders[source.id],
+        bonfireStatuses,
+        options,
+        perDedicatedSource,
+      )),
+      ...IONWAVE_SOURCES.map((source) => runDedicatedSource(
+        source,
+        ionWavePortalProviders[source.id],
+        ionwaveStatuses,
         options,
         perDedicatedSource,
       )),
@@ -257,13 +334,19 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   async getStatus(): Promise<ProviderStatus> {
     try { await hydrateDedicatedStatuses(); } catch { /* retain in-memory health */ }
     const base = await catalogPortalProvider.getStatus().catch(() => undefined);
-    const statuses = [...bsoStatuses.values(), ...jaggaerStatuses.values()];
+    const statuses = [
+      ...bsoStatuses.values(),
+      ...jaggaerStatuses.values(),
+      ...bonfireStatuses.values(),
+      ...ionwaveStatuses.values(),
+    ];
     const failures = statuses.filter((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
     const dates = statuses.map((status) => status.lastCheckedAt).concat(base?.lastAttempt ? [base.lastAttempt] : []);
     const successes = statuses.flatMap((status) => status.lastSuccessAt ? [status.lastSuccessAt] : []).concat(base?.lastSuccess ? [base.lastSuccess] : []);
     return {
       name: this.name,
-      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0 || JAGGAER_SOURCES.length > 0,
+      configured: Boolean(base?.configured) || BSO_SOURCES.length > 0 || JAGGAER_SOURCES.length > 0
+        || BONFIRE_SOURCES.length > 0 || IONWAVE_SOURCES.length > 0,
       healthy: failures.length === 0 && (base?.healthy ?? true),
       errorMessage: [
         base?.errorMessage,
