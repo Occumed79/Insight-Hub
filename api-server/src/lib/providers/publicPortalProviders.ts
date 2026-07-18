@@ -19,6 +19,10 @@ import {
   ionWavePortalProviders,
 } from "./ionWavePortal";
 import {
+  CAL_EPROCURE_SOURCE,
+  calEprocureProvider,
+} from "./calEprocure";
+import {
   publicPortalProvidersProvider as catalogPortalProvider,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/index";
@@ -35,6 +39,7 @@ export * from "./bsoPortal";
 export * from "./jaggaerSciQuest";
 export * from "./bonfirePortal";
 export * from "./ionWavePortal";
+export * from "./calEprocure";
 
 const BSO_SOURCES: PublicPortalSource[] = [
   {
@@ -144,10 +149,13 @@ const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({
   notes: "Dedicated public IonWave/Euna bid-listing adapter.",
 }));
 
+const CAL_EPROCURE_SOURCES: PublicPortalSource[] = [CAL_EPROCURE_SOURCE];
+
 const bsoStatuses = new Map<string, PublicPortalSourceRunStatus>();
 const jaggaerStatuses = new Map<string, PublicPortalSourceRunStatus>();
 const bonfireStatuses = new Map<string, PublicPortalSourceRunStatus>();
 const ionwaveStatuses = new Map<string, PublicPortalSourceRunStatus>();
+const calEprocureStatuses = new Map<string, PublicPortalSourceRunStatus>();
 
 async function hydrateDedicatedStatuses(): Promise<void> {
   const persisted = await loadPublicPortalHealth();
@@ -166,6 +174,10 @@ async function hydrateDedicatedStatuses(): Promise<void> {
   for (const source of IONWAVE_SOURCES) {
     const status = persisted.get(source.id);
     if (status) ionwaveStatuses.set(source.id, status);
+  }
+  for (const source of CAL_EPROCURE_SOURCES) {
+    const status = persisted.get(source.id);
+    if (status) calEprocureStatuses.set(source.id, status);
   }
 }
 
@@ -204,6 +216,7 @@ function mergedSources(): PublicPortalSource[] {
   for (const source of JAGGAER_SOURCES) byId.set(source.id, source);
   for (const source of BONFIRE_SOURCES) byId.set(source.id, source);
   for (const source of IONWAVE_SOURCES) byId.set(source.id, source);
+  for (const source of CAL_EPROCURE_SOURCES) byId.set(source.id, source);
   return Array.from(byId.values());
 }
 
@@ -249,7 +262,8 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
       || BSO_SOURCES.some((source) => Boolean(bsoPortalProviders[source.id]))
       || JAGGAER_SOURCES.some((source) => Boolean(jaggaerSciQuestProviders[source.id]))
       || BONFIRE_SOURCES.some((source) => Boolean(bonfirePortalProviders[source.id]))
-      || IONWAVE_SOURCES.some((source) => Boolean(ionWavePortalProviders[source.id]));
+      || IONWAVE_SOURCES.some((source) => Boolean(ionWavePortalProviders[source.id]))
+      || CAL_EPROCURE_SOURCES.some((source) => source.id === CAL_EPROCURE_SOURCE.id);
   }
 
   getSources(): PublicPortalSource[] {
@@ -262,13 +276,18 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     for (const status of jaggaerStatuses.values()) byId.set(status.sourceId, status);
     for (const status of bonfireStatuses.values()) byId.set(status.sourceId, status);
     for (const status of ionwaveStatuses.values()) byId.set(status.sourceId, status);
+    for (const status of calEprocureStatuses.values()) byId.set(status.sourceId, status);
     return Array.from(byId.values()).sort((left, right) => right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime());
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
     const dedicatedSourceCount = Math.max(
-      BSO_SOURCES.length + JAGGAER_SOURCES.length + BONFIRE_SOURCES.length + IONWAVE_SOURCES.length,
+      BSO_SOURCES.length
+        + JAGGAER_SOURCES.length
+        + BONFIRE_SOURCES.length
+        + IONWAVE_SOURCES.length
+        + CAL_EPROCURE_SOURCES.length,
       1,
     );
     const perDedicatedSource = Math.max(1, Math.ceil(limit / dedicatedSourceCount));
@@ -308,6 +327,13 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
         options,
         perDedicatedSource,
       )),
+      ...CAL_EPROCURE_SOURCES.map((source) => runDedicatedSource(
+        source,
+        calEprocureProvider,
+        calEprocureStatuses,
+        options,
+        perDedicatedSource,
+      )),
       catalogPortalProvider.fetch({ ...options, limit }),
     ]);
 
@@ -339,6 +365,7 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
       ...jaggaerStatuses.values(),
       ...bonfireStatuses.values(),
       ...ionwaveStatuses.values(),
+      ...calEprocureStatuses.values(),
     ];
     const failures = statuses.filter((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
     const dates = statuses.map((status) => status.lastCheckedAt).concat(base?.lastAttempt ? [base.lastAttempt] : []);
@@ -346,7 +373,7 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     return {
       name: this.name,
       configured: Boolean(base?.configured) || BSO_SOURCES.length > 0 || JAGGAER_SOURCES.length > 0
-        || BONFIRE_SOURCES.length > 0 || IONWAVE_SOURCES.length > 0,
+        || BONFIRE_SOURCES.length > 0 || IONWAVE_SOURCES.length > 0 || CAL_EPROCURE_SOURCES.length > 0,
       healthy: failures.length === 0 && (base?.healthy ?? true),
       errorMessage: [
         base?.errorMessage,

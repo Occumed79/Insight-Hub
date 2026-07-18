@@ -33,6 +33,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "tx-esbd",
   "ny-contract-reporter",
   "ia-das",
+  "ca-caleprocure",
   // OpenGov shared adapter — all 18 confirmed tenants
   "ca-city-of-santa-cruz-opengov",
   "ca-city-of-palm-desert-opengov",
