@@ -1,6 +1,7 @@
 import { nyScrProvider } from "../nyScr";
 import { texasEsbdProvider } from "../texasEsbd";
 import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "../openGov";
+import { civicEngageTenantProvider, CIVICENGAGE_PORTAL_IDS } from "../civicEngageBids";
 import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
@@ -38,10 +39,21 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = (() => {
     const provider = openGovTenantProvider(portalId);
     if (provider) adapters[portalId] = provider;
   }
+  for (const portalId of CIVICENGAGE_PORTAL_IDS) {
+    const provider = civicEngageTenantProvider(portalId);
+    if (provider) adapters[portalId] = provider;
+  }
   return adapters;
 })();
 
 const DEDICATED_SOURCE_IDS = new Set(Object.keys(SOURCE_ADAPTERS));
+const ALWAYS_RUN_SOURCE_IDS = new Set(
+  Array.from(DEDICATED_SOURCE_IDS).filter((sourceId) => !CIVICENGAGE_PORTAL_IDS.has(sourceId)),
+);
+
+export function isDedicatedPublicPortalSourceId(sourceId: string): boolean {
+  return DEDICATED_SOURCE_IDS.has(sourceId);
+}
 
 function positiveIntegerEnv(name: string, fallback: number, minimum: number, maximum: number): number {
   const value = Number(process.env[name]);
@@ -328,7 +340,7 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
       enabledSources,
       sourceStatuses,
       rotationBatchSize,
-      DEDICATED_SOURCE_IDS,
+      ALWAYS_RUN_SOURCE_IDS,
     );
     const runDeadlineAt = Date.now() + runTimeoutMs;
     const resultLimit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
@@ -398,6 +410,7 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
 
         for (const discovered of discoveredRecords) {
           const sourceId = sourceIdForRecord(discovered);
+          if (sourceId && DEDICATED_SOURCE_IDS.has(sourceId)) continue;
           const source = sourceId ? sourceById.get(sourceId) : undefined;
           const normalized: NormalizedOpportunity = source
             ? withPublicPortalMetadata({

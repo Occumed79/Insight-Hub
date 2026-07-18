@@ -1,3 +1,5 @@
+import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
   "direct_adapter",
@@ -50,6 +52,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "az-chandler-unified-school-district-opengov",
   "md-wicomico-county-opengov",
   "sc-richland-school-district-two-opengov",
+  ...CIVICENGAGE_PORTAL_IDS,
 ]);
 
 /**
