@@ -9,8 +9,7 @@ import {
   parseCivicEngageListingHtml,
 } from "../civicEngageBids";
 import {
-  CIVICENGAGE_GENERIC_EXCLUDED_IDS,
-  CIVICENGAGE_PUBLIC_PORTAL_SOURCES,
+  isDedicatedPublicPortalSourceId,
   publicPortalProvidersProvider,
 } from "../publicPortalProviders/index";
 import { portalConnectorCapability } from "../portalCapabilities";
@@ -90,22 +89,20 @@ describe("CivicEngage source manifest", () => {
   });
 
   it("preserves category query parameters in the supplied URLs", () => {
-    assert.equal(TENANT.listingUrl, "https://franklincountywa.gov/Bids.aspx?CatID=19");
+    assert.equal(
+      TENANT.listingUrl,
+      "https://franklincountywa.gov/Bids.aspx?CatID=19",
+    );
     const cowlitz = CIVICENGAGE_TENANTS.find((tenant) => tenant.portalId === "wa-cowlitz-county")!;
     assert.equal(new URL(cowlitz.listingUrl).searchParams.get("CatID"), "All");
     assert.equal(new URL(cowlitz.listingUrl).searchParams.get("showAllBids"), "on");
   });
 
-  it("marks all 50 sources as dedicated and excludes them from generic extraction", () => {
-    assert.equal(CIVICENGAGE_GENERIC_EXCLUDED_IDS.size, 50);
-    assert.equal(CIVICENGAGE_PUBLIC_PORTAL_SOURCES.length, 50);
-    for (const source of CIVICENGAGE_PUBLIC_PORTAL_SOURCES) {
-      assert.ok(CIVICENGAGE_GENERIC_EXCLUDED_IDS.has(source.id));
-      assert.equal(source.scraperType, "existing_parser");
-    }
+  it("registers all 50 as dedicated sources and excludes generic execution", () => {
     const runtimeSources = new Map(publicPortalProvidersProvider.getSources().map((source) => [source.id, source]));
     for (const portalId of CIVICENGAGE_PORTAL_IDS) {
-      assert.equal(runtimeSources.get(portalId)?.scraperType, "existing_parser");
+      assert.ok(runtimeSources.has(portalId), `runtime source missing ${portalId}`);
+      assert.equal(isDedicatedPublicPortalSourceId(portalId), true);
     }
   });
 
