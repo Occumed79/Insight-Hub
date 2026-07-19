@@ -15,7 +15,7 @@ interface DelawareOpenBid {
   deadlinedate?: string;
   agencycode?: string;
   unspsc?: string;
-  bidurl?: string;
+  bidurl?: string | { url?: string };
 }
 
 function parseDate(value: string | undefined, endOfDay = false): Date | undefined {
@@ -24,6 +24,11 @@ function parseDate(value: string | undefined, endOfDay = false): Date | undefine
   const dateOnly = /^\d{4}-\d{1,2}-\d{1,2}(?:T00:00:00(?:\.000)?)?$/.test(cleaned);
   const parsed = new Date(endOfDay && dateOnly ? `${cleaned.slice(0, 10)}T23:59:59.999` : cleaned);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function delawareBidUrl(value: DelawareOpenBid["bidurl"]): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  return value?.url?.trim() || undefined;
 }
 
 function parseDelawareOpenBids(
@@ -47,8 +52,9 @@ function parseDelawareOpenBids(
     if (!title || !nativeId) return [];
     const deadline = parseDate(row.deadlinedate, true);
     if (deadline && deadline.getTime() < Date.now()) return [];
-    const detailUrl = row.bidurl
-      ? allowedStatewideUrl(config, row.bidurl, pageUrl) || pageUrl
+    const bidUrl = delawareBidUrl(row.bidurl);
+    const detailUrl = bidUrl
+      ? allowedStatewideUrl(config, bidUrl, pageUrl) || pageUrl
       : pageUrl;
     return [{
       nativeId,
