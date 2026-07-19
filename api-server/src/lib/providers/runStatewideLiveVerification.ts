@@ -65,6 +65,9 @@ function classify(result: ProviderFetchResult): StatewideLiveStatus {
   if (/captcha|browser\/login challenge|access denied|verify you are human|checking your browser|http 401|http 403|requires you to login/.test(errors)) {
     return "BLOCKED_CHALLENGE";
   }
+  if (/application requested is not found|no server is available to handle this request|service unavailable/.test(errors)) {
+    return "REQUEST_FAILURE";
+  }
   if (/http 404|http 410|enotfound|eai_again|invalid url|name or service not known|no such host|redirected outside/.test(errors)) {
     return "BAD_ENDPOINT";
   }
@@ -143,6 +146,42 @@ export function renderStatewideLiveMarkdown(results: readonly StatewideLiveResul
   return `${lines.join("\n")}\n`;
 }
 
+async function captureFailureSources(results: readonly StatewideLiveResult[], outputDir: string): Promise<void> {
+  const debugDir = resolve(outputDir, "debug-source");
+  await mkdir(debugDir, { recursive: true });
+  const configs = new Map(STATEWIDE_PORTAL_CONFIGS.map((config) => [config.portalId, config]));
+  await mapConcurrent(
+    results.filter((result) => result.status === "BAD_ENDPOINT" || result.status === "PARSER_FAILURE"),
+    3,
+    async (result) => {
+      const config = configs.get(result.portalId);
+      if (!config) return;
+      const stem = `${result.state}-${result.portalId}`.replace(/[^a-z0-9._-]/gi, "-");
+      try {
+        const response = await fetch(config.listingUrl, {
+          redirect: "follow",
+          headers: {
+            accept: "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
+            "user-agent": "OccuMed-InsightHub/1.0 statewide-verification-debug",
+          },
+        });
+        const body = await response.text();
+        await Promise.all([
+          writeFile(resolve(debugDir, `${stem}.body.txt`), body, "utf8"),
+          writeFile(resolve(debugDir, `${stem}.meta.json`), `${JSON.stringify({
+            requestedUrl: config.listingUrl,
+            finalUrl: response.url,
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+          }, null, 2)}\n`, "utf8"),
+        ]);
+      } catch (error) {
+        await writeFile(resolve(debugDir, `${stem}.error.txt`), `${error instanceof Error ? error.stack || error.message : String(error)}\n`, "utf8");
+      }
+    },
+  );
+}
+
 export async function runStatewideLiveVerification(): Promise<StatewideLiveResult[]> {
   const states = new Set(STATEWIDE_LIVE_TARGETS.map((target) => target.state));
   if (STATEWIDE_LIVE_TARGETS.length !== 50 || states.size !== 50) {
@@ -157,6 +196,7 @@ export async function runStatewideLiveVerification(): Promise<StatewideLiveResul
   await Promise.all([
     writeFile(resolve(outputDir, "statewide-live-verification.md"), markdown, "utf8"),
     writeFile(resolve(outputDir, "statewide-live-verification.json"), `${JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2)}\n`, "utf8"),
+    captureFailureSources(results, outputDir),
   ]);
   process.stdout.write(markdown);
   if (results.some((result) => result.status === "BAD_ENDPOINT" || result.status === "PARSER_FAILURE")) {
