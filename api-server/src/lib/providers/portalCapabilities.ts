@@ -1,4 +1,5 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+import { STATEWIDE_BATCH_2_PORTAL_IDS } from "./statewidePortalsBatch2";
 
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
@@ -54,6 +55,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "md-wicomico-county-opengov",
   "sc-richland-school-district-two-opengov",
   ...CIVICENGAGE_PORTAL_IDS,
+  ...STATEWIDE_BATCH_2_PORTAL_IDS,
 ]);
 
 /**
