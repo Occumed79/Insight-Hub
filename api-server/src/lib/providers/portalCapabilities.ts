@@ -1,4 +1,5 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementConfigs";
 
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
@@ -34,7 +35,6 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "ny-contract-reporter",
   "ia-das",
   "ca-caleprocure",
-  // OpenGov shared adapter — all 18 confirmed tenants
   "ca-city-of-santa-cruz-opengov",
   "ca-city-of-palm-desert-opengov",
   "ca-city-of-west-sacramento-opengov",
@@ -54,18 +54,10 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "md-wicomico-county-opengov",
   "sc-richland-school-district-two-opengov",
   ...CIVICENGAGE_PORTAL_IDS,
+  ...STATEWIDE_PROCUREMENT_PORTAL_IDS,
 ]);
 
-/**
- * Report the connector that actually exists in the repository.
- *
- * This deliberately ignores parserStatus. parserStatus describes catalog intent,
- * not proof that a dedicated connector was implemented. The capability returned
- * here is derived from the runtime paths that are currently available.
- */
-export function portalConnectorCapability(
-  portal: PortalCapabilityInput,
-): PortalConnectorCapability {
+export function portalConnectorCapability(portal: PortalCapabilityInput): PortalConnectorCapability {
   if (DIRECT_API_PORTAL_IDS.has(portal.id)) {
     return {
       connectorStatus: "direct_api",
@@ -97,11 +89,7 @@ export function portalConnectorCapability(
   }
 
   if (portal.level === "state" || portal.level === "district") {
-    const genericPublicPage =
-      !portal.requiresKey &&
-      !portal.requiresLogin &&
-      (portal.accessMode === "public_html" || portal.accessMode === "csv");
-
+    const genericPublicPage = !portal.requiresKey && !portal.requiresLogin && (portal.accessMode === "public_html" || portal.accessMode === "csv");
     if (genericPublicPage) {
       return {
         connectorStatus: "generic_extraction",
@@ -111,7 +99,6 @@ export function portalConnectorCapability(
         requiresSerper: false,
       };
     }
-
     return {
       connectorStatus: "serper_discovery",
       connectorLabel: "Serper discovery only",
@@ -130,11 +117,6 @@ export function portalConnectorCapability(
   };
 }
 
-export function withPortalConnectorCapability<T extends PortalCapabilityInput>(
-  portal: T,
-): T & PortalConnectorCapability {
-  return {
-    ...portal,
-    ...portalConnectorCapability(portal),
-  };
+export function withPortalConnectorCapability<T extends PortalCapabilityInput>(portal: T): T & PortalConnectorCapability {
+  return { ...portal, ...portalConnectorCapability(portal) };
 }
