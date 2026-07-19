@@ -100,6 +100,23 @@ describe("statewide listing parsers", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.nativeId, "1c84090d-ba7a-ef11-a670-001dd809bcaf");
   });
+
+  it("keeps a date-only deadline active through the due date", () => {
+    const now = new Date();
+    const dueDate = `${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}/${now.getFullYear()}`;
+    const html = `<table><tr><th>Solicitation Number</th><th>Title</th><th>Due Date</th><th>Status</th></tr><tr><td>PA-TODAY-1</td><td><a href="/SolicitationDetails.aspx?SID=PA-TODAY-1">Same-day medical services</a></td><td>${dueDate}</td><td>Open</td></tr></table>`;
+    const rows = parseStatewideListingContent(html, PA);
+    assert.equal(rows.length, 1);
+    assert.ok((rows[0]!.responseDeadline?.getTime() ?? 0) >= Date.now());
+  });
+
+  it("uses action-only detail links while taking the title from its table cell", () => {
+    const html = `<table><tr><th>Solicitation Number</th><th>Title</th><th>Status</th><th>Action</th></tr><tr><td>PA-ACTION-1</td><td>Occupational medicine services</td><td>Open</td><td><a href="/SolicitationDetails.aspx?SID=PA-ACTION-1">Details</a></td></tr></table>`;
+    const rows = parseStatewideListingContent(html, PA);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.title, "Occupational medicine services");
+    assert.equal(rows[0]!.nativeId, "PA-ACTION-1");
+  });
 });
 
 describe("statewide detail parser", () => {
