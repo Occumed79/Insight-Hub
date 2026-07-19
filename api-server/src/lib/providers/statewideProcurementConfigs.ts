@@ -124,8 +124,9 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     alternateListingUrls: ["https://www.procurement.sc.gov/doing-biz/bid-ops"],
     allowedOrigins: ["https://www.procurement.sc.gov"],
   }),
-  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Procurement Management", "state_html", "https://boa.sd.gov/central-services/procurement-management/solicitations.aspx", "South Dakota Solicitations", {
-    allowedOrigins: ["https://www.boa.sd.gov"],
+  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Central Bid Exchange / ESM Solutions", "custom_portal", "https://postingboard.esmsolutions.com/3444a404-3818-494f-84c5-2a850acd7779/events", "South Dakota Central Bid Exchange", {
+    alternateListingUrls: ["https://www.sd.gov/bhra?id=kb_article_view&sysparm_article=KB0044779"],
+    allowedOrigins: ["https://www.sd.gov"],
   }),
   state("tn-edison", "State of Tennessee", "TN", "Tennessee Edison / PeopleSoft", "peoplesoft", "https://hub.edison.tn.gov/psc/fsprd/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Tennessee Edison Bid Opportunities", {
     alternateListingUrls: [
