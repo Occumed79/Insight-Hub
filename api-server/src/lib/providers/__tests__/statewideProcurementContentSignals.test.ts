@@ -36,6 +36,26 @@ describe("statewide empty-state evidence", () => {
     assert.equal(statewideContentLooksLikeBrowserShell(html), true);
   });
 
+  it("detects the Florida Angular root shell", () => {
+    const html = `<mfmp-root></mfmp-root><script src="runtime.1.js"></script><script src="main.2.js"></script>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
+  it("detects a PrimeFaces search gated by AJAX ViewState and reCAPTCHA", () => {
+    const html = `<form id="bidSearchForm"><script>PrimeFaces.ab({s:'search'});</script><script src="https://www.google.com/recaptcha/api.js"></script></form>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
+  it("detects the CGI Advantage guest-access transition", () => {
+    const html = `<form method="post"><input name="guest_login" value="Public Access" type="submit"></form>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
+  it("detects a Telerik grid requiring browser InitialPageLoad", () => {
+    const html = `<script>RadAjaxManager; manager.ajaxRequest("InitialPageLoad");</script>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
   it("reports fetched but unrecognized non-empty markup as a parser failure", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => new Response("<html><body><main>Procurement portal landing content</main></body></html>", { status: 200 });
