@@ -3,6 +3,7 @@ import { statewideHtmlToText } from "./statewideProcurementParser";
 const EXPLICIT_EMPTY_TEXT = /(?:\bno\s+(?:(?:open|active|current|matching|available)\s+)?(?:bids?|solicitations?|opportunities|events?|records?|results?)\b|\bzero\s+(?:results?|records?)\b|\bthere (?:are|is) currently no\b|\byour search (?:returned|found) no\b|\bno items? (?:were )?found\b|\bnothing (?:was )?found\b)/i;
 const CLOSED_TEXT = /\b(?:closed|awarded|cancelled|canceled|expired|withdrawn|completed|complete|inactive|pending selection|retracted|under evaluation)\b/i;
 const LISTING_HEADER_TEXT = /\b(?:solicitation|bid|rfp|rfq|event|project|opportunity)\b/i;
+const BROWSER_BLOCK_TEXT = /\b(?:unsupported browser|browser is not supported|upgrade your browser|enable javascript to continue)\b/i;
 
 function jsonHasExplicitEmptyCollection(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0;
@@ -44,6 +45,7 @@ export function statewideContentHasExplicitEmptyEvidence(content: string): boole
 
 export function statewideContentLooksLikeBrowserShell(content: string): boolean {
   const text = statewideHtmlToText(content);
+  if (BROWSER_BLOCK_TEXT.test(text)) return true;
   const hasAppRoot = /(?:id|class)=["'][^"']*(?:app-root|__next|root|app-container|application-root)[^"']*["']/i.test(content)
     || /<app-root\b/i.test(content);
   const hasScriptBundle = /<script\b[^>]*src=["'][^"']+(?:\.js|bundle|chunk)[^"']*["']/i.test(content);
