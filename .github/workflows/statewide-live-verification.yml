@@ -1,0 +1,77 @@
+name: Statewide live verification
+
+on:
+  pull_request:
+    paths:
+      - "api-server/src/lib/providers/**"
+      - "package.json"
+      - ".github/workflows/statewide-live-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck provider modules
+        run: pnpm --filter @workspace/api-server run typecheck
+
+      - name: Run statewide provider tests
+        run: >-
+          pnpm --filter @workspace/scripts exec tsx --test
+          ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts
+          ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts
+
+      - name: Run live 50-state sweep
+        id: live_sweep
+        continue-on-error: true
+        env:
+          STATEWIDE_LIVE_CONCURRENCY: "4"
+          STATEWIDE_LIVE_REPORT_DIR: artifacts/statewide-live-verification
+          STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "10000"
+          STATEWIDE_PORTAL_MAX_RETRIES: "0"
+          STATEWIDE_PORTAL_MAX_PAGES: "2"
+          STATEWIDE_PORTAL_MAX_RESULTS: "2"
+          STATEWIDE_PORTAL_DETAIL_CONCURRENCY: "2"
+          BSO_REQUEST_TIMEOUT_MS: "10000"
+          BSO_MAX_RETRIES: "0"
+        run: pnpm statewide:verify-live
+
+      - name: Publish sweep summary
+        if: always()
+        run: |
+          if [ -f artifacts/statewide-live-verification/statewide-live-verification.md ]; then
+            cat artifacts/statewide-live-verification/statewide-live-verification.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: statewide-live-verification
+          path: artifacts/statewide-live-verification
+          if-no-files-found: error
+
+      - name: Fail on bad endpoints or parser failures
+        if: steps.live_sweep.outcome == 'failure'
+        run: exit 1
