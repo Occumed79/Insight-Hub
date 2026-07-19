@@ -18,6 +18,11 @@ import {
   type StatewidePortalConfig,
 } from "./statewideProcurementConfigs";
 import {
+  statewideContentHasExplicitEmptyEvidence,
+  statewideContentLooksLikeBrowserShell,
+} from "./statewideProcurementContentSignals";
+import { parseStatewidePlatformListings } from "./statewideProcurementPlatformParsers";
+import {
   extractStatewideDiscoveryUrls,
   parseStatewideDetailHtml,
   parseStatewideListingContent,
@@ -56,27 +61,31 @@ export function statewideRetryDelayMs(retryAfter: string | null, attempt: number
   return Math.min(400 * 2 ** Math.max(attempt, 0), 10_000);
 }
 
-class PublicPortalSession {
-  private readonly cookies = new Map<string, string>();
+export class PublicPortalSession {
+  private readonly cookiesByOrigin = new Map<string, Map<string, string>>();
   private readonly origins: ReadonlySet<string>;
 
   constructor(private readonly config: StatewidePortalConfig) {
     this.origins = statewideAllowedOrigins(config);
   }
 
-  private absorbCookies(headers: Headers): void {
+  private absorbCookies(origin: string, headers: Headers): void {
     const extended = headers as Headers & { getSetCookie?: () => string[] };
     const values = extended.getSetCookie?.() ?? (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+    if (!values.length) return;
+    const cookies = this.cookiesByOrigin.get(origin) ?? new Map<string, string>();
     for (const cookie of values) {
       const pair = cookie.split(";", 1)[0]?.trim();
       const equals = pair?.indexOf("=") ?? -1;
-      if (pair && equals > 0) this.cookies.set(pair.slice(0, equals), pair.slice(equals + 1));
+      if (pair && equals > 0) cookies.set(pair.slice(0, equals), pair.slice(equals + 1));
     }
+    if (cookies.size) this.cookiesByOrigin.set(origin, cookies);
   }
 
-  private cookieHeader(): string | undefined {
-    return this.cookies.size
-      ? Array.from(this.cookies.entries()).map(([name, value]) => `${name}=${value}`).join("; ")
+  private cookieHeader(origin: string): string | undefined {
+    const cookies = this.cookiesByOrigin.get(origin);
+    return cookies?.size
+      ? Array.from(cookies.entries()).map(([name, value]) => `${name}=${value}`).join("; ")
       : undefined;
   }
 
@@ -88,24 +97,27 @@ class PublicPortalSession {
       const canonical = statewideCanonicalUrl(current).toLowerCase();
       if (seenRedirects.has(canonical)) throw new Error(`${this.config.portalId} entered a redirect loop`);
       seenRedirects.add(canonical);
+      const currentOrigin = new URL(current).origin;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
+        const cookie = this.cookieHeader(currentOrigin);
         const response = await fetch(current, {
           signal: controller.signal,
           redirect: "manual",
           headers: {
             accept: "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
             "user-agent": "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)",
-            ...(this.cookieHeader() ? { cookie: this.cookieHeader() as string } : {}),
+            ...(cookie ? { cookie } : {}),
           },
         });
-        this.absorbCookies(response.headers);
+        this.absorbCookies(currentOrigin, response.headers);
         if (response.status < 300 || response.status >= 400) return response;
         const location = response.headers.get("location");
         if (!location) return response;
-        const next = allowedStatewideUrl(this.config, location, current);
-        if (!next) throw new Error(`${this.config.portalId} redirected outside its configured official origins`);
+        const redirectTarget = new URL(location, current).toString();
+        const next = allowedStatewideUrl(this.config, redirectTarget, current);
+        if (!next) throw new Error(`${this.config.portalId} redirected outside its configured official origins: ${redirectTarget}`);
         current = next;
       } finally {
         clearTimeout(timer);
@@ -230,6 +242,8 @@ export class StatewideProcurementProvider implements DataSourceProvider {
     const errors: string[] = [];
     let listingPage = 0;
     let challengeCount = 0;
+    let successfulFetches = 0;
+    let explicitEmptyCount = 0;
 
     if (!(await this.isConfigured())) {
       const reason = `${this.config.portalId}: invalid or empty statewide adapter configuration`;
@@ -251,18 +265,26 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       let content: string;
       try {
         content = await session.fetchText(safePageUrl, timeoutMs, maxRetries, `${this.config.portalId} listing`);
+        successfulFetches += 1;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         errors.push(listings.size ? `${this.config.portalId}: partial listing results after ${reason}` : `${this.config.portalId}: ${reason}`);
         continue;
       }
-      if (statewideContentLooksLikeChallenge(content)) challengeCount += 1;
+
+      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
+      if (browserBlocked) challengeCount += 1;
       const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));
       if (seenSignatures.has(signature)) continue;
       seenSignatures.add(signature);
       listingPage += 1;
 
-      for (const listing of parseStatewideListingContent(content, this.config, safePageUrl, listingPage)) {
+      const parsedListings = [
+        ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
+        ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
+      ];
+      if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;
+      for (const listing of parsedListings) {
         const key = listing.nativeId.toLowerCase();
         if (!listings.has(key)) listings.set(key, listing);
         if (listings.size >= targetCount) break;
@@ -280,12 +302,20 @@ export class StatewideProcurementProvider implements DataSourceProvider {
     }
 
     if (!listings.size) {
-      const reason = challengeCount
-        ? `${this.config.portalId}: official public route returned a browser/login challenge and no parseable public records`
-        : `${this.config.portalId}: official public routes returned no recognizable active opportunity rows`;
-      errors.push(reason);
-      this.lastError = errors.join("; ");
       this.recordCount = 0;
+      if (successfulFetches > 0 && explicitEmptyCount > 0 && challengeCount < successfulFetches) {
+        this.lastError = undefined;
+        this.lastSuccess = new Date();
+        return { records: [], total: 0, errors: [] };
+      }
+      if (challengeCount > 0) {
+        errors.push(`${this.config.portalId}: official public route returned a browser/login challenge and no parseable public records`);
+      } else if (successfulFetches > 0) {
+        errors.push(`${this.config.portalId}: official public routes returned content but no parseable active opportunity rows and no explicit empty-state evidence`);
+      } else if (!errors.length) {
+        errors.push(`${this.config.portalId}: all configured official listing requests failed before content was returned`);
+      }
+      this.lastError = errors.join("; ");
       return { records: [], total: 0, errors };
     }
 
@@ -322,7 +352,7 @@ export class StatewideProcurementProvider implements DataSourceProvider {
 
     this.recordCount = records.length;
     this.lastError = records.length ? undefined : errors.join("; ") || undefined;
-    if (records.length) this.lastSuccess = new Date();
+    if (records.length || !errors.length) this.lastSuccess = new Date();
     return { records, total: records.length, errors };
   }
 

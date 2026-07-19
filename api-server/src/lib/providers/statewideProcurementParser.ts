@@ -19,7 +19,7 @@ const ID_QUERY_KEYS = [
   "id", "bidid", "bid_id", "solicitationid", "solicitation_id", "eventid", "event_id",
   "rfpid", "rfp_id", "rfxid", "rfx_id", "requestid", "request_id", "noticeid",
   "notice_id", "opportunityid", "opportunity_id", "projectid", "project_id", "sid",
-  "docid", "bidno", "bidid", "rfid", "projectid",
+  "docid", "bidno", "rfid",
 ] as const;
 
 export interface StatewideListingRecord {

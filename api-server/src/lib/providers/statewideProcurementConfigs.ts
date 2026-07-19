@@ -26,6 +26,7 @@ export interface StatewidePortalConfig {
   allowedOrigins?: readonly string[];
   sourceBadge: string;
   discoveryLinkPatterns?: readonly string[];
+  interactiveAccessReason?: string;
 }
 
 const state = (
@@ -36,7 +37,7 @@ const state = (
   platformFamily: StatewidePlatformFamily,
   listingUrl: string,
   sourceBadge: string,
-  options: Pick<StatewidePortalConfig, "alternateListingUrls" | "allowedOrigins" | "discoveryLinkPatterns"> = {},
+  options: Pick<StatewidePortalConfig, "alternateListingUrls" | "allowedOrigins" | "discoveryLinkPatterns" | "interactiveAccessReason"> = {},
 ): StatewidePortalConfig => {
   const parsed = new URL(listingUrl);
   return {
@@ -53,21 +54,23 @@ const state = (
 };
 
 export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
-  // Existing post-PR-127 statewide adapters. Keep these IDs and routes stable.
-  state("fl-vbs", "State of Florida", "FL", "Florida Vendor Bid System / MyFloridaMarketPlace", "custom_portal", "https://vendor.myfloridamarketplace.com/search/bids", "Florida Vendor Bid System"),
+  state("fl-vbs", "State of Florida", "FL", "Florida Vendor Bid System / MyFloridaMarketPlace", "custom_portal", "https://vendor.myfloridamarketplace.com/search/bids", "Florida Vendor Bid System", {
+    interactiveAccessReason: "Angular application shell; opportunity data is loaded only by client-side JavaScript bundles.",
+  }),
   state("ga-gpr", "State of Georgia", "GA", "Georgia Procurement Registry", "state_html", "https://ssl.doas.state.ga.us/gpr/", "Georgia Procurement Registry"),
   state("la-lapac", "State of Louisiana", "LA", "Louisiana Procurement and Contract Network / LaPAC", "state_html", "https://wwwcfprd.doa.louisiana.gov/osp/lapac/deptbids.cfm", "Louisiana LaPAC", { alternateListingUrls: ["https://wwwcfprd.doa.louisiana.gov/osp/lapac/catbids.cfm", "https://wwwcfprd.doa.louisiana.gov/osp/lapac/srchopen.cfm"] }),
-  state("me-rfps", "State of Maine", "ME", "Maine Vendor Self-Service", "cgi_advantage", "https://mevss.hostams.com/PRDVSS1X1/AltSelfService", "Maine Vendor Self-Service"),
-  state("ms-magic", "State of Mississippi", "MS", "Mississippi Procurement Opportunity Search / MAGIC", "state_html", "https://www.ms.gov/dfa/contract_bid_search/Bid", "Mississippi Procurement Opportunity Search"),
+  state("me-rfps", "State of Maine", "ME", "Maine Vendor Self-Service", "cgi_advantage", "https://mevss.hostams.com/PRDVSS1X1/AltSelfService", "Maine Vendor Self-Service", {
+    interactiveAccessReason: "CGI Advantage requires a session-bound Public Access guest form submission before solicitations are exposed.",
+  }),
+  state("ms-magic", "State of Mississippi", "MS", "Mississippi Procurement Opportunity Search / MAGIC", "state_html", "https://www.ms.gov/dfa/contract_bid_search/Search", "Mississippi Procurement Opportunity Search"),
   state("nm-active-procurements", "State of New Mexico", "NM", "New Mexico State Purchasing Active Procurements", "state_html", "https://generalservices.state.nm.us/state-purchasing/active-itbs-and-rfps/active-procurements/", "New Mexico Active Procurements"),
-  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/webapp/PRDVSS2X1/AltSelfService", "Michigan SIGMA VSS"),
-  state("pa-emarketplace", "Commonwealth of Pennsylvania", "PA", "Pennsylvania eMarketplace", "state_html", "https://www.emarketplace.state.pa.us/Solicitations.aspx", "Pennsylvania eMarketplace"),
-  state("va-eva", "Commonwealth of Virginia", "VA", "Virginia eVA", "state_html", "https://eva.virginia.gov/business-opportunities.html", "Virginia eVA"),
-  state("oh-ohiobuys", "State of Ohio", "OH", "OhioBuys / Ohio Procurement", "state_html", "https://procure.ohio.gov/proc/view-procurement-opportunities", "Ohio Procurement Opportunities"),
+  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS"),
+  state("pa-emarketplace", "Commonwealth of Pennsylvania", "PA", "Pennsylvania eMarketplace", "state_html", "https://www.emarketplace.state.pa.us/Search.aspx", "Pennsylvania eMarketplace"),
+  state("va-eva", "Commonwealth of Virginia", "VA", "Virginia eVA / CGI", "custom_portal", "https://mvendor.cgieva.com/Vendor/public/AllOpportunities.jsp", "Virginia eVA Business Opportunities"),
+  state("oh-ohiobuys", "State of Ohio", "OH", "OhioBuys / Ivalua", "webprocure_ivalua", "https://ohiobuys.ohio.gov/page.aspx/en/rfp/request_browse_public", "OhioBuys Public Solicitations"),
   state("md-emma", "State of Maryland", "MD", "eMaryland Marketplace Advantage", "webprocure_ivalua", "https://emma.maryland.gov/page.aspx/en/rfp/request_browse_public", "eMaryland Marketplace Advantage"),
   state("nc-evp", "State of North Carolina", "NC", "North Carolina electronic Vendor Portal", "webprocure_ivalua", "https://evp.nc.gov/solicitations/", "North Carolina eVP"),
 
-  // The 31-state completion run.
   state("al-state-procurement", "State of Alabama", "AL", "Alabama STAARS Vendor Self-Service", "cgi_advantage", "https://procurement.staars.alabama.gov/PRDVSS1X1/AltSelfService", "Alabama State Procurement", {
     alternateListingUrls: ["https://rfp.alabama.gov/PublicView.aspx"],
     allowedOrigins: ["https://rfp.alabama.gov"],
@@ -86,12 +89,17 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     alternateListingUrls: ["https://webprocure.proactiscloud.com/wp-web-public/#/bidboard"],
     allowedOrigins: ["https://webprocure.proactiscloud.com"],
   }),
-  state("de-mymarketplace", "State of Delaware", "DE", "Delaware MyMarketplace", "state_html", "https://mmp.delaware.gov/Bids", "Delaware MyMarketplace"),
+  state("de-mymarketplace", "State of Delaware", "DE", "Delaware Open Bids / MyMarketplace", "custom_portal", "https://data.delaware.gov/resource/2hnj-zwix.json?$limit=5000", "Delaware Open Bids", {
+    alternateListingUrls: ["https://mmp.delaware.gov/Bids"],
+    allowedOrigins: ["https://mmp.delaware.gov"],
+  }),
   state("hi-hiepro", "State of Hawaii", "HI", "Hawaii HIePRO", "custom_portal", "https://hiepro.ehawaii.gov/sav-search.html", "Hawaii HIePRO"),
   state("id-purchasing", "State of Idaho", "ID", "Idaho Division of Purchasing / IPRO", "state_html", "https://purchasing.idaho.gov/open-and-future-solicitations/", "Idaho Open and Future Solicitations", {
     alternateListingUrls: ["https://purchasing.idaho.gov/vendor-resources/"],
   }),
-  state("il-bidbuy", "State of Illinois", "IL", "Illinois BidBuy / Periscope S2G", "periscope_bso", "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=y", "Illinois BidBuy"),
+  state("il-bidbuy", "State of Illinois", "IL", "Illinois BidBuy / Periscope S2G", "periscope_bso", "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=y", "Illinois BidBuy", {
+    interactiveAccessReason: "PrimeFaces/JSF search requires a session ViewState AJAX postback and loads Google reCAPTCHA before result rows are returned.",
+  }),
   state("in-idoa", "State of Indiana", "IN", "Indiana IDOA Current Business Opportunities", "state_html", "https://www.in.gov/idoa/procurement/current-business-opportunities/", "Indiana Current Business Opportunities"),
   state("ks-esupplier", "State of Kansas", "KS", "Kansas eSupplier / PeopleSoft", "peoplesoft", "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Kansas eSupplier Bid Opportunities"),
   state("ky-vss", "Commonwealth of Kentucky", "KY", "Kentucky eMARS Vendor Self-Service", "cgi_advantage", "https://emars311.ky.gov/webapp/vssonline/AltSelfService", "Kentucky eMARS VSS"),
@@ -105,10 +113,11 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
   state("ne-state-purchasing", "State of Nebraska", "NE", "Nebraska Materiel Division", "state_html", "https://das.nebraska.gov/materiel/bid-opportunities.html", "Nebraska State Purchasing Bid Opportunities"),
   state("nh-bids", "State of New Hampshire", "NH", "New Hampshire Bureau of Purchase and Property", "state_html", "https://das.nh.gov/purchasing/vendorresources.aspx", "New Hampshire Bids and Contracts", {
     alternateListingUrls: ["https://das.nh.gov/purchasing/vendorresources.asp"],
+    allowedOrigins: ["https://www.das.nh.gov"],
   }),
   state("nd-spo", "State of North Dakota", "ND", "North Dakota State Procurement / NDBuys", "state_html", "https://apps.nd.gov/csd/spo/services/bidder/listCurrentSolicitations.htm", "North Dakota Current Solicitations", {
     alternateListingUrls: ["https://internal.ndbuys.nd.gov/page.aspx/en/rfp/request_browse_public", "https://public.ndbuys.nd.gov/"],
-    allowedOrigins: ["https://internal.ndbuys.nd.gov", "https://public.ndbuys.nd.gov"],
+    allowedOrigins: ["https://www.apps.nd.gov", "https://internal.ndbuys.nd.gov", "https://public.ndbuys.nd.gov"],
   }),
   state("ok-omes", "State of Oklahoma", "OK", "Oklahoma OMES / PeopleSoft", "peoplesoft", "https://financials.ok.gov/psc/SOKLFP1DS/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Oklahoma OMES Solicitations", {
     alternateListingUrls: ["https://oklahoma.gov/omes/divisions/central-purchasing/solicitations.html"],
@@ -123,7 +132,10 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     alternateListingUrls: ["https://www.procurement.sc.gov/doing-biz/bid-ops"],
     allowedOrigins: ["https://www.procurement.sc.gov"],
   }),
-  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Procurement Management", "state_html", "https://boa.sd.gov/central-services/procurement-management/solicitations.aspx", "South Dakota Solicitations"),
+  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Central Bid Exchange / ESM Solutions", "custom_portal", "https://postingboard.esmsolutions.com/3444a404-3818-494f-84c5-2a850acd7779/events", "South Dakota Central Bid Exchange", {
+    alternateListingUrls: ["https://www.sd.gov/bhra?id=kb_article_view&sysparm_article=KB0044779"],
+    allowedOrigins: ["https://www.sd.gov"],
+  }),
   state("tn-edison", "State of Tennessee", "TN", "Tennessee Edison / PeopleSoft", "peoplesoft", "https://hub.edison.tn.gov/psc/fsprd/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Tennessee Edison Bid Opportunities", {
     alternateListingUrls: [
       "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html",
@@ -140,6 +152,7 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
   state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin VendorNet / eSupplier", "custom_portal", "https://vendornet.wi.gov/Bids.aspx", "Wisconsin VendorNet Public Bids", {
     alternateListingUrls: ["https://esupplier.wi.gov/psp/esupplier/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
     allowedOrigins: ["https://esupplier.wi.gov"],
+    interactiveAccessReason: "VendorNet populates its Telerik grid only after a browser-generated RadAjax InitialPageLoad postback.",
   }),
   state("wy-state-purchasing", "State of Wyoming", "WY", "Wyoming State Purchasing / Public Purchase", "public_purchase", "https://www.publicpurchase.com/gems/wyominggsd%2Cwy/buyer/public/publicInfo", "Wyoming State Purchasing", {
     alternateListingUrls: ["https://ai.wyo.gov/divisions/general-services/purchasing/bid-opportunities"],

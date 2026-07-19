@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/lib/providers/statewideProcurementConfigs.ts",
+    "src/lib/providers/statewideProcurementContentSignals.ts",
+    "src/lib/providers/statewideProcurementPlatformParsers.ts",
+    "src/lib/providers/statewideProcurementParser.ts",
+    "src/lib/providers/statewideProcurementPortals.ts",
+    "src/lib/providers/runStatewideLiveVerification.ts",
+    "src/lib/providers/__tests__/statewideProcurementPortals.test.ts",
+    "src/lib/providers/__tests__/statewideProcurementHotfix.test.ts",
+    "src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts",
+    "src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts"
+  ]
+}
