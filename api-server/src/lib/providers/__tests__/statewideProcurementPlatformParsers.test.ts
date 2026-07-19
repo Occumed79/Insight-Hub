@@ -21,7 +21,7 @@ describe("statewide platform parsers", () => {
         deadlinedate: "2099-12-31T00:00:00.000",
         agencycode: "OMB",
         unspsc: "85120000",
-        bidurl: "https://mmp.delaware.gov/Bids/Details/DE-2099-100",
+        bidurl: { url: "https://mmp.delaware.gov/Bids/Details/DE-2099-100" },
       },
       {
         contractnumber: "DE-2020-OLD",
