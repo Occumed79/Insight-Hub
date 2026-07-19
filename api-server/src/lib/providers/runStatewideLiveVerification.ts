@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { bsoPortalProviders } from "./bsoPortal";
 import { calEprocureProvider } from "./calEprocure";
 import { jaggaerSciQuestProviders } from "./jaggaerSciQuest";
@@ -31,6 +32,7 @@ interface StatewideLiveTarget {
 export interface StatewideLiveResult {
   state: string;
   portalId: string;
+  httpResult: string;
   status: StatewideLiveStatus;
   recordCount: number;
   durationMs: number;
@@ -72,6 +74,12 @@ function classify(result: ProviderFetchResult): StatewideLiveStatus {
   return "REQUEST_FAILURE";
 }
 
+function httpResult(result: ProviderFetchResult): string {
+  if (result.records.length > 0 || result.errors.length === 0) return "OK";
+  const status = result.errors.join(" ").match(/\bHTTP\s+(\d{3})\b/i)?.[1];
+  return status ? `HTTP ${status}` : "REQUEST_ERROR";
+}
+
 async function verifyTarget(target: StatewideLiveTarget): Promise<StatewideLiveResult> {
   const started = Date.now();
   try {
@@ -79,6 +87,7 @@ async function verifyTarget(target: StatewideLiveTarget): Promise<StatewideLiveR
     return {
       state: target.state,
       portalId: target.portalId,
+      httpResult: httpResult(result),
       status: classify(result),
       recordCount: result.records.length,
       durationMs: Date.now() - started,
@@ -86,10 +95,12 @@ async function verifyTarget(target: StatewideLiveTarget): Promise<StatewideLiveR
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const result = { records: [], total: 0, errors: [message] };
     return {
       state: target.state,
       portalId: target.portalId,
-      status: classify({ records: [], total: 0, errors: [message] }),
+      httpResult: httpResult(result),
+      status: classify(result),
       recordCount: 0,
       durationMs: Date.now() - started,
       errors: [message],
@@ -123,16 +134,16 @@ export function renderStatewideLiveMarkdown(results: readonly StatewideLiveResul
     "",
     `PASS: ${counts.PASS} | HEALTHY_EMPTY: ${counts.HEALTHY_EMPTY} | BLOCKED_CHALLENGE: ${counts.BLOCKED_CHALLENGE} | BAD_ENDPOINT: ${counts.BAD_ENDPOINT} | PARSER_FAILURE: ${counts.PARSER_FAILURE} | REQUEST_FAILURE: ${counts.REQUEST_FAILURE}`,
     "",
-    "| State | Portal ID | Record count | Status | Duration | Diagnostic |",
-    "|---|---|---:|---|---:|---|",
+    "| State | Portal ID | HTTP result | Record count | Status | Duration | Diagnostic |",
+    "|---|---|---|---:|---|---:|---|",
   ];
   for (const result of results) {
-    lines.push(`| ${result.state} | ${result.portalId} | ${result.recordCount} | ${result.status} | ${result.durationMs}ms | ${escapeCell(result.errors[0] ?? "")} |`);
+    lines.push(`| ${result.state} | ${result.portalId} | ${result.httpResult} | ${result.recordCount} | ${result.status} | ${result.durationMs}ms | ${escapeCell(result.errors[0] ?? "")} |`);
   }
   return `${lines.join("\n")}\n`;
 }
 
-async function main(): Promise<void> {
+export async function runStatewideLiveVerification(): Promise<StatewideLiveResult[]> {
   const states = new Set(STATEWIDE_LIVE_TARGETS.map((target) => target.state));
   if (STATEWIDE_LIVE_TARGETS.length !== 50 || states.size !== 50) {
     throw new Error(`Expected exactly 50 unique state targets; found ${STATEWIDE_LIVE_TARGETS.length} targets and ${states.size} states`);
@@ -151,10 +162,12 @@ async function main(): Promise<void> {
   if (results.some((result) => result.status === "BAD_ENDPOINT" || result.status === "PARSER_FAILURE")) {
     process.exitCode = 1;
   }
+  return results;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
+const invokedUrl = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : undefined;
+if (invokedUrl === import.meta.url) {
+  runStatewideLiveVerification().catch((error) => {
     console.error(error);
     process.exitCode = 1;
   });
