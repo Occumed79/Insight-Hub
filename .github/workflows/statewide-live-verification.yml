@@ -58,6 +58,7 @@ jobs:
             ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts \
             2>&1 | tee artifacts/statewide-live-verification/focused-tests.log
           code=${PIPESTATUS[0]}
           echo "$code" > artifacts/statewide-live-verification/focused-tests.exit
