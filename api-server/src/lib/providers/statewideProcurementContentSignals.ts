@@ -48,7 +48,7 @@ export function statewideContentLooksLikeBrowserShell(content: string): boolean 
   if (BROWSER_BLOCK_TEXT.test(text)) return true;
 
   const angularShell = /<[a-z0-9-]+-root\b/i.test(content)
-    && /<script\b[^>]*src=["'][^"']+(?:runtime|polyfills|main)\.[^"']*\.js["']/i.test(content)
+    && /<script\b[^>]*src=["'][^"']*(?:runtime|polyfills|main)\.[^"']*\.js["']/i.test(content)
     && !/<table\b|<tr\b/i.test(content);
   if (angularShell) return true;
 
