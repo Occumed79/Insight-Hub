@@ -1,5 +1,5 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
-import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementPortals";
+import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementConfigs";
 
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
@@ -46,7 +46,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "nj-jersey-city-public-schools-opengov",
   "fl-santa-rosa-county-opengov",
   "oh-cleveland-metropolitan-school-district-opengov",
-  "ca-san-bernardardino-city-unified-school-district-opengov",
+  "ca-san-bernardino-city-unified-school-district-opengov",
   "fl-alachua-county-opengov",
   "va-richmond-public-schools-opengov",
   "fl-clay-county-opengov",
