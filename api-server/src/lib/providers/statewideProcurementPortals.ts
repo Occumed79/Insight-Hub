@@ -18,6 +18,10 @@ import {
   type StatewidePortalConfig,
 } from "./statewideProcurementConfigs";
 import {
+  statewideContentHasExplicitEmptyEvidence,
+  statewideContentLooksLikeBrowserShell,
+} from "./statewideProcurementContentSignals";
+import {
   extractStatewideDiscoveryUrls,
   parseStatewideDetailHtml,
   parseStatewideListingContent,
@@ -110,8 +114,9 @@ export class PublicPortalSession {
         if (response.status < 300 || response.status >= 400) return response;
         const location = response.headers.get("location");
         if (!location) return response;
-        const next = allowedStatewideUrl(this.config, location, current);
-        if (!next) throw new Error(`${this.config.portalId} redirected outside its configured official origins`);
+        const redirectTarget = new URL(location, current).toString();
+        const next = allowedStatewideUrl(this.config, redirectTarget, current);
+        if (!next) throw new Error(`${this.config.portalId} redirected outside its configured official origins: ${redirectTarget}`);
         current = next;
       } finally {
         clearTimeout(timer);
@@ -237,6 +242,7 @@ export class StatewideProcurementProvider implements DataSourceProvider {
     let listingPage = 0;
     let challengeCount = 0;
     let successfulFetches = 0;
+    let explicitEmptyCount = 0;
 
     if (!(await this.isConfigured())) {
       const reason = `${this.config.portalId}: invalid or empty statewide adapter configuration`;
@@ -264,13 +270,17 @@ export class StatewideProcurementProvider implements DataSourceProvider {
         errors.push(listings.size ? `${this.config.portalId}: partial listing results after ${reason}` : `${this.config.portalId}: ${reason}`);
         continue;
       }
-      if (statewideContentLooksLikeChallenge(content)) challengeCount += 1;
+
+      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
+      if (browserBlocked) challengeCount += 1;
       const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));
       if (seenSignatures.has(signature)) continue;
       seenSignatures.add(signature);
       listingPage += 1;
 
-      for (const listing of parseStatewideListingContent(content, this.config, safePageUrl, listingPage)) {
+      const parsedListings = parseStatewideListingContent(content, this.config, safePageUrl, listingPage);
+      if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;
+      for (const listing of parsedListings) {
         const key = listing.nativeId.toLowerCase();
         if (!listings.has(key)) listings.set(key, listing);
         if (listings.size >= targetCount) break;
@@ -289,13 +299,15 @@ export class StatewideProcurementProvider implements DataSourceProvider {
 
     if (!listings.size) {
       this.recordCount = 0;
-      if (successfulFetches > 0 && challengeCount < successfulFetches) {
+      if (successfulFetches > 0 && explicitEmptyCount > 0 && challengeCount < successfulFetches) {
         this.lastError = undefined;
         this.lastSuccess = new Date();
         return { records: [], total: 0, errors: [] };
       }
       if (challengeCount > 0) {
         errors.push(`${this.config.portalId}: official public route returned a browser/login challenge and no parseable public records`);
+      } else if (successfulFetches > 0) {
+        errors.push(`${this.config.portalId}: official public routes returned content but no parseable active opportunity rows and no explicit empty-state evidence`);
       } else if (!errors.length) {
         errors.push(`${this.config.portalId}: all configured official listing requests failed before content was returned`);
       }
