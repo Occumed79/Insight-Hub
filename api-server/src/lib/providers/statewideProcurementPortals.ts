@@ -21,6 +21,7 @@ import {
   statewideContentHasExplicitEmptyEvidence,
   statewideContentLooksLikeBrowserShell,
 } from "./statewideProcurementContentSignals";
+import { parseStatewidePlatformListings } from "./statewideProcurementPlatformParsers";
 import {
   extractStatewideDiscoveryUrls,
   parseStatewideDetailHtml,
@@ -278,7 +279,10 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       seenSignatures.add(signature);
       listingPage += 1;
 
-      const parsedListings = parseStatewideListingContent(content, this.config, safePageUrl, listingPage);
+      const parsedListings = [
+        ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
+        ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
+      ];
       if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;
       for (const listing of parsedListings) {
         const key = listing.nativeId.toLowerCase();
