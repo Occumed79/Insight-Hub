@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "api-server/src/lib/providers/**"
+      - "api-server/tsconfig.statewide.json"
       - "package.json"
       - ".github/workflows/statewide-live-verification.yml"
   workflow_dispatch:
@@ -36,12 +37,15 @@ jobs:
       - name: Prepare verification output
         run: mkdir -p artifacts/statewide-live-verification
 
-      - name: Typecheck provider modules
+      - name: Typecheck statewide provider modules
         id: typecheck
         continue-on-error: true
         run: |
           set -o pipefail
-          pnpm --filter @workspace/api-server run typecheck 2>&1 | tee artifacts/statewide-live-verification/typecheck.log
+          {
+            pnpm run typecheck:libs
+            pnpm --filter @workspace/api-server exec tsc -p tsconfig.statewide.json --noEmit
+          } 2>&1 | tee artifacts/statewide-live-verification/typecheck.log
 
       - name: Run statewide provider tests
         id: focused_tests
@@ -88,7 +92,7 @@ jobs:
         run: |
           failures=0
           if [ "${{ steps.typecheck.outcome }}" != "success" ]; then
-            echo "Typecheck failed"
+            echo "Focused statewide typecheck failed"
             failures=1
           fi
           if [ "${{ steps.focused_tests.outcome }}" != "success" ]; then
