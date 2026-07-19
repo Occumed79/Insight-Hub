@@ -13,6 +13,7 @@
     "src/lib/providers/runStatewideLiveVerification.ts",
     "src/lib/providers/__tests__/statewideProcurementPortals.test.ts",
     "src/lib/providers/__tests__/statewideProcurementHotfix.test.ts",
-    "src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts"
+    "src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts",
+    "src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts"
   ]
 }
