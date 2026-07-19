@@ -46,6 +46,29 @@ export function statewideContentHasExplicitEmptyEvidence(content: string): boole
 export function statewideContentLooksLikeBrowserShell(content: string): boolean {
   const text = statewideHtmlToText(content);
   if (BROWSER_BLOCK_TEXT.test(text)) return true;
+
+  const angularShell = /<[a-z0-9-]+-root\b/i.test(content)
+    && /<script\b[^>]*src=["'][^"']+(?:runtime|polyfills|main)\.[^"']*\.js["']/i.test(content)
+    && !/<table\b|<tr\b/i.test(content);
+  if (angularShell) return true;
+
+  const primeFacesPostback = /id=["']bidSearchForm["']/i.test(content)
+    && /PrimeFaces\.(?:ab|bcn)\(/i.test(content)
+    && /recaptcha|g-recaptcha/i.test(content)
+    && !/external\/bidDetail\.sda/i.test(content);
+  if (primeFacesPostback) return true;
+
+  const cgiGuestTransition = /name=["']guest_login["']/i.test(content)
+    && /value=["']Public Access["']/i.test(content)
+    && /method=["']post["']/i.test(content)
+    && !/solicitation number|bid number|event id/i.test(text);
+  if (cgiGuestTransition) return true;
+
+  const telerikInitialPostback = /RadAjaxManager/i.test(content)
+    && /ajaxRequest\(["']InitialPageLoad["']\)/i.test(content)
+    && !/Bid\.aspx\?Id=/i.test(content);
+  if (telerikInitialPostback) return true;
+
   const hasAppRoot = /(?:id|class)=["'][^"']*(?:app-root|__next|root|app-container|application-root)[^"']*["']/i.test(content)
     || /<app-root\b/i.test(content);
   const hasScriptBundle = /<script\b[^>]*src=["'][^"']+(?:\.js|bundle|chunk)[^"']*["']/i.test(content);
