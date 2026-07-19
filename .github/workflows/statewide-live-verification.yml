@@ -75,8 +75,9 @@ jobs:
           BSO_MAX_RETRIES: "0"
         run: |
           set +e
-          pnpm statewide:verify-live
-          code=$?
+          set -o pipefail
+          pnpm statewide:verify-live 2>&1 | tee artifacts/statewide-live-verification/live-sweep.log
+          code=${PIPESTATUS[0]}
           echo "$code" > artifacts/statewide-live-verification/live-sweep.exit
           exit 0
 
