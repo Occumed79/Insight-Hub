@@ -25,7 +25,7 @@ export const SOUTH_DAKOTA_POSTING_BOARD_SOURCE: PublicPortalSource = {
   portalPlatform: "ESM Solutions Posting Board",
   sourceLevel: "state",
   level: "state",
-  accessMode: "public_api",
+  accessMode: "api",
   scraperType: "existing_parser",
   enabled: true,
   verificationStatus: "verified",
