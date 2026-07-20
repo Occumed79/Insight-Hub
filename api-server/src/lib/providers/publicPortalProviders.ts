@@ -4,9 +4,7 @@ import { JAGGAER_SCIQUEST_TENANTS, jaggaerSciQuestProviders } from "./jaggaerSci
 import { BONFIRE_TENANTS, bonfirePortalProviders } from "./bonfirePortal";
 import { IONWAVE_TENANTS, ionWavePortalProviders } from "./ionWavePortal";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
-import { GEORGIA_GAWORK_SOURCE, georgiaGaworkProvider } from "./georgiaGawork";
-import { MINNESOTA_OSP_SOURCE, minnesotaOspProvider } from "./minnesotaOsp";
-import { OREGON_BUYS_SOURCE, oregonBuysProvider } from "./oregonBuys";
+import { DEEP_RECOVERY_SOURCES, deepRecoveryProviders } from "./deepRecoveryProviders";
 import { STATEWIDE_PROCUREMENT_SOURCES, statewideProcurementProviders } from "./statewideProcurementPortals";
 import { PublicPortalProvidersProvider, PUBLIC_PORTAL_SOURCES, type PublicPortalSourceRunStatus } from "./publicPortalProviders/index";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
@@ -18,9 +16,11 @@ export * from "./jaggaerSciQuest";
 export * from "./bonfirePortal";
 export * from "./ionWavePortal";
 export * from "./calEprocure";
+export * from "./deepRecoveryProviders";
 export * from "./georgiaGawork";
 export * from "./minnesotaOsp";
 export * from "./oregonBuys";
+export * from "./southDakotaPostingBoard";
 export * from "./statewideProcurementPortals";
 
 const BSO_SOURCES: PublicPortalSource[] = [
@@ -33,11 +33,6 @@ const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS.filter((t
 const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({ id: tenant.portalId, agencyName: tenant.buyerName, agencyType: "county", state: tenant.state, sourceUrl: tenant.listingUrl, searchUrl: tenant.listingUrl, domain: new URL(tenant.listingUrl).hostname, portalPlatform: "Bonfire / Euna", sourceLevel: "county", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public Bonfire/Euna opportunity-listing adapter." }));
 const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({ id: tenant.portalId, agencyName: tenant.buyerName, agencyType: "county", state: tenant.state, sourceUrl: tenant.listingUrl, searchUrl: tenant.listingUrl, domain: new URL(tenant.listingUrl).hostname, portalPlatform: "IonWave / Euna", sourceLevel: "county", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public IonWave/Euna bid-listing adapter." }));
 const CAL_EPROCURE_SOURCES: PublicPortalSource[] = [CAL_EPROCURE_SOURCE];
-const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = [
-  GEORGIA_GAWORK_SOURCE,
-  MINNESOTA_OSP_SOURCE,
-  OREGON_BUYS_SOURCE,
-];
 const DEEP_RECOVERY_SOURCE_IDS = new Set(DEEP_RECOVERY_SOURCES.map((source) => source.id));
 const STATEWIDE_SHARED_SOURCES = STATEWIDE_PROCUREMENT_SOURCES.filter((source) => !DEEP_RECOVERY_SOURCE_IDS.has(source.id));
 const STATEWIDE_SOURCE_IDS = new Set(STATEWIDE_PROCUREMENT_SOURCES.map((source) => source.id));
@@ -57,15 +52,7 @@ const dedicatedGroups: DedicatedGroup[] = [
   { sources: BONFIRE_SOURCES, providers: bonfirePortalProviders, statuses: new Map() },
   { sources: IONWAVE_SOURCES, providers: ionWavePortalProviders, statuses: new Map() },
   { sources: CAL_EPROCURE_SOURCES, providers: { [CAL_EPROCURE_SOURCE.id]: calEprocureProvider }, statuses: new Map() },
-  {
-    sources: DEEP_RECOVERY_SOURCES,
-    providers: {
-      [GEORGIA_GAWORK_SOURCE.id]: georgiaGaworkProvider,
-      [MINNESOTA_OSP_SOURCE.id]: minnesotaOspProvider,
-      [OREGON_BUYS_SOURCE.id]: oregonBuysProvider,
-    },
-    statuses: new Map(),
-  },
+  { sources: DEEP_RECOVERY_SOURCES, providers: deepRecoveryProviders, statuses: new Map() },
   { sources: STATEWIDE_SHARED_SOURCES, providers: statewideProcurementProviders, statuses: new Map() },
 ];
 
