@@ -207,6 +207,20 @@ function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): 
   queue.push(value);
 }
 
+function boundedPortalBudget(
+  envName: string,
+  configuredValue: number | undefined,
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const configured = Math.min(Math.max(configuredValue ?? defaultValue, minimum), maximum);
+  const raw = process.env[envName]?.trim();
+  if (!raw) return configured;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : configured;
+}
+
 export class StatewideProcurementProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
   private lastAttempt?: Date;
@@ -226,9 +240,27 @@ export class StatewideProcurementProvider implements DataSourceProvider {
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     this.lastAttempt = new Date();
-    const timeoutMs = positiveIntegerEnv("STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS", 20_000, 3_000, 60_000);
-    const maxRetries = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RETRIES", 2, 0, 2);
-    const maxPages = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_PAGES", 8, 1, 20);
+    const timeoutMs = boundedPortalBudget(
+      "STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS",
+      this.config.requestTimeoutMs,
+      20_000,
+      3_000,
+      60_000,
+    );
+    const maxRetries = boundedPortalBudget(
+      "STATEWIDE_PORTAL_MAX_RETRIES",
+      this.config.maxRetries,
+      2,
+      0,
+      2,
+    );
+    const maxPages = boundedPortalBudget(
+      "STATEWIDE_PORTAL_MAX_PAGES",
+      this.config.maxPages,
+      8,
+      1,
+      20,
+    );
     const maxResults = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RESULTS", 100, 1, 500);
     const detailConcurrency = positiveIntegerEnv("STATEWIDE_PORTAL_DETAIL_CONCURRENCY", 4, 1, 8);
     const offset = Math.max(options.offset ?? 0, 0);
@@ -273,7 +305,6 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       }
 
       const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      if (browserBlocked) challengeCount += 1;
       const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));
       if (seenSignatures.has(signature)) continue;
       seenSignatures.add(signature);
@@ -283,6 +314,7 @@ export class StatewideProcurementProvider implements DataSourceProvider {
         ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
         ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
       ];
+      if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;
       if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;
       for (const listing of parsedListings) {
         const key = listing.nativeId.toLowerCase();

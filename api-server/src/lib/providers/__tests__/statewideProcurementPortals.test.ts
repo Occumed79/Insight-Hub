@@ -170,7 +170,7 @@ describe("statewide listing parser platform fixtures", () => {
     const rows = parseStatewideListingContent(html, WI);
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.nativeId, "WI-100");
-    assert.deepEqual(rows[0]!.documentUrls, ["https://vendornet.wi.gov/Documents/WI-100.pdf"]);
+    assert.deepEqual(rows[0]!.documentUrls, [new URL("/Documents/WI-100.pdf", WI.listingUrl).toString()]);
   });
 });
 

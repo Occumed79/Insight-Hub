@@ -51,6 +51,16 @@ describe("statewide empty-state evidence", () => {
     assert.equal(statewideContentLooksLikeBrowserShell(html), true);
   });
 
+  it("detects the CGI Advantage 4 client application shell", () => {
+    const html = `<html><head><script>var moInitialResponse = {"page_metadata":{"key":"vss.page.VAXXX03150"}};</script></head><body><div id="viewManager"></div></body></html>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
+  it("detects a Perfdrive hCaptcha block", () => {
+    const html = `<img src="https://captcha.perfdrive.com/captcha-public/images/ss_captcha.png"><p>Your activity made us think that you are a bot.</p><div class="h-captcha"></div>`;
+    assert.equal(statewideContentLooksLikeBrowserShell(html), true);
+  });
+
   it("detects a Telerik grid requiring browser InitialPageLoad", () => {
     const html = `<script>RadAjaxManager; manager.ajaxRequest("InitialPageLoad");</script>`;
     assert.equal(statewideContentLooksLikeBrowserShell(html), true);

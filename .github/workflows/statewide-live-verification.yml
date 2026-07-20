@@ -16,7 +16,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,15 +66,15 @@ jobs:
 
       - name: Run live 50-state sweep
         env:
-          STATEWIDE_LIVE_CONCURRENCY: "4"
+          STATEWIDE_LIVE_CONCURRENCY: "8"
           STATEWIDE_LIVE_REPORT_DIR: ${{ github.workspace }}/artifacts/statewide-live-verification
-          STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "10000"
-          STATEWIDE_PORTAL_MAX_RETRIES: "0"
-          STATEWIDE_PORTAL_MAX_PAGES: "2"
+          STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "30000"
+          STATEWIDE_PORTAL_MAX_RETRIES: "1"
+          STATEWIDE_PORTAL_MAX_PAGES: "4"
           STATEWIDE_PORTAL_MAX_RESULTS: "2"
           STATEWIDE_PORTAL_DETAIL_CONCURRENCY: "2"
-          BSO_REQUEST_TIMEOUT_MS: "10000"
-          BSO_MAX_RETRIES: "0"
+          BSO_REQUEST_TIMEOUT_MS: "30000"
+          BSO_MAX_RETRIES: "1"
         run: |
           set +e
           set -o pipefail
