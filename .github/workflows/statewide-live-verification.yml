@@ -26,8 +26,8 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/statewide-19-recovery'
         shell: bash
         run: |
-          git fetch origin agent/statewide-19-recovery
-          git checkout -B agent/statewide-19-recovery origin/agent/statewide-19-recovery
+          git fetch origin refs/heads/agent/statewide-19-recovery:refs/remotes/origin/agent/statewide-19-recovery
+          git checkout -B agent/statewide-19-recovery refs/remotes/origin/agent/statewide-19-recovery
           python .github/scripts/statewide-recovery-pass2.py
           git config user.name "openai-agent"
           git config user.email "openai-agent@users.noreply.github.com"
