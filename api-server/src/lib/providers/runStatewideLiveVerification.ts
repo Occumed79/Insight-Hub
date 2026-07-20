@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { bsoPortalProviders } from "./bsoPortal";
 import { calEprocureProvider } from "./calEprocure";
+import { georgiaGaworkProvider } from "./georgiaGawork";
 import { jaggaerSciQuestProviders } from "./jaggaerSciQuest";
 import { minnesotaOspProvider } from "./minnesotaOsp";
 import { nyScrProvider } from "./nyScr";
@@ -52,6 +53,7 @@ const SPECIALIZED_TARGETS: readonly StatewideLiveTarget[] = [
 ];
 
 const RECOVERY_OVERRIDES: Readonly<Record<string, DataSourceProvider>> = {
+  "ga-gpr": georgiaGaworkProvider,
   "mn-swift": minnesotaOspProvider,
   "or-oregonbuys": oregonBuysProvider,
 };
