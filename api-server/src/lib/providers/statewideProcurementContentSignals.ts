@@ -3,7 +3,8 @@ import { statewideHtmlToText } from "./statewideProcurementParser";
 const EXPLICIT_EMPTY_TEXT = /(?:\bno\s+(?:(?:open|active|current|matching|available)\s+)?(?:bids?|solicitations?|opportunities|events?|records?|results?)\b|\bzero\s+(?:results?|records?)\b|\bthere (?:are|is) currently no\b|\byour search (?:returned|found) no\b|\bno items? (?:were )?found\b|\bnothing (?:was )?found\b)/i;
 const CLOSED_TEXT = /\b(?:closed|awarded|cancelled|canceled|expired|withdrawn|completed|complete|inactive|pending selection|retracted|under evaluation)\b/i;
 const LISTING_HEADER_TEXT = /\b(?:solicitation|bid|rfp|rfq|event|project|opportunity)\b/i;
-const BROWSER_BLOCK_TEXT = /\b(?:unsupported browser|browser is not supported|upgrade your browser|enable javascript to continue)\b/i;
+const BROWSER_BLOCK_TEXT = /\b(?:unsupported browser|browser is not supported|upgrade your browser|enable javascript to continue|verify you are human|checking your browser|made us think that you are a bot|solve this captcha|request unblock)\b/i;
+const AUTOMATED_ACCESS_BLOCK_MARKUP = /captcha\.perfdrive\.com|h-captcha|g-recaptcha|cf-chl-|px-captcha|perimeterx|datadome/i;
 
 function jsonHasExplicitEmptyCollection(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0;
@@ -45,7 +46,7 @@ export function statewideContentHasExplicitEmptyEvidence(content: string): boole
 
 export function statewideContentLooksLikeBrowserShell(content: string): boolean {
   const text = statewideHtmlToText(content);
-  if (BROWSER_BLOCK_TEXT.test(text)) return true;
+  if (BROWSER_BLOCK_TEXT.test(text) || AUTOMATED_ACCESS_BLOCK_MARKUP.test(content)) return true;
 
   const angularShell = /<[a-z0-9-]+-root\b/i.test(content)
     && /<script\b[^>]*src=["'][^"']*(?:runtime|polyfills|main)\.[^"']*\.js["']/i.test(content)
@@ -63,6 +64,11 @@ export function statewideContentLooksLikeBrowserShell(content: string): boolean 
     && /method=["']post["']/i.test(content)
     && !/solicitation number|bid number|event id/i.test(text);
   if (cgiGuestTransition) return true;
+
+  const cgiAdvantage4Shell = /\bmoInitialResponse\s*=\s*\{/i.test(content)
+    && /\bvss\.page\./i.test(content)
+    && !/<table\b|<tr\b|\b(?:solicitation number|bid number|event id|opportunity title)\b/i.test(content);
+  if (cgiAdvantage4Shell) return true;
 
   const telerikInitialPostback = /RadAjaxManager/i.test(content)
     && /ajaxRequest\(["']InitialPageLoad["']\)/i.test(content)
