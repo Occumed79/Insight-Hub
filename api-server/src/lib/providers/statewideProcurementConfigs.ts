@@ -83,8 +83,8 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
   }),
   state("ms-magic", "State of Mississippi", "MS", "Mississippi Procurement Opportunity Search / MAGIC", "state_html", "https://www.ms.gov/dfa/contract_bid_search/Search", "Mississippi Procurement Opportunity Search"),
   state("nm-active-procurements", "State of New Mexico", "NM", "New Mexico State Purchasing Active Procurements", "state_html", "https://generalservices.state.nm.us/state-purchasing/active-itbs-and-rfps/active-procurements/", "New Mexico Active Procurements"),
-  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/AltSelfService", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma.michigan.gov/PRDVSS1X1/Advantage4"],
+  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma-prod.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
+    alternateListingUrls: ["https://sigma-prod.michigan.gov/PRDVSS1X1/AltSelfService"],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 6,
@@ -151,13 +151,14 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     maxRetries: 2,
     maxPages: 8,
   }),
-  state("ky-vss", "Commonwealth of Kentucky", "KY", "Kentucky eMARS Vendor Self-Service", "cgi_advantage", "https://emars311.ky.gov/webapp/vssonline/AltSelfService", "Kentucky eMARS VSS", {
+  state("ky-vss", "Commonwealth of Kentucky", "KY", "Kentucky eMARS Vendor Self-Service", "cgi_advantage", "https://vss.ky.gov/vssprod-ext/Advantage4", "Kentucky eMARS VSS", {
+    alternateListingUrls: ["https://vss.ky.gov/vssprod-ext/AltSelfService"],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 6,
   }),
-  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
-    alternateListingUrls: ["https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUBLIC_MENU_FL.GBL"],
+  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
+    alternateListingUrls: ["https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 8,
@@ -222,19 +223,20 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     maxPages: 8,
   }),
   state("wv-oasis", "State of West Virginia", "WV", "West Virginia wvOASIS Vendor Self-Service", "cgi_advantage", "https://prd311.wvoasis.gov/PRDVSS1X1/AltSelfService", "West Virginia wvOASIS", {
-    alternateListingUrls: ["https://prd311.wvoasis.gov/PRDVSS1X1/Advantage4", "https://purchasing.wv.gov/vendor/Pages/default.aspx"],
-    allowedOrigins: ["https://purchasing.wv.gov"],
+    alternateListingUrls: ["https://prd311.wvoasis.gov/PRDVSS1X1/Advantage4", "https://purchasing.wv.gov/vendor/Pages/default.aspx", "https://dep-auth.wv.gov/bto/IHP/Pages/default.aspx"],
+    allowedOrigins: ["https://purchasing.wv.gov", "https://dep-auth.wv.gov"],
     requestTimeoutMs: 60_000,
     maxRetries: 3,
     maxPages: 8,
   }),
-  state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin VendorNet / eSupplier", "custom_portal", "https://vendornet.wi.gov/Bids.aspx", "Wisconsin VendorNet Public Bids", {
-    alternateListingUrls: ["https://esupplier.wi.gov/psp/esupplier/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
-    allowedOrigins: ["https://esupplier.wi.gov"],
+  state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin eSupplier / VendorNet", "peoplesoft", "https://esupplier.wi.gov/psc/esupplier_4/SUPPLIER/ERP/c/WI_SS_SELF_SERVICE.WI_SS_BIDDER_BIDS.GBL?page=WI_SS_BIDDER_BIDS", "Wisconsin eSupplier Search Solicitations", {
+    alternateListingUrls: [
+      "https://esupplier.wi.gov/psc/esupplier_3/SUPPLIER/ERP/c/WI_SS_SELF_SERVICE.WI_SS_BIDDER_BIDS.GBL?page=WI_SS_BIDDER_BIDS",
+      "https://esupplier.wi.gov/psc/esupplier_5/SUPPLIER/ERP/c/WI_SS_SELF_SERVICE.WI_SS_PGLT_CURSOL.GBL",
+    ],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 8,
-    interactiveAccessReason: "VendorNet populates its Telerik grid only after a public RadAjax InitialPageLoad postback.",
   }),
   state("wy-state-purchasing", "State of Wyoming", "WY", "Wyoming State Purchasing / Public Purchase", "public_purchase", "https://www.publicpurchase.com/gems/wyominggsd%2Cwy/buyer/public/publicInfo", "Wyoming State Purchasing", {
     alternateListingUrls: ["https://ai.wyo.gov/divisions/general-services/purchasing/bid-opportunities"],
