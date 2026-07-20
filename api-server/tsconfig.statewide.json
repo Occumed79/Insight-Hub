@@ -5,6 +5,7 @@
     "noEmit": true
   },
   "include": [
+    "src/lib/providers/georgiaGawork.ts",
     "src/lib/providers/minnesotaOsp.ts",
     "src/lib/providers/oregonBuys.ts",
     "src/lib/providers/officialPortalHttp.ts",
