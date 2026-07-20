@@ -6,6 +6,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import {
+  describeOfficialPortalRequestError,
   extractSameOriginPaginationUrls,
   positiveIntegerEnv,
 } from "./officialPortalHttp";
@@ -144,11 +145,7 @@ export class PublicPortalSession {
         await new Promise((resolve) => setTimeout(resolve, statewideRetryDelayMs(null, attempt)));
       }
     }
-    if (lastError instanceof Error) {
-      if (lastError.name === "AbortError") throw new Error(`${label} timed out after ${timeoutMs}ms`);
-      throw lastError;
-    }
-    throw new Error(`${label} request failed`);
+    throw new Error(describeOfficialPortalRequestError(lastError, label, timeoutMs));
   }
 
   supports(url: string): boolean {
