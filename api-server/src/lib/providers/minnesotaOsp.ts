@@ -109,6 +109,7 @@ function parseDate(value?: string, endOfDay = false): Date | undefined {
     .replace(/\u00a0/g, " ")
     .replace(/\b(?:CST|CDT|CT)\b/gi, "")
     .replace(/\s+at\s+/gi, " ")
+    .replace(/\b(\d{1,2}:\d{2})(am|pm)\b/gi, "$1 $2")
     .replace(/\s+/g, " ")
     .trim();
   const dateOnly = /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(cleaned)
