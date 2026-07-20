@@ -83,11 +83,12 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
   }),
   state("ms-magic", "State of Mississippi", "MS", "Mississippi Procurement Opportunity Search / MAGIC", "state_html", "https://www.ms.gov/dfa/contract_bid_search/Search", "Mississippi Procurement Opportunity Search"),
   state("nm-active-procurements", "State of New Mexico", "NM", "New Mexico State Purchasing Active Procurements", "state_html", "https://generalservices.state.nm.us/state-purchasing/active-itbs-and-rfps/active-procurements/", "New Mexico Active Procurements"),
-  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/webapp/PRDVSS2X1/AltSelfService", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma.michigan.gov/webapp/PRDVSS2X1/Advantage4"],
+  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
+    alternateListingUrls: ["https://sigma.michigan.gov/PRDVSS1X1/AltSelfService"],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 6,
+    interactiveAccessReason: "The official SIGMA VSS route uses the CGI Advantage client application before public solicitations are exposed.",
   }),
   state("pa-emarketplace", "Commonwealth of Pennsylvania", "PA", "Pennsylvania eMarketplace", "state_html", "https://www.emarketplace.state.pa.us/Search.aspx", "Pennsylvania eMarketplace"),
   state("va-eva", "Commonwealth of Virginia", "VA", "Virginia eVA / CGI", "custom_portal", "https://mvendor.cgieva.com/Vendor/public/PublicSearch.jsp", "Virginia eVA Business Opportunities", {
