@@ -4,7 +4,9 @@ import { pathToFileURL } from "node:url";
 import { bsoPortalProviders } from "./bsoPortal";
 import { calEprocureProvider } from "./calEprocure";
 import { jaggaerSciQuestProviders } from "./jaggaerSciQuest";
+import { minnesotaOspProvider } from "./minnesotaOsp";
 import { nyScrProvider } from "./nyScr";
+import { oregonBuysProvider } from "./oregonBuys";
 import {
   STATEWIDE_PORTAL_CONFIGS,
   statewideProcurementProviders,
@@ -49,11 +51,16 @@ const SPECIALIZED_TARGETS: readonly StatewideLiveTarget[] = [
   { state: "TX", portalId: "tx-esbd", provider: texasEsbdProvider },
 ];
 
+const RECOVERY_OVERRIDES: Readonly<Record<string, DataSourceProvider>> = {
+  "mn-swift": minnesotaOspProvider,
+  "or-oregonbuys": oregonBuysProvider,
+};
+
 export const STATEWIDE_LIVE_TARGETS: readonly StatewideLiveTarget[] = [
   ...STATEWIDE_PORTAL_CONFIGS.map((config) => ({
     state: config.state,
     portalId: config.portalId,
-    provider: statewideProcurementProviders[config.portalId]!,
+    provider: RECOVERY_OVERRIDES[config.portalId] ?? statewideProcurementProviders[config.portalId]!,
   })),
   ...SPECIALIZED_TARGETS,
 ].sort((left, right) => left.state.localeCompare(right.state));
