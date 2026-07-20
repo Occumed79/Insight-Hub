@@ -6,7 +6,7 @@ def replace_once(path: str, old: str, new: str) -> None:
     text = target.read_text()
     count = text.count(old)
     if count != 1:
-        raise SystemExit(f"{path}: expected exactly one match, found {count}: {old[:120]!r}")
+        raise SystemExit(f"{path}: expected exactly one match, found {count}: {old[:160]!r}")
     target.write_text(text.replace(old, new, 1))
 
 
@@ -15,8 +15,8 @@ replace_once(
     configs,
     '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma-prod.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
     alternateListingUrls: ["https://sigma-prod.michigan.gov/PRDVSS1X1/AltSelfService"],''',
-    '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma.michigan.gov/PRDVSS1X1/AltSelfService"],''',
+    '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/webapp/PRDVSS2X1/AltSelfService", "Michigan SIGMA VSS", {
+    alternateListingUrls: ["https://sigma.michigan.gov/webapp/PRDVSS2X1/Advantage4"],''',
 )
 replace_once(
     configs,
@@ -55,7 +55,7 @@ replace_once(
   queue.push(value);
 }
 
-export class StatewideProcurementProvider''',
+export class StatewideProcurementProvider implements DataSourceProvider''',
     '''function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
   const key = statewideCanonicalUrl(value).toLowerCase();
   if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
@@ -76,7 +76,7 @@ function boundedPortalBudget(
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : configured;
 }
 
-export class StatewideProcurementProvider''',
+export class StatewideProcurementProvider implements DataSourceProvider''',
 )
 replace_once(
     portals,
@@ -107,6 +107,14 @@ replace_once(
 )
 replace_once(
     portals,
+    '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
+      if (browserBlocked) challengeCount += 1;
+      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
+    '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
+      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
+)
+replace_once(
+    portals,
     '''      const parsedListings = [
         ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
         ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
@@ -118,14 +126,6 @@ replace_once(
       ];
       if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;
       if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;''',
-)
-replace_once(
-    portals,
-    '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      if (browserBlocked) challengeCount += 1;
-      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
-    '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
 )
 
 signals = "api-server/src/lib/providers/statewideProcurementContentSignals.ts"
