@@ -9,6 +9,7 @@
     "src/lib/providers/georgiaGawork.ts",
     "src/lib/providers/hawaiiHands.ts",
     "src/lib/providers/minnesotaOsp.ts",
+    "src/lib/providers/newHampshireBids.ts",
     "src/lib/providers/oregonBuys.ts",
     "src/lib/providers/southDakotaPostingBoard.ts",
     "src/lib/providers/officialPortalHttp.ts",
