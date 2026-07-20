@@ -136,4 +136,58 @@ describe("blocked-state deep recovery providers", () => {
       "OregonBuys open bids network request failed (code=ENOTFOUND, syscall=getaddrinfo, hostname=oregonbuys.gov): fetch failed",
     );
   });
+
+  it("discovers public solicitation contracts from official CGI Advantage bundles", async () => {
+    const bundles: Record<string, string[]> = {
+      KY: [
+        "https://vss.ky.gov/vssprod-ext/advjs/761.ce818569c9c36901941b.js",
+        "https://vss.ky.gov/vssprod-ext/advjs/855.62c7aba0e5cf061f6289.js",
+        "https://vss.ky.gov/vssprod-ext/advjs/940.a2b1ea853b56a88fb349.js",
+        "https://vss.ky.gov/vssprod-ext/advjs/168.020e8dd8a8febc335887.js",
+        "https://vss.ky.gov/vssprod-ext/advjs/app.7e2fd11eea125fb867ea.js",
+      ],
+      MI: [
+        "https://sigma.michigan.gov/PRDVSS1X1/advjs/761.ce818569c9c36901941b.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advjs/855.62c7aba0e5cf061f6289.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advjs/940.a2b1ea853b56a88fb349.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advjs/722.e1d22ef86f9821c6727e.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advjs/app.92f4eacad22cc83e1a85.js",
+      ],
+    };
+
+    for (const [state, urls] of Object.entries(bundles)) {
+      const findings = new Set<string>();
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, {
+            headers: {
+              accept: "application/javascript,text/javascript,*/*;q=0.8",
+              "user-agent": "OccuMed-InsightHub/1.0 recovery-contract-inspector",
+            },
+          });
+          if (!response.ok) {
+            console.log(`CGI_DISCOVERY ${state} ${response.status} ${url}`);
+            continue;
+          }
+          const source = await response.text();
+          for (const match of source.matchAll(/["'`]([^"'`\n]{3,280})["'`]/g)) {
+            const value = match[1] ?? "";
+            if (/solicit|business.?opportun|bid.?search|public.?access|rest|api|vaxxx|vss\.page/i.test(value)) {
+              findings.add(value);
+            }
+          }
+          for (const keyword of ["solicitation_number", "Business Opportunities", "VAXXX", "REST", "api/"]) {
+            let cursor = 0;
+            while ((cursor = source.indexOf(keyword, cursor)) >= 0 && findings.size < 160) {
+              findings.add(source.slice(Math.max(0, cursor - 120), Math.min(source.length, cursor + 220)));
+              cursor += keyword.length;
+            }
+          }
+        } catch (error) {
+          console.log(`CGI_DISCOVERY ${state} ERROR ${url} ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      console.log(`CGI_DISCOVERY ${state} FINDINGS ${JSON.stringify(Array.from(findings).slice(0, 160))}`);
+    }
+  });
 });
