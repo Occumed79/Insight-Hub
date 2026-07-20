@@ -77,6 +77,29 @@ export function extractSameOriginPaginationUrls(
   return Array.from(deduped.values()).slice(0, Math.max(0, limit));
 }
 
+export function describeOfficialPortalRequestError(
+  error: unknown,
+  label: string,
+  timeoutMs: number,
+): string {
+  if (!(error instanceof Error)) return `${label} request failed: ${String(error)}`;
+  if (error.name === "AbortError") return `${label} timed out after ${timeoutMs}ms`;
+  if (error.message.startsWith(`${label} `)) return error.message;
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const details = cause && typeof cause === "object"
+    ? cause as Record<string, unknown>
+    : undefined;
+  const diagnostics = ["code", "syscall", "hostname", "address", "port"].flatMap((key) => {
+    const value = details?.[key];
+    return value === undefined || value === null || value === ""
+      ? []
+      : [`${key}=${String(value)}`];
+  });
+  const suffix = diagnostics.length ? ` (${diagnostics.join(", ")})` : "";
+  return `${label} network request failed${suffix}: ${error.message}`;
+}
+
 export async function fetchOfficialPortalText(
   url: string,
   options: OfficialPortalRequestOptions,
@@ -121,13 +144,7 @@ export async function fetchOfficialPortalText(
     }
   }
 
-  if (lastError instanceof Error) {
-    if (lastError.name === "AbortError") {
-      throw new Error(`${options.label} timed out after ${options.timeoutMs}ms`);
-    }
-    throw lastError;
-  }
-  throw new Error(`${options.label} request failed`);
+  throw new Error(describeOfficialPortalRequestError(lastError, options.label, options.timeoutMs));
 }
 
 function stripMarkup(value: string): string {
