@@ -83,8 +83,8 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
   }),
   state("ms-magic", "State of Mississippi", "MS", "Mississippi Procurement Opportunity Search / MAGIC", "state_html", "https://www.ms.gov/dfa/contract_bid_search/Search", "Mississippi Procurement Opportunity Search"),
   state("nm-active-procurements", "State of New Mexico", "NM", "New Mexico State Purchasing Active Procurements", "state_html", "https://generalservices.state.nm.us/state-purchasing/active-itbs-and-rfps/active-procurements/", "New Mexico Active Procurements"),
-  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma-prod.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma-prod.michigan.gov/PRDVSS1X1/AltSelfService"],
+  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/webapp/PRDVSS2X1/AltSelfService", "Michigan SIGMA VSS", {
+    alternateListingUrls: ["https://sigma.michigan.gov/webapp/PRDVSS2X1/Advantage4"],
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 6,
@@ -162,6 +162,7 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     requestTimeoutMs: 45_000,
     maxRetries: 2,
     maxPages: 8,
+    interactiveAccessReason: "The official public SWIFT guest route is protected by a Radware/Perfdrive hCaptcha challenge for automated network traffic.",
   }),
   state("mo-missouribuys", "State of Missouri", "MO", "MissouriBUYS powered by MOVERS", "state_html", "https://missouribuys.mo.gov/bid-board/movers", "MissouriBUYS Bid Board", {
     alternateListingUrls: ["https://missouribuys.mo.gov/bid-board"],
@@ -226,7 +227,7 @@ export const STATEWIDE_PORTAL_CONFIGS: readonly StatewidePortalConfig[] = [
     alternateListingUrls: ["https://prd311.wvoasis.gov/PRDVSS1X1/Advantage4", "https://purchasing.wv.gov/vendor/Pages/default.aspx", "https://dep-auth.wv.gov/bto/IHP/Pages/default.aspx"],
     allowedOrigins: ["https://purchasing.wv.gov", "https://dep-auth.wv.gov"],
     requestTimeoutMs: 60_000,
-    maxRetries: 3,
+    maxRetries: 2,
     maxPages: 8,
   }),
   state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin eSupplier / VendorNet", "peoplesoft", "https://esupplier.wi.gov/psc/esupplier_4/SUPPLIER/ERP/c/WI_SS_SELF_SERVICE.WI_SS_BIDDER_BIDS.GBL?page=WI_SS_BIDDER_BIDS", "Wisconsin eSupplier Search Solicitations", {
