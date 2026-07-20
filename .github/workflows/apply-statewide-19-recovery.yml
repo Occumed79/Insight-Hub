@@ -1,0 +1,695 @@
+name: Apply statewide 19-state recovery
+
+on:
+  push:
+    branches:
+      - agent/statewide-19-recovery
+    paths:
+      - .github/workflows/apply-statewide-19-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/statewide-19-recovery
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Apply recovery implementation
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:100]!r}")
+              target.write_text(text.replace(old, new, 1))
+
+          configs = "api-server/src/lib/providers/statewideProcurementConfigs.ts"
+          replace_once(
+              configs,
+              '''  discoveryLinkPatterns?: readonly string[];
+  interactiveAccessReason?: string;
+}''',
+              '''  discoveryLinkPatterns?: readonly string[];
+  interactiveAccessReason?: string;
+  requestTimeoutMs?: number;
+  maxRetries?: number;
+  maxPages?: number;
+}''',
+          )
+          replace_once(
+              configs,
+              '''  options: Pick<StatewidePortalConfig, "alternateListingUrls" | "allowedOrigins" | "discoveryLinkPatterns" | "interactiveAccessReason"> = {},''',
+              '''  options: Pick<StatewidePortalConfig, "alternateListingUrls" | "allowedOrigins" | "discoveryLinkPatterns" | "interactiveAccessReason" | "requestTimeoutMs" | "maxRetries" | "maxPages"> = {},''',
+          )
+
+          replacements = [
+              (
+                  '''  state("fl-vbs", "State of Florida", "FL", "Florida Vendor Bid System / MyFloridaMarketPlace", "custom_portal", "https://vendor.myfloridamarketplace.com/search/bids", "Florida Vendor Bid System", {
+    interactiveAccessReason: "Angular application shell; opportunity data is loaded only by client-side JavaScript bundles.",
+  }),''',
+                  '''  state("fl-vbs", "State of Florida", "FL", "Florida Vendor Information Portal / MyFloridaMarketPlace", "custom_portal", "https://vendor.myfloridamarketplace.com/search/bids", "Florida Vendor Information Portal", {
+    alternateListingUrls: ["https://www.dms.myflorida.com/business_operations/state_purchasing/office_of_supplier_development_osd/vendor_resources2/current_bid_opportunities"],
+    allowedOrigins: ["https://www.dms.myflorida.com"],
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 6,
+    interactiveAccessReason: "The VIP search is an Angular application; the official DMS current-opportunities bulletin is retained as a state-owned server-rendered fallback.",
+  }),''',
+              ),
+              (
+                  '''  state("ga-gpr", "State of Georgia", "GA", "Georgia Procurement Registry", "state_html", "https://ssl.doas.state.ga.us/gpr/", "Georgia Procurement Registry"),''',
+                  '''  state("ga-gpr", "State of Georgia", "GA", "Georgia Procurement Registry", "state_html", "https://ssl.doas.state.ga.us/gpr/", "Georgia Procurement Registry", {
+    alternateListingUrls: ["https://doas.ga.gov/state-purchasing/bids-and-contracts"],
+    allowedOrigins: ["https://doas.ga.gov"],
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 6,
+  }),''',
+              ),
+              (
+                  '''  state("me-rfps", "State of Maine", "ME", "Maine Vendor Self-Service", "cgi_advantage", "https://mevss.hostams.com/PRDVSS1X1/AltSelfService", "Maine Vendor Self-Service", {
+    interactiveAccessReason: "CGI Advantage requires a session-bound Public Access guest form submission before solicitations are exposed.",
+  }),''',
+                  '''  state("me-rfps", "State of Maine", "ME", "Maine Vendor Self-Service", "cgi_advantage", "https://mevss.hostams.com/PRDVSS1X1/AltSelfService", "Maine Vendor Self-Service", {
+    alternateListingUrls: ["https://www.maine.gov/dafs/bbm/procurementservices/vendors/"],
+    allowedOrigins: ["https://www.maine.gov"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 6,
+    interactiveAccessReason: "CGI Advantage requires a session-bound Public Access guest form submission before solicitations are exposed.",
+  }),''',
+              ),
+              (
+                  '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS"),''',
+                  '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/AltSelfService", "Michigan SIGMA VSS", {
+    alternateListingUrls: ["https://sigma.michigan.gov/PRDVSS1X1/Advantage4"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 6,
+  }),''',
+              ),
+              (
+                  '''  state("va-eva", "Commonwealth of Virginia", "VA", "Virginia eVA / CGI", "custom_portal", "https://mvendor.cgieva.com/Vendor/public/AllOpportunities.jsp", "Virginia eVA Business Opportunities"),''',
+                  '''  state("va-eva", "Commonwealth of Virginia", "VA", "Virginia eVA / CGI", "custom_portal", "https://mvendor.cgieva.com/Vendor/public/PublicSearch.jsp", "Virginia eVA Business Opportunities", {
+    alternateListingUrls: ["https://mvendor.cgieva.com/Vendor/public/AllOpportunities.jsp", "https://eva.virginia.gov/i-sell-to-virginia.html"],
+    allowedOrigins: ["https://eva.virginia.gov"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("co-vss", "State of Colorado", "CO", "Colorado Vendor Self-Service", "cgi_advantage", "https://codpa-vss.cloud.cgifederal.com/webapp/PRDVSS2X1/AltSelfService", "Colorado VSS"),''',
+                  '''  state("co-vss", "State of Colorado", "CO", "Colorado Vendor Self-Service", "cgi_advantage", "https://codpa-vss.cloud.cgifederal.com/webapp/PRDVSS2X1/AltSelfService", "Colorado VSS", {
+    alternateListingUrls: ["https://co.colorado.gov/bid-work-state"],
+    allowedOrigins: ["https://co.colorado.gov"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 6,
+  }),''',
+              ),
+              (
+                  '''  state("hi-hiepro", "State of Hawaii", "HI", "Hawaii HIePRO", "custom_portal", "https://hiepro.ehawaii.gov/sav-search.html", "Hawaii HIePRO"),''',
+                  '''  state("hi-hiepro", "State of Hawaii", "HI", "Hawaii Awards & Notices Data System / HIePRO", "state_html", "https://hands.ehawaii.gov/hands/opportunities", "Hawaii HANDS Opportunities", {
+    alternateListingUrls: ["https://hiepro.ehawaii.gov/sav-search.html"],
+    allowedOrigins: ["https://hiepro.ehawaii.gov"],
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("il-bidbuy", "State of Illinois", "IL", "Illinois BidBuy / Periscope S2G", "periscope_bso", "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=y", "Illinois BidBuy", {
+    interactiveAccessReason: "PrimeFaces/JSF search requires a session ViewState AJAX postback and loads Google reCAPTCHA before result rows are returned.",
+  }),''',
+                  '''  state("il-bidbuy", "State of Illinois", "IL", "Illinois BidBuy / Periscope S2G", "periscope_bso", "https://www.bidbuy.illinois.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", "Illinois BidBuy", {
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("ks-esupplier", "State of Kansas", "KS", "Kansas eSupplier / PeopleSoft", "peoplesoft", "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Kansas eSupplier Bid Opportunities"),''',
+                  '''  state("ks-esupplier", "State of Kansas", "KS", "Kansas eSupplier / PeopleSoft", "peoplesoft", "https://supplier.sok.ks.gov/psc/sokfsprdsup_1/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?FolderPath=PORTAL_ROOT_OBJECT.NUI_STRUCTURE_CONTENT.PORTAL_GROUPLETS.EP_COSP_PUBLIC_HOME_FL.EP_SUP_PUBLIC_BID_OPPRTNITY_FL&IgnoreParamTempl=FolderPath%2CIsFolder&IsFolder=false&PAGE=SCP_PUB_BIDLIST_FL&page=SCP_PUB_BIDLIST_FL", "Kansas eSupplier Bid Opportunities", {
+    alternateListingUrls: ["https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("ky-vss", "Commonwealth of Kentucky", "KY", "Kentucky eMARS Vendor Self-Service", "cgi_advantage", "https://emars311.ky.gov/webapp/vssonline/AltSelfService", "Kentucky eMARS VSS"),''',
+                  '''  state("ky-vss", "Commonwealth of Kentucky", "KY", "Kentucky eMARS Vendor Self-Service", "cgi_advantage", "https://emars311.ky.gov/webapp/vssonline/AltSelfService", "Kentucky eMARS VSS", {
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 6,
+  }),''',
+              ),
+              (
+                  '''  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
+    alternateListingUrls: ["https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUBLIC_MENU_FL.GBL"],
+  }),''',
+                  '''  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
+    alternateListingUrls: ["https://supplier.swift.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUBLIC_MENU_FL.GBL"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("nh-bids", "State of New Hampshire", "NH", "New Hampshire Bureau of Purchase and Property", "state_html", "https://das.nh.gov/purchasing/vendorresources.aspx", "New Hampshire Bids and Contracts", {
+    alternateListingUrls: ["https://das.nh.gov/purchasing/vendorresources.asp"],
+    allowedOrigins: ["https://www.das.nh.gov"],
+  }),''',
+                  '''  state("nh-bids", "State of New Hampshire", "NH", "New Hampshire Bureau of Purchase and Property", "state_html", "https://das.nh.gov/purchasing/vendorresources.aspx", "New Hampshire Bids and Contracts", {
+    alternateListingUrls: ["https://das.nh.gov/purchasing/vendorresources.asp", "https://www.das.nh.gov/purchasing/"],
+    allowedOrigins: ["https://www.das.nh.gov"],
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("or-oregonbuys", "State of Oregon", "OR", "OregonBuys / Periscope S2G", "periscope_bso", "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", "OregonBuys"),''',
+                  '''  state("or-oregonbuys", "State of Oregon", "OR", "OregonBuys / Periscope S2G", "periscope_bso", "https://oregonbuys.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", "OregonBuys", {
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Central Bid Exchange / ESM Solutions", "custom_portal", "https://postingboard.esmsolutions.com/3444a404-3818-494f-84c5-2a850acd7779/events", "South Dakota Central Bid Exchange", {
+    alternateListingUrls: ["https://www.sd.gov/bhra?id=kb_article_view&sysparm_article=KB0044779"],
+    allowedOrigins: ["https://www.sd.gov"],
+  }),''',
+                  '''  state("sd-solicitations", "State of South Dakota", "SD", "South Dakota Central Bid Exchange / ESM Solutions", "custom_portal", "https://postingboard.esmsolutions.com/3444a404-3818-494f-84c5-2a850acd7779/events", "South Dakota Central Bid Exchange", {
+    alternateListingUrls: ["https://www.sd.gov/bhra?id=kb_article_view&sysparm_article=KB0044779", "https://boa.sd.gov/central-services/procurement-management/"],
+    allowedOrigins: ["https://www.sd.gov", "https://boa.sd.gov"],
+    requestTimeoutMs: 30_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("tn-edison", "State of Tennessee", "TN", "Tennessee Edison / PeopleSoft", "peoplesoft", "https://hub.edison.tn.gov/psc/fsprd/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Tennessee Edison Bid Opportunities", {
+    alternateListingUrls: [
+      "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html",
+      "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/request-for-proposals--rfp--opportunities1.html",
+    ],
+    allowedOrigins: ["https://www.tn.gov"],
+  }),''',
+                  '''  state("tn-edison", "State of Tennessee", "TN", "Tennessee Edison / PeopleSoft", "peoplesoft", "https://hub.edison.tn.gov/psc/fsprd/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Tennessee Edison Bid Opportunities", {
+    alternateListingUrls: [
+      "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html",
+      "https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/request-for-proposals--rfp--opportunities1.html",
+    ],
+    allowedOrigins: ["https://www.tn.gov"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("wa-webs", "State of Washington", "WA", "Washington Enterprise Bid System", "custom_portal", "https://pr-webs-vendor.des.wa.gov/BidCalendar.aspx", "Washington WEBS Bid Calendar"),''',
+                  '''  state("wa-webs", "State of Washington", "WA", "Washington Enterprise Bid System", "custom_portal", "https://pr-webs-vendor.des.wa.gov/BidCalendar.aspx", "Washington WEBS Bid Calendar", {
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("wv-oasis", "State of West Virginia", "WV", "West Virginia wvOASIS Vendor Self-Service", "cgi_advantage", "https://prd311.wvoasis.gov/PRDVSS1X1/Advantage4", "West Virginia wvOASIS"),''',
+                  '''  state("wv-oasis", "State of West Virginia", "WV", "West Virginia wvOASIS Vendor Self-Service", "cgi_advantage", "https://prd311.wvoasis.gov/PRDVSS1X1/AltSelfService", "West Virginia wvOASIS", {
+    alternateListingUrls: ["https://prd311.wvoasis.gov/PRDVSS1X1/Advantage4", "https://purchasing.wv.gov/vendor/Pages/default.aspx"],
+    allowedOrigins: ["https://purchasing.wv.gov"],
+    requestTimeoutMs: 60_000,
+    maxRetries: 3,
+    maxPages: 8,
+  }),''',
+              ),
+              (
+                  '''  state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin VendorNet / eSupplier", "custom_portal", "https://vendornet.wi.gov/Bids.aspx", "Wisconsin VendorNet Public Bids", {
+    alternateListingUrls: ["https://esupplier.wi.gov/psp/esupplier/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
+    allowedOrigins: ["https://esupplier.wi.gov"],
+    interactiveAccessReason: "VendorNet populates its Telerik grid only after a browser-generated RadAjax InitialPageLoad postback.",
+  }),''',
+                  '''  state("wi-vendornet", "State of Wisconsin", "WI", "Wisconsin VendorNet / eSupplier", "custom_portal", "https://vendornet.wi.gov/Bids.aspx", "Wisconsin VendorNet Public Bids", {
+    alternateListingUrls: ["https://esupplier.wi.gov/psp/esupplier/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
+    allowedOrigins: ["https://esupplier.wi.gov"],
+    requestTimeoutMs: 45_000,
+    maxRetries: 2,
+    maxPages: 8,
+    interactiveAccessReason: "VendorNet populates its Telerik grid only after a public RadAjax InitialPageLoad postback.",
+  }),''',
+              ),
+          ]
+          for old, new in replacements:
+              replace_once(configs, old, new)
+
+          portals = "api-server/src/lib/providers/statewideProcurementPortals.ts"
+          replace_once(
+              portals,
+              '''const DOCUMENT_URL = /\\.(?:pdf|docx?|xlsx?|csv|zip|txt|rtf)(?:$|[?#])/i;
+''',
+              '''const DOCUMENT_URL = /\\.(?:pdf|docx?|xlsx?|csv|zip|txt|rtf)(?:$|[?#])/i;
+
+interface PublicFormSubmission {
+  action: string;
+  fields: Record<string, string>;
+  label: string;
+}
+
+function decodeFormAttribute(value: string): string {
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function formAttribute(tag: string, name: string): string | undefined {
+  const quoted = tag.match(new RegExp(`\\\\b${name}\\\\s*=\\\\s*(["'])([\\\\s\\\\S]*?)\\\\1`, "i"))?.[2];
+  if (quoted !== undefined) return decodeFormAttribute(quoted);
+  const bare = tag.match(new RegExp(`\\\\b${name}\\\\s*=\\\\s*([^\\\\s>]+)`, "i"))?.[1];
+  return bare === undefined ? undefined : decodeFormAttribute(bare);
+}
+
+function formFields(formHtml: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const match of formHtml.matchAll(/<input\\b[^>]*>/gi)) {
+    const tag = match[0];
+    const name = formAttribute(tag, "name")?.trim();
+    if (!name || /\\bdisabled\\b/i.test(tag)) continue;
+    const type = formAttribute(tag, "type")?.toLowerCase();
+    if ((type === "checkbox" || type === "radio") && !/\\bchecked\\b/i.test(tag)) continue;
+    fields[name] = formAttribute(tag, "value") ?? "";
+  }
+  return fields;
+}
+
+export function extractPublicInteractiveForm(
+  content: string,
+  pageUrl: string,
+  config: StatewidePortalConfig,
+): PublicFormSubmission | undefined {
+  for (const match of content.matchAll(/<form\\b[^>]*>[\\s\\S]*?<\\/form>/gi)) {
+    const formHtml = match[0];
+    const formTag = formHtml.match(/<form\\b[^>]*>/i)?.[0] ?? "";
+    const rawAction = formAttribute(formTag, "action") || pageUrl;
+    const action = allowedStatewideUrl(config, rawAction, pageUrl);
+    if (!action) continue;
+    const fields = formFields(formHtml);
+
+    const publicAccess = /name=["']guest_login["']/i.test(formHtml)
+      && /value=["']Public Access["']/i.test(formHtml);
+    if (config.platformFamily === "cgi_advantage" && publicAccess) {
+      fields.guest_login = "Public Access";
+      return { action, fields, label: "Public Access guest transition" };
+    }
+
+    const telerikInitialLoad = config.portalId === "wi-vendornet"
+      && /RadAjaxManager/i.test(content)
+      && /ajaxRequest\\(["']InitialPageLoad["']\\)/i.test(content);
+    if (telerikInitialLoad) {
+      const clientId = content.match(/\\$find\\(["']([^"']*RadAjaxManager[^"']*)["']\\)\\.ajaxRequest\\(["']InitialPageLoad["']\\)/i)?.[1];
+      if (clientId) {
+        const uniqueId = clientId.replace(/_/g, "$");
+        fields.__EVENTTARGET = uniqueId;
+        fields.__EVENTARGUMENT = "InitialPageLoad";
+        fields[uniqueId] = "InitialPageLoad";
+        return { action, fields, label: "VendorNet InitialPageLoad postback" };
+      }
+    }
+  }
+  return undefined;
+}
+''',
+          )
+
+          replace_once(
+              portals,
+              '''  private async request(url: string, timeoutMs: number): Promise<Response> {
+    let current = allowedStatewideUrl(this.config, url);''',
+              '''  private async request(url: string, timeoutMs: number, init: RequestInit = {}): Promise<Response> {
+    let current = allowedStatewideUrl(this.config, url);''',
+          )
+          replace_once(
+              portals,
+              '''        const cookie = this.cookieHeader(currentOrigin);
+        const response = await fetch(current, {
+          signal: controller.signal,
+          redirect: "manual",
+          headers: {
+            accept: "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
+            "user-agent": "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)",
+            ...(cookie ? { cookie } : {}),
+          },
+        });''',
+              '''        const cookie = this.cookieHeader(currentOrigin);
+        const suppliedHeaders = new Headers(init.headers);
+        const response = await fetch(current, {
+          ...init,
+          signal: controller.signal,
+          redirect: "manual",
+          headers: {
+            accept: "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
+            "accept-language": "en-US,en;q=0.9",
+            "cache-control": "no-cache",
+            pragma: "no-cache",
+            "user-agent": "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)",
+            ...Object.fromEntries(suppliedHeaders.entries()),
+            ...(cookie ? { cookie } : {}),
+          },
+        });''',
+          )
+          replace_once(
+              portals,
+              '''  async fetchText(url: string, timeoutMs: number, maxRetries: number, label: string): Promise<string> {
+    let lastError: unknown;''',
+              '''  async fetchText(
+    url: string,
+    timeoutMs: number,
+    maxRetries: number,
+    label: string,
+    init: RequestInit = {},
+  ): Promise<string> {
+    let lastError: unknown;''',
+          )
+          replace_once(
+              portals,
+              '''        const response = await this.request(url, timeoutMs);''',
+              '''        const response = await this.request(url, timeoutMs, init);''',
+          )
+          replace_once(
+              portals,
+              '''    throw new Error(`${label} request failed`);
+  }
+
+  supports(url: string): boolean {''',
+              '''    throw new Error(`${label} request failed`);
+  }
+
+  async postForm(
+    url: string,
+    fields: Record<string, string>,
+    timeoutMs: number,
+    maxRetries: number,
+    label: string,
+  ): Promise<string> {
+    const body = new URLSearchParams(fields);
+    return this.fetchText(url, timeoutMs, maxRetries, label, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        referer: url,
+      },
+      body,
+    });
+  }
+
+  supports(url: string): boolean {''',
+          )
+
+          replace_once(
+              portals,
+              '''function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
+  const key = statewideCanonicalUrl(value).toLowerCase();
+  if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
+  queue.push(value);
+}
+
+export class StatewideProcurementProvider''',
+              '''function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
+  const key = statewideCanonicalUrl(value).toLowerCase();
+  if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
+  queue.push(value);
+}
+
+async function resolveInteractiveListingContent(
+  content: string,
+  pageUrl: string,
+  config: StatewidePortalConfig,
+  session: PublicPortalSession,
+  timeoutMs: number,
+  maxRetries: number,
+): Promise<string> {
+  const transition = extractPublicInteractiveForm(content, pageUrl, config);
+  if (!transition) return content;
+  return session.postForm(
+    transition.action,
+    transition.fields,
+    timeoutMs,
+    maxRetries,
+    `${config.portalId} ${transition.label}`,
+  );
+}
+
+export class StatewideProcurementProvider''',
+          )
+
+          replace_once(
+              portals,
+              '''    const timeoutMs = positiveIntegerEnv("STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS", 20_000, 3_000, 60_000);
+    const maxRetries = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RETRIES", 2, 0, 2);
+    const maxPages = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_PAGES", 8, 1, 20);''',
+              '''    const timeoutMs = Math.max(
+      positiveIntegerEnv("STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS", 20_000, 3_000, 60_000),
+      this.config.requestTimeoutMs ?? 0,
+    );
+    const maxRetries = Math.max(
+      positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RETRIES", 2, 0, 2),
+      this.config.maxRetries ?? 0,
+    );
+    const maxPages = Math.max(
+      positiveIntegerEnv("STATEWIDE_PORTAL_MAX_PAGES", 8, 1, 20),
+      this.config.maxPages ?? 1,
+    );''',
+          )
+          replace_once(
+              portals,
+              '''        content = await session.fetchText(safePageUrl, timeoutMs, maxRetries, `${this.config.portalId} listing`);
+        successfulFetches += 1;''',
+              '''        content = await session.fetchText(safePageUrl, timeoutMs, maxRetries, `${this.config.portalId} listing`);
+        content = await resolveInteractiveListingContent(
+          content,
+          safePageUrl,
+          this.config,
+          session,
+          timeoutMs,
+          maxRetries,
+        );
+        successfulFetches += 1;''',
+          )
+
+          cal = "api-server/src/lib/providers/calEprocure.ts"
+          replace_once(
+              cal,
+              '''export const CAL_EPROCURE_SOURCE: PublicPortalSource = {''',
+              '''export const CAL_EPROCURE_LISTING_URLS = [
+  CAL_EPROCURE_LISTING_URL,
+  CAL_EPROCURE_LISTING_URL.replaceAll("psfpd1", "psfpd1_1"),
+  CAL_EPROCURE_LISTING_URL.replaceAll("psfpd1", "psfpd1_2"),
+] as const;
+
+export const CAL_EPROCURE_SOURCE: PublicPortalSource = {''',
+          )
+          replace_once(
+              cal,
+              '''    const timeoutMs = positiveIntegerEnv("CAL_EPROCURE_REQUEST_TIMEOUT_MS", DEFAULT_REQUEST_TIMEOUT_MS, 3_000, 60_000);
+    const maxRetries = positiveIntegerEnv("CAL_EPROCURE_MAX_RETRIES", DEFAULT_MAX_RETRIES, 0, 2);''',
+              '''    const timeoutMs = Math.max(30_000, positiveIntegerEnv("CAL_EPROCURE_REQUEST_TIMEOUT_MS", DEFAULT_REQUEST_TIMEOUT_MS, 3_000, 60_000));
+    const maxRetries = Math.max(2, positiveIntegerEnv("CAL_EPROCURE_MAX_RETRIES", DEFAULT_MAX_RETRIES, 0, 2));''',
+          )
+          replace_once(cal, '''    const queue = [CAL_EPROCURE_LISTING_URL];''', '''    const queue = Array.from(CAL_EPROCURE_LISTING_URLS);''')
+          replace_once(
+              cal,
+              '''        if (!listings.size) {
+          this.lastError = reason;
+          return { records: [], total: 0, errors: [`ca-caleprocure: ${reason}`] };
+        }
+        errors.push(`ca-caleprocure: partial listing results after ${reason}`);
+        break;''',
+              '''        errors.push(listings.size
+          ? `ca-caleprocure: partial listing results after ${reason}`
+          : `ca-caleprocure: ${reason}`);
+        continue;''',
+          )
+
+          test_path = Path("api-server/src/lib/providers/__tests__/statewideProcurementRecovery.test.ts")
+          test_path.write_text(r'''import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  CAL_EPROCURE_LISTING_URLS,
+} from "../calEprocure";
+import {
+  STATEWIDE_PORTAL_CONFIGS,
+  StatewideProcurementProvider,
+} from "../statewideProcurementPortals";
+
+const DEGRADED_SHARED_IDS = [
+  "fl-vbs",
+  "ga-gpr",
+  "hi-hiepro",
+  "il-bidbuy",
+  "me-rfps",
+  "nh-bids",
+  "sd-solicitations",
+  "va-eva",
+  "wi-vendornet",
+  "co-vss",
+  "ks-esupplier",
+  "ky-vss",
+  "mi-sigma",
+  "mn-swift",
+  "or-oregonbuys",
+  "tn-edison",
+  "wa-webs",
+  "wv-oasis",
+] as const;
+
+function config(portalId: string) {
+  const found = STATEWIDE_PORTAL_CONFIGS.find((item) => item.portalId === portalId);
+  assert.ok(found, `missing config ${portalId}`);
+  return found;
+}
+
+describe("statewide 19-state recovery", () => {
+  it("keeps all eighteen shared-family degraded states in one recovery manifest", () => {
+    assert.equal(new Set(DEGRADED_SHARED_IDS).size, 18);
+    for (const portalId of DEGRADED_SHARED_IDS) assert.ok(config(portalId));
+  });
+
+  it("uses corrected public listing routes for the known endpoint failures", () => {
+    assert.match(config("hi-hiepro").listingUrl, /hands\.ehawaii\.gov\/hands\/opportunities/);
+    assert.match(config("il-bidbuy").listingUrl, /openBids=true/);
+    assert.match(config("ks-esupplier").listingUrl, /sokfsprdsup_1/);
+    assert.match(config("mi-sigma").listingUrl, /AltSelfService/);
+    assert.match(config("va-eva").listingUrl, /PublicSearch\.jsp/);
+    assert.match(config("wv-oasis").listingUrl, /AltSelfService/);
+  });
+
+  it("applies bounded portal-specific recovery budgets", () => {
+    for (const portalId of DEGRADED_SHARED_IDS) {
+      const item = config(portalId);
+      assert.ok((item.requestTimeoutMs ?? 0) >= 30_000, `${portalId} missing recovery timeout`);
+      assert.ok((item.maxRetries ?? 0) >= 2, `${portalId} missing bounded retries`);
+      assert.ok((item.maxPages ?? 0) >= 6, `${portalId} missing recovery page budget`);
+    }
+  });
+
+  it("tries all three official Cal eProcure PeopleSoft nodes", () => {
+    assert.equal(CAL_EPROCURE_LISTING_URLS.length, 3);
+    assert.match(CAL_EPROCURE_LISTING_URLS[0], /psfpd1/);
+    assert.match(CAL_EPROCURE_LISTING_URLS[1], /psfpd1_1/);
+    assert.match(CAL_EPROCURE_LISTING_URLS[2], /psfpd1_2/);
+  });
+
+  it("submits CGI Advantage Public Access with the session cookie before parsing", async () => {
+    const originalFetch = globalThis.fetch;
+    const observed: Array<{ method: string; cookie: string | null; body: string }> = [];
+    globalThis.fetch = async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      observed.push({
+        method: init?.method ?? "GET",
+        cookie: headers.get("cookie"),
+        body: init?.body instanceof URLSearchParams ? init.body.toString() : String(init?.body ?? ""),
+      });
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(`
+          <form method="post" action="/PRDVSS1X1/AltSelfService">
+            <input type="hidden" name="csrf" value="abc123">
+            <input type="submit" name="guest_login" value="Public Access">
+          </form>
+        `, { status: 200, headers: { "set-cookie": "session=public; Path=/; Secure" } });
+      }
+      return new Response(`
+        <table>
+          <tr><th>Solicitation Number</th><th>Title</th><th>Status</th><th>Due Date</th><th>Details</th></tr>
+          <tr>
+            <td>ME-2026-001</td>
+            <td>Occupational health services</td>
+            <td>Open</td>
+            <td>12/31/2026</td>
+            <td><a href="/PRDVSS1X1/AltSelfService?solicitation_number=ME-2026-001">Details</a></td>
+          </tr>
+        </table>
+      `, { status: 200 });
+    };
+    try {
+      const provider = new StatewideProcurementProvider(config("me-rfps"));
+      const result = await provider.fetch({ limit: 1 });
+      assert.equal(result.records.length, 1);
+      assert.equal(result.records[0]?.solicitationNumber, "ME-2026-001");
+      assert.equal(observed[0]?.method, "GET");
+      assert.equal(observed[1]?.method, "POST");
+      assert.equal(observed[1]?.cookie, "session=public");
+      assert.match(observed[1]?.body ?? "", /guest_login=Public\+Access/);
+      assert.match(observed[1]?.body ?? "", /csrf=abc123/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+''')
+
+          workflow = ".github/workflows/statewide-live-verification.yml"
+          replace_once(
+              workflow,
+              '''            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts \\
+            2>&1 | tee artifacts/statewide-live-verification/focused-tests.log''',
+              '''            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts \\
+            ../api-server/src/lib/providers/__tests__/statewideProcurementRecovery.test.ts \\
+            2>&1 | tee artifacts/statewide-live-verification/focused-tests.log''',
+          )
+          PY
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run focused typecheck
+        run: |
+          pnpm run typecheck:libs
+          pnpm --filter @workspace/api-server exec tsc -p tsconfig.statewide.json --noEmit
+
+      - name: Run statewide recovery tests
+        run: |
+          pnpm --filter @workspace/scripts exec tsx --test \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementRecovery.test.ts
+
+      - name: Commit recovery implementation
+        shell: bash
+        run: |
+          rm .github/workflows/apply-statewide-19-recovery.yml
+          git config user.name "openai-agent"
+          git config user.email "openai-agent@users.noreply.github.com"
+          git add api-server/src/lib/providers .github/workflows/statewide-live-verification.yml .github/workflows/apply-statewide-19-recovery.yml
+          git commit -m "fix: recover degraded statewide procurement adapters"
+          git push origin HEAD:agent/statewide-19-recovery
