@@ -11,6 +11,10 @@ import {
   parseOregonBuysListingHtml,
 } from "../oregonBuys";
 import { STATEWIDE_LIVE_TARGETS } from "../runStatewideLiveVerification";
+import {
+  parseSouthDakotaPostingBoardJson,
+  southDakotaPostingBoardProvider,
+} from "../southDakotaPostingBoard";
 
 describe("blocked-state deep recovery providers", () => {
   it("parses Minnesota's official labeled solicitation bulletin", () => {
@@ -60,13 +64,32 @@ describe("blocked-state deep recovery providers", () => {
     );
   });
 
+  it("parses South Dakota's first-party posting-board API payload", () => {
+    const events = parseSouthDakotaPostingBoardJson(JSON.stringify({
+      data: [{
+        eventId: 19839,
+        eventName: "Statewide Medical Services RFP",
+        publishedDate: "2026-07-15T12:00:00Z",
+        eventDueDate: "2099-08-01T20:00:00Z",
+        invitationType: { description: "Request for Proposal" },
+        status: { description: "Open" },
+      }],
+      totalCount: 1,
+    }));
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.eventId, 19839);
+    assert.equal(events[0]!.eventName, "Statewide Medical Services RFP");
+  });
+
   it("uses the dedicated recovery providers in the 50-state verifier", () => {
     const georgia = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "GA");
     const minnesota = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN");
     const oregon = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR");
+    const southDakota = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "SD");
     assert.equal(georgia?.provider, georgiaGaworkProvider);
     assert.equal(minnesota?.provider, minnesotaOspProvider);
     assert.equal(oregon?.provider, oregonBuysProvider);
+    assert.equal(southDakota?.provider, southDakotaPostingBoardProvider);
   });
 
   it("reports the underlying network cause instead of generic fetch failed", () => {
