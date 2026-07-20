@@ -1,8 +1,6 @@
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
-import {
-  StatewideProcurementProvider,
-  type StatewidePortalConfig,
-} from "./statewideProcurementPortals";
+import type { StatewidePortalConfig } from "./statewideProcurementConfigs";
+import { StatewideProcurementProvider } from "./statewideProcurementPortals";
 
 export const NEW_HAMPSHIRE_BIDS_PORTAL_ID = "nh-bids";
 export const NEW_HAMPSHIRE_BIDS_LISTING_URL =
