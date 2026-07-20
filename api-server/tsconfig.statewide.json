@@ -5,12 +5,16 @@
     "noEmit": true
   },
   "include": [
+    "src/lib/providers/minnesotaOsp.ts",
+    "src/lib/providers/oregonBuys.ts",
+    "src/lib/providers/officialPortalHttp.ts",
     "src/lib/providers/statewideProcurementConfigs.ts",
     "src/lib/providers/statewideProcurementContentSignals.ts",
     "src/lib/providers/statewideProcurementPlatformParsers.ts",
     "src/lib/providers/statewideProcurementParser.ts",
     "src/lib/providers/statewideProcurementPortals.ts",
     "src/lib/providers/runStatewideLiveVerification.ts",
+    "src/lib/providers/__tests__/deepRecoveryProviders.test.ts",
     "src/lib/providers/__tests__/statewideProcurementPortals.test.ts",
     "src/lib/providers/__tests__/statewideProcurementHotfix.test.ts",
     "src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts",
