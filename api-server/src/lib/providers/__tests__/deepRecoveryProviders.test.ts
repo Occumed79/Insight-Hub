@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { georgiaGaworkProvider } from "../georgiaGawork";
 import {
@@ -137,7 +139,7 @@ describe("blocked-state deep recovery providers", () => {
     );
   });
 
-  it("discovers public solicitation contracts from official CGI Advantage bundles", async () => {
+  it("archives official CGI Advantage bundles for guest-session contract analysis", async () => {
     const bundles: Record<string, string[]> = {
       KY: [
         "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/761.ce818569c9c36901941b.js",
@@ -154,40 +156,25 @@ describe("blocked-state deep recovery providers", () => {
         "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/app.92f4eacad22cc83e1a85.js",
       ],
     };
+    const root = resolve(process.env.GITHUB_WORKSPACE ?? process.cwd(), "artifacts/statewide-live-verification/cgi-discovery");
+    await mkdir(root, { recursive: true });
 
     for (const [state, urls] of Object.entries(bundles)) {
-      const findings = new Set<string>();
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, {
-            headers: {
-              accept: "application/javascript,text/javascript,*/*;q=0.8",
-              "user-agent": "OccuMed-InsightHub/1.0 recovery-contract-inspector",
-            },
-          });
-          if (!response.ok) {
-            console.log(`CGI_DISCOVERY ${state} ${response.status} ${url}`);
-            continue;
-          }
-          const source = await response.text();
-          for (const match of source.matchAll(/["'`]([^"'`\n]{3,280})["'`]/g)) {
-            const value = match[1] ?? "";
-            if (/solicit|business.?opportun|bid.?search|public.?access|rest|api|vaxxx|vss\.page/i.test(value)) {
-              findings.add(value);
-            }
-          }
-          for (const keyword of ["solicitation_number", "Business Opportunities", "VAXXX", "REST", "api/"]) {
-            let cursor = 0;
-            while ((cursor = source.indexOf(keyword, cursor)) >= 0 && findings.size < 160) {
-              findings.add(source.slice(Math.max(0, cursor - 120), Math.min(source.length, cursor + 220)));
-              cursor += keyword.length;
-            }
-          }
-        } catch (error) {
-          console.log(`CGI_DISCOVERY ${state} ERROR ${url} ${error instanceof Error ? error.message : String(error)}`);
-        }
+      for (const [index, url] of urls.entries()) {
+        const response = await fetch(url, {
+          headers: {
+            accept: "application/javascript,text/javascript,*/*;q=0.8",
+            "user-agent": "OccuMed-InsightHub/1.0 recovery-contract-inspector",
+          },
+        });
+        const source = await response.text();
+        await writeFile(
+          resolve(root, `${state}-${String(index + 1).padStart(2, "0")}-${url.split("/").pop()}`),
+          `/* ${url} | HTTP ${response.status} */\n${source}`,
+          "utf8",
+        );
+        console.log(`CGI_ARCHIVE ${state} ${response.status} ${source.length} ${url}`);
       }
-      console.log(`CGI_DISCOVERY ${state} FINDINGS ${JSON.stringify(Array.from(findings).slice(0, 160))}`);
     }
   });
 });
