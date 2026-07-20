@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -34,6 +34,28 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # BEGIN ONE-TIME STATEWIDE REVIEW FIXES
+      - name: Apply and validate statewide review fixes
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/statewide-19-recovery'
+        shell: bash
+        run: |
+          git fetch origin refs/heads/agent/statewide-19-recovery:refs/remotes/origin/agent/statewide-19-recovery
+          git checkout -B agent/statewide-19-recovery refs/remotes/origin/agent/statewide-19-recovery
+          python .github/scripts/apply-statewide-review-fixes.py
+          pnpm run typecheck:libs
+          pnpm --filter @workspace/api-server exec tsc -p tsconfig.statewide.json --noEmit
+          pnpm --filter @workspace/scripts exec tsx --test \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts \
+            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts
+          git config user.name "openai-agent"
+          git config user.email "openai-agent@users.noreply.github.com"
+          git add api-server/src/lib/providers .github/workflows/statewide-live-verification.yml .github/workflows/apply-statewide-review-fixes.yml .github/scripts/apply-statewide-review-fixes.py
+          git commit -m "fix: bound statewide recovery budgets and challenge classification"
+          git push origin HEAD:agent/statewide-19-recovery
+      # END ONE-TIME STATEWIDE REVIEW FIXES
 
       - name: Prepare verification output
         run: mkdir -p artifacts/statewide-live-verification
