@@ -140,18 +140,18 @@ describe("blocked-state deep recovery providers", () => {
   it("discovers public solicitation contracts from official CGI Advantage bundles", async () => {
     const bundles: Record<string, string[]> = {
       KY: [
-        "https://vss.ky.gov/vssprod-ext/advjs/761.ce818569c9c36901941b.js",
-        "https://vss.ky.gov/vssprod-ext/advjs/855.62c7aba0e5cf061f6289.js",
-        "https://vss.ky.gov/vssprod-ext/advjs/940.a2b1ea853b56a88fb349.js",
-        "https://vss.ky.gov/vssprod-ext/advjs/168.020e8dd8a8febc335887.js",
-        "https://vss.ky.gov/vssprod-ext/advjs/app.7e2fd11eea125fb867ea.js",
+        "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/761.ce818569c9c36901941b.js",
+        "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/855.62c7aba0e5cf061f6289.js",
+        "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/940.a2b1ea853b56a88fb349.js",
+        "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/168.020e8dd8a8febc335887.js",
+        "https://vss.ky.gov/vssprod-ext/advantage/Advantage4/advjs/app.7e2fd11eea125fb867ea.js",
       ],
       MI: [
-        "https://sigma.michigan.gov/PRDVSS1X1/advjs/761.ce818569c9c36901941b.js",
-        "https://sigma.michigan.gov/PRDVSS1X1/advjs/855.62c7aba0e5cf061f6289.js",
-        "https://sigma.michigan.gov/PRDVSS1X1/advjs/940.a2b1ea853b56a88fb349.js",
-        "https://sigma.michigan.gov/PRDVSS1X1/advjs/722.e1d22ef86f9821c6727e.js",
-        "https://sigma.michigan.gov/PRDVSS1X1/advjs/app.92f4eacad22cc83e1a85.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/761.ce818569c9c36901941b.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/855.62c7aba0e5cf061f6289.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/940.a2b1ea853b56a88fb349.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/722.e1d22ef86f9821c6727e.js",
+        "https://sigma.michigan.gov/PRDVSS1X1/advantage/Advantage4/advjs/app.92f4eacad22cc83e1a85.js",
       ],
     };
 
