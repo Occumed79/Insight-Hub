@@ -7,35 +7,19 @@ on:
       - "api-server/tsconfig.statewide.json"
       - "scripts/src/run-statewide-live-verification.ts"
       - "package.json"
-      - ".github/scripts/apply-statewide-review-fixes.py"
       - ".github/workflows/statewide-live-verification.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # BEGIN ONE-TIME STATEWIDE REVIEW FIXES
-      - name: Apply statewide review fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/statewide-19-recovery'
-        shell: bash
-        run: |
-          git fetch origin refs/heads/agent/statewide-19-recovery:refs/remotes/origin/agent/statewide-19-recovery
-          git checkout -B agent/statewide-19-recovery refs/remotes/origin/agent/statewide-19-recovery
-          python .github/scripts/apply-statewide-review-fixes.py
-          git config user.name "openai-agent"
-          git config user.email "openai-agent@users.noreply.github.com"
-          git add -A
-          git commit -m "fix: bound statewide recovery budgets and challenge classification"
-          git push origin HEAD:agent/statewide-19-recovery
-      # END ONE-TIME STATEWIDE REVIEW FIXES
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -82,15 +66,15 @@ jobs:
 
       - name: Run live 50-state sweep
         env:
-          STATEWIDE_LIVE_CONCURRENCY: "4"
+          STATEWIDE_LIVE_CONCURRENCY: "8"
           STATEWIDE_LIVE_REPORT_DIR: ${{ github.workspace }}/artifacts/statewide-live-verification
           STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "30000"
-          STATEWIDE_PORTAL_MAX_RETRIES: "2"
-          STATEWIDE_PORTAL_MAX_PAGES: "8"
+          STATEWIDE_PORTAL_MAX_RETRIES: "1"
+          STATEWIDE_PORTAL_MAX_PAGES: "4"
           STATEWIDE_PORTAL_MAX_RESULTS: "2"
           STATEWIDE_PORTAL_DETAIL_CONCURRENCY: "2"
           BSO_REQUEST_TIMEOUT_MS: "30000"
-          BSO_MAX_RETRIES: "2"
+          BSO_MAX_RETRIES: "1"
         run: |
           set +e
           set -o pipefail
