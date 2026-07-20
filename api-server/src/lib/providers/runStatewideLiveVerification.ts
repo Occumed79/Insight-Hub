@@ -3,11 +3,9 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { bsoPortalProviders } from "./bsoPortal";
 import { calEprocureProvider } from "./calEprocure";
-import { georgiaGaworkProvider } from "./georgiaGawork";
+import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import { jaggaerSciQuestProviders } from "./jaggaerSciQuest";
-import { minnesotaOspProvider } from "./minnesotaOsp";
 import { nyScrProvider } from "./nyScr";
-import { oregonBuysProvider } from "./oregonBuys";
 import {
   STATEWIDE_PORTAL_CONFIGS,
   statewideProcurementProviders,
@@ -52,11 +50,7 @@ const SPECIALIZED_TARGETS: readonly StatewideLiveTarget[] = [
   { state: "TX", portalId: "tx-esbd", provider: texasEsbdProvider },
 ];
 
-const RECOVERY_OVERRIDES: Readonly<Record<string, DataSourceProvider>> = {
-  "ga-gpr": georgiaGaworkProvider,
-  "mn-swift": minnesotaOspProvider,
-  "or-oregonbuys": oregonBuysProvider,
-};
+const RECOVERY_OVERRIDES: Readonly<Record<string, DataSourceProvider>> = deepRecoveryProviders;
 
 export const STATEWIDE_LIVE_TARGETS: readonly StatewideLiveTarget[] = [
   ...STATEWIDE_PORTAL_CONFIGS.map((config) => ({
@@ -155,7 +149,14 @@ export function renderStatewideLiveMarkdown(results: readonly StatewideLiveResul
   return `${lines.join("\n")}\n`;
 }
 
-function debugAssetUrls(html: string, pageUrl: string, limit = 10): string[] {
+const SUPPLEMENTAL_DEBUG_ASSETS: Readonly<Record<string, readonly string[]>> = {
+  "hi-hiepro": [
+    "https://hands.ehawaii.gov/hands/23.e1f93d162deb6da9a68d.js",
+    "https://hands.ehawaii.gov/hands/58.ea7542805ecca7a300b7.js",
+  ],
+};
+
+function debugAssetUrls(html: string, pageUrl: string, portalId: string, limit = 12): string[] {
   let origin: string;
   try {
     origin = new URL(pageUrl).origin;
@@ -165,6 +166,7 @@ function debugAssetUrls(html: string, pageUrl: string, limit = 10): string[] {
   const candidates = [
     ...Array.from(html.matchAll(/<script\b[^>]*src=["']([^"']+)["'][^>]*>/gi), (match) => match[1] ?? ""),
     ...Array.from(html.matchAll(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi), (match) => match[1] ?? ""),
+    ...(SUPPLEMENTAL_DEBUG_ASSETS[portalId] ?? []),
   ];
   const seen = new Set<string>();
   const urls: string[] = [];
@@ -207,7 +209,7 @@ async function captureFailureSources(results: readonly StatewideLiveResult[], ou
         });
         const body = await response.text();
         const finalUrl = response.url || config.listingUrl;
-        const assets = debugAssetUrls(body, finalUrl);
+        const assets = debugAssetUrls(body, finalUrl, result.portalId);
         await Promise.all([
           writeFile(resolve(debugDir, `${stem}.body.txt`), body.slice(0, 3_000_000), "utf8"),
           writeFile(resolve(debugDir, `${stem}.meta.json`), `${JSON.stringify({
