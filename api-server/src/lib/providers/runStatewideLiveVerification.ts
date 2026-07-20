@@ -153,12 +153,43 @@ export function renderStatewideLiveMarkdown(results: readonly StatewideLiveResul
   return `${lines.join("\n")}\n`;
 }
 
+function debugAssetUrls(html: string, pageUrl: string, limit = 10): string[] {
+  let origin: string;
+  try {
+    origin = new URL(pageUrl).origin;
+  } catch {
+    return [];
+  }
+  const candidates = [
+    ...Array.from(html.matchAll(/<script\b[^>]*src=["']([^"']+)["'][^>]*>/gi), (match) => match[1] ?? ""),
+    ...Array.from(html.matchAll(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi), (match) => match[1] ?? ""),
+  ];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const candidate of candidates) {
+    let url: URL;
+    try {
+      url = new URL(candidate.replace(/&amp;/gi, "&"), pageUrl);
+    } catch {
+      continue;
+    }
+    if (url.origin !== origin || !/\.(?:js|mjs)(?:$|[?#])/i.test(url.pathname + url.search)) continue;
+    url.hash = "";
+    const key = url.toString().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    urls.push(url.toString());
+    if (urls.length >= limit) break;
+  }
+  return urls;
+}
+
 async function captureFailureSources(results: readonly StatewideLiveResult[], outputDir: string): Promise<void> {
   const debugDir = resolve(outputDir, "debug-source");
   await mkdir(debugDir, { recursive: true });
   const configs = new Map(STATEWIDE_PORTAL_CONFIGS.map((config) => [config.portalId, config]));
   await mapConcurrent(
-    results.filter((result) => result.status === "BAD_ENDPOINT" || result.status === "PARSER_FAILURE"),
+    results.filter((result) => result.status !== "PASS" && result.status !== "HEALTHY_EMPTY"),
     3,
     async (result) => {
       const config = configs.get(result.portalId);
@@ -173,14 +204,40 @@ async function captureFailureSources(results: readonly StatewideLiveResult[], ou
           },
         });
         const body = await response.text();
+        const finalUrl = response.url || config.listingUrl;
+        const assets = debugAssetUrls(body, finalUrl);
         await Promise.all([
-          writeFile(resolve(debugDir, `${stem}.body.txt`), body, "utf8"),
+          writeFile(resolve(debugDir, `${stem}.body.txt`), body.slice(0, 3_000_000), "utf8"),
           writeFile(resolve(debugDir, `${stem}.meta.json`), `${JSON.stringify({
             requestedUrl: config.listingUrl,
-            finalUrl: response.url,
+            finalUrl,
             status: response.status,
             contentType: response.headers.get("content-type"),
+            assets,
           }, null, 2)}\n`, "utf8"),
+          ...assets.map(async (assetUrl, index) => {
+            try {
+              const assetResponse = await fetch(assetUrl, {
+                redirect: "follow",
+                headers: {
+                  accept: "application/javascript,text/javascript,*/*;q=0.8",
+                  "user-agent": "OccuMed-InsightHub/1.0 statewide-verification-debug",
+                },
+              });
+              const assetBody = await assetResponse.text();
+              await writeFile(
+                resolve(debugDir, `${stem}.asset-${String(index + 1).padStart(2, "0")}.js`),
+                `/* ${assetUrl} | HTTP ${assetResponse.status} */\n${assetBody.slice(0, 3_000_000)}`,
+                "utf8",
+              );
+            } catch (error) {
+              await writeFile(
+                resolve(debugDir, `${stem}.asset-${String(index + 1).padStart(2, "0")}.error.txt`),
+                `${assetUrl}\n${error instanceof Error ? error.stack || error.message : String(error)}\n`,
+                "utf8",
+              );
+            }
+          }),
         ]);
       } catch (error) {
         await writeFile(resolve(debugDir, `${stem}.error.txt`), `${error instanceof Error ? error.stack || error.message : String(error)}\n`, "utf8");
