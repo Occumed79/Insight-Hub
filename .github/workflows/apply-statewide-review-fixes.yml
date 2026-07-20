@@ -13,7 +13,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout recovery branch
         uses: actions/checkout@v4
@@ -21,187 +21,14 @@ jobs:
           ref: agent/statewide-19-recovery
           fetch-depth: 0
 
-      - name: Apply bounded recovery budgets and official-route corrections
+      - name: Apply review fixes
+        run: python .github/scripts/apply-statewide-review-fixes.py
+
+      - name: Commit review fixes
         shell: bash
         run: |
-          python <<'PY'
-          from pathlib import Path
-
-          def replace_once(path: str, old: str, new: str) -> None:
-              target = Path(path)
-              text = target.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one match, found {count}: {old[:120]!r}")
-              target.write_text(text.replace(old, new, 1))
-
-          configs = "api-server/src/lib/providers/statewideProcurementConfigs.ts"
-          replace_once(
-              configs,
-              '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma-prod.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma-prod.michigan.gov/PRDVSS1X1/AltSelfService"],''',
-              '''  state("mi-sigma", "State of Michigan", "MI", "Michigan SIGMA Vendor Self-Service", "cgi_advantage", "https://sigma.michigan.gov/PRDVSS1X1/Advantage4", "Michigan SIGMA VSS", {
-    alternateListingUrls: ["https://sigma.michigan.gov/PRDVSS1X1/AltSelfService"],''',
-          )
-          replace_once(
-              configs,
-              '''  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
-    alternateListingUrls: ["https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
-    requestTimeoutMs: 45_000,
-    maxRetries: 2,
-    maxPages: 8,
-  }),''',
-              '''  state("mn-swift", "State of Minnesota", "MN", "Minnesota SWIFT Supplier Portal", "peoplesoft", "https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL", "Minnesota SWIFT Public Events", {
-    alternateListingUrls: ["https://guest.supplier.systems.state.mn.us/psc/fmssupap/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL"],
-    requestTimeoutMs: 45_000,
-    maxRetries: 2,
-    maxPages: 8,
-    interactiveAccessReason: "The official public SWIFT guest route is protected by a Radware/Perfdrive hCaptcha challenge for automated network traffic.",
-  }),''',
-          )
-          replace_once(configs, '''    maxRetries: 3,
-    maxPages: 8,
-  }),
-  state("wi-vendornet"''', '''    maxRetries: 2,
-    maxPages: 8,
-  }),
-  state("wi-vendornet"''')
-
-          portals = "api-server/src/lib/providers/statewideProcurementPortals.ts"
-          replace_once(
-              portals,
-              '''function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
-  const key = statewideCanonicalUrl(value).toLowerCase();
-  if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
-  queue.push(value);
-}
-
-export class StatewideProcurementProvider''',
-              '''function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
-  const key = statewideCanonicalUrl(value).toLowerCase();
-  if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
-  queue.push(value);
-}
-
-function boundedPortalBudget(
-  envName: string,
-  configuredValue: number | undefined,
-  defaultValue: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const configured = Math.min(Math.max(configuredValue ?? defaultValue, minimum), maximum);
-  const raw = process.env[envName]?.trim();
-  if (!raw) return configured;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : configured;
-}
-
-export class StatewideProcurementProvider''',
-          )
-          replace_once(
-              portals,
-              '''    const timeoutMs = positiveIntegerEnv("STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS", 20_000, 3_000, 60_000);
-    const maxRetries = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RETRIES", 2, 0, 2);
-    const maxPages = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_PAGES", 8, 1, 20);''',
-              '''    const timeoutMs = boundedPortalBudget(
-      "STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS",
-      this.config.requestTimeoutMs,
-      20_000,
-      3_000,
-      60_000,
-    );
-    const maxRetries = boundedPortalBudget(
-      "STATEWIDE_PORTAL_MAX_RETRIES",
-      this.config.maxRetries,
-      2,
-      0,
-      2,
-    );
-    const maxPages = boundedPortalBudget(
-      "STATEWIDE_PORTAL_MAX_PAGES",
-      this.config.maxPages,
-      8,
-      1,
-      20,
-    );''',
-          )
-          replace_once(
-              portals,
-              '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      if (browserBlocked) challengeCount += 1;''',
-              '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;''',
-          )
-          # The prior replacement references parsedListings before it is declared; move the policy check after parsing.
-          replace_once(
-              portals,
-              '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;
-      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
-              '''      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));''',
-          )
-          replace_once(
-              portals,
-              '''      const parsedListings = [
-        ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
-        ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
-      ];
-      if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;''',
-              '''      const parsedListings = [
-        ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
-        ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
-      ];
-      if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;
-      if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;''',
-          )
-
-          signals = "api-server/src/lib/providers/statewideProcurementContentSignals.ts"
-          replace_once(
-              signals,
-              '''const AUTOMATED_ACCESS_BLOCK_MARKUP = /captcha\\.perfdrive\\.com|h-captcha|g-recaptcha|cf-chl-|px-captcha|perimeterx|datadome/i;''',
-              '''const AUTOMATED_ACCESS_BLOCK_MARKUP = /captcha\\.perfdrive\\.com|radware captcha page|shieldsquare|ssjsconnectorobj|h-captcha|g-recaptcha|cf-chl-|px-captcha|perimeterx|datadome/i;''',
-          )
-
-          workflow = ".github/workflows/statewide-live-verification.yml"
-          replace_once(workflow, "    timeout-minutes: 35", "    timeout-minutes: 45")
-          replace_once(workflow, '          STATEWIDE_LIVE_CONCURRENCY: "4"', '          STATEWIDE_LIVE_CONCURRENCY: "8"')
-          replace_once(workflow, '          STATEWIDE_PORTAL_MAX_RETRIES: "2"', '          STATEWIDE_PORTAL_MAX_RETRIES: "1"')
-          replace_once(workflow, '          STATEWIDE_PORTAL_MAX_PAGES: "8"', '          STATEWIDE_PORTAL_MAX_PAGES: "4"')
-          replace_once(workflow, '          BSO_MAX_RETRIES: "2"', '          BSO_MAX_RETRIES: "1"')
-          PY
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate focused statewide modules
-        run: |
-          pnpm run typecheck:libs
-          pnpm --filter @workspace/api-server exec tsc -p tsconfig.statewide.json --noEmit
-          pnpm --filter @workspace/scripts exec tsx --test \
-            ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
-            ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
-            ../api-server/src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts \
-            ../api-server/src/lib/providers/__tests__/statewideProcurementPlatformParsers.test.ts
-
-      - name: Commit validated review fixes
-        shell: bash
-        run: |
-          rm .github/workflows/apply-statewide-review-fixes.yml
           git config user.name "openai-agent"
           git config user.email "openai-agent@users.noreply.github.com"
-          git add api-server/src/lib/providers .github/workflows/statewide-live-verification.yml .github/workflows/apply-statewide-review-fixes.yml
+          git add -A
           git commit -m "fix: bound statewide recovery budgets and challenge classification"
           git push origin HEAD:agent/statewide-19-recovery
