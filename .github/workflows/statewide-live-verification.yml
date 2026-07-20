@@ -68,13 +68,13 @@ jobs:
         env:
           STATEWIDE_LIVE_CONCURRENCY: "4"
           STATEWIDE_LIVE_REPORT_DIR: ${{ github.workspace }}/artifacts/statewide-live-verification
-          STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "10000"
-          STATEWIDE_PORTAL_MAX_RETRIES: "0"
-          STATEWIDE_PORTAL_MAX_PAGES: "2"
+          STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS: "30000"
+          STATEWIDE_PORTAL_MAX_RETRIES: "2"
+          STATEWIDE_PORTAL_MAX_PAGES: "8"
           STATEWIDE_PORTAL_MAX_RESULTS: "2"
           STATEWIDE_PORTAL_DETAIL_CONCURRENCY: "2"
-          BSO_REQUEST_TIMEOUT_MS: "10000"
-          BSO_MAX_RETRIES: "0"
+          BSO_REQUEST_TIMEOUT_MS: "30000"
+          BSO_MAX_RETRIES: "2"
         run: |
           set +e
           set -o pipefail
