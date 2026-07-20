@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { georgiaGaworkProvider } from "../georgiaGawork";
+import {
+  hawaiiHandsProvider,
+  parseHawaiiHandsJson,
+} from "../hawaiiHands";
 import { describeOfficialPortalRequestError } from "../officialPortalHttp";
 import {
   minnesotaOspProvider,
@@ -37,6 +41,32 @@ describe("blocked-state deep recovery providers", () => {
     assert.equal(rows[0]!.title, "DNR RFB Kawishiwi Falls Parking Lot");
     assert.deepEqual(rows[0]!.categoryCodes, ["72103301", "72141003"]);
     assert.equal(rows[0]!.responseDeadline?.getFullYear(), 2099);
+  });
+
+  it("parses Hawaii's first-party HANDS search response", () => {
+    const rows = parseHawaiiHandsJson(JSON.stringify({
+      data: {
+        searchResult: {
+          content: [{
+            id: 91827,
+            solicitionNo: "RFP-26-001",
+            title: "Statewide Occupational Health Services",
+            category: "Health and Human Services",
+            jurisdiction: "Executive Branch",
+            department: "Department of Human Services",
+            island: "Statewide",
+            publishDate: "07/15/2026",
+            dueDate: "08/31/2099 2:00 PM",
+            status: "POSTED",
+            system: "HANDS",
+          }],
+        },
+      },
+    }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.id, 91827);
+    assert.equal(rows[0]!.solicitionNo, "RFP-26-001");
+    assert.equal(rows[0]!.title, "Statewide Occupational Health Services");
   });
 
   it("parses OregonBuys BSO open-bid rows and preserves official detail URLs", () => {
@@ -83,10 +113,12 @@ describe("blocked-state deep recovery providers", () => {
 
   it("uses the dedicated recovery providers in the 50-state verifier", () => {
     const georgia = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "GA");
+    const hawaii = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "HI");
     const minnesota = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN");
     const oregon = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR");
     const southDakota = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "SD");
     assert.equal(georgia?.provider, georgiaGaworkProvider);
+    assert.equal(hawaii?.provider, hawaiiHandsProvider);
     assert.equal(minnesota?.provider, minnesotaOspProvider);
     assert.equal(oregon?.provider, oregonBuysProvider);
     assert.equal(southDakota?.provider, southDakotaPostingBoardProvider);
