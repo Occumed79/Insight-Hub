@@ -10,7 +10,7 @@
  *   - unifiedFetch / webIntelligenceFetch — crawler/scraper pipelines
  */
 
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, ilike, or, and, gte } from "drizzle-orm";
 import type { Opportunity } from "@workspace/db/schema";

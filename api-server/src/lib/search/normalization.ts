@@ -85,11 +85,6 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
         ? relevanceScore >= 75 ? "high" : relevanceScore >= 50 ? "medium" : "low"
         : null;
 
-  // Auto-archive if the deadline has already passed
-  const deadline = record.responseDeadline ?? null;
-  const isExpired = deadline != null && deadline < new Date();
-  const resolvedStatus = isExpired ? "archived" : record.status;
-
   return {
     noticeId: record.externalId || undefined,
     title: record.title,
@@ -97,7 +92,9 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
     subAgency: record.subAgency ?? null,
     office: null,
     type: record.type,
-    status: resolvedStatus,
+    // Deadline-based archival is reconciled explicitly after a manual run or
+    // through POST /opportunities/reconcile-expired.
+    status: record.status,
     naicsCode: record.naicsCode ?? null,
     naicsDescription: record.naicsDescription ?? null,
     pscCode: null,

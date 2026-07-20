@@ -1,7 +1,7 @@
 // Startup migration — idempotent database setup for the RFP opportunities database.
 
 import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { logger } from "./logger";
 
 export async function runRfpStartupMigrations(): Promise<void> {

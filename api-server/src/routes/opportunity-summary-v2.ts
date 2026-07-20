@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { groqProvider } from "../lib/providers/groq";

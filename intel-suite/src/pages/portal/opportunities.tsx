@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -37,11 +37,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  isOpportunityRunActive,
+  opportunityRunMetrics,
+  opportunityRunProgress,
+  type OpportunityRunStatus,
+} from "./opportunityRunView";
 
 import {
   useListOpportunities,
   useGetSettings,
-  useFetchOpportunities,
   useImportOpportunitiesFromCsv,
   useDeleteOpportunity,
   getListOpportunitiesQueryKey,
@@ -106,6 +111,23 @@ const OPPORTUNITY_PROVIDER_NAMES = new Set([
   "exa",
 ]);
 
+type IngestionRun = {
+  id: string;
+  status: OpportunityRunStatus;
+  currentProvider?: string | null;
+  providersCompleted: number;
+  providersTotal: number;
+  fetched: number;
+  staged: number;
+  accepted: number;
+  rejected: number;
+  duplicates: number;
+  created: number;
+  updated: number;
+  archived: number;
+  providerErrors?: Array<{ provider: string; error: string }>;
+};
+
 export default function OpportunitiesDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -122,6 +144,12 @@ export default function OpportunitiesDashboard() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
+  const [isStartingFetch, setIsStartingFetch] = useState(false);
+  const [isRetryingFetch, setIsRetryingFetch] = useState(false);
+  const [currentRun, setCurrentRun] = useState<IngestionRun | null>(null);
+  const [lastStartedRunId, setLastStartedRunId] = useState<string | null>(null);
+  const activeRunIds = useRef(new Set<string>());
+  const notifiedRunIds = useRef(new Set<string>());
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
@@ -181,36 +209,36 @@ export default function OpportunitiesDashboard() {
     }
   };
 
-  const fetchMutation = useFetchOpportunities({
-    mutation: {
-      onSuccess: (data: any) => {
-        queryClient.invalidateQueries({ queryKey: getListOpportunitiesQueryKey() });
-        setIsFetchOpen(false);
-        const providerErrors: string[] = (data.providers ?? []).flatMap((p: any) => p.errors ?? []).filter(Boolean);
-        const totalSaved = (data.created ?? 0) + (data.updated ?? 0);
-
-        if (totalSaved > 0) {
-          toast({
-            title: "Intelligence Fetched",
-            description: `Found ${data.fetched} opportunities. Added ${data.created}, updated ${data.updated}.${providerErrors.length > 0 ? " Some providers used fallback mode." : ""}`,
-          });
-          if (providerErrors.length > 0) {
-            const quotaMsg = providerErrors.find((e) => e.includes("quota") || e.includes("rate limit") || e.includes("fallback"));
-            if (quotaMsg) {
-              setTimeout(() => toast({ title: "Provider Notice", description: quotaMsg.slice(0, 140), variant: "default" }), 600);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+        const response = await fetch(`${baseUrl}/api/opportunities/ingestion-runs/current`);
+        if (response.ok) {
+          const data = await response.json();
+          const run = (data.run ?? null) as IngestionRun | null;
+          if (!cancelled) {
+            setCurrentRun(run);
+            if (run && isOpportunityRunActive(run.status)) activeRunIds.current.add(run.id);
+            if (run && !isOpportunityRunActive(run.status) && activeRunIds.current.has(run.id) && !notifiedRunIds.current.has(run.id)) {
+              notifiedRunIds.current.add(run.id);
+              queryClient.invalidateQueries({ queryKey: getListOpportunitiesQueryKey() });
+              toast({
+                variant: run.status === "failed" ? "destructive" : "default",
+                title: run.status === "completed" ? "Fetch complete" : run.status === "failed" ? "Fetch failed" : "Fetch completed with provider errors",
+                description: `Fetched ${run.fetched}. Added ${run.created}, updated ${run.updated}, archived ${run.archived}.`,
+              });
             }
           }
-        } else if (providerErrors.length > 0) {
-          toast({ variant: "destructive", title: "Fetch Issue", description: providerErrors[0] });
-        } else {
-          toast({ title: "Fetch Complete", description: `Fetched ${data.fetched} records. Added ${data.created}, updated ${data.updated}.` });
         }
-      },
-      onError: (err: any) => {
-        toast({ variant: "destructive", title: "Fetch Failed", description: err.error || err.message || "Failed to fetch from configured sources" });
-      },
-    },
-  });
+      } catch {}
+      if (!cancelled) timer = setTimeout(poll, currentRun && isOpportunityRunActive(currentRun.status) ? 1500 : 5000);
+    };
+    void poll();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [queryClient, toast, currentRun?.id, currentRun?.status]);
 
   const importMutation = useImportOpportunitiesFromCsv({
     mutation: {
@@ -321,13 +349,47 @@ export default function OpportunitiesDashboard() {
 
   const handleFetchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchMutation.mutate({
-      data: {
-        keywords: fetchQuery.trim(),
-        dateRange: parseInt(fetchDays, 10),
-        providers: fetchProviders.length > 0 ? fetchProviders : undefined,
-      },
-    });
+    if (fetchProviders.length === 0) return;
+    void (async () => {
+      setIsStartingFetch(true);
+      try {
+        const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+        const response = await fetch(`${baseUrl}/api/opportunities/fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keywords: fetchQuery.trim(), dateRange: parseInt(fetchDays, 10), providers: fetchProviders }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Failed to start the manual fetch");
+        setCurrentRun(data.run);
+        setLastStartedRunId(data.runId);
+        activeRunIds.current.add(data.runId);
+        toast({ title: "Fetch started", description: "Progress is saved and remains visible if you leave this page." });
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "Fetch could not start", description: err.message });
+      } finally {
+        setIsStartingFetch(false);
+      }
+    })();
+  };
+
+  const handleRetryFailedProviders = async () => {
+    if (!currentRun) return;
+    setIsRetryingFetch(true);
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const response = await fetch(`${baseUrl}/api/opportunities/ingestion-runs/${currentRun.id}/retry`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Retry could not start");
+      setCurrentRun(data.run);
+      setLastStartedRunId(data.runId);
+      activeRunIds.current.add(data.runId);
+      toast({ title: "Retry started", description: "Only providers that failed in the prior run were queued." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Retry failed", description: err.message });
+    } finally {
+      setIsRetryingFetch(false);
+    }
   };
 
   const handleImportSubmit = (e: React.FormEvent) => {
@@ -428,6 +490,7 @@ export default function OpportunitiesDashboard() {
   const getOpportunityUrl = (opp: any) => opp.samUrl || opp.sourceUrl || opp.url || null;
   const getAgency = (opp: any) => opp.agency === "Unknown" ? (extractAgencyHint(opp.title) ?? "—") : (opp.agency ?? "—");
   const opportunities = oppsData?.data ?? [];
+  const showRunProgress = Boolean(currentRun && (isOpportunityRunActive(currentRun.status) || currentRun.id === lastStartedRunId));
 
   return (
     <div className="flex flex-col gap-6">
@@ -769,8 +832,30 @@ export default function OpportunitiesDashboard() {
           <form onSubmit={handleFetchSubmit}>
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Fetch Intelligence</DialogTitle>
-              <DialogDescription className="text-muted-foreground">Choose official opportunity sources and, when needed, optional web-discovery services.</DialogDescription>
+              <DialogDescription className="text-muted-foreground">{showRunProgress ? "Manual ingestion progress is persisted while you navigate or refresh." : "Choose official opportunity sources and, when needed, optional web-discovery services."}</DialogDescription>
             </DialogHeader>
+            {showRunProgress && currentRun ? (
+              <div className="grid gap-5 py-6">
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground">Run status</div>
+                      <div className="mt-1 flex items-center gap-2 text-sm font-medium capitalize">
+                        {isOpportunityRunActive(currentRun.status) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                        {currentRun.status.replaceAll("_", " ")}
+                      </div>
+                    </div>
+                    <div className="text-right"><div className="text-xs text-muted-foreground">Providers</div><div className="text-lg font-semibold">{currentRun.providersCompleted}/{currentRun.providersTotal}</div></div>
+                  </div>
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${opportunityRunProgress(currentRun.providersCompleted, currentRun.providersTotal)}%` }} /></div>
+                  {currentRun.currentProvider && <p className="mt-3 text-xs text-white/70">Running: <span className="font-medium text-white">{currentRun.currentProvider}</span></p>}
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  {opportunityRunMetrics(currentRun).map(([label, value]) => <div key={label} className="rounded-lg border border-white/10 bg-background/30 px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div><div className="mt-0.5 text-base font-semibold">{value}</div></div>)}
+                </div>
+                {(currentRun.providerErrors?.length ?? 0) > 0 && <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3"><div className="text-[10px] uppercase tracking-wider text-amber-300">Provider errors</div>{currentRun.providerErrors!.map((item) => <p key={`${item.provider}-${item.error}`} className="text-xs text-white/75"><span className="font-medium text-white">{item.provider}:</span> {item.error}</p>)}</div>}
+              </div>
+            ) : (
             <div className="grid gap-5 py-6">
               <div className="grid gap-2">
                 <Label className="text-xs uppercase tracking-widest text-muted-foreground">Sources</Label>
@@ -821,12 +906,16 @@ export default function OpportunitiesDashboard() {
                 <Input id="days" type="number" value={fetchDays} onChange={(e) => setFetchDays(e.target.value)} min="1" max="365" className="bg-background/50 border-white/10" />
               </div>
             </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setIsFetchOpen(false)} className="hover:bg-white/5">Cancel</Button>
-              <Button type="submit" disabled={fetchMutation.isPending || fetchProviders.length === 0} className="bg-primary hover:bg-primary/90">
-                {fetchMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <DownloadCloud className="w-4 h-4 mr-2" />}
-                {fetchMutation.isPending ? "Fetching..." : "Start Fetch"}
-              </Button>
+              {showRunProgress && currentRun ? <>
+                {!isOpportunityRunActive(currentRun.status) && (currentRun.providerErrors?.length ?? 0) > 0 && <Button type="button" onClick={handleRetryFailedProviders} disabled={isRetryingFetch} className="bg-primary hover:bg-primary/90">{isRetryingFetch && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Retry Failed Providers</Button>}
+                {!isOpportunityRunActive(currentRun.status) && <Button type="button" variant="outline" onClick={() => setLastStartedRunId(null)} className="border-white/10 bg-white/5">New Manual Run</Button>}
+              </> : <Button type="submit" disabled={isStartingFetch || fetchProviders.length === 0} className="bg-primary hover:bg-primary/90">
+                {isStartingFetch ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <DownloadCloud className="w-4 h-4 mr-2" />}
+                {isStartingFetch ? "Starting..." : "Start Fetch"}
+              </Button>}
             </DialogFooter>
           </form>
         </DialogContent>

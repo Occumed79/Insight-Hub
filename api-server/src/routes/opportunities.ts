@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq, ilike, and, or, sql, isNull, lt, desc, count as countFn } from "drizzle-orm";
-import { unifiedFetch } from "../lib/search/unifiedSearch";
+import { eq, ilike, and, or, sql, isNull, desc, count as countFn } from "drizzle-orm";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { groqProvider } from "../lib/providers/groq";
@@ -10,6 +9,16 @@ import { openrouterProvider } from "../lib/providers/openrouter";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
+import {
+  getCurrentIngestionRun,
+  getIngestionRun,
+  IngestionRunNotRetryableError,
+  listRecentIngestionRuns,
+  reconcileExpiredOpportunities,
+  retryFailedProviders,
+  startManualIngestion,
+} from "../lib/ingestion/manualIngestion";
+import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
 import multer from "multer";
 
 const router = Router();
@@ -166,24 +175,9 @@ function shouldShowOpportunity(opp: any): boolean {
   return true;
 }
 
-// Exported so unifiedSearch can use it at write time (prevents junk from ever entering DB)
+// Shared with enrichment and read-time presentation. Manual ingestion applies
+// its quality decision before any record can be promoted into production.
 export { shouldShowOpportunity };
-
-async function archiveExpiredOpportunities(): Promise<void> {
-  try {
-    await db
-      .update(opportunitiesTable)
-      .set({ status: "archived", updatedAt: new Date() })
-      .where(
-        and(
-          eq(opportunitiesTable.status, "active"),
-          lt(opportunitiesTable.responseDeadline, new Date())
-        )
-      );
-  } catch {
-    // Non-critical — don't fail the request if this errors
-  }
-}
 
 function parseTags(raw: unknown): string[] {
   if (typeof raw !== "string" || !raw.trim()) return [];
@@ -266,8 +260,6 @@ function mapOpportunity(opp: any) {
 
 router.get("/opportunities", async (req, res) => {
   try {
-    await archiveExpiredOpportunities();
-
     const {
       search, status, type, naicsCode, agency, source,
       dateRange, freshOnly,
@@ -508,99 +500,57 @@ router.get("/opportunities", async (req, res) => {
   }
 });
 
-router.post("/opportunities/fetch", async (req, res) => {
+router.post("/opportunities/fetch", createStartIngestionHandler(startManualIngestion));
+
+router.get("/opportunities/ingestion-runs/current", async (req, res) => {
   try {
-    const { keywords, dateRange, providers } = req.body as {
-      keywords?: string;
-      dateRange?: number;
-      providers?: string[];
-    };
+    return res.json({ run: await getCurrentIngestionRun() });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to read the current ingestion run" });
+  }
+});
 
-    const providerNameMap: Record<string, string> = {
-      sam_gov: "samGov",
-      grantsGov: "grantsGov",
-      grants_gov: "grantsGov",
-      publicPortalProviders: "publicPortalProviders",
-      public_portal_providers: "publicPortalProviders",
-      publicPortals: "publicPortalProviders",
-      public_portals: "publicPortalProviders",
-      eunaBonfire: "eunaBonfire",
-      euna_bonfire: "eunaBonfire",
-      eunaSupplierNetwork: "eunaBonfire",
-      internationalPublicPortals: "internationalPublicPortals",
-      international_public_portals: "internationalPublicPortals",
-      internationalOpportunities: "internationalPublicPortals",
-      usaSpending: "usaSpending",
-      usa_spending: "usaSpending",
-      gemini: "gemini",
-      serper: "serper",
-      tavily: "tavily",
-      tango: "tango",
-      bidnet: "bidnet",
-      exa: "exa",
-      jina: "jina",
-      firecrawl: "firecrawl",
-      groq: "groq",
-      openrouter: "openrouter",
-      minimax: "minimax",
-      statePortals: "publicPortalProviders",
-      olostep: "olostep",
-      browseAi: "browseAi",
-      browserUse: "browserUse",
-      clod: "clod",
-      cloudflareWorker: "cloudflareWorker",
-      cerebras: "cerebras",
-      deepseek: "deepseek",
-      mistral: "mistral",
-      nvidia: "nvidia",
-      you: "you",
-      langsearch: "langsearch",
-      websearch: "websearch",
-      federalRegister: "federalRegister",
-    };
+router.get("/opportunities/ingestion-runs", async (req, res) => {
+  try {
+    const limit = Number(req.query.limit ?? 20);
+    return res.json({ runs: await listRecentIngestionRuns(Number.isFinite(limit) ? limit : 20) });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to list ingestion runs" });
+  }
+});
 
-    const resolvedProviders = providers && providers.length > 0
-      ? providers.map((p) => providerNameMap[p] || p)
-      : ["samGov"];
+router.get("/opportunities/ingestion-runs/:runId", async (req, res) => {
+  try {
+    const run = await getIngestionRun(req.params.runId);
+    if (!run) return res.status(404).json({ error: "Ingestion run not found" });
+    return res.json({ run });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to read ingestion run" });
+  }
+});
 
-    const result = await unifiedFetch({
-      keywords,
-      dateRange,
-      providers: resolvedProviders as any,
-    });
-
-    await archiveExpiredOpportunities();
-
-    const allErrors = (result.providerResults ?? []).flatMap((pr: any) => (pr.errors ?? []).map((e: string) => `[${pr.provider}] ${e}`));
-
-    return res.json({
-      fetched: result.fetched,
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      providers: result.providerResults?.map((pr: any) => ({
-        name: pr.provider,
-        fetched: pr.fetched,
-        errors: pr.errors ?? [],
-      })),
-      diagnostics: allErrors.length > 0 ? allErrors : undefined,
-    });
+router.post("/opportunities/ingestion-runs/:runId/retry", async (req, res) => {
+  try {
+    const run = await retryFailedProviders(req.params.runId);
+    return res.status(202).json({ runId: run.id, status: run.status, run });
   } catch (err: any) {
     req.log.error(err);
-    const msg: string = err?.message ?? String(err);
-    if (msg === "SAM_API_KEY_NOT_CONFIGURED" || msg.includes("SAM_API_KEY_NOT_CONFIGURED")) {
-      return res.status(400).json({ error: "SAM.gov API key not configured. Add it in Settings → Integrations." });
-    }
-    if (msg.includes("quota") || msg.includes("throttled") || msg.includes("rate limit")) {
-      return res.status(429).json({ error: msg });
-    }
-    if (msg.includes("API key not configured") || msg.includes("not configured")) {
-      return res.status(400).json({ error: msg });
-    }
-    return res.status(500).json({
-      error: "Fetch failed: " + (msg.slice(0, 300) || "Unknown error"),
-      details: msg,
-    });
+    if (err?.constructor?.name === "ActiveIngestionRunError") return res.status(409).json({ error: err.message, runId: err.runId });
+    if (err instanceof IngestionRunNotRetryableError) return res.status(400).json({ error: err.message });
+    if (String(err?.message).includes("not found")) return res.status(404).json({ error: err.message });
+    return res.status(500).json({ error: "Failed to retry ingestion run" });
+  }
+});
+
+router.post("/opportunities/reconcile-expired", async (req, res) => {
+  try {
+    return res.json({ archived: await reconcileExpiredOpportunities() });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Deadline reconciliation failed" });
   }
 });
 

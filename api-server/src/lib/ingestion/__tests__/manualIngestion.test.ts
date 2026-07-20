@@ -1,0 +1,227 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { describe, it } from "node:test";
+import type { NormalizedOpportunity } from "../../providers/types";
+import {
+  calculateOpportunityDedupeKeys,
+  decideOpportunityQuality,
+  serializeOpportunity,
+} from "../opportunityIdentity";
+import {
+  classifyIdentityMatch,
+  failedProvidersForRetry,
+  mergeSourceRefresh,
+  shouldArchiveForDeadline,
+} from "../pipelineRules";
+
+function fixture(
+  overrides: Partial<NormalizedOpportunity> = {},
+): NormalizedOpportunity {
+  return {
+    externalId: "notice-100",
+    title: "RFP Employee Occupational Health Services",
+    agency: "County of Fresno",
+    type: "RFP",
+    status: "active",
+    postedDate: new Date("2026-07-01T00:00:00Z"),
+    responseDeadline: new Date("2026-08-15T00:00:00Z"),
+    description:
+      "Occupational health physicals, drug testing, and medical surveillance.",
+    solicitationNumber: "RFP-26-100",
+    sourceUrl: "https://example.gov/bids/100?utm_source=test",
+    source: "samGov",
+    rawData: { sourceEvidence: "fixture", sourceConfidence: "high" },
+    ...overrides,
+  };
+}
+
+type Canonical = Record<string, unknown> & { id: string };
+
+class InMemoryPipeline {
+  raw: Record<string, unknown>[] = [];
+  staging: Array<{
+    status: string;
+    reason: string | null;
+    canonicalId?: string;
+  }> = [];
+  opportunities = new Map<string, Canonical>();
+  keys = new Map<string, string>();
+  nextId = 1;
+
+  ingest(record: NormalizedOpportunity) {
+    this.raw.push(serializeOpportunity(record));
+    const quality = decideOpportunityQuality(record);
+    if (quality.status !== "accepted") {
+      this.staging.push({ status: quality.status, reason: quality.reason });
+      return;
+    }
+    const keys = calculateOpportunityDedupeKeys(record);
+    const match = classifyIdentityMatch(keys, this.keys);
+    const weakDuplicate =
+      match?.matchType === "url" || match?.matchType === "fingerprint";
+    if (weakDuplicate) {
+      this.staging.push({
+        status: "duplicate",
+        reason: match.matchType,
+        canonicalId: match.opportunityId,
+      });
+      for (const key of keys) this.keys.set(key.value, match.opportunityId);
+      return;
+    }
+    const id = match?.opportunityId ?? `canonical-${this.nextId++}`;
+    const incoming = { ...serializeOpportunity(record), id } as Canonical;
+    const existing = this.opportunities.get(id);
+    this.opportunities.set(
+      id,
+      existing ? mergeSourceRefresh(existing, incoming) : incoming,
+    );
+    for (const key of keys) this.keys.set(key.value, id);
+    this.staging.push({
+      status: "accepted",
+      reason: match?.matchType ?? null,
+      canonicalId: id,
+    });
+  }
+}
+
+describe("raw, staging, persistent identity, and refresh rules", () => {
+  it("retains raw and rejected staging records", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(
+      fixture({ title: "Office furniture", description: "Chairs and desks" }),
+    );
+    assert.equal(pipeline.raw.length, 1);
+    assert.equal(pipeline.staging.length, 1);
+    assert.equal(pipeline.staging[0].status, "rejected");
+    assert.match(pipeline.staging[0].reason!, /relevance filter/i);
+    assert.equal(pipeline.opportunities.size, 0);
+  });
+
+  it("promotes accepted records and an identical rerun is idempotent", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture());
+    pipeline.ingest(fixture());
+    assert.equal(pipeline.raw.length, 2);
+    assert.equal(
+      pipeline.staging.filter((row) => row.status === "accepted").length,
+      2,
+    );
+    assert.equal(pipeline.opportunities.size, 1);
+  });
+
+  it("resolves a cross-provider solicitation identity to one canonical opportunity", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture());
+    pipeline.ingest(
+      fixture({
+        externalId: "county-portal-55",
+        source: "publicPortalProviders",
+        sourceUrl: "https://county.example.gov/rfp/55",
+      }),
+    );
+    assert.equal(pipeline.opportunities.size, 1);
+    assert.equal(pipeline.staging[1].reason, "solicitation");
+  });
+
+  it("treats a provider-identity amendment as a refresh and preserves user fields", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture());
+    const id = [...pipeline.opportunities.keys()][0];
+    pipeline.opportunities.set(id, {
+      ...pipeline.opportunities.get(id)!,
+      notes: "My bid/no-bid note",
+      userGrade: "excellent",
+      userConfidence: 97,
+      createdAt: "preserved",
+      firstSeenAt: "preserved",
+    });
+    pipeline.ingest(
+      fixture({
+        title: "RFP Employee Occupational Health Services - Amendment 2",
+        responseDeadline: new Date("2026-09-01T00:00:00Z"),
+      }),
+    );
+    const refreshed = pipeline.opportunities.get(id)!;
+    assert.match(String(refreshed.title), /Amendment 2/);
+    assert.equal(refreshed.notes, "My bid/no-bid note");
+    assert.equal(refreshed.userGrade, "excellent");
+    assert.equal(refreshed.userConfidence, 97);
+    assert.equal(refreshed.createdAt, "preserved");
+    assert.equal(refreshed.firstSeenAt, "preserved");
+  });
+
+  it("keeps every source lineage key even when a weak cross-provider duplicate is not promoted", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture({ solicitationNumber: undefined }));
+    pipeline.ingest(
+      fixture({
+        externalId: "other-44",
+        source: "publicPortalProviders",
+        solicitationNumber: undefined,
+      }),
+    );
+    assert.equal(pipeline.opportunities.size, 1);
+    assert.equal(pipeline.staging[1].status, "duplicate");
+    assert.ok(
+      calculateOpportunityDedupeKeys(
+        fixture({
+          externalId: "other-44",
+          source: "publicPortalProviders",
+          solicitationNumber: undefined,
+        }),
+      ).every((key) => pipeline.keys.has(key.value)),
+    );
+  });
+});
+
+describe("run retry and deadline rules", () => {
+  it("persists run and provider progress counters in RFP-only tables", async () => {
+    const schema = await readFile(path.resolve(process.cwd(), "../lib/db/src/schema/opportunity-ingestion.ts"), "utf8");
+    for (const table of [
+      "opportunity_ingestion_runs",
+      "opportunity_ingestion_run_sources",
+      "opportunity_raw_records",
+      "opportunity_staging",
+      "opportunity_source_registry",
+      "opportunity_dedupe_keys",
+    ]) assert.ok(schema.includes(`\"${table}\"`), `missing ${table}`);
+    for (const counter of ["providersCompleted", "providersTotal", "fetched", "staged", "accepted", "rejected", "duplicates", "created", "updated", "archived"]) {
+      assert.ok(schema.includes(counter), `missing persisted progress counter ${counter}`);
+    }
+  });
+
+  it("selects only failed providers for retry", () => {
+    assert.deepEqual(
+      failedProvidersForRetry([
+        { provider: "samGov", status: "completed" },
+        { provider: "serper", status: "failed" },
+        { provider: "exa", status: "failed" },
+      ]),
+      ["serper", "exa"],
+    );
+  });
+
+  it("archives a known past deadline and never archives an unknown deadline", () => {
+    const now = new Date("2026-07-20T00:00:00Z");
+    assert.equal(
+      shouldArchiveForDeadline(new Date("2026-07-19T23:59:59Z"), now),
+      true,
+    );
+    assert.equal(shouldArchiveForDeadline(null, now), false);
+    assert.equal(shouldArchiveForDeadline(undefined, now), false);
+  });
+
+  it("GET /opportunities contains no archive mutation", async () => {
+    const routePath = path.resolve(
+      process.cwd(),
+      "src/routes/opportunities.ts",
+    );
+    const source = await readFile(routePath, "utf8");
+    const getStart = source.indexOf('router.get("/opportunities"');
+    const fetchStart = source.indexOf('router.post("/opportunities/fetch"');
+    const getHandler = source.slice(getStart, fetchStart);
+    assert.equal(getHandler.includes("reconcileExpiredOpportunities"), false);
+    assert.equal(getHandler.includes(".update(opportunitiesTable)"), false);
+  });
+});

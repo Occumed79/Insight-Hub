@@ -77,6 +77,8 @@ export const opportunitiesTable = pgTable(
     userConfidence: numeric("user_confidence"),  // 0-100: model's prediction of your interest based on past grades
     userGrade: text("user_grade"),               // your latest grade: excellent | good | poor | spam (null = ungraded)
     // Timestamps
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
