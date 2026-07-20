@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { georgiaGaworkProvider } from "../georgiaGawork";
 import { describeOfficialPortalRequestError } from "../officialPortalHttp";
 import {
   minnesotaOspProvider,
@@ -60,8 +61,10 @@ describe("blocked-state deep recovery providers", () => {
   });
 
   it("uses the dedicated recovery providers in the 50-state verifier", () => {
+    const georgia = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "GA");
     const minnesota = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN");
     const oregon = STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR");
+    assert.equal(georgia?.provider, georgiaGaworkProvider);
     assert.equal(minnesota?.provider, minnesotaOspProvider);
     assert.equal(oregon?.provider, oregonBuysProvider);
   });
