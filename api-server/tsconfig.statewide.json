@@ -5,9 +5,11 @@
     "noEmit": true
   },
   "include": [
+    "src/lib/providers/deepRecoveryProviders.ts",
     "src/lib/providers/georgiaGawork.ts",
     "src/lib/providers/minnesotaOsp.ts",
     "src/lib/providers/oregonBuys.ts",
+    "src/lib/providers/southDakotaPostingBoard.ts",
     "src/lib/providers/officialPortalHttp.ts",
     "src/lib/providers/statewideProcurementConfigs.ts",
     "src/lib/providers/statewideProcurementContentSignals.ts",
