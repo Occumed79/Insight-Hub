@@ -4,7 +4,7 @@ const EXPLICIT_EMPTY_TEXT = /(?:\bno\s+(?:(?:open|active|current|matching|availa
 const CLOSED_TEXT = /\b(?:closed|awarded|cancelled|canceled|expired|withdrawn|completed|complete|inactive|pending selection|retracted|under evaluation)\b/i;
 const LISTING_HEADER_TEXT = /\b(?:solicitation|bid|rfp|rfq|event|project|opportunity)\b/i;
 const BROWSER_BLOCK_TEXT = /\b(?:unsupported browser|browser is not supported|upgrade your browser|enable javascript to continue|verify you are human|checking your browser|made us think that you are a bot|solve this captcha|request unblock)\b/i;
-const AUTOMATED_ACCESS_BLOCK_MARKUP = /captcha\.perfdrive\.com|h-captcha|g-recaptcha|cf-chl-|px-captcha|perimeterx|datadome/i;
+const AUTOMATED_ACCESS_BLOCK_MARKUP = /captcha\.perfdrive\.com|radware captcha page|shieldsquare|ssjsconnectorobj|h-captcha|g-recaptcha|cf-chl-|px-captcha|perimeterx|datadome/i;
 
 function jsonHasExplicitEmptyCollection(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0;
