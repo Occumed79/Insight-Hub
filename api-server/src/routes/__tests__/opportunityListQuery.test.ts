@@ -4,9 +4,11 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
+  boundNumeric,
   boundTextArray,
   likeAnyText,
   notLikeAnyText,
+  opportunityListErrorDetail,
   opportunityListSelection,
 } from "../opportunityListQuery";
 
@@ -28,6 +30,28 @@ describe("opportunity list PostgreSQL pattern filters", () => {
     assert.match(
       dialect.sqlToQuery(notLikeAnyText(sql`lower(title)`, ["%vacancy%"])).sql,
       /^NOT \(lower\(title\) LIKE ANY\(ARRAY\[\$1\]::text\[\]\)\)$/,
+    );
+  });
+
+  it("casts bound feedback weights before applying unary minus", () => {
+    const query = dialect.sqlToQuery(
+      sql`GREATEST(-(${boundNumeric(15)}), 0::numeric)`,
+    );
+
+    assert.equal(query.sql, "GREATEST(-($1::numeric), 0::numeric)");
+    assert.deepEqual(query.params, [15]);
+  });
+
+  it("preserves the real database error for the API response", () => {
+    assert.equal(
+      opportunityListErrorDetail(
+        new Error("operator is not unique: - unknown"),
+      ),
+      "operator is not unique: - unknown",
+    );
+    assert.equal(
+      opportunityListErrorDetail(undefined),
+      "Unknown opportunity query error",
     );
   });
 });
