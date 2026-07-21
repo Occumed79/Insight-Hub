@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { opportunitiesTable } from "@workspace/db/schema";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   boundNumeric,
@@ -8,6 +9,7 @@ import {
   likeAnyText,
   notLikeAnyText,
   opportunityListErrorDetail,
+  opportunityListSelection,
 } from "../opportunityListQuery";
 
 const dialect = new PgDialect();
@@ -51,5 +53,54 @@ describe("opportunity list PostgreSQL pattern filters", () => {
       opportunityListErrorDetail(undefined),
       "Unknown opportunity query error",
     );
+  });
+});
+
+
+describe("opportunity list production schema compatibility", () => {
+  it("does not select backend-only provider_key for the public list response", () => {
+    const query = dialect.sqlToQuery(
+      sql`select ${sql.join(
+        Object.entries(opportunityListSelection(opportunitiesTable)).map(
+          ([alias, column]) => sql`${column} as ${sql.identifier(alias)}`,
+        ),
+        sql`, `,
+      )} from ${opportunitiesTable}`
+    );
+
+    assert.doesNotMatch(query.sql, /provider_key/);
+    assert.match(query.sql, /provider_name/);
+    assert.match(query.sql, /user_confidence/);
+  });
+
+  it("renders SQL for every Opportunities page filter combination", () => {
+    const filters = [
+      undefined,
+      eq(opportunitiesTable.status, "active"),
+      ilike(opportunitiesTable.type, "%Solicitation%"),
+      sql`${opportunitiesTable.postedDate} >= ${new Date("2026-07-01T00:00:00.000Z")}`,
+      ilike(opportunitiesTable.providerName, "samGov"),
+      or(
+        ilike(opportunitiesTable.title, "%drug%"),
+        ilike(opportunitiesTable.agency, "%drug%"),
+        ilike(opportunitiesTable.description, "%drug%"),
+        ilike(opportunitiesTable.solicitationNumber, "%drug%"),
+      ),
+    ];
+
+    const where = and(...filters.filter(Boolean) as any[]);
+    const rankExpr = sql<number>`COALESCE(${opportunitiesTable.relevanceScore}::numeric, 50)`;
+    const query = dialect.sqlToQuery(
+      sql`select ${sql.join(
+        Object.entries(opportunityListSelection(opportunitiesTable)).map(
+          ([alias, column]) => sql`${column} as ${sql.identifier(alias)}`,
+        ),
+        sql`, `,
+      )} from ${opportunitiesTable} where ${where} order by ${desc(rankExpr)} limit ${50} offset ${0}`
+    );
+
+    assert.match(query.sql, /where/);
+    assert.match(query.sql, /order by/);
+    assert.doesNotMatch(query.sql, /provider_key/);
   });
 });

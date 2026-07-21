@@ -24,6 +24,7 @@ import {
   likeAnyText,
   notLikeAnyText,
   opportunityListErrorDetail,
+  opportunityListSelection,
 } from "./opportunityListQuery";
 import multer from "multer";
 
@@ -472,7 +473,7 @@ router.get("/opportunities", async (req, res) => {
 
     // ── Paginated data query ──────────────────────────────────────────────────
     const rows = await db
-      .select()
+      .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
       .where(where)
       .orderBy(desc(rankExpr), desc(dateKnownExpr), desc(opportunitiesTable.postedDate))
