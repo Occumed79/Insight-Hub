@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "verify:database-silo": "node --import tsx ./src/verify-database-silo.ts",
+    "test:database-silo": "node --import tsx --test ./src/__tests__/verify-database-silo.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

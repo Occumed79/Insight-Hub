@@ -111,18 +111,124 @@ paths:
                     type: string
                   description: List of provider names to fetch from. Defaults to all configured providers.
       responses:
-        "200":
-          description: Fetch result
+        "202":
+          description: Persisted manual ingestion run accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FetchResult"
+                $ref: "#/components/schemas/IngestionRunStarted"
+        "409":
+          description: Another manual ingestion run is already active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "400":
           description: No providers configured or invalid request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /opportunities/ingestion-runs/current:
+    get:
+      operationId: getCurrentOpportunityIngestionRun
+      tags: [opportunities]
+      summary: Read the latest persisted manual ingestion run
+      responses:
+        "200":
+          description: Latest run, or null when no run exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    anyOf:
+                      - $ref: "#/components/schemas/IngestionRun"
+                      - type: "null"
+
+  /opportunities/ingestion-runs:
+    get:
+      operationId: listOpportunityIngestionRuns
+      tags: [opportunities]
+      summary: List recent manual ingestion runs
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Recent runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/IngestionRun"
+
+  /opportunities/ingestion-runs/{runId}:
+    get:
+      operationId: getOpportunityIngestionRun
+      tags: [opportunities]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Persisted run and provider progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    $ref: "#/components/schemas/IngestionRun"
+
+  /opportunities/ingestion-runs/{runId}/retry:
+    post:
+      operationId: retryFailedOpportunityProviders
+      tags: [opportunities]
+      summary: Start a new manual run containing only failed providers
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Retry run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionRunStarted"
+        "409":
+          description: Another manual run is active
+
+  /opportunities/reconcile-expired:
+    post:
+      operationId: reconcileExpiredOpportunities
+      tags: [opportunities]
+      summary: Explicitly archive active opportunities with known past deadlines
+      responses:
+        "200":
+          description: Reconciliation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archived:
+                    type: integer
 
   /opportunities/import:
     post:
@@ -540,27 +646,82 @@ components:
         limit:
           type: integer
 
-    FetchResult:
+    IngestionRunStarted:
       type: object
-      required: [fetched, created, updated, skipped]
+      required: [runId, status, run]
       properties:
+        runId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, completed_with_errors, failed]
+        run:
+          $ref: "#/components/schemas/IngestionRun"
+
+    IngestionRun:
+      type: object
+      required:
+        [
+          id,
+          status,
+          selectedProviders,
+          providersCompleted,
+          providersTotal,
+          fetched,
+          staged,
+          accepted,
+          rejected,
+          duplicates,
+          created,
+          updated,
+          archived,
+        ]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, completed_with_errors, failed]
+        selectedProviders:
+          type: array
+          items:
+            type: string
+        query:
+          type: string
+          nullable: true
+        dateRange:
+          type: integer
+          nullable: true
+        currentProvider:
+          type: string
+          nullable: true
+        providersCompleted:
+          type: integer
+        providersTotal:
+          type: integer
         fetched:
+          type: integer
+        staged:
+          type: integer
+        accepted:
+          type: integer
+        rejected:
+          type: integer
+        duplicates:
           type: integer
         created:
           type: integer
         updated:
           type: integer
-        skipped:
+        archived:
           type: integer
-        providers:
+        providerErrors:
           type: array
           items:
             type: object
             properties:
-              name:
+              provider:
                 type: string
-              fetched:
-                type: integer
               error:
                 type: string
 
@@ -640,7 +801,17 @@ components:
 
     Provider:
       type: object
-      required: [name, displayName, description, category, capabilities, requiredFields, optionalFields, status]
+      required:
+        [
+          name,
+          displayName,
+          description,
+          category,
+          capabilities,
+          requiredFields,
+          optionalFields,
+          status,
+        ]
       properties:
         name:
           type: string
@@ -755,4 +926,3 @@ components:
           type: string
         details:
           type: string
-

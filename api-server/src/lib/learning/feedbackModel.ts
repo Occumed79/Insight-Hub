@@ -20,7 +20,7 @@
  *   spam       → -2.0
  */
 
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { opportunityFeedbackTable, opportunitiesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";

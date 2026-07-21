@@ -9,7 +9,7 @@
 import { Router } from "express";
 import { createHash } from "crypto";
 import { eq, desc, and, count as countFn } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import { federalIntelItemsTable, type FederalIntelBucket } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
 

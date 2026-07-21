@@ -11,7 +11,7 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import { prospectsTable } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
 import { tavilyProvider } from "../lib/providers/tavily";

@@ -11,7 +11,7 @@
 import { Router } from "express";
 import { createHash } from "crypto";
 import { eq, and, desc, sql, like, count as countFn } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import {
   sourceMonitorItemsTable,
   sourceMonitorRunsTable,

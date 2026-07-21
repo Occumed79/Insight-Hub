@@ -10,7 +10,7 @@
 import { Router } from "express";
 import { createHash } from "crypto";
 import { eq, and, desc, sql, count as countFn, inArray } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import {
   intelFeedItemsTable,
   intelFeedSignalsTable,

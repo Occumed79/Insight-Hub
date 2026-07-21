@@ -1,4 +1,4 @@
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { like } from "drizzle-orm";
 import type { PublicPortalSource } from "./catalog";

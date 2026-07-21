@@ -7,7 +7,7 @@ if (!process.env.RFP_DATABASE_URL) {
 
 export default defineConfig({
   schema: path.join(__dirname, "./src/schema/rfp.ts"),
-  out: path.join(__dirname, "./migrations/rfp"),
+  out: "./migrations/rfp",
   dialect: "postgresql",
   dbCredentials: {
     url: process.env.RFP_DATABASE_URL,

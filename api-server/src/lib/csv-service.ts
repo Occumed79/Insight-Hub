@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { and, eq, or } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 
 const UNKNOWN_POSTED_DATE = new Date(0);

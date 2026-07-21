@@ -1,4 +1,4 @@
-import { PORTAL_PARSER_REGISTRY } from "../index";
+import { normalizerForPortalSource } from "../index";
 
 export const PORTAL_PARSER_SAMPLE_FIXTURES = [
   { sourceId: "us-sam-gov", data: [{ title: "Occupational Health Services", solicitationNumber: "FA1234-26-R-0001", agency: "Department of Air Force", postedDate: "2026-07-01", responseDeadline: "2026-08-15", url: "https://sam.gov/opp/example" }] },
@@ -9,5 +9,7 @@ export const PORTAL_PARSER_SAMPLE_FIXTURES = [
 ];
 
 export function validatePortalParserSamples(): boolean {
-  return PORTAL_PARSER_SAMPLE_FIXTURES.every((fixture) => (PORTAL_PARSER_REGISTRY[fixture.sourceId]?.({ sourceId: fixture.sourceId, data: fixture.data }) ?? []).length > 0);
+  return PORTAL_PARSER_SAMPLE_FIXTURES.every((fixture) =>
+    (normalizerForPortalSource(fixture.sourceId)?.({ sourceId: fixture.sourceId, data: fixture.data }) ?? []).length > 0,
+  );
 }

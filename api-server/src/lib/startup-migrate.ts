@@ -1,7 +1,7 @@
 // Startup migration — idempotent database setup for Intelligence Feed and Source Monitor.
 
 import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import { logger } from "./logger";
 
 export async function runStartupMigrations(): Promise<void> {

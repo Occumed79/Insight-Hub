@@ -4,7 +4,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { eq, sql } from "drizzle-orm";
-import { db, runWithDbContext } from "@workspace/db";
+import { intelDb, runWithDbContext } from "@workspace/db";
 import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
@@ -81,7 +81,7 @@ app.post("/api/source-monitor/items/:id/protect", async (req, res) => {
   const protectedFromCleanup = req.body?.protectedFromCleanup !== false;
 
   try {
-    const [item] = await db
+    const [item] = await intelDb
       .update(sourceMonitorItemsTable)
       .set({
         protectedFromCleanup,
@@ -101,7 +101,7 @@ app.post("/api/source-monitor/items/:id/protect", async (req, res) => {
 
 app.post("/api/source-monitor/cleanup-junk", async (_req, res) => {
   try {
-    const result: any = await db.execute(sql`
+    const result: any = await intelDb.execute(sql`
       WITH deleted AS (
         DELETE FROM source_monitor_items
         WHERE COALESCE(protected_from_cleanup, FALSE) = FALSE

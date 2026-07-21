@@ -10,7 +10,7 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { eq, and } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { intelDb as db } from "@workspace/db";
 import { clientContactsTable } from "@workspace/db/schema";
 
 const router = Router();
