@@ -6,7 +6,9 @@ import {
   FEATURED_US_PORTAL_IDS,
   INTERNATIONAL_PORTAL_GROUPS,
   buildProcurementPortalDirectory,
+  buildProcurementPortalInventory,
 } from "../portalDirectory";
+import { withPortalConnectorCapability } from "../portalCapabilities";
 
 describe("procurement portal directory", () => {
   it("resolves all featured United States portals in the requested order", () => {
@@ -44,5 +46,36 @@ describe("procurement portal directory", () => {
   it("uses unique portal IDs across the complete catalog", () => {
     const ids = DIRECT_RFP_PORTALS.map((portal) => portal.id);
     assert.equal(new Set(ids).size, ids.length);
+  });
+
+  it("builds the inventory from every configured source instead of a featured subset", () => {
+    const configuredSources = DIRECT_RFP_PORTALS.map(
+      withPortalConnectorCapability,
+    );
+    const inventory = buildProcurementPortalInventory(configuredSources);
+    const inventoriedIds = inventory.groups.flatMap((group) =>
+      group.sources.map((source) => source.id),
+    );
+
+    assert.equal(inventory.total, configuredSources.length);
+    assert.equal(inventoriedIds.length, configuredSources.length);
+    assert.deepEqual(
+      new Set(inventoriedIds),
+      new Set(configuredSources.map((source) => source.id)),
+    );
+    assert.ok(
+      inventory.groups
+        .find((group) => group.id === "direct")
+        ?.sources.every((source) =>
+          ["direct_api", "direct_adapter"].includes(source.connectorStatus),
+        ),
+    );
+    assert.ok(
+      inventory.groups
+        .find((group) => group.id === "discovery")
+        ?.sources.every(
+          (source) => source.connectorStatus === "serper_discovery",
+        ),
+    );
   });
 });

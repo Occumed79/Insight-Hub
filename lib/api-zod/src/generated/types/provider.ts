@@ -7,6 +7,7 @@
  */
 import type { ProviderCategory } from "./providerCategory";
 import type { ProviderField } from "./providerField";
+import type { ProviderIngestionMode } from "./providerIngestionMode";
 import type { ProviderStatus } from "./providerStatus";
 import type { ProviderUseCase } from "./providerUseCase";
 
@@ -16,7 +17,11 @@ export interface Provider {
   description: string;
   category: ProviderCategory;
   /** How this provider is used in opportunity intelligence */
-  useCase?: ProviderUseCase;
+  useCase: ProviderUseCase;
+  /** Whether the provider can be selected for a manual RFP ingestion run */
+  ingestionEligible: boolean;
+  /** The provider's actual role in the manual ingestion pipeline */
+  ingestionMode: ProviderIngestionMode;
   capabilities: string[];
   docsUrl?: string;
   signupUrl?: string;

@@ -8,7 +8,10 @@ import {
   scanPortalEvidence,
 } from "../lib/providers/portalEvidenceScanner";
 import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/publicPortalDiscovery";
-import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
+import {
+  buildProcurementPortalDirectory,
+  buildProcurementPortalInventory,
+} from "../lib/providers/portalDirectory";
 import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
 
 const router = Router();
@@ -70,17 +73,18 @@ router.get("/rfp-sources", async (req, res) => {
     rotationKey,
   });
   const directory = buildProcurementPortalDirectory(sources);
+  const inventory = buildProcurementPortalInventory(sources);
 
   return res.json({
     sources,
     directory,
+    inventory,
     totals: {
       ...totals,
       verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,
       likelyCount: totals.byOccumedFit.likely ?? 0,
       broadCount: totals.byOccumedFit.broad ?? 0,
-      insufficientEvidenceCount:
-        totals.byOccumedFit.insufficient_evidence ?? 0,
+      insufficientEvidenceCount: totals.byOccumedFit.insufficient_evidence ?? 0,
       irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
       unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
     },
@@ -110,8 +114,10 @@ router.get("/rfp-sources", async (req, res) => {
       connectorStatusPolicy: {
         direct_api: "Dedicated official structured API",
         direct_adapter: "Portal-specific official listing adapter",
-        generic_extraction: "Generic one-page link/text extraction without portal-specific pagination",
-        serper_discovery: "Official-domain discovery through Serper; not a direct connector",
+        generic_extraction:
+          "Generic one-page link/text extraction without portal-specific pagination",
+        serper_discovery:
+          "Official-domain discovery through Serper; not a direct connector",
         directory_only: "Manual directory link with no automated collection",
         stub: "Scaffold only; collection is not implemented",
       },
@@ -159,7 +165,9 @@ router.get("/rfp-sources/evidence-scan/plan", async (req, res) => {
 router.post("/rfp-sources/evidence-scan", async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const portalIds = Array.isArray(body.portalIds)
-    ? body.portalIds.filter((value): value is string => typeof value === "string")
+    ? body.portalIds.filter(
+        (value): value is string => typeof value === "string",
+      )
     : undefined;
   const includeTier3 = body.includeTier3 !== false;
   const includeHistorical = body.includeHistorical === true;

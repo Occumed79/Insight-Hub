@@ -10,8 +10,36 @@ export const ACTIVE_OPPORTUNITY_RUN_STATUSES = new Set<OpportunityRunStatus>([
   "running",
 ]);
 
+export const STALE_OPPORTUNITY_RUN_AFTER_MS = 30 * 60 * 1000;
+
 export function isOpportunityRunActive(status: OpportunityRunStatus): boolean {
   return ACTIVE_OPPORTUNITY_RUN_STATUSES.has(status);
+}
+
+export function isOpportunityRunStale(
+  updatedAt: string | Date | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!updatedAt) return false;
+  const timestamp = updatedAt instanceof Date ? updatedAt : new Date(updatedAt);
+  return (
+    !Number.isNaN(timestamp.getTime()) &&
+    now.getTime() - timestamp.getTime() >= STALE_OPPORTUNITY_RUN_AFTER_MS
+  );
+}
+
+export function opportunityApiErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === "object") {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === "object") {
+      const apiMessage = (data as { error?: unknown }).error;
+      if (typeof apiMessage === "string" && apiMessage.trim()) {
+        return apiMessage;
+      }
+    }
+  }
+  return "The opportunities API request failed.";
 }
 
 export function opportunityRunProgress(

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isOpportunityRunActive,
+  isOpportunityRunStale,
+  opportunityApiErrorMessage,
   opportunityRunMetrics,
   opportunityRunProgress,
 } from "../opportunityRunView";
@@ -13,6 +15,28 @@ describe("persisted opportunity run view", () => {
     assert.equal(isOpportunityRunActive("completed"), false);
     assert.equal(isOpportunityRunActive("completed_with_errors"), false);
     assert.equal(isOpportunityRunActive("failed"), false);
+  });
+
+  it("detects an abandoned run only after the persisted heartbeat is stale", () => {
+    const now = new Date("2026-07-21T20:00:00Z");
+    assert.equal(isOpportunityRunStale("2026-07-21T19:29:59Z", now), true);
+    assert.equal(isOpportunityRunStale("2026-07-21T19:30:01Z", now), false);
+    assert.equal(isOpportunityRunStale(null, now), false);
+  });
+
+  it("surfaces the API error instead of treating a failed request as empty data", () => {
+    assert.equal(
+      opportunityApiErrorMessage(
+        new Error(
+          "HTTP 500 Internal Server Error: Failed to fetch opportunities",
+        ),
+      ),
+      "HTTP 500 Internal Server Error: Failed to fetch opportunities",
+    );
+    assert.equal(
+      opportunityApiErrorMessage({ data: { error: "Database unavailable" } }),
+      "Database unavailable",
+    );
   });
 
   it("calculates bounded provider progress", () => {

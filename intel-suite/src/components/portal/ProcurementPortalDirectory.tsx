@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Building2,
   ChevronDown,
   ChevronUp,
   ExternalLink,
@@ -27,37 +26,22 @@ type PortalSource = {
   url: string;
   searchUrl?: string;
   accessMode: string;
-  requiresLogin: boolean;
-  parserStatus: string;
-  notes: string;
-  occumedFit?: string;
   connectorStatus: PortalConnectorStatus;
   connectorLabel: string;
   connectorDescription: string;
-  directCollection: boolean;
-  requiresSerper: boolean;
 };
 
-type DirectoryGroup = {
+type InventoryGroup = {
   id: string;
   title: string;
+  description: string;
   sources: PortalSource[];
 };
 
-type PortalDirectoryResponse = {
-  directory?: {
-    unitedStates: {
-      id: string;
-      title: string;
-      description: string;
-      sources: PortalSource[];
-    };
-    international: {
-      id: string;
-      title: string;
-      description: string;
-      groups: DirectoryGroup[];
-    };
+type PortalInventoryResponse = {
+  inventory?: {
+    total: number;
+    groups: InventoryGroup[];
   };
 };
 
@@ -105,7 +89,10 @@ function PortalCard({ source }: { source: PortalSource }) {
         <ExternalLink className="h-4 w-4 shrink-0 text-white/35 transition-colors group-hover:text-primary" />
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <Badge variant="outline" className="border-white/10 bg-white/5 text-[9px] font-normal text-white/65">
+        <Badge
+          variant="outline"
+          className="border-white/10 bg-white/5 text-[9px] font-normal text-white/65"
+        >
           {accessLabel(source)}
         </Badge>
         <Badge
@@ -123,11 +110,12 @@ function PortalCard({ source }: { source: PortalSource }) {
 }
 
 export function ProcurementPortalDirectory() {
-  const [directory, setDirectory] = useState<PortalDirectoryResponse["directory"]>();
+  const [inventory, setInventory] =
+    useState<PortalInventoryResponse["inventory"]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
-  const [activeInternationalGroup, setActiveInternationalGroup] = useState("canada");
+  const [activeGroupId, setActiveGroupId] = useState("direct");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,13 +125,16 @@ export function ProcurementPortalDirectory() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Portal directory could not be loaded.");
-        return response.json() as Promise<PortalDirectoryResponse>;
+        if (!response.ok)
+          throw new Error("Source inventory could not be loaded.");
+        return response.json() as Promise<PortalInventoryResponse>;
       })
       .then((data) => {
-        setDirectory(data.directory);
-        const firstGroup = data.directory?.international.groups[0]?.id;
-        if (firstGroup) setActiveInternationalGroup(firstGroup);
+        setInventory(data.inventory);
+        const firstPopulatedGroup = data.inventory?.groups.find(
+          (group) => group.sources.length > 0,
+        );
+        if (firstPopulatedGroup) setActiveGroupId(firstPopulatedGroup.id);
       })
       .catch((err: Error) => {
         if (err.name !== "AbortError") setError(err.message);
@@ -154,13 +145,8 @@ export function ProcurementPortalDirectory() {
   }, []);
 
   const activeGroup = useMemo(
-    () => directory?.international.groups.find((group) => group.id === activeInternationalGroup),
-    [activeInternationalGroup, directory],
-  );
-
-  const internationalCount = useMemo(
-    () => directory?.international.groups.reduce((sum, group) => sum + group.sources.length, 0) ?? 0,
-    [directory],
+    () => inventory?.groups.find((group) => group.id === activeGroupId),
+    [activeGroupId, inventory],
   );
 
   return (
@@ -175,19 +161,29 @@ export function ProcurementPortalDirectory() {
             <Globe2 className="h-4 w-4 text-primary" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-white">Official Procurement Portal Directory</h2>
+            <h2 className="text-base font-semibold text-white">
+              Configured Source & Adapter Inventory
+            </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Official portal links with the collection method that is actually implemented.
+              The complete configured catalog, separated by the collection
+              method actually implemented.
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {directory && (
-            <Badge variant="outline" className="border-white/10 bg-white/5 text-[10px] font-normal text-white/60">
-              {(directory.unitedStates.sources.length + internationalCount).toLocaleString()} portals
+          {inventory && (
+            <Badge
+              variant="outline"
+              className="border-white/10 bg-white/5 text-[10px] font-normal text-white/60"
+            >
+              {inventory.total.toLocaleString()} sources
             </Badge>
           )}
-          {expanded ? <ChevronUp className="h-4 w-4 text-white/50" /> : <ChevronDown className="h-4 w-4 text-white/50" />}
+          {expanded ? (
+            <ChevronUp className="h-4 w-4 text-white/50" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-white/50" />
+          )}
         </div>
       </button>
 
@@ -195,73 +191,64 @@ export function ProcurementPortalDirectory() {
         <div className="border-t border-white/10 px-5 py-5">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading official portals...
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading configured
+              sources...
             </div>
-          ) : error || !directory ? (
+          ) : error || !inventory ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-muted-foreground">
-              {error ?? "Portal directory is unavailable."}
+              {error ?? "Source inventory is unavailable."}
             </div>
           ) : (
-            <div className="space-y-7">
-              <div>
-                <div className="mb-3 flex items-end justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-primary" />
-                      <h3 className="text-sm font-semibold text-white">{directory.unitedStates.title}</h3>
-                    </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{directory.unitedStates.description}</p>
-                  </div>
-                  <span className="text-[10px] uppercase tracking-wider text-white/40">
-                    {directory.unitedStates.sources.length} featured
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                  {directory.unitedStates.sources.map((source) => (
-                    <PortalCard key={source.id} source={source} />
-                  ))}
-                </div>
+            <div className="space-y-5">
+              <div className="flex flex-wrap gap-1.5">
+                {inventory.groups.map((group) => {
+                  const selected = group.id === activeGroupId;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => setActiveGroupId(group.id)}
+                      className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
+                        selected
+                          ? "border-primary/40 bg-primary/15 text-primary"
+                          : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/85"
+                      }`}
+                    >
+                      {group.title} · {group.sources.length.toLocaleString()}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="border-t border-white/10 pt-6">
-                <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Globe2 className="h-4 w-4 text-primary" />
-                      <h3 className="text-sm font-semibold text-white">{directory.international.title}</h3>
+              {activeGroup && (
+                <div>
+                  <div className="mb-3 flex items-end justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">
+                        {activeGroup.title}
+                      </h3>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {activeGroup.description}
+                      </p>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{directory.international.description}</p>
+                    <span className="text-[10px] uppercase tracking-wider text-white/40">
+                      {activeGroup.sources.length.toLocaleString()} sources
+                    </span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {directory.international.groups.map((group) => {
-                      const selected = group.id === activeInternationalGroup;
-                      return (
-                        <button
-                          key={group.id}
-                          type="button"
-                          onClick={() => setActiveInternationalGroup(group.id)}
-                          className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
-                            selected
-                              ? "border-primary/40 bg-primary/15 text-primary"
-                              : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/85"
-                          }`}
-                        >
-                          {group.title} · {group.sources.length}
-                        </button>
-                      );
-                    })}
+                  <div className="grid max-h-[560px] grid-cols-1 gap-2.5 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+                    {activeGroup.sources.map((source) => (
+                      <PortalCard key={source.id} source={source} />
+                    ))}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                  {activeGroup?.sources.map((source) => (
-                    <PortalCard key={source.id} source={source} />
-                  ))}
-                </div>
-              </div>
+              )}
 
               <p className="text-[10px] leading-relaxed text-white/40">
-                A directory entry confirms an official source link, not a completed connector. Direct API and dedicated adapter labels indicate source-specific collection. Generic extraction reads one public page without full portal pagination. Serper discovery searches the official domain and requires source-page verification.
+                “Direct API” and “Dedicated listing adapter” mean
+                source-specific collection. Generic extraction is bounded
+                public-page collection. Search/discovery sources rely on
+                discovery tooling and are not direct adapters. Directory entries
+                are links only.
               </p>
             </div>
           )}

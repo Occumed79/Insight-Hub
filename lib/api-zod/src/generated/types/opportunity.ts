@@ -8,6 +8,8 @@
 import type { OpportunitySource } from "./opportunitySource";
 import type { OpportunitySourceConfidence } from "./opportunitySourceConfidence";
 import type { OpportunityStatus } from "./opportunityStatus";
+import type { OpportunityUserGrade } from "./opportunityUserGrade";
+import type { RelevanceView } from "./relevanceView";
 
 export interface Opportunity {
   id: string;
@@ -48,9 +50,14 @@ export interface Opportunity {
   relevanceScore?: number;
   /** Confidence level of the source data */
   sourceConfidence?: OpportunitySourceConfidence;
-  /** JSON array of tags */
-  tags?: string;
+  /** Quality/category tags (e.g. date-unknown, stale, category name) */
+  tags?: string[];
+  relevance?: RelevanceView;
   notes?: string;
+  /** Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history */
+  userConfidence?: number;
+  /** Your latest grade for this opportunity (null = ungraded) */
+  userGrade?: OpportunityUserGrade;
   createdAt?: Date;
   updatedAt?: Date;
 }

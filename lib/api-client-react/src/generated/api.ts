@@ -20,14 +20,24 @@ import type {
   ApiError,
   DeleteOpportunity200,
   FetchOpportunitiesBody,
-  FetchResult,
+  GetCurrentOpportunityIngestionRun200,
+  GetOpportunityFeedback200,
+  GetOpportunityIngestionRun200,
+  GradeOpportunity200,
+  GradeOpportunityBody,
   HealthStatus,
   ImportOpportunitiesFromCsvBody,
   ImportResult,
+  IngestionRunStarted,
   ListOpportunitiesParams,
+  ListOpportunityIngestionRuns200,
+  ListOpportunityIngestionRunsParams,
+  ModelSummary,
   OpportunitiesResponse,
   Opportunity,
   ProvidersResponse,
+  ReconcileExpiredOpportunities200,
+  RescoreOpportunities200,
   Settings,
   SettingsUpdate,
   UpdateProvider200,
@@ -226,8 +236,8 @@ export const getFetchOpportunitiesUrl = () => {
 export const fetchOpportunities = async (
   fetchOpportunitiesBody: FetchOpportunitiesBody,
   options?: RequestInit,
-): Promise<FetchResult> => {
-  return customFetch<FetchResult>(getFetchOpportunitiesUrl(), {
+): Promise<IngestionRunStarted> => {
+  return customFetch<IngestionRunStarted>(getFetchOpportunitiesUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -300,6 +310,457 @@ export const useFetchOpportunities = <
   TContext
 > => {
   return useMutation(getFetchOpportunitiesMutationOptions(options));
+};
+
+/**
+ * @summary Read the latest persisted manual ingestion run
+ */
+export const getGetCurrentOpportunityIngestionRunUrl = () => {
+  return `/api/opportunities/ingestion-runs/current`;
+};
+
+export const getCurrentOpportunityIngestionRun = async (
+  options?: RequestInit,
+): Promise<GetCurrentOpportunityIngestionRun200> => {
+  return customFetch<GetCurrentOpportunityIngestionRun200>(
+    getGetCurrentOpportunityIngestionRunUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCurrentOpportunityIngestionRunQueryKey = () => {
+  return [`/api/opportunities/ingestion-runs/current`] as const;
+};
+
+export const getGetCurrentOpportunityIngestionRunQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCurrentOpportunityIngestionRunQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>
+  > = ({ signal }) =>
+    getCurrentOpportunityIngestionRun({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentOpportunityIngestionRunQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>
+>;
+export type GetCurrentOpportunityIngestionRunQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Read the latest persisted manual ingestion run
+ */
+
+export function useGetCurrentOpportunityIngestionRun<
+  TData = Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentOpportunityIngestionRun>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getGetCurrentOpportunityIngestionRunQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List recent manual ingestion runs
+ */
+export const getListOpportunityIngestionRunsUrl = (
+  params?: ListOpportunityIngestionRunsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/opportunities/ingestion-runs?${stringifiedParams}`
+    : `/api/opportunities/ingestion-runs`;
+};
+
+export const listOpportunityIngestionRuns = async (
+  params?: ListOpportunityIngestionRunsParams,
+  options?: RequestInit,
+): Promise<ListOpportunityIngestionRuns200> => {
+  return customFetch<ListOpportunityIngestionRuns200>(
+    getListOpportunityIngestionRunsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListOpportunityIngestionRunsQueryKey = (
+  params?: ListOpportunityIngestionRunsParams,
+) => {
+  return [
+    `/api/opportunities/ingestion-runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListOpportunityIngestionRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOpportunityIngestionRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListOpportunityIngestionRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listOpportunityIngestionRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListOpportunityIngestionRunsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listOpportunityIngestionRuns>>
+  > = ({ signal }) =>
+    listOpportunityIngestionRuns(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOpportunityIngestionRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOpportunityIngestionRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOpportunityIngestionRuns>>
+>;
+export type ListOpportunityIngestionRunsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List recent manual ingestion runs
+ */
+
+export function useListOpportunityIngestionRuns<
+  TData = Awaited<ReturnType<typeof listOpportunityIngestionRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListOpportunityIngestionRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listOpportunityIngestionRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOpportunityIngestionRunsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOpportunityIngestionRunUrl = (runId: string) => {
+  return `/api/opportunities/ingestion-runs/${runId}`;
+};
+
+export const getOpportunityIngestionRun = async (
+  runId: string,
+  options?: RequestInit,
+): Promise<GetOpportunityIngestionRun200> => {
+  return customFetch<GetOpportunityIngestionRun200>(
+    getGetOpportunityIngestionRunUrl(runId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetOpportunityIngestionRunQueryKey = (runId: string) => {
+  return [`/api/opportunities/ingestion-runs/${runId}`] as const;
+};
+
+export const getGetOpportunityIngestionRunQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOpportunityIngestionRun>>,
+  TError = ErrorType<unknown>,
+>(
+  runId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOpportunityIngestionRun>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOpportunityIngestionRunQueryKey(runId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOpportunityIngestionRun>>
+  > = ({ signal }) =>
+    getOpportunityIngestionRun(runId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!runId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOpportunityIngestionRun>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOpportunityIngestionRunQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOpportunityIngestionRun>>
+>;
+export type GetOpportunityIngestionRunQueryError = ErrorType<unknown>;
+
+export function useGetOpportunityIngestionRun<
+  TData = Awaited<ReturnType<typeof getOpportunityIngestionRun>>,
+  TError = ErrorType<unknown>,
+>(
+  runId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOpportunityIngestionRun>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOpportunityIngestionRunQueryOptions(
+    runId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Start a new manual run containing only failed providers
+ */
+export const getRetryFailedOpportunityProvidersUrl = (runId: string) => {
+  return `/api/opportunities/ingestion-runs/${runId}/retry`;
+};
+
+export const retryFailedOpportunityProviders = async (
+  runId: string,
+  options?: RequestInit,
+): Promise<IngestionRunStarted> => {
+  return customFetch<IngestionRunStarted>(
+    getRetryFailedOpportunityProvidersUrl(runId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRetryFailedOpportunityProvidersMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryFailedOpportunityProviders>>,
+    TError,
+    { runId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof retryFailedOpportunityProviders>>,
+  TError,
+  { runId: string },
+  TContext
+> => {
+  const mutationKey = ["retryFailedOpportunityProviders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof retryFailedOpportunityProviders>>,
+    { runId: string }
+  > = (props) => {
+    const { runId } = props ?? {};
+
+    return retryFailedOpportunityProviders(runId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RetryFailedOpportunityProvidersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof retryFailedOpportunityProviders>>
+>;
+
+export type RetryFailedOpportunityProvidersMutationError = ErrorType<void>;
+
+/**
+ * @summary Start a new manual run containing only failed providers
+ */
+export const useRetryFailedOpportunityProviders = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryFailedOpportunityProviders>>,
+    TError,
+    { runId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof retryFailedOpportunityProviders>>,
+  TError,
+  { runId: string },
+  TContext
+> => {
+  return useMutation(
+    getRetryFailedOpportunityProvidersMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Explicitly archive active opportunities with known past deadlines
+ */
+export const getReconcileExpiredOpportunitiesUrl = () => {
+  return `/api/opportunities/reconcile-expired`;
+};
+
+export const reconcileExpiredOpportunities = async (
+  options?: RequestInit,
+): Promise<ReconcileExpiredOpportunities200> => {
+  return customFetch<ReconcileExpiredOpportunities200>(
+    getReconcileExpiredOpportunitiesUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getReconcileExpiredOpportunitiesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reconcileExpiredOpportunities>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reconcileExpiredOpportunities>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["reconcileExpiredOpportunities"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reconcileExpiredOpportunities>>,
+    void
+  > = () => {
+    return reconcileExpiredOpportunities(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReconcileExpiredOpportunitiesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reconcileExpiredOpportunities>>
+>;
+
+export type ReconcileExpiredOpportunitiesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Explicitly archive active opportunities with known past deadlines
+ */
+export const useReconcileExpiredOpportunities = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reconcileExpiredOpportunities>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reconcileExpiredOpportunities>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getReconcileExpiredOpportunitiesMutationOptions(options));
 };
 
 /**
@@ -562,6 +1023,341 @@ export const useDeleteOpportunity = <
   TContext
 > => {
   return useMutation(getDeleteOpportunityMutationOptions(options));
+};
+
+/**
+ * @summary Get grade for an opportunity
+ */
+export const getGetOpportunityFeedbackUrl = (id: string) => {
+  return `/api/opportunities/${id}/feedback`;
+};
+
+export const getOpportunityFeedback = async (
+  id: string,
+  options?: RequestInit,
+): Promise<GetOpportunityFeedback200> => {
+  return customFetch<GetOpportunityFeedback200>(
+    getGetOpportunityFeedbackUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetOpportunityFeedbackQueryKey = (id: string) => {
+  return [`/api/opportunities/${id}/feedback`] as const;
+};
+
+export const getGetOpportunityFeedbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOpportunityFeedback>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOpportunityFeedback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOpportunityFeedbackQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOpportunityFeedback>>
+  > = ({ signal }) => getOpportunityFeedback(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOpportunityFeedback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOpportunityFeedbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOpportunityFeedback>>
+>;
+export type GetOpportunityFeedbackQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get grade for an opportunity
+ */
+
+export function useGetOpportunityFeedback<
+  TData = Awaited<ReturnType<typeof getOpportunityFeedback>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOpportunityFeedback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOpportunityFeedbackQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Submit or update a grade for an opportunity
+ */
+export const getGradeOpportunityUrl = (id: string) => {
+  return `/api/opportunities/${id}/feedback`;
+};
+
+export const gradeOpportunity = async (
+  id: string,
+  gradeOpportunityBody: GradeOpportunityBody,
+  options?: RequestInit,
+): Promise<GradeOpportunity200> => {
+  return customFetch<GradeOpportunity200>(getGradeOpportunityUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(gradeOpportunityBody),
+  });
+};
+
+export const getGradeOpportunityMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof gradeOpportunity>>,
+    TError,
+    { id: string; data: BodyType<GradeOpportunityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof gradeOpportunity>>,
+  TError,
+  { id: string; data: BodyType<GradeOpportunityBody> },
+  TContext
+> => {
+  const mutationKey = ["gradeOpportunity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof gradeOpportunity>>,
+    { id: string; data: BodyType<GradeOpportunityBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return gradeOpportunity(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GradeOpportunityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof gradeOpportunity>>
+>;
+export type GradeOpportunityMutationBody = BodyType<GradeOpportunityBody>;
+export type GradeOpportunityMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Submit or update a grade for an opportunity
+ */
+export const useGradeOpportunity = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof gradeOpportunity>>,
+    TError,
+    { id: string; data: BodyType<GradeOpportunityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof gradeOpportunity>>,
+  TError,
+  { id: string; data: BodyType<GradeOpportunityBody> },
+  TContext
+> => {
+  return useMutation(getGradeOpportunityMutationOptions(options));
+};
+
+/**
+ * @summary Get the current state of the learning model signal weights
+ */
+export const getGetFeedbackModelSummaryUrl = () => {
+  return `/api/opportunities/feedback/model-summary`;
+};
+
+export const getFeedbackModelSummary = async (
+  options?: RequestInit,
+): Promise<ModelSummary> => {
+  return customFetch<ModelSummary>(getGetFeedbackModelSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFeedbackModelSummaryQueryKey = () => {
+  return [`/api/opportunities/feedback/model-summary`] as const;
+};
+
+export const getGetFeedbackModelSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFeedbackModelSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFeedbackModelSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFeedbackModelSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFeedbackModelSummary>>
+  > = ({ signal }) => getFeedbackModelSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFeedbackModelSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFeedbackModelSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFeedbackModelSummary>>
+>;
+export type GetFeedbackModelSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current state of the learning model signal weights
+ */
+
+export function useGetFeedbackModelSummary<
+  TData = Awaited<ReturnType<typeof getFeedbackModelSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFeedbackModelSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFeedbackModelSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Trigger a full re-score of all opportunities
+ */
+export const getRescoreOpportunitiesUrl = () => {
+  return `/api/opportunities/feedback/rescore`;
+};
+
+export const rescoreOpportunities = async (
+  options?: RequestInit,
+): Promise<RescoreOpportunities200> => {
+  return customFetch<RescoreOpportunities200>(getRescoreOpportunitiesUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRescoreOpportunitiesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rescoreOpportunities>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rescoreOpportunities>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["rescoreOpportunities"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rescoreOpportunities>>,
+    void
+  > = () => {
+    return rescoreOpportunities(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RescoreOpportunitiesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rescoreOpportunities>>
+>;
+
+export type RescoreOpportunitiesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Trigger a full re-score of all opportunities
+ */
+export const useRescoreOpportunities = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rescoreOpportunities>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rescoreOpportunities>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRescoreOpportunitiesMutationOptions(options));
 };
 
 /**

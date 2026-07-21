@@ -21,7 +21,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "needs_parser",
-    notes: "Official City of Los Angeles regional procurement marketplace. Public entry point; supplier registration may be required for documents or responses.",
+    notes:
+      "Official City of Los Angeles regional procurement marketplace. Public entry point; supplier registration may be required for documents or responses.",
   },
   {
     id: "wa-webs",
@@ -38,7 +39,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "needs_parser",
-    notes: "Official Washington Department of Enterprise Services vendor and solicitation portal. Registration may be required for full bid participation.",
+    notes:
+      "Official Washington Department of Enterprise Services vendor and solicitation portal. Registration may be required for full bid participation.",
   },
   {
     id: "ca-seao-quebec",
@@ -54,7 +56,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "catalog_only",
-    notes: "Official Québec electronic tendering system for public procurement notices.",
+    notes:
+      "Official Québec electronic tendering system for public procurement notices.",
   },
   {
     id: "ca-sasktenders",
@@ -86,7 +89,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "catalog_only",
-    notes: "Public procurement opportunity directory for British Columbia local governments and public-sector organizations.",
+    notes:
+      "Public procurement opportunity directory for British Columbia local governments and public-sector organizations.",
   },
   {
     id: "ca-city-of-toronto",
@@ -95,14 +99,16 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     country: "CA",
     level: "international",
     url: "https://www.toronto.ca/business-economy/doing-business-with-the-city/searching-bidding-on-city-contracts/",
-    searchUrl: "https://www.toronto.ca/business-economy/doing-business-with-the-city/searching-bidding-on-city-contracts/",
+    searchUrl:
+      "https://www.toronto.ca/business-economy/doing-business-with-the-city/searching-bidding-on-city-contracts/",
     domain: "toronto.ca",
     accessMode: "public_html",
     requiresKey: false,
     requiresLogin: false,
     tier: 1,
     parserStatus: "catalog_only",
-    notes: "Official City of Toronto procurement entry point for current solicitations and supplier bidding resources.",
+    notes:
+      "Official City of Toronto procurement entry point for current solicitations and supplier bidding resources.",
   },
   {
     id: "ca-alberta-purchasing",
@@ -118,7 +124,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Alberta public-sector purchasing and tender opportunity portal.",
+    notes:
+      "Official Alberta public-sector purchasing and tender opportunity portal.",
   },
   {
     id: "ca-ontario-tenders",
@@ -127,14 +134,16 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     country: "CA",
     level: "international",
     url: "https://ontariotenders.app.jaggaer.com/esop/nac-host/public/web/login.html",
-    searchUrl: "https://ontariotenders.app.jaggaer.com/esop/nac-host/public/web/login.html",
+    searchUrl:
+      "https://ontariotenders.app.jaggaer.com/esop/nac-host/public/web/login.html",
     domain: "ontariotenders.app.jaggaer.com",
     accessMode: "portal",
     requiresKey: false,
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Ontario Tenders Portal public entry point; supplier registration is available for bid participation.",
+    notes:
+      "Official Ontario Tenders Portal public entry point; supplier registration is available for bid participation.",
   },
   {
     id: "ca-nova-scotia-procurement",
@@ -150,7 +159,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Nova Scotia procurement portal for public tender opportunities.",
+    notes:
+      "Official Nova Scotia procurement portal for public tender opportunities.",
   },
   {
     id: "uk-find-a-tender",
@@ -166,7 +176,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "catalog_only",
-    notes: "Official UK service for higher-value public procurement notices and searchable tender data.",
+    notes:
+      "Official UK service for higher-value public procurement notices and searchable tender data.",
   },
   {
     id: "uk-public-contracts-scotland",
@@ -175,7 +186,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     country: "GB",
     level: "international",
     url: "https://www.publiccontractsscotland.gov.uk/",
-    searchUrl: "https://www.publiccontractsscotland.gov.uk/search/search_mainpage.aspx",
+    searchUrl:
+      "https://www.publiccontractsscotland.gov.uk/search/search_mainpage.aspx",
     domain: "publiccontractsscotland.gov.uk",
     accessMode: "public_html",
     requiresKey: false,
@@ -230,7 +242,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 1,
     parserStatus: "catalog_only",
-    notes: "Official EU supplement to the Official Journal for public procurement notices.",
+    notes:
+      "Official EU supplement to the Official Journal for public procurement notices.",
   },
   {
     id: "ie-etenders",
@@ -246,7 +259,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Irish national tendering website for public-sector opportunities.",
+    notes:
+      "Official Irish national tendering website for public-sector opportunities.",
   },
   {
     id: "fr-place",
@@ -310,7 +324,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Spanish public-sector contracting and tender search platform.",
+    notes:
+      "Official Spanish public-sector contracting and tender search platform.",
   },
   {
     id: "pt-base",
@@ -326,7 +341,8 @@ export const ADDITIONAL_DIRECTORY_PORTALS: DirectRfpPortal[] = [
     requiresLogin: false,
     tier: 2,
     parserStatus: "catalog_only",
-    notes: "Official Portuguese public contracts and procurement announcements portal.",
+    notes:
+      "Official Portuguese public contracts and procurement announcements portal.",
   },
   {
     id: "be-eprocurement",
@@ -460,12 +476,69 @@ export function buildProcurementPortalDirectory<
     international: {
       id: "international",
       title: "International Opportunities",
-      description: "Official Canadian, British, European, and multilateral procurement portals.",
+      description:
+        "Official Canadian, British, European, and multilateral procurement portals.",
       groups: INTERNATIONAL_PORTAL_GROUPS.map((group) => ({
         id: group.id,
         title: group.title,
         sources: selectSources(portalsById, group.portalIds),
       })),
     },
+  };
+}
+
+export type ProcurementInventorySource = ProcurementPortalDirectorySource & {
+  connectorStatus:
+    | "direct_api"
+    | "direct_adapter"
+    | "generic_extraction"
+    | "serper_discovery"
+    | "directory_only"
+    | "stub";
+};
+
+const INVENTORY_GROUPS = [
+  {
+    id: "direct",
+    title: "Direct APIs & Dedicated Adapters",
+    description:
+      "Source-specific collection through an official API or portal adapter.",
+    statuses: ["direct_api", "direct_adapter"],
+  },
+  {
+    id: "generic",
+    title: "Generic Public-Page Collection",
+    description:
+      "Bounded extraction from eligible official public listing pages; not a dedicated adapter.",
+    statuses: ["generic_extraction"],
+  },
+  {
+    id: "discovery",
+    title: "Search / Discovery Sources",
+    description:
+      "Official domains searched through discovery tooling; source pages still require verification.",
+    statuses: ["serper_discovery"],
+  },
+  {
+    id: "directory",
+    title: "Directory / Not Connected",
+    description: "Known official portal links without automated collection.",
+    statuses: ["directory_only", "stub"],
+  },
+] as const;
+
+export function buildProcurementPortalInventory<
+  T extends ProcurementInventorySource,
+>(sources: readonly T[]) {
+  return {
+    total: sources.length,
+    groups: INVENTORY_GROUPS.map((group) => ({
+      id: group.id,
+      title: group.title,
+      description: group.description,
+      sources: sources.filter((source) =>
+        (group.statuses as readonly string[]).includes(source.connectorStatus),
+      ),
+    })),
   };
 }

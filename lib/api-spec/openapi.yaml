@@ -675,6 +675,11 @@ components:
           created,
           updated,
           archived,
+          errors,
+          createdAt,
+          updatedAt,
+          sources,
+          providerErrors,
         ]
       properties:
         id:
@@ -691,6 +696,9 @@ components:
           nullable: true
         dateRange:
           type: integer
+          nullable: true
+        retryOfRunId:
+          type: string
           nullable: true
         currentProvider:
           type: string
@@ -715,6 +723,28 @@ components:
           type: integer
         archived:
           type: integer
+        errors:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngestionRunSource"
         providerErrors:
           type: array
           items:
@@ -724,6 +754,65 @@ components:
                 type: string
               error:
                 type: string
+
+    IngestionRunSource:
+      type: object
+      required:
+        [
+          id,
+          runId,
+          provider,
+          position,
+          status,
+          fetched,
+          staged,
+          accepted,
+          rejected,
+          duplicates,
+          created,
+          updated,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        provider:
+          type: string
+        position:
+          type: integer
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        fetched:
+          type: integer
+        staged:
+          type: integer
+        accepted:
+          type: integer
+        rejected:
+          type: integer
+        duplicates:
+          type: integer
+        created:
+          type: integer
+        updated:
+          type: integer
+        error:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
 
     ImportResult:
       type: object
@@ -745,6 +834,18 @@ components:
           type: boolean
         samApiKeyMasked:
           type: string
+        dolApiKeyConfigured:
+          type: boolean
+        dolApiKeyMasked:
+          type: string
+        courtListenerTokenConfigured:
+          type: boolean
+        courtListenerTokenMasked:
+          type: string
+        fecApiKeyConfigured:
+          type: boolean
+        fecApiKeyMasked:
+          type: string
         defaultKeywords:
           type: string
         defaultDateRange:
@@ -756,6 +857,12 @@ components:
       type: object
       properties:
         samApiKey:
+          type: string
+        dolApiKey:
+          type: string
+        courtListenerToken:
+          type: string
+        fecApiKey:
           type: string
         defaultKeywords:
           type: string
@@ -807,6 +914,9 @@ components:
           displayName,
           description,
           category,
+          useCase,
+          ingestionEligible,
+          ingestionMode,
           capabilities,
           requiredFields,
           optionalFields,
@@ -826,6 +936,13 @@ components:
           type: string
           enum: [direct_source, web_discovery, research_analysis, hybrid]
           description: How this provider is used in opportunity intelligence
+        ingestionEligible:
+          type: boolean
+          description: Whether the provider can be selected for a manual RFP ingestion run
+        ingestionMode:
+          type: string
+          enum: [direct, hybrid, discovery, stub]
+          description: The provider's actual role in the manual ingestion pipeline
         capabilities:
           type: array
           items:

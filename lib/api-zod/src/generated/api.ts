@@ -28,6 +28,8 @@ export const ListOpportunitiesQueryParams = zod.object({
   naicsCode: zod.coerce.string().optional(),
   agency: zod.coerce.string().optional(),
   source: zod.coerce.string().optional(),
+  dateRange: zod.coerce.number().optional(),
+  freshOnly: zod.coerce.boolean().optional(),
   page: zod.coerce.number().default(listOpportunitiesQueryPageDefault),
   limit: zod.coerce.number().default(listOpportunitiesQueryLimitDefault),
 });
@@ -87,8 +89,50 @@ export const ListOpportunitiesResponse = zod.object({
         .enum(["high", "medium", "low"])
         .optional()
         .describe("Confidence level of the source data"),
-      tags: zod.string().optional().describe("JSON array of tags"),
+      tags: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Quality\/category tags (e.g. date-unknown, stale, category name)",
+        ),
+      relevance: zod
+        .object({
+          score: zod.number().describe("Relevance\/fit score (0-100)"),
+          reasons: zod
+            .array(zod.string())
+            .describe(
+              "Human-readable reasons this result matched (or was ranked down)",
+            ),
+          category: zod
+            .string()
+            .nullish()
+            .describe("Detected Occu-Med service category"),
+          dateUnknown: zod
+            .boolean()
+            .describe("True when no reliable publication date was detected"),
+          stale: zod
+            .boolean()
+            .describe(
+              "True when the result appears to be from a past\/historical period",
+            ),
+          confidence: zod.enum(["high", "medium", "low"]),
+          postedDate: zod.coerce.date().nullish(),
+        })
+        .optional()
+        .describe(
+          "Transparent relevance summary used by the UI to explain ranking.",
+        ),
       notes: zod.string().optional(),
+      userConfidence: zod
+        .number()
+        .optional()
+        .describe(
+          "Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history",
+        ),
+      userGrade: zod
+        .enum(["excellent", "good", "poor", "spam"])
+        .nullish()
+        .describe("Your latest grade for this opportunity (null = ungraded)"),
       createdAt: zod.coerce.date().optional(),
       updatedAt: zod.coerce.date().optional(),
     }),
@@ -114,20 +158,224 @@ export const FetchOpportunitiesBody = zod.object({
     ),
 });
 
-export const FetchOpportunitiesResponse = zod.object({
-  fetched: zod.number(),
-  created: zod.number(),
-  updated: zod.number(),
-  skipped: zod.number(),
-  providers: zod
+/**
+ * @summary Read the latest persisted manual ingestion run
+ */
+export const GetCurrentOpportunityIngestionRunResponse = zod.object({
+  run: zod
+    .union([
+      zod.object({
+        id: zod.string(),
+        status: zod.enum([
+          "queued",
+          "running",
+          "completed",
+          "completed_with_errors",
+          "failed",
+        ]),
+        selectedProviders: zod.array(zod.string()),
+        query: zod.string().nullish(),
+        dateRange: zod.number().nullish(),
+        retryOfRunId: zod.string().nullish(),
+        currentProvider: zod.string().nullish(),
+        providersCompleted: zod.number(),
+        providersTotal: zod.number(),
+        fetched: zod.number(),
+        staged: zod.number(),
+        accepted: zod.number(),
+        rejected: zod.number(),
+        duplicates: zod.number(),
+        created: zod.number(),
+        updated: zod.number(),
+        archived: zod.number(),
+        errors: zod.array(zod.string()),
+        createdAt: zod.coerce.date(),
+        startedAt: zod.coerce.date().nullish(),
+        completedAt: zod.coerce.date().nullish(),
+        updatedAt: zod.coerce.date(),
+        sources: zod.array(
+          zod.object({
+            id: zod.string(),
+            runId: zod.string(),
+            provider: zod.string(),
+            position: zod.number(),
+            status: zod.enum(["queued", "running", "completed", "failed"]),
+            fetched: zod.number(),
+            staged: zod.number(),
+            accepted: zod.number(),
+            rejected: zod.number(),
+            duplicates: zod.number(),
+            created: zod.number(),
+            updated: zod.number(),
+            error: zod.string().nullish(),
+            startedAt: zod.coerce.date().nullish(),
+            completedAt: zod.coerce.date().nullish(),
+            updatedAt: zod.coerce.date(),
+          }),
+        ),
+        providerErrors: zod.array(
+          zod.object({
+            provider: zod.string().optional(),
+            error: zod.string().optional(),
+          }),
+        ),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+/**
+ * @summary List recent manual ingestion runs
+ */
+export const listOpportunityIngestionRunsQueryLimitDefault = 20;
+
+export const ListOpportunityIngestionRunsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .default(listOpportunityIngestionRunsQueryLimitDefault),
+});
+
+export const ListOpportunityIngestionRunsResponse = zod.object({
+  runs: zod
     .array(
       zod.object({
-        name: zod.string().optional(),
-        fetched: zod.number().optional(),
-        error: zod.string().optional(),
+        id: zod.string(),
+        status: zod.enum([
+          "queued",
+          "running",
+          "completed",
+          "completed_with_errors",
+          "failed",
+        ]),
+        selectedProviders: zod.array(zod.string()),
+        query: zod.string().nullish(),
+        dateRange: zod.number().nullish(),
+        retryOfRunId: zod.string().nullish(),
+        currentProvider: zod.string().nullish(),
+        providersCompleted: zod.number(),
+        providersTotal: zod.number(),
+        fetched: zod.number(),
+        staged: zod.number(),
+        accepted: zod.number(),
+        rejected: zod.number(),
+        duplicates: zod.number(),
+        created: zod.number(),
+        updated: zod.number(),
+        archived: zod.number(),
+        errors: zod.array(zod.string()),
+        createdAt: zod.coerce.date(),
+        startedAt: zod.coerce.date().nullish(),
+        completedAt: zod.coerce.date().nullish(),
+        updatedAt: zod.coerce.date(),
+        sources: zod.array(
+          zod.object({
+            id: zod.string(),
+            runId: zod.string(),
+            provider: zod.string(),
+            position: zod.number(),
+            status: zod.enum(["queued", "running", "completed", "failed"]),
+            fetched: zod.number(),
+            staged: zod.number(),
+            accepted: zod.number(),
+            rejected: zod.number(),
+            duplicates: zod.number(),
+            created: zod.number(),
+            updated: zod.number(),
+            error: zod.string().nullish(),
+            startedAt: zod.coerce.date().nullish(),
+            completedAt: zod.coerce.date().nullish(),
+            updatedAt: zod.coerce.date(),
+          }),
+        ),
+        providerErrors: zod.array(
+          zod.object({
+            provider: zod.string().optional(),
+            error: zod.string().optional(),
+          }),
+        ),
       }),
     )
     .optional(),
+});
+
+export const GetOpportunityIngestionRunParams = zod.object({
+  runId: zod.coerce.string(),
+});
+
+export const GetOpportunityIngestionRunResponse = zod.object({
+  run: zod
+    .object({
+      id: zod.string(),
+      status: zod.enum([
+        "queued",
+        "running",
+        "completed",
+        "completed_with_errors",
+        "failed",
+      ]),
+      selectedProviders: zod.array(zod.string()),
+      query: zod.string().nullish(),
+      dateRange: zod.number().nullish(),
+      retryOfRunId: zod.string().nullish(),
+      currentProvider: zod.string().nullish(),
+      providersCompleted: zod.number(),
+      providersTotal: zod.number(),
+      fetched: zod.number(),
+      staged: zod.number(),
+      accepted: zod.number(),
+      rejected: zod.number(),
+      duplicates: zod.number(),
+      created: zod.number(),
+      updated: zod.number(),
+      archived: zod.number(),
+      errors: zod.array(zod.string()),
+      createdAt: zod.coerce.date(),
+      startedAt: zod.coerce.date().nullish(),
+      completedAt: zod.coerce.date().nullish(),
+      updatedAt: zod.coerce.date(),
+      sources: zod.array(
+        zod.object({
+          id: zod.string(),
+          runId: zod.string(),
+          provider: zod.string(),
+          position: zod.number(),
+          status: zod.enum(["queued", "running", "completed", "failed"]),
+          fetched: zod.number(),
+          staged: zod.number(),
+          accepted: zod.number(),
+          rejected: zod.number(),
+          duplicates: zod.number(),
+          created: zod.number(),
+          updated: zod.number(),
+          error: zod.string().nullish(),
+          startedAt: zod.coerce.date().nullish(),
+          completedAt: zod.coerce.date().nullish(),
+          updatedAt: zod.coerce.date(),
+        }),
+      ),
+      providerErrors: zod.array(
+        zod.object({
+          provider: zod.string().optional(),
+          error: zod.string().optional(),
+        }),
+      ),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Start a new manual run containing only failed providers
+ */
+export const RetryFailedOpportunityProvidersParams = zod.object({
+  runId: zod.coerce.string(),
+});
+
+/**
+ * @summary Explicitly archive active opportunities with known past deadlines
+ */
+export const ReconcileExpiredOpportunitiesResponse = zod.object({
+  archived: zod.number().optional(),
 });
 
 /**
@@ -200,8 +448,50 @@ export const GetOpportunityResponse = zod.object({
     .enum(["high", "medium", "low"])
     .optional()
     .describe("Confidence level of the source data"),
-  tags: zod.string().optional().describe("JSON array of tags"),
+  tags: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Quality\/category tags (e.g. date-unknown, stale, category name)",
+    ),
+  relevance: zod
+    .object({
+      score: zod.number().describe("Relevance\/fit score (0-100)"),
+      reasons: zod
+        .array(zod.string())
+        .describe(
+          "Human-readable reasons this result matched (or was ranked down)",
+        ),
+      category: zod
+        .string()
+        .nullish()
+        .describe("Detected Occu-Med service category"),
+      dateUnknown: zod
+        .boolean()
+        .describe("True when no reliable publication date was detected"),
+      stale: zod
+        .boolean()
+        .describe(
+          "True when the result appears to be from a past\/historical period",
+        ),
+      confidence: zod.enum(["high", "medium", "low"]),
+      postedDate: zod.coerce.date().nullish(),
+    })
+    .optional()
+    .describe(
+      "Transparent relevance summary used by the UI to explain ranking.",
+    ),
   notes: zod.string().optional(),
+  userConfidence: zod
+    .number()
+    .optional()
+    .describe(
+      "Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history",
+    ),
+  userGrade: zod
+    .enum(["excellent", "good", "poor", "spam"])
+    .nullish()
+    .describe("Your latest grade for this opportunity (null = ungraded)"),
   createdAt: zod.coerce.date().optional(),
   updatedAt: zod.coerce.date().optional(),
 });
@@ -218,6 +508,106 @@ export const DeleteOpportunityResponse = zod.object({
 });
 
 /**
+ * @summary Get grade for an opportunity
+ */
+export const GetOpportunityFeedbackParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetOpportunityFeedbackResponse = zod.object({
+  feedback: zod
+    .object({
+      id: zod.string().optional(),
+      opportunityId: zod.string().optional(),
+      grade: zod.enum(["excellent", "good", "poor", "spam"]).optional(),
+      notes: zod.string().optional(),
+      agency: zod.string().optional(),
+      naicsCode: zod.string().optional(),
+      providerName: zod.string().optional(),
+      tags: zod.string().optional(),
+      createdAt: zod.coerce.date().optional(),
+      updatedAt: zod.coerce.date().optional(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Submit or update a grade for an opportunity
+ */
+export const GradeOpportunityParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GradeOpportunityBody = zod.object({
+  grade: zod.enum(["excellent", "good", "poor", "spam"]),
+  notes: zod.string().optional(),
+});
+
+export const GradeOpportunityResponse = zod.object({
+  success: zod.boolean().optional(),
+  opportunityId: zod.string().optional(),
+  grade: zod.string().optional(),
+});
+
+/**
+ * @summary Get the current state of the learning model signal weights
+ */
+export const GetFeedbackModelSummaryResponse = zod.object({
+  totalGrades: zod
+    .number()
+    .optional()
+    .describe("Total number of graded opportunities"),
+  topAgencies: zod
+    .array(
+      zod.object({
+        key: zod.string().optional(),
+        weight: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  topNaics: zod
+    .array(
+      zod.object({
+        key: zod.string().optional(),
+        weight: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  topProviders: zod
+    .array(
+      zod.object({
+        key: zod.string().optional(),
+        weight: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  topTags: zod
+    .array(
+      zod.object({
+        key: zod.string().optional(),
+        weight: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  topKeywords: zod
+    .array(
+      zod.object({
+        key: zod.string().optional(),
+        weight: zod.number().optional(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Trigger a full re-score of all opportunities
+ */
+export const RescoreOpportunitiesResponse = zod.object({
+  success: zod.boolean().optional(),
+  message: zod.string().optional(),
+});
+
+/**
  * @summary Get all provider statuses
  */
 export const ListProvidersResponse = zod.object({
@@ -229,8 +619,17 @@ export const ListProvidersResponse = zod.object({
       category: zod.enum(["primary", "ai", "search", "procurement"]),
       useCase: zod
         .enum(["direct_source", "web_discovery", "research_analysis", "hybrid"])
-        .optional()
         .describe("How this provider is used in opportunity intelligence"),
+      ingestionEligible: zod
+        .boolean()
+        .describe(
+          "Whether the provider can be selected for a manual RFP ingestion run",
+        ),
+      ingestionMode: zod
+        .enum(["direct", "hybrid", "discovery", "stub"])
+        .describe(
+          "The provider's actual role in the manual ingestion pipeline",
+        ),
       capabilities: zod.array(zod.string()),
       docsUrl: zod.string().optional(),
       signupUrl: zod.string().optional(),
@@ -296,6 +695,12 @@ export const UpdateProviderResponse = zod.object({
 export const GetSettingsResponse = zod.object({
   samApiKeyConfigured: zod.boolean().optional(),
   samApiKeyMasked: zod.string().optional(),
+  dolApiKeyConfigured: zod.boolean().optional(),
+  dolApiKeyMasked: zod.string().optional(),
+  courtListenerTokenConfigured: zod.boolean().optional(),
+  courtListenerTokenMasked: zod.string().optional(),
+  fecApiKeyConfigured: zod.boolean().optional(),
+  fecApiKeyMasked: zod.string().optional(),
   defaultKeywords: zod.string().optional(),
   defaultDateRange: zod.number().optional(),
   organizationName: zod.string().optional(),
@@ -306,6 +711,9 @@ export const GetSettingsResponse = zod.object({
  */
 export const UpdateSettingsBody = zod.object({
   samApiKey: zod.string().optional(),
+  dolApiKey: zod.string().optional(),
+  courtListenerToken: zod.string().optional(),
+  fecApiKey: zod.string().optional(),
   defaultKeywords: zod.string().optional(),
   defaultDateRange: zod.number().optional(),
   organizationName: zod.string().optional(),
@@ -314,6 +722,12 @@ export const UpdateSettingsBody = zod.object({
 export const UpdateSettingsResponse = zod.object({
   samApiKeyConfigured: zod.boolean().optional(),
   samApiKeyMasked: zod.string().optional(),
+  dolApiKeyConfigured: zod.boolean().optional(),
+  dolApiKeyMasked: zod.string().optional(),
+  courtListenerTokenConfigured: zod.boolean().optional(),
+  courtListenerTokenMasked: zod.string().optional(),
+  fecApiKeyConfigured: zod.boolean().optional(),
+  fecApiKeyMasked: zod.string().optional(),
   defaultKeywords: zod.string().optional(),
   defaultDateRange: zod.number().optional(),
   organizationName: zod.string().optional(),

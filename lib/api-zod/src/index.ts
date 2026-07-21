@@ -1,8 +1,6 @@
 export * from "./generated/api";
 export type * from "./generated/types/apiError";
 export type * from "./generated/types/deleteOpportunity200";
-export type * from "./generated/types/fetchResult";
-export type * from "./generated/types/fetchResultProvidersItem";
 export type * from "./generated/types/healthStatus";
 export type * from "./generated/types/importResult";
 export type * from "./generated/types/listOpportunitiesParams";

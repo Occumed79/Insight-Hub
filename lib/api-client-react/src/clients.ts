@@ -9,8 +9,8 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import { customFetch } from "./custom-fetch";
+import type { ErrorType } from "./custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
@@ -86,7 +86,11 @@ export interface BranchHiringResponse {
 export interface RefreshHiringResponse {
   branch: ClientBranch;
   posts: BranchHiringPost[];
-  stats: { postsFound: number; trendDirection: string; overallClientTrend: string };
+  stats: {
+    postsFound: number;
+    trendDirection: string;
+    overallClientTrend: string;
+  };
   errors: string[];
 }
 
@@ -94,8 +98,13 @@ export interface RefreshHiringResponse {
 
 export const getListClientsUrl = () => `/api/clients`;
 
-export const listClients = async (options?: RequestInit): Promise<ClientsResponse> =>
-  customFetch<ClientsResponse>(getListClientsUrl(), { ...options, method: "GET" });
+export const listClients = async (
+  options?: RequestInit,
+): Promise<ClientsResponse> =>
+  customFetch<ClientsResponse>(getListClientsUrl(), {
+    ...options,
+    method: "GET",
+  });
 
 export const getListClientsQueryKey = () => [`/api/clients`] as const;
 
@@ -103,13 +112,18 @@ export const getListClientsQueryOptions = <
   TData = Awaited<ReturnType<typeof listClients>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listClients>>, TError, TData>;
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listClients>>,
+    TError,
+    TData
+  >;
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
   const queryKey = queryOptions?.queryKey ?? getListClientsQueryKey();
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listClients>>> = ({ signal }) =>
-    listClients({ signal, ...requestOptions });
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listClients>>> = ({
+    signal,
+  }) => listClients({ signal, ...requestOptions });
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listClients>>,
     TError,
@@ -121,11 +135,17 @@ export function useListClients<
   TData = Awaited<ReturnType<typeof listClients>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listClients>>, TError, TData>;
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listClients>>,
+    TError,
+    TData
+  >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListClientsQueryOptions(options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
@@ -133,10 +153,17 @@ export function useListClients<
 
 export const getGetClientUrl = (id: string) => `/api/clients/${id}`;
 
-export const getClient = async (id: string, options?: RequestInit): Promise<ClientDetailResponse> =>
-  customFetch<ClientDetailResponse>(getGetClientUrl(id), { ...options, method: "GET" });
+export const getClient = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ClientDetailResponse> =>
+  customFetch<ClientDetailResponse>(getGetClientUrl(id), {
+    ...options,
+    method: "GET",
+  });
 
-export const getGetClientQueryKey = (id: string) => [`/api/clients/${id}`] as const;
+export const getGetClientQueryKey = (id: string) =>
+  [`/api/clients/${id}`] as const;
 
 export const getGetClientQueryOptions = <
   TData = Awaited<ReturnType<typeof getClient>>,
@@ -144,19 +171,27 @@ export const getGetClientQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getClient>>, TError, TData>;
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClient>>,
+      TError,
+      TData
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
   const queryKey = queryOptions?.queryKey ?? getGetClientQueryKey(id);
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getClient>>> = ({ signal }) =>
-    getClient(id, { signal, ...requestOptions });
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getClient>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getClient>>> = ({
+    signal,
+  }) => getClient(id, { signal, ...requestOptions });
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getClient>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
 };
 
 export function useGetClient<
@@ -165,23 +200,39 @@ export function useGetClient<
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getClient>>, TError, TData>;
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClient>>,
+      TError,
+      TData
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetClientQueryOptions(id, options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
 // ── Research Branches ──────────────────────────────────────────────────────────
 
-export const getResearchBranchesUrl = (id: string) => `/api/clients/${id}/research-branches`;
+export const getResearchBranchesUrl = (id: string) =>
+  `/api/clients/${id}/research-branches`;
 
-export const researchBranches = async (id: string, options?: RequestInit): Promise<ResearchBranchesResponse> =>
-  customFetch<ResearchBranchesResponse>(getResearchBranchesUrl(id), { ...options, method: "POST" });
+export const researchBranches = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ResearchBranchesResponse> =>
+  customFetch<ResearchBranchesResponse>(getResearchBranchesUrl(id), {
+    ...options,
+    method: "POST",
+  });
 
-export const getResearchBranchesMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+export const getResearchBranchesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof researchBranches>>,
     TError,
@@ -197,7 +248,9 @@ export const getResearchBranchesMutationOptions = <TError = ErrorType<unknown>, 
 > => {
   const mutationKey = ["researchBranches"];
   const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
     : { mutation: { mutationKey }, request: undefined };
@@ -210,7 +263,10 @@ export const getResearchBranchesMutationOptions = <TError = ErrorType<unknown>, 
   return { mutationFn, ...mutationOptions };
 };
 
-export function useResearchBranches<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+export function useResearchBranches<
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof researchBranches>>,
     TError,
@@ -237,7 +293,10 @@ export const getBranchHiring = async (
   branchId: string,
   options?: RequestInit,
 ): Promise<BranchHiringResponse> =>
-  customFetch<BranchHiringResponse>(getGetBranchHiringUrl(id, branchId), { ...options, method: "GET" });
+  customFetch<BranchHiringResponse>(getGetBranchHiringUrl(id, branchId), {
+    ...options,
+    method: "GET",
+  });
 
 export const getGetBranchHiringQueryKey = (id: string, branchId: string) =>
   [`/api/clients/${id}/branches/${branchId}/hiring`] as const;
@@ -249,15 +308,26 @@ export const getGetBranchHiringQueryOptions = <
   id: string,
   branchId: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getBranchHiring>>, TError, TData>;
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBranchHiring>>,
+      TError,
+      TData
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
-  const queryKey = queryOptions?.queryKey ?? getGetBranchHiringQueryKey(id, branchId);
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBranchHiring>>> = ({ signal }) =>
-    getBranchHiring(id, branchId, { signal, ...requestOptions });
-  return { queryKey, queryFn, enabled: !!(id && branchId), ...queryOptions } as UseQueryOptions<
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBranchHiringQueryKey(id, branchId);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBranchHiring>>> = ({
+    signal,
+  }) => getBranchHiring(id, branchId, { signal, ...requestOptions });
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && branchId),
+    ...queryOptions,
+  } as UseQueryOptions<
     Awaited<ReturnType<typeof getBranchHiring>>,
     TError,
     TData
@@ -271,12 +341,18 @@ export function useGetBranchHiring<
   id: string,
   branchId: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getBranchHiring>>, TError, TData>;
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBranchHiring>>,
+      TError,
+      TData
+    >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetBranchHiringQueryOptions(id, branchId, options);
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
@@ -290,9 +366,15 @@ export const refreshBranchHiring = async (
   branchId: string,
   options?: RequestInit,
 ): Promise<RefreshHiringResponse> =>
-  customFetch<RefreshHiringResponse>(getRefreshBranchHiringUrl(id, branchId), { ...options, method: "POST" });
+  customFetch<RefreshHiringResponse>(getRefreshBranchHiringUrl(id, branchId), {
+    ...options,
+    method: "POST",
+  });
 
-export const getRefreshBranchHiringMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+export const getRefreshBranchHiringMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof refreshBranchHiring>>,
     TError,
@@ -308,7 +390,9 @@ export const getRefreshBranchHiringMutationOptions = <TError = ErrorType<unknown
 > => {
   const mutationKey = ["refreshBranchHiring"];
   const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
     : { mutation: { mutationKey }, request: undefined };
@@ -321,7 +405,10 @@ export const getRefreshBranchHiringMutationOptions = <TError = ErrorType<unknown
   return { mutationFn, ...mutationOptions };
 };
 
-export function useRefreshBranchHiring<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+export function useRefreshBranchHiring<
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof refreshBranchHiring>>,
     TError,

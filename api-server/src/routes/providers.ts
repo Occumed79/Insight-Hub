@@ -3,7 +3,11 @@ import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { providerRegistry } from "../lib/providers";
-import { PROVIDER_DEFINITIONS, type RfpProviderName } from "../lib/config/providerConfig";
+import {
+  PROVIDER_DEFINITIONS,
+  RFP_INGESTION_PROVIDER_NAMES,
+  type RfpProviderName,
+} from "../lib/config/providerConfig";
 
 const router = Router();
 
@@ -11,6 +15,14 @@ const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>(["texasEsbd", "
 const PROVIDER_NAMES = (Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]).filter(
   (name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name),
 );
+const RFP_INGESTION_PROVIDER_SET = new Set<string>(RFP_INGESTION_PROVIDER_NAMES);
+
+function ingestionMode(name: RfpProviderName) {
+  if (name === "bidnet") return "stub" as const;
+  if (name === "publicPortalProviders") return "hybrid" as const;
+  if (PROVIDER_DEFINITIONS[name].useCase === "web_discovery") return "discovery" as const;
+  return "direct" as const;
+}
 
 /**
  * GET /api/providers
@@ -33,6 +45,8 @@ router.get("/providers", async (req, res) => {
             description: def.description,
             category: def.category,
             useCase: def.useCase,
+            ingestionEligible: RFP_INGESTION_PROVIDER_SET.has(name),
+            ingestionMode: ingestionMode(name),
             capabilities: def.capabilities,
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
@@ -69,6 +83,8 @@ router.get("/providers", async (req, res) => {
             description: def.description,
             category: def.category,
             useCase: def.useCase,
+            ingestionEligible: RFP_INGESTION_PROVIDER_SET.has(name),
+            ingestionMode: ingestionMode(name),
             capabilities: def.capabilities,
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
