@@ -28,3 +28,50 @@ export function notLikeAnyText(
 ): SQL {
   return sql`NOT (${likeAnyText(expression, patterns)})`;
 }
+
+
+/**
+ * Public Opportunities response columns. Keep this explicit instead of using
+ * Drizzle's select-all so newly added backend-only identity columns do not make
+ * the read endpoint depend on migrations that are unrelated to rendering the
+ * Opportunities page.
+ */
+export function opportunityListSelection(table: typeof import("@workspace/db/schema").opportunitiesTable) {
+  return {
+    id: table.id,
+    noticeId: table.noticeId,
+    title: table.title,
+    agency: table.agency,
+    subAgency: table.subAgency,
+    office: table.office,
+    type: table.type,
+    status: table.status,
+    naicsCode: table.naicsCode,
+    naicsDescription: table.naicsDescription,
+    pscCode: table.pscCode,
+    contractType: table.contractType,
+    postedDate: table.postedDate,
+    responseDeadline: table.responseDeadline,
+    periodOfPerformance: table.periodOfPerformance,
+    setAside: table.setAside,
+    placeOfPerformance: table.placeOfPerformance,
+    description: table.description,
+    solicitationNumber: table.solicitationNumber,
+    samUrl: table.samUrl,
+    estimatedValue: table.estimatedValue,
+    ceilingValue: table.ceilingValue,
+    floorValue: table.floorValue,
+    awardAmount: table.awardAmount,
+    awardee: table.awardee,
+    source: table.source,
+    providerName: table.providerName,
+    relevanceScore: table.relevanceScore,
+    sourceConfidence: table.sourceConfidence,
+    tags: table.tags,
+    notes: table.notes,
+    userConfidence: table.userConfidence,
+    userGrade: table.userGrade,
+    createdAt: table.createdAt,
+    updatedAt: table.updatedAt,
+  } as const;
+}
