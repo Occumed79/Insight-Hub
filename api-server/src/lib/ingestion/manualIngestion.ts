@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { rfpDb } from "@workspace/db";
 import {
   opportunitiesTable,
@@ -30,6 +30,9 @@ import {
 import {
   classifyIdentityMatch,
   failedProvidersForRetry,
+  protectedLineageKeys,
+  shouldProtectCanonicalFromRefresh,
+  STALE_INGESTION_RUN_AFTER_MS,
 } from "./pipelineRules";
 
 const ACTIVE_RUN_STATUSES = ["queued", "running"] as const;
@@ -38,6 +41,8 @@ const RETRYABLE_RUN_STATUSES = new Set([
   "completed_with_errors",
   "failed",
 ]);
+const STALE_RUN_RECOVERY_ERROR =
+  "Run was marked failed during a later manual start because it had no persisted progress for 30 minutes.";
 
 export class ActiveIngestionRunError extends Error {
   constructor(public readonly runId: string) {
@@ -160,6 +165,48 @@ async function createPersistedRun(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended('manual-rfp-ingestion-active-run', 0))`,
     );
+    const staleBefore = new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS);
+    const staleRuns = await tx
+      .update(opportunityIngestionRunsTable)
+      .set({
+        status: "failed",
+        currentProvider: null,
+        errors: sql`coalesce(${opportunityIngestionRunsTable.errors}, '[]'::jsonb) || ${JSON.stringify([STALE_RUN_RECOVERY_ERROR])}::jsonb`,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          inArray(opportunityIngestionRunsTable.status, [
+            ...ACTIVE_RUN_STATUSES,
+          ]),
+          lte(opportunityIngestionRunsTable.updatedAt, staleBefore),
+        ),
+      )
+      .returning({ id: opportunityIngestionRunsTable.id });
+
+    if (staleRuns.length > 0) {
+      await tx
+        .update(opportunityIngestionRunSourcesTable)
+        .set({
+          status: "failed",
+          error: STALE_RUN_RECOVERY_ERROR,
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(
+              opportunityIngestionRunSourcesTable.runId,
+              staleRuns.map((run) => run.id),
+            ),
+            inArray(opportunityIngestionRunSourcesTable.status, [
+              ...ACTIVE_RUN_STATUSES,
+            ]),
+          ),
+        );
+    }
+
     const [active] = await tx
       .select({ id: opportunityIngestionRunsTable.id })
       .from(opportunityIngestionRunsTable)
@@ -286,19 +333,24 @@ async function registerLineage(
   const [existingSource] = await tx
     .select({ id: opportunitySourceRegistryTable.id })
     .from(opportunitySourceRegistryTable)
-    .where(and(
-      eq(opportunitySourceRegistryTable.provider, provider),
-      eq(opportunitySourceRegistryTable.providerNativeId, providerNativeId),
-    ))
+    .where(
+      and(
+        eq(opportunitySourceRegistryTable.provider, provider),
+        eq(opportunitySourceRegistryTable.providerNativeId, providerNativeId),
+      ),
+    )
     .limit(1);
   if (existingSource) {
-    await tx.update(opportunitySourceRegistryTable).set({
-      opportunityId,
-      sourceUrl: sourceUrl ?? null,
-      canonicalUrl: canonicalizeOpportunityUrl(sourceUrl),
-      latestRawRecordId: rawRecordId,
-      lastSeenAt: now,
-    }).where(eq(opportunitySourceRegistryTable.id, existingSource.id));
+    await tx
+      .update(opportunitySourceRegistryTable)
+      .set({
+        opportunityId,
+        sourceUrl: sourceUrl ?? null,
+        canonicalUrl: canonicalizeOpportunityUrl(sourceUrl),
+        latestRawRecordId: rawRecordId,
+        lastSeenAt: now,
+      })
+      .where(eq(opportunitySourceRegistryTable.id, existingSource.id));
   } else {
     await tx.insert(opportunitySourceRegistryTable).values({
       id: randomUUID(),
@@ -408,14 +460,17 @@ async function processOneRecord(
       { ...record, externalId: providerNativeId },
       keys,
     );
-    const weakDuplicate =
+    const protectedDuplicate =
       existing &&
-      (existing.matchType === "url" || existing.matchType === "fingerprint");
+      shouldProtectCanonicalFromRefresh(
+        existing.matchType,
+        record.rawData?.fallback === true,
+      );
     let opportunityId = existing?.opportunityId ?? randomUUID();
     let created = 0;
     let updated = 0;
 
-    if (weakDuplicate) {
+    if (protectedDuplicate) {
       await registerLineage(
         tx,
         opportunityId,
@@ -423,14 +478,17 @@ async function processOneRecord(
         providerNativeId,
         record.sourceUrl,
         rawRecordId,
-        keys,
+        protectedLineageKeys(keys, existing.matchType),
         now,
       );
       await tx
         .update(opportunityStagingTable)
         .set({
           qualityStatus: "duplicate",
-          qualityReason: `Resolved to canonical opportunity by ${existing.matchType} identity.`,
+          qualityReason:
+            record.rawData?.fallback === true
+              ? `Fallback record resolved to canonical opportunity by ${existing.matchType} identity without refreshing canonical fields.`
+              : `Resolved to canonical opportunity by ${existing.matchType} identity.`,
           canonicalOpportunityId: opportunityId,
           updatedAt: now,
         })

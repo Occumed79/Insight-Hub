@@ -19,6 +19,7 @@ import {
   startManualIngestion,
 } from "../lib/ingestion/manualIngestion";
 import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
+import { likeAnyText, notLikeAnyText } from "./opportunityListQuery";
 import multer from "multer";
 
 const router = Router();
@@ -340,31 +341,31 @@ router.get("/opportunities", async (req, res) => {
     // Rule 2: The combined text (title + description + agency) must contain at
     // least one Occu-Med service signal.
     // Pattern: lower(concat) LIKE ANY(ARRAY['%signal1%','%signal2%',...])
-    // The patterns array is passed as a single bound parameter ($N) so the
-    // query is safe from SQL injection and compact in the wire format.
+    // Each pattern remains a bound parameter inside an explicit PostgreSQL
+    // text[] so LIKE ANY receives the array type it requires.
     {
       const servicePatterns = OCCUMED_SERVICE_SIGNALS.map((s) => `%${s}%`);
       conditions.push(
-        sql`(
+        likeAnyText(sql`(
           lower(${opportunitiesTable.title}) || ' ' ||
           lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
           lower(coalesce(${opportunitiesTable.agency}, ''))
-        ) LIKE ANY(${servicePatterns})` as any,
+        )`, servicePatterns) as any,
       );
     }
 
     // Rule 3: Hard-reject signals — none may appear in the combined text.
-    // NOT (... LIKE ANY(ARRAY[...])) — same safe bound-parameter pattern.
+    // NOT (... LIKE ANY(ARRAY[...])) — same safe bound-array pattern.
     {
       const rejectPatterns = HARD_REJECT_SIGNALS.map((s) => `%${s}%`);
       conditions.push(
-        sql`NOT (
+        notLikeAnyText(sql`(
           lower(${opportunitiesTable.title}) || ' ' ||
           lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
           lower(coalesce(${opportunitiesTable.agency}, '')) || ' ' ||
           lower(coalesce(${opportunitiesTable.providerName}, '')) || ' ' ||
           lower(coalesce(${opportunitiesTable.samUrl}, ''))
-        ) LIKE ANY(${rejectPatterns})` as any,
+        )`, rejectPatterns) as any,
       );
     }
 
@@ -410,7 +411,10 @@ router.get("/opportunities", async (req, res) => {
         (s) => `%${s}%`,
       );
       conditions.push(
-        sql`NOT (' ' || lower(${opportunitiesTable.title}) || ' ') LIKE ANY(${jobTitlePatterns})` as any,
+        notLikeAnyText(
+          sql`(' ' || lower(${opportunitiesTable.title}) || ' ')`,
+          jobTitlePatterns,
+        ) as any,
       );
     }
 

@@ -1,9 +1,18 @@
 import type { OpportunityDedupeKey } from "./opportunityIdentity";
 
 export const ACTIVE_INGESTION_STATUSES = new Set(["queued", "running"]);
+export const STALE_INGESTION_RUN_AFTER_MS = 30 * 60 * 1000;
 
 export function isActiveIngestionStatus(status: string): boolean {
   return ACTIVE_INGESTION_STATUSES.has(status);
+}
+
+export function isStaleIngestionRun(
+  updatedAt: Date,
+  now: Date,
+  staleAfterMs = STALE_INGESTION_RUN_AFTER_MS,
+): boolean {
+  return now.getTime() - updatedAt.getTime() >= staleAfterMs;
 }
 
 export function failedProvidersForRetry(
@@ -23,6 +32,25 @@ export function classifyIdentityMatch(
     if (opportunityId) return { opportunityId, matchType: key.type };
   }
   return null;
+}
+
+export function shouldProtectCanonicalFromRefresh(
+  matchType: OpportunityDedupeKey["type"],
+  fallback: boolean,
+): boolean {
+  return fallback || matchType === "url" || matchType === "fingerprint";
+}
+
+/**
+ * A protected duplicate may update lineage timestamps for the identity that
+ * actually matched, but it must not attach stronger provider/solicitation keys
+ * that would promote the duplicate into a canonical refresh on a later run.
+ */
+export function protectedLineageKeys(
+  keys: OpportunityDedupeKey[],
+  matchType: OpportunityDedupeKey["type"],
+): OpportunityDedupeKey[] {
+  return keys.filter((key) => key.type === matchType);
 }
 
 export function mergeSourceRefresh<T extends Record<string, unknown>>(

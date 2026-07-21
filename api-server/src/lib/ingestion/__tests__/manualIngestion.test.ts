@@ -11,8 +11,12 @@ import {
 import {
   classifyIdentityMatch,
   failedProvidersForRetry,
+  isStaleIngestionRun,
   mergeSourceRefresh,
+  protectedLineageKeys,
   shouldArchiveForDeadline,
+  shouldProtectCanonicalFromRefresh,
+  STALE_INGESTION_RUN_AFTER_MS,
 } from "../pipelineRules";
 
 function fixture(
@@ -58,15 +62,21 @@ class InMemoryPipeline {
     }
     const keys = calculateOpportunityDedupeKeys(record);
     const match = classifyIdentityMatch(keys, this.keys);
-    const weakDuplicate =
-      match?.matchType === "url" || match?.matchType === "fingerprint";
-    if (weakDuplicate) {
+    const protectedDuplicate =
+      match &&
+      shouldProtectCanonicalFromRefresh(
+        match.matchType,
+        record.rawData?.fallback === true,
+      );
+    if (protectedDuplicate) {
       this.staging.push({
         status: "duplicate",
         reason: match.matchType,
         canonicalId: match.opportunityId,
       });
-      for (const key of keys) this.keys.set(key.value, match.opportunityId);
+      for (const key of protectedLineageKeys(keys, match.matchType)) {
+        this.keys.set(key.value, match.opportunityId);
+      }
       return;
     }
     const id = match?.opportunityId ?? `canonical-${this.nextId++}`;
@@ -151,7 +161,7 @@ describe("raw, staging, persistent identity, and refresh rules", () => {
     assert.equal(refreshed.firstSeenAt, "preserved");
   });
 
-  it("keeps every source lineage key even when a weak cross-provider duplicate is not promoted", () => {
+  it("keeps only the matched weak lineage key for a cross-provider duplicate", () => {
     const pipeline = new InMemoryPipeline();
     pipeline.ingest(fixture({ solicitationNumber: undefined }));
     pipeline.ingest(
@@ -163,21 +173,75 @@ describe("raw, staging, persistent identity, and refresh rules", () => {
     );
     assert.equal(pipeline.opportunities.size, 1);
     assert.equal(pipeline.staging[1].status, "duplicate");
+    const duplicateKeys = calculateOpportunityDedupeKeys(
+      fixture({
+        externalId: "other-44",
+        source: "publicPortalProviders",
+        solicitationNumber: undefined,
+      }),
+    );
     assert.ok(
-      calculateOpportunityDedupeKeys(
-        fixture({
-          externalId: "other-44",
-          source: "publicPortalProviders",
-          solicitationNumber: undefined,
-        }),
-      ).every((key) => pipeline.keys.has(key.value)),
+      duplicateKeys
+        .filter((key) => key.type === "url")
+        .every((key) => pipeline.keys.has(key.value)),
+    );
+    assert.ok(
+      duplicateKeys
+        .filter((key) => key.type === "provider")
+        .every((key) => !pipeline.keys.has(key.value)),
+    );
+  });
+
+  it("does not promote a repeated weak duplicate into a canonical refresh", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture({ solicitationNumber: undefined }));
+    const duplicate = fixture({
+      externalId: "other-44",
+      source: "publicPortalProviders",
+      solicitationNumber: undefined,
+      title: "RFP Employee Occupational Health Services - weaker copy",
+    });
+    pipeline.ingest(duplicate);
+    pipeline.ingest(duplicate);
+
+    assert.equal(pipeline.opportunities.size, 1);
+    assert.equal(pipeline.staging[1].status, "duplicate");
+    assert.equal(pipeline.staging[2].status, "duplicate");
+    assert.doesNotMatch(
+      String([...pipeline.opportunities.values()][0].title),
+      /weaker copy/,
+    );
+  });
+
+  it("does not let a fallback solicitation match refresh canonical fields", () => {
+    const pipeline = new InMemoryPipeline();
+    pipeline.ingest(fixture());
+    pipeline.ingest(
+      fixture({
+        externalId: "search-fallback-1",
+        source: "serper",
+        title: "RFP Employee Occupational Health Services - search fallback",
+        rawData: { fallback: true, sourceConfidence: "low" },
+      }),
+    );
+
+    assert.equal(pipeline.staging[1].status, "duplicate");
+    assert.doesNotMatch(
+      String([...pipeline.opportunities.values()][0].title),
+      /search fallback/,
     );
   });
 });
 
 describe("run retry and deadline rules", () => {
   it("persists run and provider progress counters in RFP-only tables", async () => {
-    const schema = await readFile(path.resolve(process.cwd(), "../lib/db/src/schema/opportunity-ingestion.ts"), "utf8");
+    const schema = await readFile(
+      path.resolve(
+        process.cwd(),
+        "../lib/db/src/schema/opportunity-ingestion.ts",
+      ),
+      "utf8",
+    );
     for (const table of [
       "opportunity_ingestion_runs",
       "opportunity_ingestion_run_sources",
@@ -185,9 +249,24 @@ describe("run retry and deadline rules", () => {
       "opportunity_staging",
       "opportunity_source_registry",
       "opportunity_dedupe_keys",
-    ]) assert.ok(schema.includes(`\"${table}\"`), `missing ${table}`);
-    for (const counter of ["providersCompleted", "providersTotal", "fetched", "staged", "accepted", "rejected", "duplicates", "created", "updated", "archived"]) {
-      assert.ok(schema.includes(counter), `missing persisted progress counter ${counter}`);
+    ])
+      assert.ok(schema.includes(`\"${table}\"`), `missing ${table}`);
+    for (const counter of [
+      "providersCompleted",
+      "providersTotal",
+      "fetched",
+      "staged",
+      "accepted",
+      "rejected",
+      "duplicates",
+      "created",
+      "updated",
+      "archived",
+    ]) {
+      assert.ok(
+        schema.includes(counter),
+        `missing persisted progress counter ${counter}`,
+      );
     }
   });
 
@@ -210,6 +289,24 @@ describe("run retry and deadline rules", () => {
     );
     assert.equal(shouldArchiveForDeadline(null, now), false);
     assert.equal(shouldArchiveForDeadline(undefined, now), false);
+  });
+
+  it("recovers only active runs whose persisted heartbeat is stale", () => {
+    const now = new Date("2026-07-21T20:00:00Z");
+    assert.equal(
+      isStaleIngestionRun(
+        new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS),
+        now,
+      ),
+      true,
+    );
+    assert.equal(
+      isStaleIngestionRun(
+        new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS + 1),
+        now,
+      ),
+      false,
+    );
   });
 
   it("GET /opportunities contains no archive mutation", async () => {

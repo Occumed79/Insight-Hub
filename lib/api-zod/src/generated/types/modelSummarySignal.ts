@@ -6,8 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type FetchResultProvidersItem = {
-  name?: string;
-  fetched?: number;
-  error?: string;
-};
+export interface ModelSummarySignal {
+  key?: string;
+  weight?: number;
+}

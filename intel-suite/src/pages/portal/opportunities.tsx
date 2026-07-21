@@ -39,6 +39,8 @@ import {
 import { Label } from "@/components/ui/label";
 import {
   isOpportunityRunActive,
+  isOpportunityRunStale,
+  opportunityApiErrorMessage,
   opportunityRunMetrics,
   opportunityRunProgress,
   type OpportunityRunStatus,
@@ -99,18 +101,6 @@ const FETCH_PROVIDER_GROUPS: { id: string; label: string; options: FetchProvider
   },
 ];
 
-const OPPORTUNITY_PROVIDER_NAMES = new Set([
-  "samGov",
-  "publicPortalProviders",
-  "eunaBonfire",
-  "internationalPublicPortals",
-  "tango",
-  "bidnet",
-  "serper",
-  "tavily",
-  "exa",
-]);
-
 type IngestionRun = {
   id: string;
   status: OpportunityRunStatus;
@@ -125,6 +115,7 @@ type IngestionRun = {
   created: number;
   updated: number;
   archived: number;
+  updatedAt?: string | null;
   providerErrors?: Array<{ provider: string; error: string }>;
 };
 
@@ -173,7 +164,13 @@ export default function OpportunitiesDashboard() {
   const { data: settings } = useGetSettings();
   const { data: providersData } = useListProviders();
 
-  const { data: oppsData, isLoading: isLoadingOpps } = useListOpportunities({
+  const {
+    data: oppsData,
+    error: opportunitiesError,
+    isError: hasOpportunitiesError,
+    isLoading: isLoadingOpps,
+    refetch: refetchOpportunities,
+  } = useListOpportunities({
     search: search || undefined,
     status: status !== "all" ? status as any : undefined,
     type: type !== "all" ? type : undefined,
@@ -490,7 +487,16 @@ export default function OpportunitiesDashboard() {
   const getOpportunityUrl = (opp: any) => opp.samUrl || opp.sourceUrl || opp.url || null;
   const getAgency = (opp: any) => opp.agency === "Unknown" ? (extractAgencyHint(opp.title) ?? "—") : (opp.agency ?? "—");
   const opportunities = oppsData?.data ?? [];
-  const showRunProgress = Boolean(currentRun && (isOpportunityRunActive(currentRun.status) || currentRun.id === lastStartedRunId));
+  const currentRunIsStale = Boolean(
+    currentRun &&
+      isOpportunityRunActive(currentRun.status) &&
+      isOpportunityRunStale(currentRun.updatedAt),
+  );
+  const showRunProgress = Boolean(
+    currentRun &&
+      !currentRunIsStale &&
+      (isOpportunityRunActive(currentRun.status) || currentRun.id === lastStartedRunId),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -520,7 +526,7 @@ export default function OpportunitiesDashboard() {
       <ProcurementPortalDirectory />
 
       <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold whitespace-nowrap">Active Sources:</span>
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold whitespace-nowrap">Source Filters:</span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setSourceFilter("all"); setPage(1); }}
@@ -528,8 +534,8 @@ export default function OpportunitiesDashboard() {
           >
             All
           </button>
-          {providersData?.providers.filter((p) => OPPORTUNITY_PROVIDER_NAMES.has(p.name)).map((p) => {
-            const isStub = p.name === "bidnet";
+          {providersData?.providers.filter((p) => p.ingestionEligible).map((p) => {
+            const isStub = p.ingestionMode === "stub";
             const dotClass = isStub ? "bg-amber-500/40 border border-amber-500/40" : p.status?.configured ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" : "bg-white/20";
             const providerKey = p.name === "sam_gov" ? "samGov" : p.name;
             const isSelected = sourceFilter === providerKey;
@@ -539,7 +545,7 @@ export default function OpportunitiesDashboard() {
                 disabled={isStub}
                 onClick={() => { if (!isStub) { setSourceFilter(isSelected ? "all" : providerKey); setPage(1); } }}
                 className={"flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap border transition-all " + (isStub ? "opacity-40 cursor-not-allowed bg-white/5 border-white/10" : isSelected ? "bg-primary/20 border-primary/40 text-primary font-bold cursor-pointer" : "bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer")}
-                title={isStub ? "Pending direct API wiring" : p.status?.configured ? "Click to filter by " + p.displayName : "Not configured"}
+                title={isStub ? "Pending direct API wiring" : p.status?.configured ? "Configured — click to filter by " + p.displayName : "Available source — credentials not configured"}
               >
                 <div className={"w-1.5 h-1.5 rounded-full " + dotClass} />
                 <span className={isStub ? "text-white/40" : isSelected ? "" : "text-white/80"}>{p.displayName}</span>
@@ -726,6 +732,15 @@ export default function OpportunitiesDashboard() {
           </>
         ) : isLoadingOpps ? (
           <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>
+        ) : hasOpportunitiesError ? (
+          <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center">
+            <AlertCircle className="w-12 h-12 mb-4 text-destructive/70" />
+            <h3 className="text-lg font-medium text-white mb-2">Opportunities could not be loaded</h3>
+            <p className="max-w-xl text-sm break-words">{opportunityApiErrorMessage(opportunitiesError)}</p>
+            <Button type="button" variant="outline" className="mt-5 border-white/10 bg-white/5" onClick={() => void refetchOpportunities()}>
+              Try Again
+            </Button>
+          </div>
         ) : opportunities.length === 0 ? (
           <div className="p-16 text-center text-muted-foreground flex flex-col items-center justify-center">
             <AlertCircle className="w-12 h-12 mb-4 opacity-25" />
@@ -857,6 +872,11 @@ export default function OpportunitiesDashboard() {
               </div>
             ) : (
             <div className="grid gap-5 py-6">
+              {currentRunIsStale && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 text-xs text-amber-100">
+                  The previous run stopped reporting progress. Starting this manual run will safely mark it failed and continue.
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label className="text-xs uppercase tracking-widest text-muted-foreground">Sources</Label>
                 <div className="grid gap-4 max-h-[390px] overflow-y-auto pr-1">

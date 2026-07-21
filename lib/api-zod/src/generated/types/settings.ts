@@ -9,6 +9,12 @@
 export interface Settings {
   samApiKeyConfigured?: boolean;
   samApiKeyMasked?: string;
+  dolApiKeyConfigured?: boolean;
+  dolApiKeyMasked?: string;
+  courtListenerTokenConfigured?: boolean;
+  courtListenerTokenMasked?: string;
+  fecApiKeyConfigured?: boolean;
+  fecApiKeyMasked?: string;
   defaultKeywords?: string;
   defaultDateRange?: number;
   organizationName?: string;

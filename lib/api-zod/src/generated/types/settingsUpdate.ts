@@ -8,6 +8,9 @@
 
 export interface SettingsUpdate {
   samApiKey?: string;
+  dolApiKey?: string;
+  courtListenerToken?: string;
+  fecApiKey?: string;
   defaultKeywords?: string;
   defaultDateRange?: number;
   organizationName?: string;

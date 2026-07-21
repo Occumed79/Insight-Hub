@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:ingestion": "node --import tsx --test src/lib/ingestion/__tests__/manualIngestion.test.ts src/routes/__tests__/opportunityIngestionHandlers.test.ts"
+    "test:ingestion": "node --import tsx --test src/lib/ingestion/__tests__/manualIngestion.test.ts src/lib/providers/__tests__/portalDirectory.test.ts src/routes/__tests__/opportunityIngestionHandlers.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/ingestionApiGeneration.test.ts"
   },
   "dependencies": {
     "@types/multer": "^2.1.0",

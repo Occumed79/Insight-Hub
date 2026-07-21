@@ -38,6 +38,47 @@ export const OpportunitySourceConfidence = {
   low: "low",
 } as const;
 
+/**
+ * Your latest grade for this opportunity (null = ungraded)
+ */
+export type OpportunityUserGrade =
+  | (typeof OpportunityUserGrade)[keyof typeof OpportunityUserGrade]
+  | null;
+
+export const OpportunityUserGrade = {
+  excellent: "excellent",
+  good: "good",
+  poor: "poor",
+  spam: "spam",
+} as const;
+
+export type RelevanceViewConfidence =
+  (typeof RelevanceViewConfidence)[keyof typeof RelevanceViewConfidence];
+
+export const RelevanceViewConfidence = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+} as const;
+
+/**
+ * Transparent relevance summary used by the UI to explain ranking.
+ */
+export interface RelevanceView {
+  /** Relevance/fit score (0-100) */
+  score: number;
+  /** Human-readable reasons this result matched (or was ranked down) */
+  reasons: string[];
+  /** Detected Occu-Med service category */
+  category?: string | null;
+  /** True when no reliable publication date was detected */
+  dateUnknown: boolean;
+  /** True when the result appears to be from a past/historical period */
+  stale: boolean;
+  confidence: RelevanceViewConfidence;
+  postedDate?: string | null;
+}
+
 export interface Opportunity {
   id: string;
   noticeId?: string;
@@ -77,9 +118,14 @@ export interface Opportunity {
   relevanceScore?: number;
   /** Confidence level of the source data */
   sourceConfidence?: OpportunitySourceConfidence;
-  /** JSON array of tags */
-  tags?: string;
+  /** Quality/category tags (e.g. date-unknown, stale, category name) */
+  tags?: string[];
+  relevance?: RelevanceView;
   notes?: string;
+  /** Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history */
+  userConfidence?: number;
+  /** Your latest grade for this opportunity (null = ungraded) */
+  userGrade?: OpportunityUserGrade;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -91,18 +137,93 @@ export interface OpportunitiesResponse {
   limit: number;
 }
 
-export type FetchResultProvidersItem = {
-  name?: string;
-  fetched?: number;
+export type IngestionRunStartedStatus =
+  (typeof IngestionRunStartedStatus)[keyof typeof IngestionRunStartedStatus];
+
+export const IngestionRunStartedStatus = {
+  queued: "queued",
+  running: "running",
+  completed: "completed",
+  completed_with_errors: "completed_with_errors",
+  failed: "failed",
+} as const;
+
+export type IngestionRunStatus =
+  (typeof IngestionRunStatus)[keyof typeof IngestionRunStatus];
+
+export const IngestionRunStatus = {
+  queued: "queued",
+  running: "running",
+  completed: "completed",
+  completed_with_errors: "completed_with_errors",
+  failed: "failed",
+} as const;
+
+export type IngestionRunSourceStatus =
+  (typeof IngestionRunSourceStatus)[keyof typeof IngestionRunSourceStatus];
+
+export const IngestionRunSourceStatus = {
+  queued: "queued",
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export interface IngestionRunSource {
+  id: string;
+  runId: string;
+  provider: string;
+  position: number;
+  status: IngestionRunSourceStatus;
+  fetched: number;
+  staged: number;
+  accepted: number;
+  rejected: number;
+  duplicates: number;
+  created: number;
+  updated: number;
+  error?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt: string;
+}
+
+export type IngestionRunProviderErrorsItem = {
+  provider?: string;
   error?: string;
 };
 
-export interface FetchResult {
+export interface IngestionRun {
+  id: string;
+  status: IngestionRunStatus;
+  selectedProviders: string[];
+  query?: string | null;
+  dateRange?: number | null;
+  retryOfRunId?: string | null;
+  currentProvider?: string | null;
+  providersCompleted: number;
+  providersTotal: number;
   fetched: number;
+  staged: number;
+  accepted: number;
+  rejected: number;
+  duplicates: number;
   created: number;
   updated: number;
-  skipped: number;
-  providers?: FetchResultProvidersItem[];
+  archived: number;
+  errors: string[];
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt: string;
+  sources: IngestionRunSource[];
+  providerErrors: IngestionRunProviderErrorsItem[];
+}
+
+export interface IngestionRunStarted {
+  runId: string;
+  status: IngestionRunStartedStatus;
+  run: IngestionRun;
 }
 
 export interface ImportResult {
@@ -185,13 +306,30 @@ export const ProviderUseCase = {
   hybrid: "hybrid",
 } as const;
 
+/**
+ * The provider's actual role in the manual ingestion pipeline
+ */
+export type ProviderIngestionMode =
+  (typeof ProviderIngestionMode)[keyof typeof ProviderIngestionMode];
+
+export const ProviderIngestionMode = {
+  direct: "direct",
+  hybrid: "hybrid",
+  discovery: "discovery",
+  stub: "stub",
+} as const;
+
 export interface Provider {
   name: string;
   displayName: string;
   description: string;
   category: ProviderCategory;
   /** How this provider is used in opportunity intelligence */
-  useCase?: ProviderUseCase;
+  useCase: ProviderUseCase;
+  /** Whether the provider can be selected for a manual RFP ingestion run */
+  ingestionEligible: boolean;
+  /** The provider's actual role in the manual ingestion pipeline */
+  ingestionMode: ProviderIngestionMode;
   capabilities: string[];
   docsUrl?: string;
   signupUrl?: string;
@@ -203,6 +341,44 @@ export interface Provider {
 
 export interface ProvidersResponse {
   providers: Provider[];
+}
+
+export type OpportunityFeedbackGrade =
+  (typeof OpportunityFeedbackGrade)[keyof typeof OpportunityFeedbackGrade];
+
+export const OpportunityFeedbackGrade = {
+  excellent: "excellent",
+  good: "good",
+  poor: "poor",
+  spam: "spam",
+} as const;
+
+export interface OpportunityFeedback {
+  id?: string;
+  opportunityId?: string;
+  grade?: OpportunityFeedbackGrade;
+  notes?: string;
+  agency?: string;
+  naicsCode?: string;
+  providerName?: string;
+  tags?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ModelSummarySignal {
+  key?: string;
+  weight?: number;
+}
+
+export interface ModelSummary {
+  /** Total number of graded opportunities */
+  totalGrades?: number;
+  topAgencies?: ModelSummarySignal[];
+  topNaics?: ModelSummarySignal[];
+  topProviders?: ModelSummarySignal[];
+  topTags?: ModelSummarySignal[];
+  topKeywords?: ModelSummarySignal[];
 }
 
 export interface ApiError {
@@ -220,9 +396,13 @@ export type ListOpportunitiesParams = {
    * Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
    */
   source?: string;
-  /** Only return results posted within this many days (freshness window). */
+  /**
+   * Only return results posted within this many days (freshness window).
+   */
   dateRange?: number;
-  /** When true, exclude results flagged stale or with an unknown date. */
+  /**
+   * When true, exclude results flagged stale or with an unknown date.
+   */
   freshOnly?: boolean;
   page?: number;
   limit?: number;
@@ -244,12 +424,62 @@ export type FetchOpportunitiesBody = {
   providers?: string[];
 };
 
+export type GetCurrentOpportunityIngestionRun200 = {
+  run?: IngestionRun | null;
+};
+
+export type ListOpportunityIngestionRunsParams = {
+  limit?: number;
+};
+
+export type ListOpportunityIngestionRuns200 = {
+  runs?: IngestionRun[];
+};
+
+export type GetOpportunityIngestionRun200 = {
+  run?: IngestionRun;
+};
+
+export type ReconcileExpiredOpportunities200 = {
+  archived?: number;
+};
+
 export type ImportOpportunitiesFromCsvBody = {
   file?: Blob;
 };
 
 export type DeleteOpportunity200 = {
   success?: boolean;
+};
+
+export type GetOpportunityFeedback200 = {
+  feedback?: OpportunityFeedback;
+};
+
+export type GradeOpportunityBodyGrade =
+  (typeof GradeOpportunityBodyGrade)[keyof typeof GradeOpportunityBodyGrade];
+
+export const GradeOpportunityBodyGrade = {
+  excellent: "excellent",
+  good: "good",
+  poor: "poor",
+  spam: "spam",
+} as const;
+
+export type GradeOpportunityBody = {
+  grade: GradeOpportunityBodyGrade;
+  notes?: string;
+};
+
+export type GradeOpportunity200 = {
+  success?: boolean;
+  opportunityId?: string;
+  grade?: string;
+};
+
+export type RescoreOpportunities200 = {
+  success?: boolean;
+  message?: string;
 };
 
 export type UpdateProviderBody = { [key: string]: string };
