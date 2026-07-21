@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { customFetch } from "../../../../../lib/api-client-react/src/custom-fetch";
 import {
   isOpportunityRunActive,
   isOpportunityRunStale,
@@ -37,6 +38,31 @@ describe("persisted opportunity run view", () => {
       opportunityApiErrorMessage({ data: { error: "Database unavailable" } }),
       "Database unavailable",
     );
+  });
+
+  it("surfaces the API details field through generated-client errors", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          error: "Failed to fetch opportunities",
+          details: "operator is not unique: - unknown",
+        }),
+        {
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+    try {
+      await assert.rejects(
+        customFetch("/api/opportunities"),
+        /HTTP 500 Internal Server Error: operator is not unique: - unknown/,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("calculates bounded provider progress", () => {

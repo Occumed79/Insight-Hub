@@ -19,7 +19,12 @@ import {
   startManualIngestion,
 } from "../lib/ingestion/manualIngestion";
 import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
-import { likeAnyText, notLikeAnyText } from "./opportunityListQuery";
+import {
+  boundNumeric,
+  likeAnyText,
+  notLikeAnyText,
+  opportunityListErrorDetail,
+} from "./opportunityListQuery";
 import multer from "multer";
 
 const router = Router();
@@ -446,10 +451,10 @@ router.get("/opportunities", async (req, res) => {
     const feedbackWeight = FEEDBACK_RANK_WEIGHT; // 15
     const rankExpr = sql<number>`(
       COALESCE(${opportunitiesTable.relevanceScore}::numeric, 50) +
-      LEAST(${feedbackWeight}, GREATEST(-${feedbackWeight},
+      LEAST(${boundNumeric(feedbackWeight)}, GREATEST(-(${boundNumeric(feedbackWeight)}),
         CASE
           WHEN ${opportunitiesTable.userConfidence} IS NOT NULL
-          THEN ((${opportunitiesTable.userConfidence}::numeric - 50.0) / 50.0) * ${feedbackWeight}
+          THEN ((${opportunitiesTable.userConfidence}::numeric - 50.0) / 50.0) * ${boundNumeric(feedbackWeight)}
           ELSE 0
         END
       ))
@@ -500,7 +505,10 @@ router.get("/opportunities", async (req, res) => {
     return res.json({ data: page_data, total: Number(totalCount), page: pageNum, limit: limitNum });
   } catch (err) {
     req.log.error(err);
-    return res.status(500).json({ error: "Failed to fetch opportunities" });
+    return res.status(500).json({
+      error: "Failed to fetch opportunities",
+      details: opportunityListErrorDetail(err),
+    });
   }
 });
 

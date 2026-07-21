@@ -28,3 +28,14 @@ export function notLikeAnyText(
 ): SQL {
   return sql`NOT (${likeAnyText(expression, patterns)})`;
 }
+
+/** Keep numeric constants bound while giving PostgreSQL enough type context
+ * for unary operators such as the negative feedback-weight clamp. */
+export function boundNumeric(value: number): SQL<number> {
+  return sql<number>`${value}::numeric`;
+}
+
+export function opportunityListErrorDetail(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Unknown opportunity query error";
+}
