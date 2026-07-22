@@ -52,7 +52,19 @@ export function resolveSpiderConfig(
     throw new Error(
       `Portal-family spider ${config.id} references missing delegate ${config.delegateSpiderId}`,
     );
-  return resolveSpiderConfig(delegate, seen);
+  const resolved = resolveSpiderConfig(delegate, seen);
+  return {
+    ...resolved,
+    id: config.id,
+    sourceId: config.sourceId,
+    enabled: config.enabled,
+    startUrls: config.startUrls.length > 0 ? config.startUrls : resolved.startUrls,
+    allowedHosts:
+      config.allowedHosts.length > 0 ? config.allowedHosts : resolved.allowedHosts,
+    limits: { ...(resolved.limits ?? {}), ...(config.limits ?? {}) },
+    scheduleMinutes: config.scheduleMinutes ?? resolved.scheduleMinutes,
+    notes: config.notes ?? resolved.notes,
+  } as SpiderConfig;
 }
 
 export function resetSpiderRegistryForTests(): void {
