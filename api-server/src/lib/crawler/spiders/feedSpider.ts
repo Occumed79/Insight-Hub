@@ -39,9 +39,17 @@ export class FeedSpider implements PortalSpider {
     let lastModified: string | undefined;
     let sawNotModified = false;
 
-    for (const feedUrl of context.config.startUrls.slice(0, context.limits.maxPages)) {
-      if (context.signal?.aborted)
-        throw context.signal.reason ?? new Error("Feed spider cancelled");
+    for (const feedUrl of context.config.startUrls.slice(
+      0,
+      context.limits.maxPages,
+    )) {
+      if (context.signal?.aborted) {
+        const reason = context.signal.reason;
+        diagnostics.errors.push(
+          reason instanceof Error ? reason.message : "Feed spider cancelled",
+        );
+        break;
+      }
       diagnostics.urlsVisited += 1;
       try {
         const response = await context.fetchText(feedUrl);
@@ -111,7 +119,9 @@ export class FeedSpider implements PortalSpider {
           if (records.length >= context.limits.maxUrls) break;
         }
       } catch (error) {
-        diagnostics.errors.push(error instanceof Error ? error.message : String(error));
+        diagnostics.errors.push(
+          error instanceof Error ? error.message : String(error),
+        );
       }
       if (records.length >= context.limits.maxUrls) break;
     }
@@ -130,7 +140,9 @@ export class FeedSpider implements PortalSpider {
       diagnostics,
       etag: lastEtag,
       lastModified,
-      contentHash: hashes.length ? contentHash(hashes.join("|")) : context.frontier?.contentHash,
+      contentHash: hashes.length
+        ? contentHash(hashes.join("|"))
+        : context.frontier?.contentHash,
     };
   }
 }
