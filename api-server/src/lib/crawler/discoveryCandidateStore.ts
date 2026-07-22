@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { eq, like } from "drizzle-orm";
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
@@ -26,14 +28,16 @@ export interface StoredDiscoveryCandidate {
 }
 
 function candidateKey(sourceId: string, endpointUrl: string): string {
-  const encoded = Buffer.from(endpointUrl).toString("base64url").slice(0, 180);
-  return `${DISCOVERY_KEY_PREFIX}${sourceId}:${encoded}`;
+  const digest = createHash("sha256").update(endpointUrl).digest("hex");
+  return `${DISCOVERY_KEY_PREFIX}${sourceId}:${digest}`;
 }
 
 function parseCandidate(value: string): StoredDiscoveryCandidate | undefined {
   try {
     const parsed = JSON.parse(value) as StoredDiscoveryCandidate;
-    return parsed.sourceId && parsed.endpointUrl && parsed.pageUrl ? parsed : undefined;
+    return parsed.sourceId && parsed.endpointUrl && parsed.pageUrl
+      ? parsed
+      : undefined;
   } catch {
     return undefined;
   }
@@ -49,7 +53,11 @@ export async function saveDiscoveryCandidates(
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") continue;
     const value = candidate as Record<string, unknown>;
-    if (typeof value.endpointUrl !== "string" || typeof value.pageUrl !== "string") continue;
+    if (
+      typeof value.endpointUrl !== "string" ||
+      typeof value.pageUrl !== "string"
+    )
+      continue;
     const key = candidateKey(sourceId, value.endpointUrl);
     const [existingRow] = await db
       .select({ value: settingsTable.value })
@@ -72,12 +80,18 @@ export async function saveDiscoveryCandidates(
           ? value.paginationMechanism
           : undefined,
       queryParameters: Array.isArray(value.queryParameters)
-        ? value.queryParameters.filter((item): item is string => typeof item === "string")
+        ? value.queryParameters.filter(
+            (item): item is string => typeof item === "string",
+          )
         : undefined,
       bodyShape: Array.isArray(value.bodyShape)
-        ? value.bodyShape.filter((item): item is string => typeof item === "string")
+        ? value.bodyShape.filter(
+            (item): item is string => typeof item === "string",
+          )
         : undefined,
-      candidateIdentifierFields: Array.isArray(value.candidateIdentifierFields)
+      candidateIdentifierFields: Array.isArray(
+        value.candidateIdentifierFields,
+      )
         ? value.candidateIdentifierFields.filter(
             (item): item is string => typeof item === "string",
           )
@@ -97,7 +111,9 @@ export async function saveDiscoveryCandidates(
             (item): item is string => typeof item === "string",
           )
         : undefined,
-      candidateDetailLinkFields: Array.isArray(value.candidateDetailLinkFields)
+      candidateDetailLinkFields: Array.isArray(
+        value.candidateDetailLinkFields,
+      )
         ? value.candidateDetailLinkFields.filter(
             (item): item is string => typeof item === "string",
           )
@@ -112,13 +128,18 @@ export async function saveDiscoveryCandidates(
     await db
       .insert(settingsTable)
       .values({ key, value: serialized })
-      .onConflictDoUpdate({ target: settingsTable.key, set: { value: serialized } });
+      .onConflictDoUpdate({
+        target: settingsTable.key,
+        set: { value: serialized },
+      });
     saved += 1;
   }
   return saved;
 }
 
-export async function listDiscoveryCandidates(): Promise<StoredDiscoveryCandidate[]> {
+export async function listDiscoveryCandidates(): Promise<
+  StoredDiscoveryCandidate[]
+> {
   const rows = await db
     .select({ value: settingsTable.value })
     .from(settingsTable)
