@@ -1,0 +1,47 @@
+{
+  "priorSearchBehavior": {
+    "candidateRetrievalRecall": 0.25,
+    "authoritativeVerificationRecall": 0,
+    "precision": 0.6666666666666666,
+    "missedKnownOpportunities": [
+      "https://native.example.gov/bids/prior-year-open",
+      "https://native.example.gov/bids/no-year",
+      "https://native.example.gov/docs/pdf-only.pdf",
+      "https://feed.example.gov/bids/rss-health",
+      "https://feed.example.gov/bids/atom-health",
+      "https://dynamic-api.example.gov/api/opportunities"
+    ],
+    "falsePositives": [
+      "https://native.example.gov/news/award"
+    ],
+    "coverageByPortal": {
+      "native": 1,
+      "feed": 0,
+      "fallback": 1,
+      "dynamic": 0
+    },
+    "nativeVersusSearchFallbackDiscovery": {
+      "native": 1,
+      "searchFallback": 1
+    },
+    "directVerificationRate": 0
+  },
+  "correctedNativeFirstBehavior": {
+    "candidateRetrievalRecall": 1,
+    "authoritativeVerificationRecall": 0.125,
+    "precision": 1,
+    "missedKnownOpportunities": [],
+    "falsePositives": [],
+    "coverageByPortal": {
+      "native": 4,
+      "feed": 2,
+      "fallback": 1,
+      "dynamic": 1
+    },
+    "nativeVersusSearchFallbackDiscovery": {
+      "native": 7,
+      "searchFallback": 1
+    },
+    "directVerificationRate": 0.125
+  }
+}

@@ -13,10 +13,15 @@ import {
 } from "./portal-parsers";
 import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
 import { classifyResult } from "../search/relevance";
+import {
+  discoverNativePortal,
+  type NativeDiscoveryDiagnostics,
+} from "./nativePublicPortalDiscovery";
 import type { PortalFit } from "./portalRelevance";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const NEXT_YEAR = CURRENT_YEAR + 1;
+function runtimeYear(): number {
+  return new Date().getFullYear();
+}
 const DEFAULT_EXECUTION_QUERY_BUDGET = 6;
 const DEFAULT_RESULT_LIMIT = 25;
 const MAX_DOMAINS_PER_QUERY = 6;
@@ -54,6 +59,7 @@ export interface PublicPortalSearchPlanDiagnostics {
   deferredPortalIds: string[];
   queryBundleCount: number;
   selectedQueryCount: number;
+  deferredQueryBundleIndexes: number[];
   fullPlannedQueryCount: number;
   rotationKey: string;
   rotationOffset: number;
@@ -67,7 +73,9 @@ export interface PublicPortalSearchPlan {
   diagnostics: PublicPortalSearchPlanDiagnostics;
 }
 
-function toPublicPortalDiscoverySource(portal: EnrichedDirectRfpPortal): PublicPortalDiscoverySource | null {
+function toPublicPortalDiscoverySource(
+  portal: EnrichedDirectRfpPortal,
+): PublicPortalDiscoverySource | null {
   if (portal.country !== "US") return null;
   if (portal.level !== "state" && portal.level !== "district") return null;
   return {
@@ -90,7 +98,9 @@ export const PUBLIC_PORTAL_DISCOVERY_SOURCES: PublicPortalDiscoverySource[] =
     .filter((portal): portal is PublicPortalDiscoverySource => Boolean(portal));
 
 function eligiblePortals(includeTier3 = true): PublicPortalDiscoverySource[] {
-  return PUBLIC_PORTAL_DISCOVERY_SOURCES.filter((portal) => includeTier3 || portal.tier !== 3);
+  return PUBLIC_PORTAL_DISCOVERY_SOURCES.filter(
+    (portal) => includeTier3 || portal.tier !== 3,
+  );
 }
 
 function hasStaleYearOnly(text: string): boolean {
@@ -99,9 +109,9 @@ function hasStaleYearOnly(text: string): boolean {
   );
   if (years.length === 0) return false;
   const hasCurrentOrFuture = years.some(
-    (year) => year >= CURRENT_YEAR && year <= NEXT_YEAR + 1,
+    (year) => year >= runtimeYear() - 1 && year <= runtimeYear() + 2,
   );
-  const hasOld = years.some((year) => year < CURRENT_YEAR);
+  const hasOld = years.some((year) => year < runtimeYear() - 1);
   return hasOld && !hasCurrentOrFuture;
 }
 
@@ -140,7 +150,9 @@ function isUsefulPortalResult(
   return !classification.rejected;
 }
 
-function countByFit(portals: PublicPortalDiscoverySource[]): Record<string, number> {
+function countByFit(
+  portals: PublicPortalDiscoverySource[],
+): Record<string, number> {
   return portals.reduce<Record<string, number>>((counts, portal) => {
     counts[portal.occumedFit] = (counts[portal.occumedFit] ?? 0) + 1;
     return counts;
@@ -164,7 +176,9 @@ function defaultRotationKey(): string {
   return new Date().toISOString().slice(0, 13);
 }
 
-function buildDomainGroups(portals: PublicPortalDiscoverySource[]): PublicPortalDiscoverySource[][] {
+function buildDomainGroups(
+  portals: PublicPortalDiscoverySource[],
+): PublicPortalDiscoverySource[][] {
   const groups: PublicPortalDiscoverySource[][] = [];
   let current: PublicPortalDiscoverySource[] = [];
 
@@ -197,9 +211,7 @@ function makePlannedQuery(
   const domainExpression = portals
     .map((portal) => `site:${portal.domain}`)
     .join(" OR ");
-  const keywordSupplement = keywords?.trim()
-    ? ` (${keywords.trim()})`
-    : "";
+  const keywordSupplement = keywords?.trim() ? ` (${keywords.trim()})` : "";
   return {
     query: `(${domainExpression}) ${queryBundle}${keywordSupplement}`,
     portalIds: portals.map((portal) => portal.sourceId),
@@ -216,11 +228,12 @@ export function buildPublicPortalSearchPlan(
     fullCoverage?: boolean;
     executionBudget?: number;
     rotationKey?: string;
+    continuationCursor?: number;
   } = {},
 ): PublicPortalSearchPlan {
   const portals = eligiblePortals(options.includeTier3 ?? true);
   const domainGroups = buildDomainGroups(portals);
-  const queryBundles = buildOccuMedSearchQueries(CURRENT_YEAR);
+  const queryBundles = buildOccuMedSearchQueries(runtimeYear());
   const allQueries = domainGroups.flatMap((group) =>
     queryBundles.map((bundle, index) =>
       makePlannedQuery(group, bundle, index, options.keywords),
@@ -228,15 +241,20 @@ export function buildPublicPortalSearchPlan(
   );
 
   const rotationKey = options.rotationKey ?? defaultRotationKey();
-  const rotationOffset =
-    allQueries.length > 0 ? stableHash(rotationKey) % allQueries.length : 0;
-  const rotated = [
-    ...allQueries.slice(rotationOffset),
-    ...allQueries.slice(0, rotationOffset),
-  ];
   const executionBudget = Math.max(
     1,
     options.executionBudget ?? DEFAULT_EXECUTION_QUERY_BUDGET,
+  );
+  const rotationOffset =
+    allQueries.length > 0
+      ? (options.continuationCursor ?? stableHash(rotationKey)) %
+        allQueries.length
+      : 0;
+  const families = Math.max(1, Math.min(domainGroups.length, executionBudget));
+  const rotated = Array.from(
+    { length: allQueries.length },
+    (_, offset) =>
+      allQueries[(rotationOffset + offset * families) % allQueries.length],
   );
   const selectedQueries = options.fullCoverage
     ? rotated
@@ -263,6 +281,11 @@ export function buildPublicPortalSearchPlan(
       deferredPortalIds,
       queryBundleCount: queryBundles.length,
       selectedQueryCount: selectedQueries.length,
+      deferredQueryBundleIndexes: unique(
+        allQueries
+          .filter((query) => !selectedQueries.includes(query))
+          .map((query) => query.queryBundleIndex),
+      ),
       fullPlannedQueryCount: allQueries.length,
       rotationKey,
       rotationOffset,
@@ -292,11 +315,20 @@ function resultToOpportunity(
   url: string,
   snippet: string,
   parsed?: PortalCandidateOpportunity,
+  metadata?: {
+    discoveryMethod?: string;
+    discoveryState?: string;
+    authoritative?: boolean;
+    sourceConfidence?: "high" | "medium" | "low";
+  },
 ): NormalizedOpportunity | null {
   if (!isUsefulPortalResult(title, url, snippet)) return null;
 
   const resultKey = normalizeResultKey(title, parsed?.sourceUrl ?? url);
-  const urlHash = createHash("sha256").update(resultKey).digest("hex").slice(0, 20);
+  const urlHash = createHash("sha256")
+    .update(resultKey)
+    .digest("hex")
+    .slice(0, 20);
   const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(
     snippet,
     title,
@@ -339,13 +371,24 @@ function resultToOpportunity(
     rawData: {
       providerName: "publicPortalProviders",
       providerFamily: "public_portal",
-      providerType: "serper_official_portal_discovery",
-      discoveryMethod: "serper_official_domain",
+      providerType:
+        metadata?.discoveryMethod &&
+        metadata.discoveryMethod !== "serper_fallback"
+          ? "native_official_portal_discovery"
+          : "serper_official_portal_discovery",
+      discoveryMethod:
+        metadata?.discoveryMethod ??
+        (parsed ? "native_official_content" : "serper_official_domain"),
+      discoveryState:
+        metadata?.discoveryState ??
+        (parsed ? "authoritatively_extracted" : "candidate"),
       portalName,
       portalState,
       portalGroup: matchedPortal?.group ?? directPortal?.level ?? "unknown",
       sourceId: directPortal?.id ?? matchedPortal?.sourceId,
-      sourceConfidence: parsed ? "medium" : "low",
+      sourceConfidence:
+        metadata?.sourceConfidence ?? (parsed ? "medium" : "low"),
+      authoritative: Boolean(parsed) && metadata?.authoritative === true,
       occumedFit: directPortal?.occumedFit ?? matchedPortal?.occumedFit,
       buyerSector: directPortal?.buyerSector ?? matchedPortal?.buyerSector,
       occumedServiceCategories:
@@ -355,22 +398,35 @@ function resultToOpportunity(
       dateUnknown: !postedDate,
       tags: [
         "official-procurement-portal",
-        "serper-discovery",
-        "verification-required",
+        metadata?.discoveryMethod === "serper_fallback"
+          ? "serper-discovery"
+          : "native-discovery",
+        metadata?.authoritative ? "authoritative" : "verification-required",
         portalState ? `state:${portalState}` : "state:unknown",
         ...(!postedDate ? ["date-unknown"] : []),
       ],
-      notes: `Search-discovered through Serper on the official portal domain for ${portalName}. This is not direct portal ingestion; verify the source page before relying on the card.`,
+      notes:
+        metadata?.discoveryMethod &&
+        metadata.discoveryMethod !== "serper_fallback"
+          ? `Natively discovered from direct official public content for ${portalName}; authoritative promotion still requires structured extraction evidence.`
+          : `Search-discovered through Serper on the official portal domain for ${portalName}. This is not direct portal ingestion; verify the source page before relying on the card.`,
       parserApplied: Boolean(parsed),
       parsedPortalSourceId: parsed?.portalSourceId,
-      fallback: true,
+      fallback: metadata?.discoveryMethod === "serper_fallback",
     },
   };
 }
 
+export interface PublicPortalDiscoveryRunDiagnostics {
+  native: NativeDiscoveryDiagnostics[];
+  searchPlan: PublicPortalSearchPlanDiagnostics;
+}
+
 export class PublicPortalDiscovery {
+  lastDiagnostics?: PublicPortalDiscoveryRunDiagnostics;
+
   async isConfigured(): Promise<boolean> {
-    return serperProvider.isConfigured();
+    return true;
   }
 
   async search(
@@ -380,32 +436,153 @@ export class PublicPortalDiscovery {
       fullCoverage?: boolean;
       executionBudget?: number;
       rotationKey?: string;
+      continuationCursor?: number;
       signal?: AbortSignal;
+      nativeFetchImpl?: typeof fetch;
     } = {},
   ): Promise<
-    { title: string; url: string; snippet: string; portal: string }[]
+    {
+      title: string;
+      url: string;
+      snippet: string;
+      portal: string;
+      method?: string;
+      verified?: boolean;
+      discoveryMethod?: string;
+      discoveryState?: string;
+      authoritative?: boolean;
+      sourceConfidence?: "high" | "medium" | "low";
+      portalSourceId?: string;
+    }[]
   > {
     const plan = buildPublicPortalSearchPlan(options);
-    if (plan.selectedQueries.length === 0) return [];
+    if (plan.selectedQueries.length === 0) {
+      this.lastDiagnostics = { native: [], searchPlan: plan.diagnostics };
+      return [];
+    }
 
-    const results = await serperProvider.searchMultiple(
-      plan.selectedQueries.map((query) => query.query),
-      10,
-      { signal: options.signal },
+    const nativeDiagnostics: NativeDiscoveryDiagnostics[] = [];
+    const combinedResults: {
+      title: string;
+      url: string;
+      snippet: string;
+      portal: string;
+      method?: string;
+      verified?: boolean;
+      discoveryMethod?: string;
+      discoveryState?: string;
+      authoritative?: boolean;
+      sourceConfidence?: "high" | "medium" | "low";
+      portalSourceId?: string;
+    }[] = [];
+    const selectedPortals = eligiblePortals(
+      options.includeTier3 ?? true,
+    ).filter((portal) =>
+      plan.diagnostics.selectedPortalIds.includes(portal.sourceId),
     );
+
+    for (const portal of selectedPortals) {
+      const startUrl = portal.searchUrl ?? `https://${portal.domain}/`;
+      let relevantNativeCount = 0;
+      try {
+        const native = await discoverNativePortal(startUrl, {
+          signal: options.signal,
+          maxUrls: 12,
+          maxPages: 8,
+          elapsedMs: 5000,
+          fetchImpl: options.nativeFetchImpl,
+        });
+        nativeDiagnostics.push(native.diagnostics);
+        for (const candidate of native.candidates.filter((candidate) =>
+          ["relevant_candidate", "authoritatively_extracted"].includes(
+            candidate.state,
+          ),
+        )) {
+          const item = {
+            title: candidate.title ?? candidate.url,
+            url: candidate.url,
+            snippet: candidate.snippet ?? candidate.title ?? candidate.url,
+            portal: portal.name,
+            method: candidate.method,
+            verified: candidate.state === "authoritatively_extracted",
+            discoveryMethod: candidate.method,
+            discoveryState: candidate.state,
+            authoritative: candidate.state === "authoritatively_extracted",
+            sourceConfidence: candidate.confidence,
+            portalSourceId: portal.sourceId,
+          };
+          if (isUsefulPortalResult(item.title, item.url, item.snippet)) {
+            relevantNativeCount += 1;
+            combinedResults.push(item);
+          }
+        }
+      } catch (error) {
+        nativeDiagnostics.push({
+          nativeSourcesAttempted: ["native_discovery"],
+          sitemapsFound: [],
+          feedsFound: [],
+          listingPagesCrawled: [],
+          dynamicEndpointsDetected: [],
+          searchFallbackQueriesExecuted: [],
+          portalsDeferred: [],
+          queryBundlesDeferred: [],
+          candidateUrlsByMethod: {},
+          candidatesVerifiedFromDirectOfficialContent: 0,
+          errors: [String(error)],
+        });
+      }
+
+      if (relevantNativeCount === 0 && (await serperProvider.isConfigured())) {
+        const fallbackQueries = plan.selectedQueries
+          .filter((query) => query.portalIds.includes(portal.sourceId))
+          .map((query) => query.query);
+        if (fallbackQueries.length > 0) {
+          nativeDiagnostics.push({
+            nativeSourcesAttempted: [],
+            sitemapsFound: [],
+            feedsFound: [],
+            listingPagesCrawled: [],
+            dynamicEndpointsDetected: [],
+            searchFallbackQueriesExecuted: fallbackQueries,
+            portalsDeferred: plan.diagnostics.deferredPortalIds,
+            queryBundlesDeferred: plan.diagnostics.deferredQueryBundleIndexes,
+            candidateUrlsByMethod: {},
+            candidatesVerifiedFromDirectOfficialContent: 0,
+            errors: [],
+          });
+          const fallback = await serperProvider.searchMultiple(
+            fallbackQueries,
+            10,
+            {
+              signal: options.signal,
+            },
+          );
+          for (const result of fallback) {
+            combinedResults.push({
+              title: result.title,
+              url: result.link,
+              snippet: result.snippet,
+              portal: portal.name,
+              method: "serper_fallback",
+              verified: false,
+              discoveryMethod: "serper_fallback",
+              discoveryState: "candidate",
+              authoritative: false,
+              sourceConfidence: "low",
+              portalSourceId: portal.sourceId,
+            });
+          }
+        }
+      }
+    }
+    this.lastDiagnostics = {
+      native: nativeDiagnostics,
+      searchPlan: plan.diagnostics,
+    };
+
     const seen = new Set<string>();
 
-    return results
-      .map((result) => {
-        const domainMatch = result.link.match(/https?:\/\/([^/]+)/);
-        const directPortal = enrichedPortalByDomain(domainMatch?.[1] ?? "");
-        return {
-          title: result.title,
-          url: result.link,
-          snippet: result.snippet,
-          portal: directPortal?.name ?? "Official Public RFP Portal",
-        };
-      })
+    return combinedResults
       .filter((result) =>
         isUsefulPortalResult(result.title, result.url, result.snippet),
       )
@@ -419,7 +596,19 @@ export class PublicPortalDiscovery {
   }
 
   toOpportunities(
-    results: { title: string; url: string; snippet: string; portal: string }[],
+    results: {
+      title: string;
+      url: string;
+      snippet: string;
+      portal: string;
+      method?: string;
+      verified?: boolean;
+      discoveryMethod?: string;
+      discoveryState?: string;
+      authoritative?: boolean;
+      sourceConfidence?: "high" | "medium" | "low";
+      portalSourceId?: string;
+    }[],
   ): NormalizedOpportunity[] {
     return results
       .flatMap((result) => {
@@ -439,7 +628,18 @@ export class PublicPortalDiscovery {
 
         if (parsed.length === 0) {
           return [
-            resultToOpportunity(result.title, result.url, result.snippet),
+            resultToOpportunity(
+              result.title,
+              result.url,
+              result.snippet,
+              undefined,
+              {
+                discoveryMethod: result.discoveryMethod ?? result.method,
+                discoveryState: result.discoveryState,
+                authoritative: result.authoritative,
+                sourceConfidence: result.sourceConfidence,
+              },
+            ),
           ];
         }
         return parsed.map((candidate) =>
@@ -448,6 +648,12 @@ export class PublicPortalDiscovery {
             candidate.sourceUrl ?? result.url,
             candidate.description ?? result.snippet,
             candidate,
+            {
+              discoveryMethod: result.discoveryMethod ?? result.method,
+              discoveryState: result.discoveryState,
+              authoritative: result.authoritative,
+              sourceConfidence: result.sourceConfidence,
+            },
           ),
         );
       })
