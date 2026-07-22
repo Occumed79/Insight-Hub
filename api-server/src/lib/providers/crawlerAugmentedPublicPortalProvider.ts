@@ -192,7 +192,10 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
 
   async getStatus(): Promise<ProviderStatus> {
     const base = await basePublicPortalProvider.getStatus();
-    const frontier = await listCrawlFrontier().catch(() => []);
+    const activeCrawlerSourceIds = new Set(crawlerSources().map((source) => source.id));
+    const frontier = (await listCrawlFrontier().catch(() => [])).filter((state) =>
+      activeCrawlerSourceIds.has(state.sourceId),
+    );
     const crawlerFailures = frontier.filter(
       (state) => state.lastOutcome === "failed" || state.lastOutcome === "blocked",
     );
