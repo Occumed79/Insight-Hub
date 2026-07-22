@@ -45,7 +45,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck workspace
-        run: pnpm run typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run typecheck 2>&1 | tee typecheck.log
+
+      - name: Upload typecheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crawler-typecheck-${{ github.run_id }}
+          path: typecheck.log
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Test crawler foundation
         run: pnpm --filter @workspace/api-server exec node --import tsx --test "src/lib/crawler/__tests__/*.test.ts"
