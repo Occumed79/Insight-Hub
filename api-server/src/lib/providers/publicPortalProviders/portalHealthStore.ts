@@ -180,25 +180,76 @@ export function failedPortalStatus(
   };
 }
 
+function lastCheckedTime(
+  source: PublicPortalSource,
+  statuses: ReadonlyMap<string, PublicPortalSourceRunStatus>,
+): number {
+  return statuses.get(source.id)?.lastCheckedAt.getTime() ?? 0;
+}
+
+function oldestFirst(
+  statuses: ReadonlyMap<string, PublicPortalSourceRunStatus>,
+): (left: PublicPortalSource, right: PublicPortalSource) => number {
+  return (left, right) => {
+    const attemptDifference =
+      lastCheckedTime(left, statuses) - lastCheckedTime(right, statuses);
+    return attemptDifference !== 0
+      ? attemptDifference
+      : left.id.localeCompare(right.id);
+  };
+}
+
+/**
+ * Selects a bounded, durable rotation instead of running every dedicated adapter
+ * at once. Dedicated sources receive most of the batch, while generic sources
+ * retain guaranteed capacity. Oldest/never-checked sources always move to the
+ * front, so repeated manual runs eventually cover the complete catalog.
+ */
 export function selectFairPortalSources(
   sources: readonly PublicPortalSource[],
   statuses: ReadonlyMap<string, PublicPortalSourceRunStatus>,
   rotatingBatchSize: number,
   dedicatedSourceIds: ReadonlySet<string>,
 ): { selected: PublicPortalSource[]; deferred: PublicPortalSource[] } {
-  const dedicated = sources.filter((source) => dedicatedSourceIds.has(source.id));
+  const batchSize = Math.min(
+    sources.length,
+    Math.max(0, Math.floor(rotatingBatchSize)),
+  );
+  if (batchSize === 0) return { selected: [], deferred: [...sources] };
+
+  const compare = oldestFirst(statuses);
+  const dedicated = sources
+    .filter((source) => dedicatedSourceIds.has(source.id))
+    .sort(compare);
   const rotating = sources
     .filter((source) => !dedicatedSourceIds.has(source.id))
-    .sort((left, right) => {
-      const leftAttempt = statuses.get(left.id)?.lastCheckedAt.getTime() ?? 0;
-      const rightAttempt = statuses.get(right.id)?.lastCheckedAt.getTime() ?? 0;
-      if (leftAttempt !== rightAttempt) return leftAttempt - rightAttempt;
-      return left.id.localeCompare(right.id);
-    });
+    .sort(compare);
 
-  const selectedRotating = rotating.slice(0, Math.max(0, rotatingBatchSize));
+  const dedicatedBudget = dedicated.length === 0
+    ? 0
+    : Math.min(
+        dedicated.length,
+        Math.max(1, Math.ceil(batchSize * 0.75)),
+      );
+  const selected = [
+    ...dedicated.slice(0, dedicatedBudget),
+    ...rotating.slice(0, Math.max(0, batchSize - dedicatedBudget)),
+  ];
+
+  if (selected.length < batchSize) {
+    const selectedIds = new Set(selected.map((source) => source.id));
+    const overflow = [...dedicated, ...rotating]
+      .filter((source) => !selectedIds.has(source.id))
+      .sort(compare)
+      .slice(0, batchSize - selected.length);
+    selected.push(...overflow);
+  }
+
+  const selectedIds = new Set(selected.map((source) => source.id));
   return {
-    selected: [...dedicated, ...selectedRotating],
-    deferred: rotating.slice(selectedRotating.length),
+    selected,
+    deferred: sources
+      .filter((source) => !selectedIds.has(source.id))
+      .sort(compare),
   };
 }
