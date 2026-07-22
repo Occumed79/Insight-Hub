@@ -10,6 +10,26 @@ import { mergeSummaryWithVerifiedFacts } from "../lib/summaryEvidence";
 
 const router = Router();
 const summaryCache = new Map<string, any>();
+const SUMMARY_CACHE_MAX = 250;
+
+function getCachedSummary(id: string): any | undefined {
+  const cached = summaryCache.get(id);
+  if (cached) {
+    summaryCache.delete(id);
+    summaryCache.set(id, cached);
+  }
+  return cached;
+}
+
+function cacheSummary(id: string, summary: any): void {
+  summaryCache.delete(id);
+  summaryCache.set(id, summary);
+  while (summaryCache.size > SUMMARY_CACHE_MAX) {
+    const oldest = summaryCache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    summaryCache.delete(oldest);
+  }
+}
 
 function cleanText(value: unknown, max = 4000): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -160,24 +180,24 @@ router.post("/opportunities/:id/summary", async (req, res) => {
       });
     }
     const evidenceFingerprint = summaryEvidenceFingerprint(quality, cleanText(extracted, 6000));
-    const cached = summaryCache.get(opp.id);
+    const cached = getCachedSummary(opp.id);
     if (cached?.evidenceFingerprint === evidenceFingerprint) return res.json({ ...cached, cached: true });
     const base = { ...baseBrief(opp, extracted), classification: quality.classification, solicitationType: opp.type ?? null, evidenceSource: quality.sourceType, sourceAuthority: quality.sourceAuthority, eligible: true, evidenceFingerprint };
     const prompt = promptFor({ ...opp, quality }, base, extracted);
 
     try {
-      if (await groqProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "groq"), base, "groq-v2"); summaryCache.set(opp.id, merged); return res.json(merged); }
+      if (await groqProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "groq"), base, "groq-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "groq summary failed");
     }
 
     try {
-      if (await openrouterProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "openrouter"), base, "openrouter-v2"); summaryCache.set(opp.id, merged); return res.json(merged); }
+      if (await openrouterProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "openrouter"), base, "openrouter-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "openrouter summary failed");
     }
 
-    summaryCache.set(opp.id, base);
+    cacheSummary(opp.id, base);
     return res.json(base);
   } catch (err) {
     req.log.error(err);

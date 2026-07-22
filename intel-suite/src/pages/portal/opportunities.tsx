@@ -878,7 +878,7 @@ export default function OpportunitiesDashboard() {
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
-                      <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.quality?.reasons?.[0] ?? undefined}>
+                      <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
                         <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
                       </div>
                       <div className="flex items-center gap-1">

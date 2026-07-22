@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:ingestion": "node --import tsx --test src/lib/ingestion/__tests__/manualIngestion.test.ts src/lib/providers/__tests__/portalDirectory.test.ts src/routes/__tests__/opportunityIngestionHandlers.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/ingestionApiGeneration.test.ts",
-    "test:quality": "node --import tsx --test src/lib/__tests__/opportunityQuality.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/opportunitySummaryQuality.test.ts src/lib/ingestion/__tests__/manualIngestion.test.ts"
+    "test:quality": "node --import tsx --test src/lib/__tests__/opportunityQuality.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/opportunitySummaryQuality.test.ts src/lib/ingestion/__tests__/manualIngestion.test.ts",
+    "test:evidence": "node --import tsx --test src/lib/__tests__/opportunityEvidence.test.ts src/lib/__tests__/opportunityQuality.test.ts src/routes/__tests__/opportunitySummaryQuality.test.ts src/lib/ingestion/__tests__/manualIngestion.test.ts"
   },
   "dependencies": {
     "@types/multer": "^2.1.0",
@@ -35,4 +36,3 @@
     "tsx": "catalog:"
   }
 }
-
