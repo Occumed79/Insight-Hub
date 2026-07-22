@@ -310,7 +310,10 @@ describe("run retry and deadline rules", () => {
   });
 
   it("bounds provider execution, heartbeats, cancellation, stale recovery, and terminal states in the coordinator", async () => {
-    const source = await readFile(path.resolve(process.cwd(), "src/lib/ingestion/manualIngestion.ts"), "utf8");
+    const source = await readFile(
+      path.resolve(process.cwd(), "src/lib/ingestion/manualIngestion.ts"),
+      "utf8",
+    );
     for (const required of [
       "PROVIDER_DEADLINE_MS = 90_000",
       "RUN_DEADLINE_MS = 20 * 60 * 1000",
@@ -324,27 +327,56 @@ describe("run retry and deadline rules", () => {
       "rfp_run_finalized",
       "completed_with_errors",
       "cancelled",
-    ]) assert.ok(source.includes(required), `missing bounded-run safeguard ${required}`);
+    ])
+      assert.ok(
+        source.includes(required),
+        `missing bounded-run safeguard ${required}`,
+      );
   });
 
   it("passes abort signals through the provider runner into SAM.gov fetches", async () => {
-    const runner = await readFile(path.resolve(process.cwd(), "src/lib/ingestion/providerRunner.ts"), "utf8");
-    const sam = await readFile(path.resolve(process.cwd(), "src/lib/providers/samGov.ts"), "utf8");
+    const runner = await readFile(
+      path.resolve(process.cwd(), "src/lib/ingestion/providerRunner.ts"),
+      "utf8",
+    );
+    const sam = await readFile(
+      path.resolve(process.cwd(), "src/lib/providers/samGov.ts"),
+      "utf8",
+    );
     assert.ok(runner.includes("signal?: AbortSignal"));
     assert.ok(runner.includes("signal: options.signal"));
     assert.ok(sam.includes("fetch(`${baseUrl}?${params}`, { signal })"));
   });
 
   it("bounds public portal sub-runs below the manual provider deadline", async () => {
-    const combined = await readFile(path.resolve(process.cwd(), "src/lib/providers/publicPortalProviders.ts"), "utf8");
-    const catalog = await readFile(path.resolve(process.cwd(), "src/lib/providers/publicPortalProviders/index.ts"), "utf8");
+    const combined = await readFile(
+      path.resolve(process.cwd(), "src/lib/providers/publicPortalProviders.ts"),
+      "utf8",
+    );
+    const catalog = await readFile(
+      path.resolve(
+        process.cwd(),
+        "src/lib/providers/publicPortalProviders/index.ts",
+      ),
+      "utf8",
+    );
     for (const required of [
       "COMBINED_PORTAL_SOURCE_TIMEOUT_MS = 30_000",
       "COMBINED_PORTAL_RUN_TIMEOUT_MS = 75_000",
       "composeAbortSignal",
       "Promise.race([sourcePromise, sourceDeadline])",
-      "Promise.race([allTasks, runDeadline])",
-    ]) assert.ok(combined.includes(required), `missing combined public-portal bound ${required}`);
+      "const allTasks = Promise.allSettled",
+      "const runDeadline = new Promise",
+    ])
+      assert.ok(
+        combined.includes(required),
+        `missing combined public-portal bound ${required}`,
+      );
+    assert.match(
+      combined,
+      /await Promise\.race\(\[\s*allTasks(?:\.then\(\(\) => undefined\))?,\s*runDeadline\s*\]\)/,
+      "missing combined public-portal run deadline race",
+    );
     for (const required of [
       "waitForDomainRateLimit(domain, signal)",
       "fetch(pageUrl,",
@@ -352,9 +384,12 @@ describe("run retry and deadline rules", () => {
       "runWithConcurrency",
       "options.signal",
       "publicPortalDiscovery.search({ keywords: options.keywords, signal })",
-    ]) assert.ok(catalog.includes(required), `missing catalog public-portal cancellation path ${required}`);
+    ])
+      assert.ok(
+        catalog.includes(required),
+        `missing catalog public-portal cancellation path ${required}`,
+      );
   });
-
 
   it("GET /opportunities contains no archive mutation", async () => {
     const routePath = path.resolve(
