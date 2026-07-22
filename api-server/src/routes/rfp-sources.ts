@@ -191,7 +191,7 @@ router.get("/rfp-sources", async (req, res) => {
       broadCount: totals.byOccumedFit.broad ?? 0,
       insufficientEvidenceCount:
         totals.byOccumedFit.insufficient_evidence ?? 0,
-      irrelevantCount: totals.byOccumedFit.irlevant ?? 0,
+      irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
       unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
     },
     relevanceValidation: catalogValidation,
