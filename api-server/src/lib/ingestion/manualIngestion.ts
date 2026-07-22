@@ -695,17 +695,26 @@ async function runProviderWithDeadline(
   const abortFromRun = () => controller.abort(runSignal.reason ?? new RunCancelledError());
   if (runSignal.aborted) abortFromRun();
   runSignal.addEventListener("abort", abortFromRun, { once: true });
-  const timeout = setTimeout(() => controller.abort(new ProviderTimeoutError(PROVIDER_DEADLINE_MS)), PROVIDER_DEADLINE_MS);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      const error = new ProviderTimeoutError(PROVIDER_DEADLINE_MS);
+      controller.abort(error);
+      reject(error);
+    }, PROVIDER_DEADLINE_MS);
+  });
   const beat = setInterval(() => void heartbeat(runId, `Still waiting for ${provider}`, provider), HEARTBEAT_INTERVAL_MS);
+  const providerPromise = fetcher(provider, { ...options, signal: controller.signal });
+  providerPromise.catch(() => undefined);
   try {
-    return await fetcher(provider, { ...options, signal: controller.signal });
+    return await Promise.race([providerPromise, deadline]);
   } catch (error) {
     if (controller.signal.aborted && error instanceof ProviderTimeoutError) throw error;
     if (controller.signal.aborted && controller.signal.reason instanceof ProviderTimeoutError) throw controller.signal.reason;
     if (runSignal.aborted) throw new RunCancelledError();
     throw error;
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
     clearInterval(beat);
     runSignal.removeEventListener("abort", abortFromRun);
   }
