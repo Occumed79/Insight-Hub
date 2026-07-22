@@ -317,6 +317,7 @@ describe("run retry and deadline rules", () => {
       "HEARTBEAT_INTERVAL_MS = 5_000",
       "AbortController",
       "ProviderTimeoutError",
+      "Promise.race",
       "cancellationRequested",
       "cancelManualIngestion",
       "finally",
