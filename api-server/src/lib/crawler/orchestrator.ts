@@ -1,3 +1,4 @@
+import { composeAbortSignal } from "../providers/abortSignals";
 import type { PublicPortalSource } from "../providers/publicPortalProviders/catalog";
 import { saveDiscoveryCandidates } from "./discoveryCandidateStore";
 import {
@@ -72,7 +73,8 @@ export async function runRegisteredSpider(
     throw new Error(
       `Spider ${spiderId} is registered for ${configured.sourceId}, not ${source.id}`,
     );
-  if (!configured.enabled) return deferredResult(source.id, spiderId, configured.kind);
+  if (!configured.enabled)
+    return deferredResult(source.id, spiderId, configured.kind);
 
   const frontier =
     (await loadCrawlFrontier(source.id, spiderId)) ??
@@ -83,8 +85,10 @@ export async function runRegisteredSpider(
 
   const config = resolveSpiderConfig(configured);
   const spider = getSpider(config.kind);
-  if (!spider) throw new Error(`No crawler implementation registered for ${config.kind}`);
+  if (!spider)
+    throw new Error(`No crawler implementation registered for ${config.kind}`);
   const limits = mergedLimits(config.limits);
+  const crawlDeadline = composeAbortSignal(limits.elapsedMs, options.signal);
   const startedAt = Date.now();
   let bytesRead = 0;
   let retries = 0;
@@ -93,7 +97,7 @@ export async function runRegisteredSpider(
     limits,
     allowedHosts: config.allowedHosts,
     frontier,
-    signal: options.signal,
+    signal: crawlDeadline.signal,
     onBytes: (bytes) => {
       bytesRead += bytes;
     },
@@ -114,7 +118,7 @@ export async function runRegisteredSpider(
       source,
       config,
       limits,
-      signal: options.signal,
+      signal: crawlDeadline.signal,
       frontier,
       fetchText,
       recordDiscoveredUrl: (url) => discovered.add(url),
@@ -124,11 +128,6 @@ export async function runRegisteredSpider(
     result.diagnostics.discoveredUrls = Array.from(
       new Set([...result.diagnostics.discoveredUrls, ...discovered]),
     ).slice(0, limits.maxUrls);
-    if (Date.now() - startedAt > limits.elapsedMs) {
-      result.diagnostics.errors.push(
-        `Crawler elapsed budget exceeded after ${Date.now() - startedAt}ms`,
-      );
-    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const now = new Date().toISOString();
@@ -149,6 +148,8 @@ export async function runRegisteredSpider(
         errors: [message],
       },
     };
+  } finally {
+    crawlDeadline.cleanup();
   }
 
   if (
