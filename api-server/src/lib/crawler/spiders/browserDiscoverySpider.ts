@@ -12,7 +12,9 @@ export class BrowserDiscoverySpider implements PortalSpider {
 
   async run(context: SpiderRunContext): Promise<SpiderRunResult> {
     if (context.config.kind !== this.kind)
-      throw new Error(`Browser discovery spider cannot run ${context.config.kind}`);
+      throw new Error(
+        `Browser discovery spider cannot run ${context.config.kind}`,
+      );
     const config = context.config as BrowserDiscoverySpiderConfig;
     const diagnostics: CrawlDiagnostics = {
       spiderId: config.id,
@@ -28,9 +30,19 @@ export class BrowserDiscoverySpider implements PortalSpider {
       dynamicEndpoints: [],
     };
 
-    for (const pageUrl of config.startUrls.slice(0, context.limits.maxPages)) {
-      if (context.signal?.aborted)
-        throw context.signal.reason ?? new Error("Browser discovery spider cancelled");
+    for (const pageUrl of config.startUrls.slice(
+      0,
+      context.limits.maxPages,
+    )) {
+      if (context.signal?.aborted) {
+        const reason = context.signal.reason;
+        diagnostics.errors.push(
+          reason instanceof Error
+            ? reason.message
+            : "Browser discovery spider cancelled",
+        );
+        break;
+      }
       diagnostics.urlsVisited += 1;
       try {
         const endpoints = await auditPublicDynamicEndpoints(pageUrl, {
@@ -38,12 +50,16 @@ export class BrowserDiscoverySpider implements PortalSpider {
             context.limits.elapsedMs,
             context.limits.requestTimeoutMs * 2,
           ),
-          maxResponses: Math.min(config.maxResponses ?? 10, context.limits.maxUrls),
+          maxResponses: Math.min(
+            config.maxResponses ?? 10,
+            context.limits.maxUrls,
+          ),
           allowedApiHosts: config.allowedHosts,
           searchText: config.searchText,
           activateOpportunityTab: config.activateOpportunityTab,
           activateFilterText: config.activateFilterText,
           paginateOnce: config.paginateOnce,
+          signal: context.signal,
         });
         diagnostics.pagesCrawled += 1;
         diagnostics.dynamicEndpoints?.push(...endpoints);
@@ -52,7 +68,9 @@ export class BrowserDiscoverySpider implements PortalSpider {
           diagnostics.discoveredUrls.push(endpoint.endpointUrl);
         }
       } catch (error) {
-        diagnostics.errors.push(error instanceof Error ? error.message : String(error));
+        diagnostics.errors.push(
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
 
