@@ -1,0 +1,57 @@
+name: Crawler Foundation
+
+on:
+  pull_request:
+    paths:
+      - "api-server/src/lib/crawler/**"
+      - "api-server/src/lib/providers/crawlerAugmentedPublicPortalProvider.ts"
+      - "api-server/src/lib/providers/index.ts"
+      - "api-server/src/routes/rfp-sources.ts"
+      - ".github/workflows/crawler-foundation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crawler-foundation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RFP_DATABASE_URL: postgres://user:pass@localhost:5432/rfp_core
+      INTEL_DATABASE_URL: postgres://user:pass@localhost:5432/intel
+      AUTH_DATABASE_URL: postgres://user:pass@localhost:5432/auth
+      APP_DATABASE_URL: postgres://user:pass@localhost:5432/app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck workspace
+        run: pnpm run typecheck
+
+      - name: Test crawler foundation
+        run: pnpm --filter @workspace/api-server exec node --import tsx --test "src/lib/crawler/__tests__/*.test.ts"
+
+      - name: Test existing ingestion pipeline
+        run: pnpm --filter @workspace/api-server run test:ingestion
+
+      - name: Build production applications
+        run: pnpm run build:prod
