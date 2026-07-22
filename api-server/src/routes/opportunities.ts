@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq, ilike, and, or, sql, isNull, desc, count as countFn } from "drizzle-orm";
+import { eq, ilike, and, or, sql, isNull, asc, gt } from "drizzle-orm";
 import { importFromCsv } from "../lib/csv-service";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { groqProvider } from "../lib/providers/groq";
@@ -20,14 +20,13 @@ import {
 } from "../lib/ingestion/manualIngestion";
 import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
 import {
-  boundNumeric,
   likeAnyText,
   notLikeAnyText,
   opportunityListErrorDetail,
   opportunityListSelection,
 } from "./opportunityListQuery";
 import multer from "multer";
-import { classifyOpportunityQuality, opportunityQualityRank, qualityMatchesView, type OpportunityViewMode } from "../lib/opportunityQuality";
+import { OpportunityQualityPageAccumulator, type OpportunityViewMode } from "../lib/opportunityQuality";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -275,7 +274,7 @@ router.get("/opportunities", async (req, res) => {
     } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(200, parseInt(limit) || 50);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit) || 50));
     const offset = (pageNum - 1) * limitNum;
 
     const days = dateRange != null ? parseInt(dateRange) : NaN;
@@ -441,56 +440,30 @@ router.get("/opportunities", async (req, res) => {
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // ── Ranking expression ────────────────────────────────────────────────────
-    //
-    // Primary: COALESCE(relevance_score, 50) + feedback adjustment
-    //   relevance_score is stored 0-100; 50 is the neutral fallback for legacy rows.
-    //   feedback adjustment = ((user_confidence - 50) / 50) * FEEDBACK_RANK_WEIGHT
-    //   clamped to [-FEEDBACK_RANK_WEIGHT, +FEEDBACK_RANK_WEIGHT], 0 when null.
-    //
-    // Secondary: date-unknown rows are pushed below clearly-dated rows at the
-    //   same score (CASE ... THEN 0 ELSE 1 END DESC).
-    //
-    // Tertiary: posted_date DESC (most recent first).
-    const feedbackWeight = FEEDBACK_RANK_WEIGHT; // 15
-    const rankExpr = sql<number>`(
-      COALESCE(${opportunitiesTable.relevanceScore}::numeric, 50) +
-      LEAST(${boundNumeric(feedbackWeight)}, GREATEST(-(${boundNumeric(feedbackWeight)}),
-        CASE
-          WHEN ${opportunitiesTable.userConfidence} IS NOT NULL
-          THEN ((${opportunitiesTable.userConfidence}::numeric - 50.0) / 50.0) * ${boundNumeric(feedbackWeight)}
-          ELSE 0
-        END
-      ))
-    )`;
+    // ── Quality/view pagination ──────────────────────────────────────────────
+    // Classification depends on derived evidence, so scan the SQL-filtered
+    // candidate set in bounded batches, collapse duplicates, then paginate the
+    // selected view. This avoids loading the entire opportunities table while
+    // ensuring view filtering/counting happen before page slicing.
+    const qualityPageAccumulator = new OpportunityQualityPageAccumulator<any>(viewMode, pageNum, limitNum, requestNow);
+    const batchSize = 500;
+    let cursor: string | null = null;
+    for (;;) {
+      const batchWhere = cursor ? and(where, gt(opportunitiesTable.id, cursor)) : where;
+      const batch = await db
+        .select(opportunityListSelection(opportunitiesTable))
+        .from(opportunitiesTable)
+        .where(batchWhere)
+        .orderBy(asc(opportunitiesTable.id))
+        .limit(batchSize);
+      if (batch.length === 0) break;
+      batch.map(mapOpportunity).forEach((row) => qualityPageAccumulator.add(row));
+      if (batch.length < batchSize) break;
+      cursor = String(batch[batch.length - 1].id);
+    }
 
-    const dateKnownExpr = sql<number>`
-      CASE WHEN coalesce(${opportunitiesTable.tags}, '') LIKE '%date-unknown%' THEN 0 ELSE 1 END
-    `;
-
-    // ── Accurate total count (same WHERE, no LIMIT) ───────────────────────────
-    const [{ value: totalCount }] = await db
-      .select({ value: countFn() })
-      .from(opportunitiesTable)
-      .where(where);
-
-    // ── Paginated data query ──────────────────────────────────────────────────
-    const rows = await db
-      .select(opportunityListSelection(opportunitiesTable))
-      .from(opportunitiesTable)
-      .where(where)
-      .orderBy(desc(rankExpr), desc(dateKnownExpr), desc(opportunitiesTable.postedDate))
-      .limit(viewMode === "actionable" ? Math.max(1000, limitNum * 10) : limitNum)
-      .offset(viewMode === "actionable" ? 0 : offset);
-
-    const mappedRows = rows.map(mapOpportunity).map((opp) => ({
-      ...opp,
-      quality: classifyOpportunityQuality(opp, requestNow),
-    }));
-    const filteredRows = mappedRows
-      .filter((opp) => qualityMatchesView(opp.quality, viewMode))
-      .sort((a, b) => opportunityQualityRank(b, b.quality, requestNow) - opportunityQualityRank(a, a.quality, requestNow));
-    let page_data = viewMode === "actionable" ? filteredRows.slice(offset, offset + limitNum) : filteredRows;
+    const qualityPage = qualityPageAccumulator.finish();
+    let page_data = qualityPage.data;
 
     // Optional semantic re-rank applied only to the returned page (not the full DB).
     // Falls back to the SQL order on any failure.
@@ -513,7 +486,7 @@ router.get("/opportunities", async (req, res) => {
       }
     }
 
-    return res.json({ data: page_data, total: viewMode === "actionable" ? filteredRows.length : Number(totalCount), page: pageNum, limit: limitNum, view: viewMode });
+    return res.json({ data: page_data, total: qualityPage.total, page: pageNum, limit: limitNum, view: viewMode });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({
