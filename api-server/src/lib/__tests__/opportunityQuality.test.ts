@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { canonicalSamOpportunityUrl, classifyOpportunityQuality, opportunityQualityRank } from "../opportunityQuality";
+import { buildOpportunityQualityPage, canonicalSamOpportunityUrl, classifyOpportunityQuality, deadlineEndForComparison, opportunityQualityRank, summaryEvidenceFingerprint, summaryIneligibilityReason } from "../opportunityQuality";
 
 const now = new Date("2026-07-21T19:00:00.000Z");
 const base = {
@@ -25,6 +25,20 @@ describe("opportunity quality classifier", () => {
   it("excludes past deadlines and archived records from verified-open", () => {
     assert.equal(classifyOpportunityQuality({ ...base, responseDeadline: new Date("2026-06-16") }, now).classification, "closed");
     assert.equal(classifyOpportunityQuality({ ...base, status: "archived" }, now).classification, "archived");
+  });
+
+  it("does not classify active RFP boilerplate award language as an award", () => {
+    assert.equal(classifyOpportunityQuality({ ...base, description: "The City may award a contract to the highest scoring proposer. Evaluation includes award criteria." }, now).classification, "verified-open");
+  });
+
+  it("classifies a real award notice as an award", () => {
+    assert.equal(classifyOpportunityQuality({ ...base, title: "Notice of Award - Occupational Health Services", description: "Contract awarded to Acme Medical." }, now).classification, "award");
+  });
+
+  it("does not classify official unknown-posted-date records with future deadlines as discovery-only", () => {
+    const quality = classifyOpportunityQuality({ ...base, postedDate: null, tags: ["date-unknown"] }, now);
+    assert.notEqual(quality.classification, "discovery-only");
+    assert.equal(quality.classification, "verified-open");
   });
 
   it("classifies forecasts, awards, tabulations, purchase orders, and contract documents", () => {
@@ -59,6 +73,44 @@ describe("opportunity quality classifier", () => {
     );
   });
 
+  it("filters, deduplicates, counts, and paginates after quality classification", () => {
+    const rows = Array.from({ length: 1105 }, (_, index) => ({
+      ...base,
+      id: `row-${index}`,
+      title: `RFP Occupational Health Services ${index}`,
+      responseDeadline: index % 2 === 0 ? new Date("2026-08-15") : new Date("2026-06-01"),
+      samUrl: `https://sam.gov/opp/example-${index}/view`,
+    }));
+    rows.push({ ...base, id: "ost-a", title: "Q--Presolicitation Notice for OST HRP - SAM.gov", samUrl: "https://sam.gov/workspace/contract/opp/9aec430f1de94cd7bf7687f515b55ed8/view" });
+    rows.push({ ...base, id: "ost-b", title: "Q--Presolicitation Notice for OST HRP - SAM.gov", samUrl: "https://sam.gov/opp/9aec430f1de94cd7bf7687f515b55ed8/view" });
+    const page = buildOpportunityQualityPage(rows, "actionable", 56, 10, now);
+    assert.equal(page.total, 554);
+    assert.ok(page.data.length > 0);
+    assert.ok(page.data.every((row) => row.quality.classification === "verified-open"));
+  });
+
+  it("does not collapse identical solicitation numbers from different agencies", () => {
+    const rows = [
+      { ...base, id: "city-a", agency: "City A", solicitationNumber: "RFP-2026-01", samUrl: null },
+      { ...base, id: "city-b", agency: "City B", solicitationNumber: "RFP-2026-01", samUrl: null },
+    ];
+    assert.equal(buildOpportunityQualityPage(rows, "actionable", 1, 10, now).total, 2);
+  });
+
+  it("keeps date-only deadlines open through the Pacific calendar day", () => {
+    const summerEnd = deadlineEndForComparison("2026-07-21")!;
+    const winterEnd = deadlineEndForComparison("2026-12-21")!;
+    assert.equal(summerEnd.toISOString(), "2026-07-22T06:59:59.999Z");
+    assert.equal(winterEnd.toISOString(), "2026-12-22T07:59:59.999Z");
+    assert.equal(classifyOpportunityQuality({ ...base, responseDeadline: "2026-07-21" }, new Date("2026-07-22T06:30:00.000Z")).classification, "verified-open");
+    assert.equal(deadlineEndForComparison("2026-07-21T15:00:00-07:00")!.toISOString(), "2026-07-21T22:00:00.000Z");
+  });
+
+  it("returns structured summary ineligibility reasons", () => {
+    assert.equal(summaryIneligibilityReason(classifyOpportunityQuality({ ...base, providerName: "serper", tags: ["ai-pending"] }, now), false), "discovery_only");
+    assert.equal(summaryIneligibilityReason(classifyOpportunityQuality({ ...base, responseDeadline: null }, now), false), "future_deadline_unverified");
+  });
+
   it("marks summary eligibility and stale fingerprints deterministically", () => {
     const eligible = classifyOpportunityQuality(base, now);
     const ineligible = classifyOpportunityQuality({ ...base, responseDeadline: null }, now);
@@ -66,6 +118,28 @@ describe("opportunity quality classifier", () => {
     assert.equal(eligible.summaryEligible, true);
     assert.equal(ineligible.summaryEligible, false);
     assert.notEqual(eligible.evidenceFingerprint, changed.evidenceFingerprint);
+    assert.notEqual(
+      eligible.evidenceFingerprint,
+      classifyOpportunityQuality({ ...base, estimatedValue: "25000" }, now).evidenceFingerprint,
+    );
+  });
+
+  it("does not treat a .gov URL alone as sufficient summary evidence", () => {
+    const officialPage = classifyOpportunityQuality({
+      ...base,
+      providerName: "manual",
+      samUrl: "https://example.gov/rfp/occupational-health",
+    }, now);
+    assert.equal(officialPage.classification, "verified-open");
+    assert.equal(officialPage.summaryEligible, false);
+    assert.equal(summaryIneligibilityReason(officialPage, false), "authoritative_content_unavailable");
+  });
+
+  it("invalidates a summary fingerprint when canonical facts or source content change", () => {
+    const quality = classifyOpportunityQuality(base, now);
+    const changedValue = classifyOpportunityQuality({ ...base, estimatedValue: "25000" }, now);
+    assert.notEqual(summaryEvidenceFingerprint(quality, "content-a"), summaryEvidenceFingerprint(changedValue, "content-a"));
+    assert.notEqual(summaryEvidenceFingerprint(quality, "content-a"), summaryEvidenceFingerprint(quality, "content-b"));
   });
 
   it("covers assessment regression fixtures", () => {
