@@ -335,6 +335,27 @@ describe("run retry and deadline rules", () => {
     assert.ok(sam.includes("fetch(`${baseUrl}?${params}`, { signal })"));
   });
 
+  it("bounds public portal sub-runs below the manual provider deadline", async () => {
+    const combined = await readFile(path.resolve(process.cwd(), "src/lib/providers/publicPortalProviders.ts"), "utf8");
+    const catalog = await readFile(path.resolve(process.cwd(), "src/lib/providers/publicPortalProviders/index.ts"), "utf8");
+    for (const required of [
+      "COMBINED_PORTAL_SOURCE_TIMEOUT_MS = 30_000",
+      "COMBINED_PORTAL_RUN_TIMEOUT_MS = 75_000",
+      "composeAbortSignal",
+      "Promise.race([sourcePromise, sourceDeadline])",
+      "Promise.race([allTasks, runDeadline])",
+    ]) assert.ok(combined.includes(required), `missing combined public-portal bound ${required}`);
+    for (const required of [
+      "waitForDomainRateLimit(domain, signal)",
+      "fetch(pageUrl,",
+      "signal: requestSignal.signal",
+      "runWithConcurrency",
+      "options.signal",
+      "publicPortalDiscovery.search({ keywords: options.keywords, signal })",
+    ]) assert.ok(catalog.includes(required), `missing catalog public-portal cancellation path ${required}`);
+  });
+
+
   it("GET /opportunities contains no archive mutation", async () => {
     const routePath = path.resolve(
       process.cwd(),

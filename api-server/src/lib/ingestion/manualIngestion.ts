@@ -50,6 +50,7 @@ const STALE_RUN_RECOVERY_ERROR =
 export const PROVIDER_DEADLINE_MS = 90_000;
 export const RUN_DEADLINE_MS = 20 * 60 * 1000;
 export const HEARTBEAT_INTERVAL_MS = 5_000;
+const activeRunControllers = new Map<string, AbortController>();
 
 export class ActiveIngestionRunError extends Error {
   constructor(public readonly runId: string) {
@@ -673,8 +674,11 @@ async function cancellationRequested(runId: string): Promise<boolean> {
 }
 
 class ProviderTimeoutError extends Error {
-  constructor(public readonly elapsedMs: number) {
-    super(`Provider timed out after ${elapsedMs}ms`);
+  constructor(
+    public readonly provider: string,
+    public readonly elapsedMs: number,
+  ) {
+    super(`Provider ${provider} timed out after ${elapsedMs}ms`);
   }
 }
 class RunCancelledError extends Error {
@@ -698,14 +702,18 @@ async function runProviderWithDeadline(
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {
-      const error = new ProviderTimeoutError(PROVIDER_DEADLINE_MS);
+      const error = new ProviderTimeoutError(provider, PROVIDER_DEADLINE_MS);
       controller.abort(error);
       reject(error);
     }, PROVIDER_DEADLINE_MS);
   });
   const beat = setInterval(() => void heartbeat(runId, `Still waiting for ${provider}`, provider), HEARTBEAT_INTERVAL_MS);
   const providerPromise = fetcher(provider, { ...options, signal: controller.signal });
-  providerPromise.catch(() => undefined);
+  providerPromise.catch((error) => {
+    if (!controller.signal.aborted) {
+      console.warn(JSON.stringify({ event: "rfp_provider_late_rejection", runId, provider, error: conciseError(error) }));
+    }
+  });
   try {
     return await Promise.race([providerPromise, deadline]);
   } catch (error) {
@@ -727,6 +735,7 @@ async function executePersistedRun(
   const run = await getIngestionRun(runId);
   if (!run) throw new Error(`Ingestion run not found: ${runId}`);
   const runController = new AbortController();
+  activeRunControllers.set(runId, runController);
   const runTimeout = setTimeout(() => runController.abort(new RunTimeoutError()), RUN_DEADLINE_MS);
   const runErrors: string[] = [];
   let cancelled = false;
@@ -780,6 +789,7 @@ async function executePersistedRun(
     else runErrors.push(conciseError(error));
   } finally {
     clearTimeout(runTimeout);
+    activeRunControllers.delete(runId);
     const archived = cancelled ? 0 : await reconcileExpiredOpportunities().catch(() => 0);
     const latest = await getIngestionRun(runId);
     const failedSources = latest?.sources.filter((s) => s.status === "failed").length ?? failedCount;
@@ -822,6 +832,7 @@ export async function cancelManualIngestion(runId: string): Promise<IngestionRun
     .update(opportunityIngestionRunsTable)
     .set({ cancellationRequestedAt: now, heartbeatAt: now, updatedAt: now, statusMessage: "Cancellation requested" })
     .where(eq(opportunityIngestionRunsTable.id, runId));
+  activeRunControllers.get(runId)?.abort(new RunCancelledError());
   return (await getIngestionRun(runId))!;
 }
 

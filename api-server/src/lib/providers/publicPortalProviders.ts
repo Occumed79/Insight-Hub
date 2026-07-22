@@ -8,6 +8,7 @@ import { DEEP_RECOVERY_SOURCES, deepRecoveryProviders } from "./deepRecoveryProv
 import { STATEWIDE_PROCUREMENT_SOURCES, statewideProcurementProviders } from "./statewideProcurementPortals";
 import { PublicPortalProvidersProvider, PUBLIC_PORTAL_SOURCES, type PublicPortalSourceRunStatus } from "./publicPortalProviders/index";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
+import { composeAbortSignal } from "./abortSignals";
 import { failedPortalStatus, loadPublicPortalHealth, savePublicPortalHealth, successfulPortalStatus } from "./publicPortalProviders/portalHealthStore";
 
 export * from "./publicPortalProviders/index";
@@ -36,6 +37,8 @@ const CAL_EPROCURE_SOURCES: PublicPortalSource[] = [CAL_EPROCURE_SOURCE];
 const DEEP_RECOVERY_SOURCE_IDS = new Set(DEEP_RECOVERY_SOURCES.map((source) => source.id));
 const STATEWIDE_SHARED_SOURCES = STATEWIDE_PROCUREMENT_SOURCES.filter((source) => !DEEP_RECOVERY_SOURCE_IDS.has(source.id));
 const STATEWIDE_SOURCE_IDS = new Set(STATEWIDE_PROCUREMENT_SOURCES.map((source) => source.id));
+const COMBINED_PORTAL_SOURCE_TIMEOUT_MS = 30_000;
+const COMBINED_PORTAL_RUN_TIMEOUT_MS = 75_000;
 const catalogPortalProvider = new PublicPortalProvidersProvider(
   PUBLIC_PORTAL_SOURCES.filter((source) => !STATEWIDE_SOURCE_IDS.has(source.id)),
 );
@@ -103,12 +106,39 @@ async function runDedicatedSource(
   statuses: Map<string, PublicPortalSourceRunStatus>,
   options: FetchOptions,
   limit: number,
+  timeoutMs = COMBINED_PORTAL_SOURCE_TIMEOUT_MS,
 ): Promise<ProviderFetchResult> {
   if (!provider) return { records: [], total: 0, errors: [`${source.id}: dedicated provider is not registered`] };
   const prior = statuses.get(source.id);
   const checkedAt = new Date();
   try {
-    const result = await provider.fetch({ ...options, limit });
+    const sourceSignal = composeAbortSignal(timeoutMs, options.signal);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const sourceDeadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        const error = new Error(`${source.id} timed out after ${timeoutMs}ms`);
+        sourceSignal.cleanup();
+        reject(error);
+      }, timeoutMs + 250);
+    });
+    const sourcePromise = provider.fetch({ ...options, limit, signal: sourceSignal.signal });
+    sourcePromise.catch(() => undefined);
+    let result: ProviderFetchResult;
+    try {
+      result = await Promise.race([sourcePromise, sourceDeadline]);
+    } catch (error) {
+      if (sourceSignal.signal.aborted) {
+        const reason = sourceSignal.signal.reason;
+        if (reason instanceof DOMException && reason.name === "TimeoutError") {
+          throw new Error(`${source.id} timed out after ${timeoutMs}ms`);
+        }
+        if (reason instanceof Error) throw reason;
+      }
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      sourceSignal.cleanup();
+    }
     const status = result.records.length === 0 && result.errors.length > 0
       ? failedPortalStatus(source, prior, checkedAt, result.errors.join("; "))
       : successfulPortalStatus(source, prior, new Date(), result.records.length, 0);
@@ -151,8 +181,22 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     } catch (error) {
       errors.push(`dedicated-portal-health-load: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const tasks = dedicatedGroups.flatMap((group) => group.sources.map((source) => runDedicatedSource(source, group.providers[source.id], group.statuses, sourceOptions, target)));
-    const settled = await Promise.allSettled([...tasks, catalogPortalProvider.fetch(sourceOptions)]);
+    const runSignal = composeAbortSignal(COMBINED_PORTAL_RUN_TIMEOUT_MS, options.signal);
+    let runTimeout: ReturnType<typeof setTimeout> | undefined;
+    const tasks = dedicatedGroups.flatMap((group) => group.sources.map((source) => runDedicatedSource(source, group.providers[source.id], group.statuses, { ...sourceOptions, signal: runSignal.signal }, target)));
+    const catalogTask = catalogPortalProvider.fetch({ ...sourceOptions, signal: runSignal.signal });
+    const allTasks = Promise.allSettled([...tasks, catalogTask]);
+    const runDeadline = new Promise<PromiseSettledResult<ProviderFetchResult>[]>((resolve) => {
+      runTimeout = setTimeout(() => {
+        errors.push(`publicPortalProviders: combined run deadline reached after ${COMBINED_PORTAL_RUN_TIMEOUT_MS}ms; returning completed portal results`);
+        runSignal.cleanup();
+        resolve([]);
+      }, COMBINED_PORTAL_RUN_TIMEOUT_MS + 500);
+    });
+    allTasks.catch(() => undefined);
+    const settled = await Promise.race([allTasks, runDeadline]);
+    if (runTimeout) clearTimeout(runTimeout);
+    runSignal.cleanup();
     const candidates: NormalizedOpportunity[] = [];
     for (const result of settled) {
       if (result.status === "fulfilled") {
