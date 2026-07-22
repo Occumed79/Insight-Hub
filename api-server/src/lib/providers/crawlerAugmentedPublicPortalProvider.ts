@@ -4,6 +4,7 @@ import {
   initializeCrawlerSpiders,
   listCrawlFrontier,
   runCrawlerForSource,
+  type CrawlFrontierState,
 } from "../crawler";
 import type {
   DataSourceProvider,
@@ -93,7 +94,9 @@ function crawlerSources(): PublicPortalSource[] {
 async function selectedCrawlerSources(): Promise<PublicPortalSource[]> {
   const sources = crawlerSources();
   for (const source of sources) ensureSourceSpiderConfig(source);
-  const frontier = await listCrawlFrontier().catch(() => []);
+  const frontier = await listCrawlFrontier().catch(
+    () => [] as CrawlFrontierState[],
+  );
   const frontierBySource = new Map(
     frontier.map((state) => [state.sourceId, state]),
   );
@@ -192,10 +195,12 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
 
   async getStatus(): Promise<ProviderStatus> {
     const base = await basePublicPortalProvider.getStatus();
-    const activeCrawlerSourceIds = new Set(crawlerSources().map((source) => source.id));
-    const frontier = (await listCrawlFrontier().catch(() => [])).filter((state) =>
-      activeCrawlerSourceIds.has(state.sourceId),
+    const activeCrawlerSourceIds = new Set(
+      crawlerSources().map((source) => source.id),
     );
+    const frontier = (
+      await listCrawlFrontier().catch(() => [] as CrawlFrontierState[])
+    ).filter((state) => activeCrawlerSourceIds.has(state.sourceId));
     const crawlerFailures = frontier.filter(
       (state) => state.lastOutcome === "failed" || state.lastOutcome === "blocked",
     );
