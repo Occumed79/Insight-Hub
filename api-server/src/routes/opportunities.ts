@@ -449,15 +449,15 @@ router.get("/opportunities", async (req, res) => {
     const batchSize = 500;
     let cursor: string | null = null;
     for (;;) {
-      const batchWhere = cursor ? and(where, gt(opportunitiesTable.id, cursor)) : where;
-      const batch = await db
+      const batchWhere: any = cursor ? and(where, gt(opportunitiesTable.id, cursor)) : where;
+      const batch: any[] = await db
         .select(opportunityListSelection(opportunitiesTable))
         .from(opportunitiesTable)
         .where(batchWhere)
         .orderBy(asc(opportunitiesTable.id))
         .limit(batchSize);
       if (batch.length === 0) break;
-      batch.map(mapOpportunity).forEach((row) => qualityPageAccumulator.add(row));
+      batch.map(mapOpportunity).forEach((row: any) => qualityPageAccumulator.add(row));
       if (batch.length < batchSize) break;
       cursor = String(batch[batch.length - 1].id);
     }

@@ -1,5 +1,6 @@
 import type { NormalizedOpportunity } from "../providers/types";
 import type { InsertOpportunity, ProviderKey } from "@workspace/db/schema";
+import { normalizeOpportunityEvidence } from "../opportunityEvidence";
 
 /**
  * Maps every provider name that can appear on a NormalizedOpportunity to a
@@ -52,7 +53,9 @@ const PROVIDER_KEY_MAP: Record<string, ProviderKey> = {
  * Web-sourced records are stored with source = manual unless they map to an
  * explicit first-party source bucket in the current RFP schema.
  */
-export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<InsertOpportunity, "id"> {
+export function normalizedToDbRecord(
+  record: NormalizedOpportunity,
+): Omit<InsertOpportunity, "id"> {
   const sourceMap: Record<string, "sam_gov" | "csv_import" | "manual"> = {
     samGov: "sam_gov",
     texasEsbd: "csv_import",
@@ -66,24 +69,36 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
   };
 
   const rawData = record.rawData ?? {};
+  const evidence = normalizeOpportunityEvidence(record);
   const relevanceScore = rawData.relevanceScore as number | undefined;
   const relevanceReason = rawData.relevanceReason as string | undefined;
   const isFallback = rawData.fallback === true;
   const tagList = Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [];
-  const providerName = typeof rawData.providerName === "string" && rawData.providerName.trim()
-    ? rawData.providerName.trim()
-    : record.source;
-  const notes = typeof rawData.notes === "string" && rawData.notes.trim()
-    ? rawData.notes.trim()
-    : relevanceReason;
-  const rawConfidence = typeof rawData.sourceConfidence === "string" ? rawData.sourceConfidence : null;
-  const sourceConfidence = rawConfidence === "high" || rawConfidence === "medium" || rawConfidence === "low"
-    ? rawConfidence
-    : isFallback
-      ? "low"
-      : relevanceScore != null
-        ? relevanceScore >= 75 ? "high" : relevanceScore >= 50 ? "medium" : "low"
-        : null;
+  const providerName =
+    typeof rawData.providerName === "string" && rawData.providerName.trim()
+      ? rawData.providerName.trim()
+      : record.source;
+  const notes =
+    typeof rawData.notes === "string" && rawData.notes.trim()
+      ? rawData.notes.trim()
+      : relevanceReason;
+  const rawConfidence =
+    typeof rawData.sourceConfidence === "string"
+      ? rawData.sourceConfidence
+      : null;
+  const confidenceRank = { low: 0, medium: 1, high: 2 } as const;
+  const normalizedRawConfidence =
+    rawConfidence === "high" ||
+    rawConfidence === "medium" ||
+    rawConfidence === "low"
+      ? rawConfidence
+      : null;
+  const sourceConfidence =
+    normalizedRawConfidence &&
+    confidenceRank[normalizedRawConfidence] <
+      confidenceRank[evidence.sourceConfidence]
+      ? normalizedRawConfidence
+      : evidence.sourceConfidence;
 
   return {
     noticeId: record.externalId || undefined,
@@ -107,7 +122,8 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
     description: record.description ?? null,
     solicitationNumber: record.solicitationNumber ?? null,
     samUrl: record.sourceUrl ?? null,
-    estimatedValue: record.estimatedValue != null ? String(record.estimatedValue) : null,
+    estimatedValue:
+      record.estimatedValue != null ? String(record.estimatedValue) : null,
     ceilingValue: null,
     floorValue: null,
     awardAmount: record.awardAmount != null ? String(record.awardAmount) : null,
@@ -117,9 +133,23 @@ export function normalizedToDbRecord(record: NormalizedOpportunity): Omit<Insert
     providerName,
     relevanceScore: relevanceScore != null ? String(relevanceScore) : null,
     sourceConfidence,
-    tags: tagList.length > 0 ? JSON.stringify(tagList) : null,
-    notes: isFallback
-      ? `Official portal discovery — parser enrichment pending. ${notes ?? ""}`.trim()
-      : notes ?? null,
+    tags: JSON.stringify(
+      Array.from(
+        new Set([
+          ...tagList.filter((tag) => !tag.startsWith("evidence:")),
+          ...evidence.tags,
+        ]),
+      ),
+    ),
+    notes:
+      [
+        isFallback
+          ? "Official portal discovery — parser enrichment pending."
+          : null,
+        evidence.notes,
+        notes,
+      ]
+        .filter(Boolean)
+        .join(" ") || null,
   };
 }

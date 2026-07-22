@@ -14,6 +14,10 @@ import {
 import type { NormalizedOpportunity } from "../providers/types";
 import { normalizedToDbRecord } from "../search/normalization";
 import {
+  evidenceStrengthFromStored,
+  normalizeOpportunityEvidence,
+} from "../opportunityEvidence";
+import {
   calculateOpportunityDedupeKeys,
   canonicalizeOpportunityUrl,
   decideOpportunityQuality,
@@ -460,12 +464,31 @@ async function processOneRecord(
       { ...record, externalId: providerNativeId },
       keys,
     );
+    let existingCanonical: typeof opportunitiesTable.$inferSelect | undefined;
+    if (existing) {
+      [existingCanonical] = await tx
+        .select()
+        .from(opportunitiesTable)
+        .where(eq(opportunitiesTable.id, existing.opportunityId))
+        .limit(1);
+    }
+    const incomingEvidence = normalizeOpportunityEvidence(record);
+    const existingStrength = existingCanonical
+      ? evidenceStrengthFromStored(existingCanonical)
+      : 0;
+    const incomingWeakensCanonical = Boolean(
+      existingCanonical && incomingEvidence.strength < existingStrength,
+    );
     const protectedDuplicate =
       existing &&
-      shouldProtectCanonicalFromRefresh(
-        existing.matchType,
-        record.rawData?.fallback === true || ["serper", "exa", "tavily", "you", "langsearch", "websearch"].includes(provider),
-      );
+      (incomingWeakensCanonical ||
+        shouldProtectCanonicalFromRefresh(
+          existing.matchType,
+          record.rawData?.fallback === true ||
+            incomingEvidence.evidenceType === "discovery" ||
+            incomingEvidence.evidenceType === "aggregator" ||
+            incomingEvidence.evidenceType === "landing-page",
+        ));
     let opportunityId = existing?.opportunityId ?? randomUUID();
     let created = 0;
     let updated = 0;
@@ -485,8 +508,9 @@ async function processOneRecord(
         .update(opportunityStagingTable)
         .set({
           qualityStatus: "duplicate",
-          qualityReason:
-            record.rawData?.fallback === true
+          qualityReason: incomingWeakensCanonical
+            ? `Weaker ${incomingEvidence.evidenceType} record resolved to stronger canonical opportunity by ${existing.matchType} identity without refreshing canonical fields.`
+            : record.rawData?.fallback === true
               ? `Fallback record resolved to canonical opportunity by ${existing.matchType} identity without refreshing canonical fields.`
               : `Resolved to canonical opportunity by ${existing.matchType} identity.`,
           canonicalOpportunityId: opportunityId,

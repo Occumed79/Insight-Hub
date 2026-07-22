@@ -73,6 +73,13 @@ describe("opportunity quality classifier", () => {
     );
   });
 
+  it("does not canonicalize lookalike SAM.gov hostnames", () => {
+    assert.equal(
+      canonicalSamOpportunityUrl("https://notasam.gov/opp/example/view"),
+      "https://notasam.gov/opp/example/view",
+    );
+  });
+
   it("filters, deduplicates, counts, and paginates after quality classification", () => {
     const rows = Array.from({ length: 1105 }, (_, index) => ({
       ...base,
@@ -91,8 +98,8 @@ describe("opportunity quality classifier", () => {
 
   it("does not collapse identical solicitation numbers from different agencies", () => {
     const rows = [
-      { ...base, id: "city-a", agency: "City A", solicitationNumber: "RFP-2026-01", samUrl: null },
-      { ...base, id: "city-b", agency: "City B", solicitationNumber: "RFP-2026-01", samUrl: null },
+      { ...base, id: "city-a", agency: "City A", solicitationNumber: "RFP-2026-01", samUrl: "https://sam.gov/opp/city-a/view" },
+      { ...base, id: "city-b", agency: "City B", solicitationNumber: "RFP-2026-01", samUrl: "https://sam.gov/opp/city-b/view" },
     ];
     assert.equal(buildOpportunityQualityPage(rows, "actionable", 1, 10, now).total, 2);
   });
@@ -130,9 +137,9 @@ describe("opportunity quality classifier", () => {
       providerName: "manual",
       samUrl: "https://example.gov/rfp/occupational-health",
     }, now);
-    assert.equal(officialPage.classification, "verified-open");
+    assert.equal(officialPage.classification, "needs-verification");
     assert.equal(officialPage.summaryEligible, false);
-    assert.equal(summaryIneligibilityReason(officialPage, false), "authoritative_content_unavailable");
+    assert.equal(summaryIneligibilityReason(officialPage, false), "record_not_actionable");
   });
 
   it("invalidates a summary fingerprint when canonical facts or source content change", () => {
