@@ -7,6 +7,7 @@ import { ionWaveTenantProvider, IONWAVE_COLLECTIBLE_PORTAL_IDS } from "../ionWav
 import { jaggaerSciQuestTenantProvider, JAGGAER_COLLECTIBLE_PORTAL_IDS } from "../jaggaerSciQuest";
 import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "../openGov";
 import { publicPortalDiscovery } from "../publicPortalDiscovery";
+import { composeAbortSignal } from "../abortSignals";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
 import { extractPaginationUrls, extractPdfLinkOpportunities, extractStaticHtmlOpportunities, withPublicPortalMetadata } from "./genericExtractors";
@@ -135,28 +136,56 @@ async function rememberSourceStatus(
   }
 }
 
-async function waitForDomainRateLimit(domain: string): Promise<void> {
+function abortError(label: string, signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  return new Error(`${label} cancelled`);
+}
+
+async function waitForDomainRateLimit(domain: string, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw abortError(`Rate limit wait for ${domain}`, signal);
   const lastFetchAt = lastDomainFetchAt.get(domain) ?? 0;
   const waitMs = Math.max(0, MIN_DOMAIN_INTERVAL_MS - (Date.now() - lastFetchAt));
-  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  if (waitMs > 0) {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => signal?.removeEventListener("abort", onAbort);
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, waitMs);
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(abortError(`Rate limit wait for ${domain}`, signal));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+    });
+  }
+  if (signal?.aborted) throw abortError(`Rate limit wait for ${domain}`, signal);
   lastDomainFetchAt.set(domain, Date.now());
 }
 
-async function withTimeout<T>(task: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+async function withTimeout<T>(task: (signal: AbortSignal) => Promise<T>, timeoutMs: number, label: string, parentSignal?: AbortSignal): Promise<T> {
+  const requestSignal = composeAbortSignal(timeoutMs, parentSignal);
   try {
-    return await Promise.race([
-      task(),
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-      }),
-    ]);
+    return await task(requestSignal.signal);
+  } catch (error) {
+    if (requestSignal.signal.aborted) {
+      const reason = requestSignal.signal.reason;
+      if (reason instanceof DOMException && reason.name === "TimeoutError") {
+        throw new Error(`${label} timed out after ${timeoutMs}ms`);
+      }
+      if (reason instanceof Error) throw reason;
+      throw new Error(`${label} cancelled`);
+    }
+    throw error;
   } finally {
-    if (timer) clearTimeout(timer);
+    requestSignal.cleanup();
   }
 }
 
-async function fetchHtml(source: PublicPortalSource, pageUrl: string, timeoutMs: number): Promise<string> {
+async function fetchHtml(source: PublicPortalSource, pageUrl: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   let domain = source.domain;
   try {
     domain = new URL(pageUrl).hostname.replace(/^www\./, "").toLowerCase();
@@ -165,12 +194,11 @@ async function fetchHtml(source: PublicPortalSource, pageUrl: string, timeoutMs:
     // domain as a safe rate-limit key if a discovered pagination URL is invalid.
   }
 
-  await waitForDomainRateLimit(domain);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  await waitForDomainRateLimit(domain, signal);
+  const requestSignal = composeAbortSignal(timeoutMs, signal);
   try {
     const response = await fetch(pageUrl, {
-      signal: controller.signal,
+      signal: requestSignal.signal,
       headers: {
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "user-agent": "OccuMed-InsightHub/1.0 public procurement catalog crawler (+https://www.occumed.com)",
@@ -179,10 +207,17 @@ async function fetchHtml(source: PublicPortalSource, pageUrl: string, timeoutMs:
     if (!response.ok) throw new Error(`${source.id} returned HTTP ${response.status} for ${pageUrl}`);
     return response.text();
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`${source.id} timed out after ${timeoutMs}ms for ${pageUrl}`);
+    if (requestSignal.signal.aborted) {
+      const reason = requestSignal.signal.reason;
+      if (reason instanceof DOMException && reason.name === "TimeoutError") {
+        throw new Error(`${source.id} timed out after ${timeoutMs}ms for ${pageUrl}`);
+      }
+      if (reason instanceof Error) throw reason;
+      throw new Error(`${source.id} cancelled for ${pageUrl}`);
+    }
     throw error;
   } finally {
-    clearTimeout(timer);
+    requestSignal.cleanup();
   }
 }
 
@@ -204,6 +239,7 @@ async function runPaginatedHtmlSource(
   timeoutMs: number,
   maxPages: number,
   extractor: PortalPageExtractor,
+  signal?: AbortSignal,
 ): Promise<NormalizedOpportunity[]> {
   const startedAt = Date.now();
   const queue: string[] = [source.sourceUrl];
@@ -213,6 +249,7 @@ async function runPaginatedHtmlSource(
   let pagesFetched = 0;
 
   while (queue.length > 0 && pagesFetched < maxPages && records.length < limit) {
+    if (signal?.aborted) throw abortError(source.id, signal);
     const pageUrl = queue.shift();
     if (!pageUrl) break;
     const pageKey = normalizedPageUrl(pageUrl);
@@ -224,7 +261,7 @@ async function runPaginatedHtmlSource(
 
     let html: string;
     try {
-      html = await fetchHtml(source, pageUrl, remainingMs);
+      html = await fetchHtml(source, pageUrl, remainingMs, signal);
     } catch (error) {
       if (records.length === 0) throw error;
       break;
@@ -274,14 +311,15 @@ async function runSource(
   timeoutMs: number,
   maxPages: number,
 ): Promise<NormalizedOpportunity[]> {
+  if (options.signal?.aborted) throw abortError(source.id, options.signal);
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), DEFAULT_LIMIT);
   if (SOURCE_ADAPTERS[source.id]) return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "existing_parser") return runExistingParser(source, { ...options, limit });
   if (source.scraperType === "static_html") {
-    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractStaticHtmlOpportunities);
+    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractStaticHtmlOpportunities, options.signal);
   }
   if (source.scraperType === "pdf_links") {
-    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractPdfLinkOpportunities);
+    return runPaginatedHtmlSource(source, limit, timeoutMs, maxPages, extractPdfLinkOpportunities, options.signal);
   }
   throw new Error(`Source ${source.id} does not have a runnable direct or generic public-page adapter`);
 }
@@ -290,12 +328,14 @@ async function runWithConcurrency<T>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
   let cursor = 0;
   const workerCount = Math.min(Math.max(concurrency, 1), Math.max(items.length, 1));
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (true) {
+        if (signal?.aborted) return;
         const index = cursor;
         cursor += 1;
         if (index >= items.length) return;
@@ -385,9 +425,10 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
       const effectiveTimeout = Math.min(sourceTimeoutMs, remainingMs);
       try {
         const sourceRecords = await withTimeout(
-          () => runSource(source, options, effectiveTimeout, maxPages),
+          (signal) => runSource(source, { ...options, signal }, effectiveTimeout, maxPages),
           effectiveTimeout,
           source.id,
+          options.signal,
         );
         records.push(...sourceRecords);
         const completedAt = new Date();
@@ -409,7 +450,7 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
           errors,
         );
       }
-    });
+    }, options.signal);
 
     const remainingForDiscovery = runDeadlineAt - Date.now();
     if (remainingForDiscovery <= 0) {
@@ -417,9 +458,10 @@ export class PublicPortalProvidersProvider implements DataSourceProvider {
     } else if (await publicPortalDiscovery.isConfigured()) {
       try {
         const discoveredPages = await withTimeout(
-          () => publicPortalDiscovery.search({ keywords: options.keywords }),
+          (signal) => publicPortalDiscovery.search({ keywords: options.keywords, signal }),
           Math.min(sourceTimeoutMs, remainingForDiscovery),
           "serper-official-portal-discovery",
+          options.signal,
         );
         const sourceById = new Map(this.sources.map((source) => [source.id, source]));
         const seen = new Set(records.map(opportunityKey));
