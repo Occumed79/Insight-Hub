@@ -8,7 +8,8 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:ingestion": "node --import tsx --test src/pages/portal/__tests__/opportunityRunView.test.ts"
+    "test:ingestion": "node --import tsx --test src/pages/portal/__tests__/opportunityRunView.test.ts",
+    "test:quality": "node --import tsx --test src/pages/portal/__tests__/opportunityRunView.test.ts src/pages/portal/__tests__/opportunityQualityView.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

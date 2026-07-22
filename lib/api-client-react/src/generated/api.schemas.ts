@@ -404,6 +404,7 @@ export type ListOpportunitiesParams = {
    * When true, exclude results flagged stale or with an unknown date.
    */
   freshOnly?: boolean;
+  view?: "actionable" | "needs-verification" | "closed" | "all";
   page?: number;
   limit?: number;
 };
