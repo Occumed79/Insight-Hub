@@ -35,6 +35,10 @@ function positiveIntegerEnv(
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
 }
 
+function browserDiscoveryEnabled(): boolean {
+  return process.env.PUBLIC_PORTAL_BROWSER_DISCOVERY_ENABLED === "true";
+}
+
 function recordKey(record: NormalizedOpportunity): string {
   if (record.sourceUrl) {
     try {
@@ -81,6 +85,7 @@ function crawlerSources(): PublicPortalSource[] {
         source.enabled &&
         source.verificationStatus === "verified" &&
         CRAWLER_ONLY_SCRAPER_TYPES.has(source.scraperType) &&
+        (source.scraperType !== "playwright_public" || browserDiscoveryEnabled()) &&
         Boolean(defaultSpiderConfigForSource(source)),
     );
 }
@@ -89,12 +94,10 @@ async function selectedCrawlerSources(): Promise<PublicPortalSource[]> {
   const sources = crawlerSources();
   for (const source of sources) ensureSourceSpiderConfig(source);
   const frontier = await listCrawlFrontier().catch(() => []);
-  const lastAttemptBySource = new Map(
-    frontier.map((state) => [
-      state.sourceId,
-      state.lastAttemptAt ? new Date(state.lastAttemptAt).getTime() : 0,
-    ]),
+  const frontierBySource = new Map(
+    frontier.map((state) => [state.sourceId, state]),
   );
+  const now = Date.now();
   const batchSize = positiveIntegerEnv(
     "PUBLIC_PORTAL_CRAWLER_BATCH_SIZE",
     DEFAULT_CRAWLER_BATCH_SIZE,
@@ -102,9 +105,21 @@ async function selectedCrawlerSources(): Promise<PublicPortalSource[]> {
     25,
   );
   return sources
+    .filter((source) => {
+      const state = frontierBySource.get(source.id);
+      if (!state) return true;
+      const nextRunAt = new Date(state.nextRunAt).getTime();
+      return Number.isNaN(nextRunAt) || nextRunAt <= now;
+    })
     .sort((left, right) => {
-      const leftAttempt = lastAttemptBySource.get(left.id) ?? 0;
-      const rightAttempt = lastAttemptBySource.get(right.id) ?? 0;
+      const leftState = frontierBySource.get(left.id);
+      const rightState = frontierBySource.get(right.id);
+      const leftAttempt = leftState?.lastAttemptAt
+        ? new Date(leftState.lastAttemptAt).getTime()
+        : 0;
+      const rightAttempt = rightState?.lastAttemptAt
+        ? new Date(rightState.lastAttemptAt).getTime()
+        : 0;
       return leftAttempt - rightAttempt || left.id.localeCompare(right.id);
     })
     .slice(0, batchSize);
@@ -114,8 +129,10 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
 
   async isConfigured(): Promise<boolean> {
-    return (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
-      crawlerSources().length > 0;
+    return (
+      (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
+      crawlerSources().length > 0
+    );
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
@@ -182,14 +199,15 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
     return {
       ...base,
       healthy: base.healthy && crawlerFailures.length === 0,
-      errorMessage: [
-        base.errorMessage,
-        crawlerFailures.length > 0
-          ? `${crawlerFailures.length} crawler source${crawlerFailures.length === 1 ? " is" : "s are"} currently failing`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join("; ") || undefined,
+      errorMessage:
+        [
+          base.errorMessage,
+          crawlerFailures.length > 0
+            ? `${crawlerFailures.length} crawler source${crawlerFailures.length === 1 ? " is" : "s are"} currently failing`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("; ") || undefined,
       recordCount:
         (base.recordCount ?? 0) +
         frontier.reduce((sum, state) => sum + state.recordsFound, 0),
