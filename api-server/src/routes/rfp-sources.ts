@@ -4,6 +4,8 @@ import {
   listDiscoveryCandidates,
   listSpiderConfigs,
   listSpiderKinds,
+  type CrawlFrontierState,
+  type StoredDiscoveryCandidate,
 } from "../lib/crawler";
 import {
   ENRICHED_DIRECT_RFP_PORTALS,
@@ -131,8 +133,8 @@ router.get("/rfp-sources", async (req, res) => {
   );
 
   const [crawlFrontier, discoveryCandidates] = await Promise.all([
-    listCrawlFrontier().catch(() => []),
-    listDiscoveryCandidates().catch(() => []),
+    listCrawlFrontier().catch(() => [] as CrawlFrontierState[]),
+    listDiscoveryCandidates().catch(() => [] as StoredDiscoveryCandidate[]),
   ]);
   const spiderConfigs = listSpiderConfigs();
   const crawlerSummary = crawlFrontier.reduce(
@@ -189,7 +191,7 @@ router.get("/rfp-sources", async (req, res) => {
       broadCount: totals.byOccumedFit.broad ?? 0,
       insufficientEvidenceCount:
         totals.byOccumedFit.insufficient_evidence ?? 0,
-      irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
+      irrelevantCount: totals.byOccumedFit.irlevant ?? 0,
       unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
     },
     relevanceValidation: catalogValidation,
