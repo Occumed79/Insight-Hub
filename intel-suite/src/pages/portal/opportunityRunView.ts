@@ -3,6 +3,7 @@ export type OpportunityRunStatus =
   | "running"
   | "completed"
   | "completed_with_errors"
+  | "cancelled"
   | "failed";
 
 export const ACTIVE_OPPORTUNITY_RUN_STATUSES = new Set<OpportunityRunStatus>([
@@ -17,11 +18,11 @@ export function isOpportunityRunActive(status: OpportunityRunStatus): boolean {
 }
 
 export function isOpportunityRunStale(
-  updatedAt: string | Date | null | undefined,
+  heartbeatAt: string | Date | null | undefined,
   now = new Date(),
 ): boolean {
-  if (!updatedAt) return false;
-  const timestamp = updatedAt instanceof Date ? updatedAt : new Date(updatedAt);
+  if (!heartbeatAt) return false;
+  const timestamp = heartbeatAt instanceof Date ? heartbeatAt : new Date(heartbeatAt);
   return (
     !Number.isNaN(timestamp.getTime()) &&
     now.getTime() - timestamp.getTime() >= STALE_OPPORTUNITY_RUN_AFTER_MS
@@ -71,5 +72,6 @@ export function opportunityRunMetrics(run: {
     ["Updated", run.updated],
     ["Archived", run.archived],
     ["Errors", run.providerErrors?.length ?? 0],
+    ["Timeouts", (run as { providersTimedOut?: number }).providersTimedOut ?? 0],
   ] as const;
 }

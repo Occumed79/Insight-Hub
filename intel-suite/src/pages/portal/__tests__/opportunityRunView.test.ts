@@ -16,6 +16,7 @@ describe("persisted opportunity run view", () => {
     assert.equal(isOpportunityRunActive("completed"), false);
     assert.equal(isOpportunityRunActive("completed_with_errors"), false);
     assert.equal(isOpportunityRunActive("failed"), false);
+    assert.equal(isOpportunityRunActive("cancelled"), false);
   });
 
   it("detects an abandoned run only after the persisted heartbeat is stale", () => {
@@ -82,6 +83,7 @@ describe("persisted opportunity run view", () => {
       updated: 2,
       archived: 4,
       providerErrors: [{}],
+      providersTimedOut: 2,
     }).map(([label]) => label);
     assert.deepEqual(labels, [
       "Fetched",
@@ -93,6 +95,7 @@ describe("persisted opportunity run view", () => {
       "Updated",
       "Archived",
       "Errors",
+      "Timeouts",
     ]);
   });
 });

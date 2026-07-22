@@ -46,7 +46,10 @@ const RETRYABLE_RUN_STATUSES = new Set([
   "failed",
 ]);
 const STALE_RUN_RECOVERY_ERROR =
-  "Run was marked failed during a later manual start because it had no persisted progress for 30 minutes.";
+  "Run was marked failed during a later manual start because its durable heartbeat expired.";
+export const PROVIDER_DEADLINE_MS = 90_000;
+export const RUN_DEADLINE_MS = 20 * 60 * 1000;
+export const HEARTBEAT_INTERVAL_MS = 5_000;
 
 export class ActiveIngestionRunError extends Error {
   constructor(public readonly runId: string) {
@@ -79,7 +82,7 @@ export interface IngestionRunView extends OpportunityIngestionRun {
 
 export type ProviderFetcher = (
   provider: string,
-  options: { keywords?: string; dateRange?: number },
+  options: { keywords?: string; dateRange?: number; signal?: AbortSignal },
 ) => Promise<ProviderRunResult>;
 
 function conciseError(value: unknown): string {
@@ -184,7 +187,7 @@ async function createPersistedRun(
           inArray(opportunityIngestionRunsTable.status, [
             ...ACTIVE_RUN_STATUSES,
           ]),
-          lte(opportunityIngestionRunsTable.updatedAt, staleBefore),
+          lte(sql`coalesce(${opportunityIngestionRunsTable.heartbeatAt}, ${opportunityIngestionRunsTable.updatedAt})`, staleBefore),
         ),
       )
       .returning({ id: opportunityIngestionRunsTable.id });
@@ -230,6 +233,8 @@ async function createPersistedRun(
       providersTotal: providers.length,
       createdAt: now,
       updatedAt: now,
+      heartbeatAt: now,
+      statusMessage: "Queued manual ingestion run",
     });
     await tx.insert(opportunityIngestionRunSourcesTable).values(
       providers.map((provider, position) => ({
@@ -653,110 +658,128 @@ export async function reconcileExpiredOpportunities(
   return archived.length;
 }
 
+async function heartbeat(runId: string, message: string, currentProvider: string | null): Promise<void> {
+  const now = new Date();
+  await rfpDb
+    .update(opportunityIngestionRunsTable)
+    .set({ heartbeatAt: now, updatedAt: now, statusMessage: message, currentProvider })
+    .where(eq(opportunityIngestionRunsTable.id, runId));
+  console.info(JSON.stringify({ event: "rfp_ingestion_heartbeat", runId, currentProvider, message }));
+}
+
+async function cancellationRequested(runId: string): Promise<boolean> {
+  const run = await getRunRow(runId);
+  return !!run?.cancellationRequestedAt;
+}
+
+class ProviderTimeoutError extends Error {
+  constructor(public readonly elapsedMs: number) {
+    super(`Provider timed out after ${elapsedMs}ms`);
+  }
+}
+class RunCancelledError extends Error {
+  constructor() { super("Ingestion run cancellation requested"); }
+}
+class RunTimeoutError extends Error {
+  constructor() { super(`Ingestion run exceeded ${RUN_DEADLINE_MS}ms maximum duration`); }
+}
+
+async function runProviderWithDeadline(
+  runId: string,
+  provider: string,
+  runSignal: AbortSignal,
+  fetcher: ProviderFetcher,
+  options: { keywords?: string; dateRange?: number },
+): Promise<ProviderRunResult> {
+  const controller = new AbortController();
+  const abortFromRun = () => controller.abort(runSignal.reason ?? new RunCancelledError());
+  if (runSignal.aborted) abortFromRun();
+  runSignal.addEventListener("abort", abortFromRun, { once: true });
+  const timeout = setTimeout(() => controller.abort(new ProviderTimeoutError(PROVIDER_DEADLINE_MS)), PROVIDER_DEADLINE_MS);
+  const beat = setInterval(() => void heartbeat(runId, `Still waiting for ${provider}`, provider), HEARTBEAT_INTERVAL_MS);
+  try {
+    return await fetcher(provider, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && error instanceof ProviderTimeoutError) throw error;
+    if (controller.signal.aborted && controller.signal.reason instanceof ProviderTimeoutError) throw controller.signal.reason;
+    if (runSignal.aborted) throw new RunCancelledError();
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    clearInterval(beat);
+    runSignal.removeEventListener("abort", abortFromRun);
+  }
+}
+
 async function executePersistedRun(
   runId: string,
   providerFetcher: ProviderFetcher,
 ): Promise<void> {
   const run = await getIngestionRun(runId);
   if (!run) throw new Error(`Ingestion run not found: ${runId}`);
-  const now = new Date();
-  await rfpDb
-    .update(opportunityIngestionRunsTable)
-    .set({ status: "running", startedAt: now, updatedAt: now })
-    .where(eq(opportunityIngestionRunsTable.id, runId));
-
+  const runController = new AbortController();
+  const runTimeout = setTimeout(() => runController.abort(new RunTimeoutError()), RUN_DEADLINE_MS);
   const runErrors: string[] = [];
-  for (const source of run.sources) {
-    const startedAt = new Date();
-    await rfpDb.transaction(async (tx) => {
-      await tx
-        .update(opportunityIngestionRunSourcesTable)
-        .set({ status: "running", startedAt, updatedAt: startedAt })
-        .where(eq(opportunityIngestionRunSourcesTable.id, source.id));
-      await tx
-        .update(opportunityIngestionRunsTable)
-        .set({ currentProvider: source.provider, updatedAt: startedAt })
-        .where(eq(opportunityIngestionRunsTable.id, runId));
-    });
-
-    let sourceError: string | null = null;
-    try {
-      const result = await providerFetcher(source.provider, {
-        keywords: run.query ?? undefined,
-        dateRange: run.dateRange ?? undefined,
-      });
+  let cancelled = false;
+  let timedOut = false;
+  let failedCount = 0;
+  let timeoutCount = 0;
+  const now = new Date();
+  try {
+    await rfpDb.update(opportunityIngestionRunsTable).set({ status: "running", startedAt: now, updatedAt: now, heartbeatAt: now, statusMessage: "Manual ingestion started" }).where(eq(opportunityIngestionRunsTable.id, runId));
+    for (const source of run.sources) {
+      if (runController.signal.aborted) throw runController.signal.reason;
+      if (await cancellationRequested(runId)) throw new RunCancelledError();
+      const startedAt = new Date();
+      console.info(JSON.stringify({ event: "rfp_provider_start", runId, provider: source.provider }));
       await rfpDb.transaction(async (tx) => {
-        await tx
-          .update(opportunityIngestionRunSourcesTable)
-          .set({ fetched: result.records.length, updatedAt: new Date() })
-          .where(eq(opportunityIngestionRunSourcesTable.id, source.id));
-        await tx
-          .update(opportunityIngestionRunsTable)
-          .set({
-            fetched: sql`${opportunityIngestionRunsTable.fetched} + ${result.records.length}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(opportunityIngestionRunsTable.id, runId));
+        await tx.update(opportunityIngestionRunSourcesTable).set({ status: "running", startedAt, updatedAt: startedAt }).where(eq(opportunityIngestionRunSourcesTable.id, source.id));
+        await tx.update(opportunityIngestionRunsTable).set({ currentProvider: source.provider, heartbeatAt: startedAt, updatedAt: startedAt, statusMessage: `Running ${source.provider}` }).where(eq(opportunityIngestionRunsTable.id, runId));
       });
-
-      for (const record of result.records) {
-        const counts = await processOneRecord(
-          runId,
-          source.id,
-          source.provider,
-          record,
-        );
-        await incrementProgress(runId, source.id, counts);
+      let sourceError: string | null = null;
+      let sourceStatus: "completed" | "failed" | "timed_out" | "cancelled" = "completed";
+      try {
+        const result = await runProviderWithDeadline(runId, source.provider, runController.signal, providerFetcher, { keywords: run.query ?? undefined, dateRange: run.dateRange ?? undefined });
+        await rfpDb.transaction(async (tx) => {
+          await tx.update(opportunityIngestionRunSourcesTable).set({ fetched: result.records.length, updatedAt: new Date() }).where(eq(opportunityIngestionRunSourcesTable.id, source.id));
+          await tx.update(opportunityIngestionRunsTable).set({ fetched: sql`${opportunityIngestionRunsTable.fetched} + ${result.records.length}`, heartbeatAt: new Date(), updatedAt: new Date(), statusMessage: `Processing ${result.records.length} ${source.provider} records` }).where(eq(opportunityIngestionRunsTable.id, runId));
+        });
+        for (const record of result.records) {
+          if (await cancellationRequested(runId)) throw new RunCancelledError();
+          const counts = await processOneRecord(runId, source.id, source.provider, record);
+          await incrementProgress(runId, source.id, counts);
+        }
+        if (result.errors.length > 0) sourceError = result.errors.map(conciseError).join(" | ").slice(0, 500);
+      } catch (error) {
+        if (error instanceof RunCancelledError) { cancelled = true; sourceStatus = "cancelled"; sourceError = error.message; }
+        else if (error instanceof RunTimeoutError) { timedOut = true; sourceStatus = "timed_out"; sourceError = error.message; }
+        else if (error instanceof ProviderTimeoutError) { sourceStatus = "timed_out"; sourceError = error.message; timeoutCount += 1; }
+        else { sourceStatus = "failed"; sourceError = conciseError(error); failedCount += 1; }
       }
-      if (result.errors.length > 0)
-        sourceError = result.errors.map(conciseError).join(" | ").slice(0, 500);
-    } catch (error) {
-      sourceError = conciseError(error);
+      const completedAt = new Date();
+      if (sourceError) runErrors.push(`[${source.provider}] ${sourceError}`);
+      console.info(JSON.stringify({ event: "rfp_provider_finish", runId, provider: source.provider, status: sourceStatus, elapsedMs: completedAt.getTime() - startedAt.getTime(), error: sourceError }));
+      await rfpDb.transaction(async (tx) => {
+        await tx.update(opportunityIngestionRunSourcesTable).set({ status: sourceStatus, error: sourceError, elapsedMs: completedAt.getTime() - startedAt.getTime(), completedAt, updatedAt: completedAt }).where(eq(opportunityIngestionRunSourcesTable.id, source.id));
+        await tx.update(opportunityIngestionRunsTable).set({ providersCompleted: sql`${opportunityIngestionRunsTable.providersCompleted} + 1`, providersFailed: failedCount, providersTimedOut: timeoutCount, errors: runErrors, heartbeatAt: completedAt, updatedAt: completedAt, statusMessage: `${source.provider} ${sourceStatus}` }).where(eq(opportunityIngestionRunsTable.id, runId));
+      });
+      if (cancelled || timedOut) break;
     }
-
+  } catch (error) {
+    if (error instanceof RunCancelledError) { cancelled = true; runErrors.push(error.message); }
+    else if (error instanceof RunTimeoutError) { timedOut = true; runErrors.push(error.message); }
+    else runErrors.push(conciseError(error));
+  } finally {
+    clearTimeout(runTimeout);
+    const archived = cancelled ? 0 : await reconcileExpiredOpportunities().catch(() => 0);
+    const latest = await getIngestionRun(runId);
+    const failedSources = latest?.sources.filter((s) => s.status === "failed").length ?? failedCount;
+    const timedOutSources = latest?.sources.filter((s) => s.status === "timed_out").length ?? timeoutCount;
+    const finalStatus = cancelled ? "cancelled" : timedOut ? "completed_with_errors" : (failedSources + timedOutSources) === run.sources.length ? "failed" : (failedSources + timedOutSources) > 0 ? "completed_with_errors" : "completed";
     const completedAt = new Date();
-    if (sourceError) runErrors.push(`[${source.provider}] ${sourceError}`);
-    await rfpDb.transaction(async (tx) => {
-      await tx
-        .update(opportunityIngestionRunSourcesTable)
-        .set({
-          status: sourceError ? "failed" : "completed",
-          error: sourceError,
-          completedAt,
-          updatedAt: completedAt,
-        })
-        .where(eq(opportunityIngestionRunSourcesTable.id, source.id));
-      await tx
-        .update(opportunityIngestionRunsTable)
-        .set({
-          providersCompleted: sql`${opportunityIngestionRunsTable.providersCompleted} + 1`,
-          errors: runErrors,
-          updatedAt: completedAt,
-        })
-        .where(eq(opportunityIngestionRunsTable.id, runId));
-    });
+    console.info(JSON.stringify({ event: "rfp_run_finalized", runId, status: finalStatus, errors: runErrors.length }));
+    await rfpDb.update(opportunityIngestionRunsTable).set({ status: finalStatus, currentProvider: null, archived, errors: runErrors, completedAt, heartbeatAt: completedAt, updatedAt: completedAt, statusMessage: `Manual ingestion ${finalStatus}` }).where(eq(opportunityIngestionRunsTable.id, runId));
   }
-
-  const archived = await reconcileExpiredOpportunities();
-  const failedSources = run.sources.length === 0 ? 0 : runErrors.length;
-  const finalStatus =
-    failedSources === run.sources.length
-      ? "failed"
-      : failedSources > 0
-        ? "completed_with_errors"
-        : "completed";
-  const completedAt = new Date();
-  await rfpDb
-    .update(opportunityIngestionRunsTable)
-    .set({
-      status: finalStatus,
-      currentProvider: null,
-      archived,
-      errors: runErrors,
-      completedAt,
-      updatedAt: completedAt,
-    })
-    .where(eq(opportunityIngestionRunsTable.id, runId));
 }
 
 export async function startManualIngestion(
@@ -773,6 +796,7 @@ export async function startManualIngestion(
         .set({
           status: "failed",
           currentProvider: null,
+          statusMessage: STALE_RUN_RECOVERY_ERROR,
           errors: [message],
           completedAt,
           updatedAt: completedAt,
@@ -781,6 +805,15 @@ export async function startManualIngestion(
     });
   });
   return run;
+}
+
+export async function cancelManualIngestion(runId: string): Promise<IngestionRunView> {
+  const now = new Date();
+  await rfpDb
+    .update(opportunityIngestionRunsTable)
+    .set({ cancellationRequestedAt: now, heartbeatAt: now, updatedAt: now, statusMessage: "Cancellation requested" })
+    .where(eq(opportunityIngestionRunsTable.id, runId));
+  return (await getIngestionRun(runId))!;
 }
 
 export async function retryFailedProviders(

@@ -309,6 +309,31 @@ describe("run retry and deadline rules", () => {
     );
   });
 
+  it("bounds provider execution, heartbeats, cancellation, stale recovery, and terminal states in the coordinator", async () => {
+    const source = await readFile(path.resolve(process.cwd(), "src/lib/ingestion/manualIngestion.ts"), "utf8");
+    for (const required of [
+      "PROVIDER_DEADLINE_MS = 90_000",
+      "RUN_DEADLINE_MS = 20 * 60 * 1000",
+      "HEARTBEAT_INTERVAL_MS = 5_000",
+      "AbortController",
+      "ProviderTimeoutError",
+      "cancellationRequested",
+      "cancelManualIngestion",
+      "finally",
+      "rfp_run_finalized",
+      "completed_with_errors",
+      "cancelled",
+    ]) assert.ok(source.includes(required), `missing bounded-run safeguard ${required}`);
+  });
+
+  it("passes abort signals through the provider runner into SAM.gov fetches", async () => {
+    const runner = await readFile(path.resolve(process.cwd(), "src/lib/ingestion/providerRunner.ts"), "utf8");
+    const sam = await readFile(path.resolve(process.cwd(), "src/lib/providers/samGov.ts"), "utf8");
+    assert.ok(runner.includes("signal?: AbortSignal"));
+    assert.ok(runner.includes("signal: options.signal"));
+    assert.ok(sam.includes("fetch(`${baseUrl}?${params}`, { signal })"));
+  });
+
   it("GET /opportunities contains no archive mutation", async () => {
     const routePath = path.resolve(
       process.cwd(),

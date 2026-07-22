@@ -10,6 +10,7 @@ import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
 import {
+  cancelManualIngestion,
   getCurrentIngestionRun,
   getIngestionRun,
   IngestionRunNotRetryableError,
@@ -500,6 +501,9 @@ router.post("/opportunities/fetch", createStartIngestionHandler(startManualInges
 
 router.get("/opportunities/ingestion-runs/current", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     return res.json({ run: await getCurrentIngestionRun() });
   } catch (err) {
     req.log.error(err);
@@ -525,6 +529,17 @@ router.get("/opportunities/ingestion-runs/:runId", async (req, res) => {
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to read ingestion run" });
+  }
+});
+
+router.post("/opportunities/ingestion-runs/:runId/stop", async (req, res) => {
+  try {
+    const run = await cancelManualIngestion(req.params.runId);
+    if (!run) return res.status(404).json({ error: "Ingestion run not found" });
+    return res.status(202).json({ runId: run.id, status: run.status, run });
+  } catch (err) {
+    req.log.error(err);
+    return res.status(500).json({ error: "Failed to stop ingestion run", details: err instanceof Error ? err.message : String(err) });
   }
 });
 

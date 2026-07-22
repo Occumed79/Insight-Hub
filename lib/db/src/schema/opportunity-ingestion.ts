@@ -14,12 +14,12 @@ import { opportunitiesTable } from "./opportunities";
 
 export const opportunityIngestionRunStatusEnum = pgEnum(
   "opportunity_ingestion_run_status",
-  ["queued", "running", "completed", "completed_with_errors", "failed"],
+  ["queued", "running", "completed", "completed_with_errors", "cancelled", "failed"],
 );
 
 export const opportunityIngestionSourceStatusEnum = pgEnum(
   "opportunity_ingestion_source_status",
-  ["queued", "running", "completed", "failed"],
+  ["queued", "running", "completed", "timed_out", "cancelled", "failed"],
 );
 
 export const opportunityQualityStatusEnum = pgEnum(
@@ -39,6 +39,12 @@ export const opportunityIngestionRunsTable = pgTable(
     dateRange: integer("date_range"),
     retryOfRunId: text("retry_of_run_id"),
     currentProvider: text("current_provider"),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    cancellationRequestedAt: timestamp("cancellation_requested_at", { withTimezone: true }),
+    statusMessage: text("status_message"),
+    providersFailed: integer("providers_failed").notNull().default(0),
+    providersTimedOut: integer("providers_timed_out").notNull().default(0),
+    providersSkipped: integer("providers_skipped").notNull().default(0),
     providersCompleted: integer("providers_completed").notNull().default(0),
     providersTotal: integer("providers_total").notNull().default(0),
     fetched: integer("fetched").notNull().default(0),
@@ -90,6 +96,7 @@ export const opportunityIngestionRunSourcesTable = pgTable(
     created: integer("created").notNull().default(0),
     updated: integer("updated").notNull().default(0),
     error: text("error"),
+    elapsedMs: integer("elapsed_ms"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
