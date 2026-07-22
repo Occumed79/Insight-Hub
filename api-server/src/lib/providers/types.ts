@@ -59,6 +59,7 @@ export interface FetchOptions {
   dateRange?: number; // days
   limit?: number;
   offset?: number;
+  signal?: AbortSignal;
 }
 
 /**

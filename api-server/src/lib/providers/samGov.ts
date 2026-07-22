@@ -92,7 +92,8 @@ export class SamGovProvider implements DataSourceProvider {
     extra: Record<string, string>,
     fromDate: Date,
     today: Date,
-    limit: number
+    limit: number,
+    signal?: AbortSignal
   ): Promise<NormalizedOpportunity[]> {
     const params = new URLSearchParams({
       api_key: apiKey,
@@ -103,7 +104,7 @@ export class SamGovProvider implements DataSourceProvider {
       ...extra,
     });
 
-    const response = await fetch(`${baseUrl}?${params}`);
+    const response = await fetch(`${baseUrl}?${params}`, { signal });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(formatSamGovApiError(response.status, text, apiKeySource));
@@ -140,7 +141,7 @@ export class SamGovProvider implements DataSourceProvider {
     // differently across API versions. Post-fetch relevance filtering handles quality instead.
 
     // Primary keyword pull — throws on quota so the caller surfaces the message.
-    const normalized = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { keywords: searchKeywords }, fromDate, today, limit);
+    const normalized = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { keywords: searchKeywords }, fromDate, today, limit, options.signal);
 
     // NAICS/PSC-targeted pulls (PR B): structured codes surface solicitations that
     // keyword search misses (and come with real dates/values). Bounded to keep
@@ -152,7 +153,7 @@ export class SamGovProvider implements DataSourceProvider {
       ...SamGovProvider.OCCUMED_PSC.map((ccode) => ({ ccode })),
     ];
     const targetedResults = await Promise.allSettled(
-      targetedQueries.map((extra) => this.runQuery(apiKey, apiKeyCredential, baseUrl, extra, fromDate, today, limit))
+      targetedQueries.map((extra) => this.runQuery(apiKey, apiKeyCredential, baseUrl, extra, fromDate, today, limit, options.signal))
     );
     for (const r of targetedResults) {
       if (r.status === "fulfilled") {

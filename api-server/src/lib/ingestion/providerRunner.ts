@@ -51,7 +51,7 @@ export function resolveManualProviders(providers?: string[]): string[] {
 
 export async function fetchOneProvider(
   provider: string,
-  options: { keywords?: string; dateRange?: number },
+  options: { keywords?: string; dateRange?: number; signal?: AbortSignal },
 ): Promise<ProviderRunResult> {
   if (WEB_DISCOVERY_PROVIDERS.has(provider)) {
     const result = await webIntelligenceFetch({
@@ -74,6 +74,7 @@ export async function fetchOneProvider(
     keywords: options.keywords,
     dateRange: options.dateRange,
     limit: 100,
+    signal: options.signal,
   });
   return { records: result.records, errors: result.errors ?? [] };
 }

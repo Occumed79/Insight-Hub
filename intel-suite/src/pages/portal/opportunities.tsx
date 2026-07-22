@@ -154,6 +154,12 @@ type IngestionRun = {
   updated: number;
   archived: number;
   updatedAt?: string | null;
+  heartbeatAt?: string | null;
+  startedAt?: string | null;
+  statusMessage?: string | null;
+  providersFailed?: number;
+  providersTimedOut?: number;
+  providersSkipped?: number;
   providerErrors?: Array<{ provider: string; error: string }>;
 };
 
@@ -176,6 +182,7 @@ export default function OpportunitiesDashboard() {
   const [isPurging, setIsPurging] = useState(false);
   const [isStartingFetch, setIsStartingFetch] = useState(false);
   const [isRetryingFetch, setIsRetryingFetch] = useState(false);
+  const [isStoppingFetch, setIsStoppingFetch] = useState(false);
   const [currentRun, setCurrentRun] = useState<IngestionRun | null>(null);
   const [lastStartedRunId, setLastStartedRunId] = useState<string | null>(null);
   const activeRunIds = useRef(new Set<string>());
@@ -252,7 +259,7 @@ export default function OpportunitiesDashboard() {
     const poll = async () => {
       try {
         const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-        const response = await fetch(`${baseUrl}/api/opportunities/ingestion-runs/current`);
+        const response = await fetch(`${baseUrl}/api/opportunities/ingestion-runs/current?ts=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
         if (response.ok) {
           const data = await response.json();
           const run = (data.run ?? null) as IngestionRun | null;
@@ -271,7 +278,7 @@ export default function OpportunitiesDashboard() {
           }
         }
       } catch {}
-      if (!cancelled) timer = setTimeout(poll, currentRun && isOpportunityRunActive(currentRun.status) ? 1500 : 5000);
+      if (!cancelled) timer = currentRun && isOpportunityRunActive(currentRun.status) ? setTimeout(poll, currentRun.providersCompleted > 0 ? 5000 : 3000) : undefined;
     };
     void poll();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
@@ -408,6 +415,23 @@ export default function OpportunitiesDashboard() {
         setIsStartingFetch(false);
       }
     })();
+  };
+
+  const handleStopRun = async () => {
+    if (!currentRun || !isOpportunityRunActive(currentRun.status)) return;
+    setIsStoppingFetch(true);
+    try {
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const response = await fetch(`${baseUrl}/api/opportunities/ingestion-runs/${currentRun.id}/stop`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.details || data.error || "Stop request failed");
+      setCurrentRun(data.run);
+      toast({ title: "Stop requested", description: "The active provider is being cancelled and the run will finalize as cancelled." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Stop failed", description: err.message });
+    } finally {
+      setIsStoppingFetch(false);
+    }
   };
 
   const handleRetryFailedProviders = async () => {
@@ -557,7 +581,7 @@ export default function OpportunitiesDashboard() {
   const currentRunIsStale = Boolean(
     currentRun &&
       isOpportunityRunActive(currentRun.status) &&
-      isOpportunityRunStale(currentRun.updatedAt),
+      isOpportunityRunStale(currentRun.heartbeatAt ?? currentRun.updatedAt),
   );
   const showRunProgress = Boolean(
     currentRun &&
@@ -935,6 +959,9 @@ export default function OpportunitiesDashboard() {
                   </div>
                   <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${opportunityRunProgress(currentRun.providersCompleted, currentRun.providersTotal)}%` }} /></div>
                   {currentRun.currentProvider && <p className="mt-3 text-xs text-white/70">Running: <span className="font-medium text-white">{currentRun.currentProvider}</span></p>}
+                  {currentRun.statusMessage && <p className="mt-2 text-xs text-white/60">{currentRun.statusMessage}</p>}
+                  <p className="mt-2 text-xs text-white/60">Heartbeat: {currentRun.heartbeatAt ? `${Math.max(0, Math.round((Date.now() - new Date(currentRun.heartbeatAt).getTime()) / 1000))}s ago` : "not reported"}{currentRun.startedAt ? ` · Elapsed ${Math.max(0, Math.round((Date.now() - new Date(currentRun.startedAt).getTime()) / 1000))}s` : ""}</p>
+                  {isOpportunityRunActive(currentRun.status) && isOpportunityRunStale(currentRun.heartbeatAt) && <p className="mt-2 text-xs text-amber-300">Heartbeat is stale; the backend should recover this run before another start.</p>}
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                   {opportunityRunMetrics(currentRun).map(([label, value]) => <div key={label} className="rounded-lg border border-white/10 bg-background/30 px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div><div className="mt-0.5 text-base font-semibold">{value}</div></div>)}
@@ -1001,6 +1028,7 @@ export default function OpportunitiesDashboard() {
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setIsFetchOpen(false)} className="hover:bg-white/5">Cancel</Button>
               {showRunProgress && currentRun ? <>
+                {isOpportunityRunActive(currentRun.status) && <Button type="button" variant="destructive" onClick={handleStopRun} disabled={isStoppingFetch}>{isStoppingFetch && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Stop Run</Button>}
                 {!isOpportunityRunActive(currentRun.status) && (currentRun.providerErrors?.length ?? 0) > 0 && <Button type="button" onClick={handleRetryFailedProviders} disabled={isRetryingFetch} className="bg-primary hover:bg-primary/90">{isRetryingFetch && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Retry Failed Providers</Button>}
                 {!isOpportunityRunActive(currentRun.status) && <Button type="button" variant="outline" onClick={() => setLastStartedRunId(null)} className="border-white/10 bg-white/5">New Manual Run</Button>}
               </> : <Button type="submit" disabled={isStartingFetch || fetchProviders.length === 0} className="bg-primary hover:bg-primary/90">

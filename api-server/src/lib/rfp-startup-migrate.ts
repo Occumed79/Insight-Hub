@@ -140,6 +140,31 @@ export async function runRfpStartupMigrations(): Promise<void> {
         AND (feedback.title IS NULL OR feedback.description IS NULL)
     `);
 
+
+
+    // 9. Keep manual ingestion runs durable and cancellable in production.
+    await db.execute(sql`ALTER TYPE opportunity_ingestion_run_status ADD VALUE IF NOT EXISTS 'cancelled'`);
+    await db.execute(sql`ALTER TYPE opportunity_ingestion_source_status ADD VALUE IF NOT EXISTS 'timed_out'`);
+    await db.execute(sql`ALTER TYPE opportunity_ingestion_source_status ADD VALUE IF NOT EXISTS 'cancelled'`);
+    await db.execute(sql`
+      ALTER TABLE opportunity_ingestion_runs
+        ADD COLUMN IF NOT EXISTS heartbeat_at timestamptz,
+        ADD COLUMN IF NOT EXISTS cancellation_requested_at timestamptz,
+        ADD COLUMN IF NOT EXISTS status_message text,
+        ADD COLUMN IF NOT EXISTS providers_failed integer NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS providers_timed_out integer NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS providers_skipped integer NOT NULL DEFAULT 0
+    `);
+    await db.execute(sql`
+      ALTER TABLE opportunity_ingestion_run_sources
+        ADD COLUMN IF NOT EXISTS elapsed_ms integer
+    `);
+    await db.execute(sql`
+      UPDATE opportunity_ingestion_runs
+      SET heartbeat_at = updated_at
+      WHERE heartbeat_at IS NULL
+    `);
+
     logger.info("[rfp] RFP startup migrations complete.");
   } catch (err) {
     logger.error({ err, db: "rfp" }, "[rfp] RFP startup migration failed");
