@@ -402,6 +402,7 @@ class BsoPortalProvider implements DataSourceProvider {
         origin: this.config.origin,
         timeoutMs,
         maxRetries,
+        signal: options.signal,
       });
     } catch (error) {
       return {
@@ -428,6 +429,7 @@ class BsoPortalProvider implements DataSourceProvider {
             origin: this.config.origin,
             timeoutMs,
             maxRetries,
+            signal: options.signal,
           });
           detail = parseDetail(detailHtml);
         } catch (error) {

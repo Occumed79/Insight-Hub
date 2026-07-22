@@ -176,6 +176,7 @@ export class SouthDakotaPostingBoardProvider implements DataSourceProvider {
         origin: ORIGIN,
         timeoutMs,
         maxRetries,
+        signal: options.signal,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

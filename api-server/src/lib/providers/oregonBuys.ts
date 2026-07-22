@@ -357,6 +357,7 @@ export class OregonBuysProvider implements DataSourceProvider {
         origin: OREGON_BUYS_ORIGIN,
         timeoutMs,
         maxRetries,
+        signal: options.signal,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -383,6 +384,7 @@ export class OregonBuysProvider implements DataSourceProvider {
             origin: OREGON_BUYS_ORIGIN,
             timeoutMs,
             maxRetries,
+            signal: options.signal,
           });
           detail = parseOregonBuysDetailHtml(detailHtml);
         } catch (error) {

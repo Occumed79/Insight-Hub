@@ -11,9 +11,11 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { composeAbortSignal } from "./abortSignals";
 
 const TAVILY_BASE = "https://api.tavily.com/search";
 const TAVILY_EXTRACT = "https://api.tavily.com/extract";
+const TAVILY_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface TavilyResult {
   title: string;
@@ -47,21 +49,28 @@ export class TavilyProvider implements DataSourceProvider {
    * Run a single deep research query using Tavily's AI search.
    * Returns structured results with full content (not just snippets).
    */
-  async research(query: string, maxResults: number = 5): Promise<TavilyResult[]> {
+  async research(query: string, maxResults: number = 5, options: { signal?: AbortSignal } = {}): Promise<TavilyResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Tavily API key not configured.");
 
-    const response = await fetch(TAVILY_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: apiKey,
-        query,
-        search_depth: "advanced",
-        include_answer: false,
-        max_results: maxResults,
-      }),
-    });
+    const requestSignal = composeAbortSignal(TAVILY_REQUEST_TIMEOUT_MS, options.signal);
+    let response: Response;
+    try {
+      response = await fetch(TAVILY_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          search_depth: "advanced",
+          include_answer: false,
+          max_results: maxResults,
+        }),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -86,10 +95,10 @@ export class TavilyProvider implements DataSourceProvider {
   /**
    * Run multiple research queries in parallel and return deduplicated results.
    */
-  async researchMultiple(queries: string[], maxResultsPerQuery: number = 5): Promise<TavilyResult[]> {
+  async researchMultiple(queries: string[], maxResultsPerQuery: number = 5, options: { signal?: AbortSignal } = {}): Promise<TavilyResult[]> {
     const batches = await Promise.all(
       queries.map((q) =>
-        this.research(q, maxResultsPerQuery).catch((err) => {
+        this.research(q, maxResultsPerQuery, { signal: options.signal }).catch((err) => {
           console.error(`Tavily research failed for query "${q}": ${err.message}`);
           return [] as TavilyResult[];
         })
@@ -122,15 +131,22 @@ export class TavilyProvider implements DataSourceProvider {
    * Returns an array of { url, rawContent } objects.
    * Tavily extract is optimized for PDFs, procurement portals, and government pages.
    */
-  async extractContent(urls: string[]): Promise<{ url: string; rawContent: string }[]> {
+  async extractContent(urls: string[], options: { signal?: AbortSignal } = {}): Promise<{ url: string; rawContent: string }[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Tavily API key not configured.");
 
-    const response = await fetch(TAVILY_EXTRACT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, urls }),
-    });
+    const requestSignal = composeAbortSignal(TAVILY_REQUEST_TIMEOUT_MS, options.signal);
+    let response: Response;
+    try {
+      response = await fetch(TAVILY_EXTRACT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, urls }),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");

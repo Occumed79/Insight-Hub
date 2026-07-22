@@ -209,7 +209,7 @@ export class InternationalPublicPortalsProvider
     }
 
     const queries = buildInternationalPortalQueries(options.keywords);
-    const results = await serperProvider.searchMultiple(queries, 10);
+    const results = await serperProvider.searchMultiple(queries, 10, { signal: options.signal });
     const seen = new Set<string>();
     const records: NormalizedOpportunity[] = [];
     const limit = Math.min(

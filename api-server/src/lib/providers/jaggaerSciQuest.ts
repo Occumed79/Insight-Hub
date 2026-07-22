@@ -384,6 +384,7 @@ async function collectTenant(tenant: JaggaerTenant, options: FetchOptions): Prom
         origin: tenant.origin,
         timeoutMs,
         maxRetries,
+        signal: options.signal,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

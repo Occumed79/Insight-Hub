@@ -221,6 +221,7 @@ export async function webIntelligenceFetch(options: {
   useWebsearch?: boolean;
   useGroqFetch?: boolean;
   useOpenrouterFetch?: boolean;
+  signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   const errors: string[] = [];
   const stats = {
@@ -356,6 +357,7 @@ export async function webIntelligenceFetch(options: {
                   type: q.type,
                   tbs: q.tbs,
                   page: i + 1,
+                  signal: options.signal,
                 })
                 .catch((err: any) => {
                   serperQueryFailures++;
@@ -377,7 +379,7 @@ export async function webIntelligenceFetch(options: {
       ? exaProvider.isConfigured().then((configured) =>
           configured
             ? exaProvider
-                .searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY)
+                .searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY, { signal: options.signal })
                 .catch((err: any) => {
                   errors.push(`Exa: ${err.message}`);
                   return [];
@@ -387,7 +389,7 @@ export async function webIntelligenceFetch(options: {
       : Promise.resolve([]),
     useTavily
       ? tavilyProvider
-          .researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY)
+          .researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY, { signal: options.signal })
           .catch((err: any) => {
             errors.push(`Tavily: ${err.message}`);
             return [];

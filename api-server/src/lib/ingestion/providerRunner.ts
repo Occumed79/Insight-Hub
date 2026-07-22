@@ -59,6 +59,7 @@ export async function fetchOneProvider(
       useSerper: provider === "serper",
       useTavily: provider === "tavily",
       useExa: provider === "exa",
+      signal: options.signal,
     });
     return {
       records: result.opportunities.filter(
