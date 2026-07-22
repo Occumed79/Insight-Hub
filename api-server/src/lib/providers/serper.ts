@@ -9,8 +9,10 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { composeAbortSignal } from "./abortSignals";
 
 const SERPER_BASE = "https://google.serper.dev";
+const SERPER_REQUEST_TIMEOUT_MS = 20_000;
 
 export interface SerperSearchResult {
   title: string;
@@ -48,7 +50,7 @@ export class SerperProvider implements DataSourceProvider {
   async search(
     query: string,
     num: number = 10,
-    options: { type?: "search" | "news"; tbs?: string; page?: number } = {}
+    options: { type?: "search" | "news"; tbs?: string; page?: number; signal?: AbortSignal } = {}
   ): Promise<SerperSearchResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Serper API key not configured.");
@@ -60,14 +62,21 @@ export class SerperProvider implements DataSourceProvider {
     // Serper paginates via a 1-based `page` field; omit for page 1.
     if (options.page && options.page > 1) body["page"] = options.page;
 
-    const response = await fetch(`${SERPER_BASE}${endpoint}`, {
-      method: "POST",
-      headers: {
-        "X-API-KEY": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const requestSignal = composeAbortSignal(SERPER_REQUEST_TIMEOUT_MS, options.signal);
+    let response: Response;
+    try {
+      response = await fetch(`${SERPER_BASE}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "X-API-KEY": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -93,10 +102,10 @@ export class SerperProvider implements DataSourceProvider {
   /**
    * Run multiple search queries in parallel and return deduplicated results.
    */
-  async searchMultiple(queries: string[], numPerQuery: number = 10): Promise<SerperSearchResult[]> {
+  async searchMultiple(queries: string[], numPerQuery: number = 10, options: { signal?: AbortSignal } = {}): Promise<SerperSearchResult[]> {
     const batches = await Promise.all(
       queries.map((q) =>
-        this.search(q, numPerQuery).catch((err) => {
+        this.search(q, numPerQuery, { signal: options.signal }).catch((err) => {
           console.error(`Serper search failed for query "${q}": ${err.message}`);
           return [] as SerperSearchResult[];
         })

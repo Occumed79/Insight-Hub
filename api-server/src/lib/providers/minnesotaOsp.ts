@@ -264,6 +264,7 @@ export class MinnesotaOspProvider implements DataSourceProvider {
         origin: MINNESOTA_OSP_ORIGIN,
         timeoutMs,
         maxRetries,
+        signal: options.signal,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

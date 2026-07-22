@@ -3,6 +3,7 @@ export interface OfficialPortalRequestOptions {
   origin: string;
   timeoutMs: number;
   maxRetries: number;
+  signal?: AbortSignal;
 }
 
 const NEXT_TEXT = /^(?:next|next page|older|older notices|more results|continue|›|»|→)$/i;
@@ -110,6 +111,9 @@ export async function fetchOfficialPortalText(
   let lastError: unknown;
   for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
     const controller = new AbortController();
+    const abortFromParent = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) abortFromParent();
+    else options.signal?.addEventListener("abort", abortFromParent, { once: true });
     const timer = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
       const response = await fetch(safeUrl, {
@@ -141,6 +145,7 @@ export async function fetchOfficialPortalText(
       await sleep(400 * 2 ** attempt);
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abortFromParent);
     }
   }
 

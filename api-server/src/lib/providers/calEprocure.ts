@@ -106,6 +106,7 @@ function htmlToText(value: string): string {
 function normalizeDateText(value: string): string {
   return value
     .replace(/\u00a0/g, " ")
+    .replace(/(\d)(AM|PM)\b/i, "$1 $2")
     .replace(/\bPST\b/i, "GMT-0800")
     .replace(/\bPDT\b/i, "GMT-0700")
     .replace(/\s+/g, " ")
@@ -221,8 +222,8 @@ export function parseCalEprocureListingHtml(
 
 function labelValue(text: string, labels: readonly string[]): string | undefined {
   for (const label of labels) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*:?\\s*(?:\\n\\s*)?([^\\n]+)`, "i"));
+    const escaped = label.replace(/:\s*$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = text.match(new RegExp(`(?:^|\\n)[ \\t]*${escaped}[ \\t]*:?[ \\t]*(?:\\n[ \\t]*)?([^\\n]+)`, "i"));
     const value = match?.[1]?.trim();
     if (value) return value;
   }

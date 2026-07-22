@@ -214,6 +214,7 @@ export class EunaBonfireProvider implements DataSourceProvider {
     const results = await serperProvider.searchMultiple(
       buildEunaBonfireSearchQueries(options.keywords),
       10,
+      { signal: options.signal },
     );
     const seen = new Set<string>();
     const records: NormalizedOpportunity[] = [];

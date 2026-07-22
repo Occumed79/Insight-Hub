@@ -253,6 +253,7 @@ async function enrichNyScrRow(
   row: NyScrRow,
   timeoutMs: number,
   maxRetries: number,
+  signal?: AbortSignal,
 ): Promise<NyScrRow> {
   if (row.detailRequiresLogin || row.sourceUrl.includes("#")) return row;
   const html = await fetchOfficialPortalText(row.sourceUrl, {
@@ -260,6 +261,7 @@ async function enrichNyScrRow(
     origin: NYSCR_ORIGIN,
     timeoutMs,
     maxRetries,
+    signal,
   });
   const text = stripTags(html);
   if (/log in|sign up to view this opportunity/i.test(text) && !/description:\s*\S/i.test(text)) {
@@ -310,6 +312,7 @@ export class NyScrProvider implements DataSourceProvider {
           origin: NYSCR_ORIGIN,
           timeoutMs,
           maxRetries,
+          signal: options.signal,
         });
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -344,7 +347,7 @@ export class NyScrProvider implements DataSourceProvider {
       }
       attemptedDetails += 1;
       try {
-        enrichedRows.push(await enrichNyScrRow(row, timeoutMs, maxRetries));
+        enrichedRows.push(await enrichNyScrRow(row, timeoutMs, maxRetries, options.signal));
       } catch (error) {
         errors.push(`NYSCR detail ${row.crNumber}: ${error instanceof Error ? error.message : String(error)}`);
         enrichedRows.push(row);

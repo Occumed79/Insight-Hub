@@ -449,7 +449,6 @@ export function enrichedDirectRfpPortalsForOccuMedSearch(
 }
 
 const BLOCKED_EVIDENCE_DOMAINS = [
-  "bidnet",
   "demandstar",
   "highergov",
   "govtribe",
@@ -460,7 +459,6 @@ const BLOCKED_EVIDENCE_DOMAINS = [
   "fedscout",
   "govwin",
   "planetbids",
-  "opengov",
   "periscope",
   "s2g",
   "google.",

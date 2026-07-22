@@ -223,12 +223,14 @@ async function enrichTexasRow(
   row: TexasEsbdRow,
   timeoutMs: number,
   maxRetries: number,
+  signal?: AbortSignal,
 ): Promise<TexasEsbdRow> {
   const html = await fetchOfficialPortalText(row.sourceUrl, {
     label: `Texas ESBD detail ${row.solicitationId}`,
     origin: ESBD_ORIGIN,
     timeoutMs,
     maxRetries,
+    signal,
   });
   const text = stripTags(html);
   return {
@@ -276,6 +278,7 @@ export class TexasEsbdProvider implements DataSourceProvider {
           origin: ESBD_ORIGIN,
           timeoutMs,
           maxRetries,
+          signal: options.signal,
         });
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -308,7 +311,7 @@ export class TexasEsbdProvider implements DataSourceProvider {
         continue;
       }
       try {
-        enrichedRows.push(await enrichTexasRow(row, timeoutMs, maxRetries));
+        enrichedRows.push(await enrichTexasRow(row, timeoutMs, maxRetries, options.signal));
       } catch (error) {
         errors.push(`Texas ESBD detail ${row.solicitationId}: ${error instanceof Error ? error.message : String(error)}`);
         enrichedRows.push(row);

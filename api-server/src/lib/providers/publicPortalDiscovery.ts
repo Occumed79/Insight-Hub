@@ -380,6 +380,7 @@ export class PublicPortalDiscovery {
       fullCoverage?: boolean;
       executionBudget?: number;
       rotationKey?: string;
+      signal?: AbortSignal;
     } = {},
   ): Promise<
     { title: string; url: string; snippet: string; portal: string }[]
@@ -390,6 +391,7 @@ export class PublicPortalDiscovery {
     const results = await serperProvider.searchMultiple(
       plan.selectedQueries.map((query) => query.query),
       10,
+      { signal: options.signal },
     );
     const seen = new Set<string>();
 

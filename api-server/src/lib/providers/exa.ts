@@ -11,8 +11,10 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { composeAbortSignal } from "./abortSignals";
 
 const EXA_BASE = "https://api.exa.ai";
+const EXA_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface ExaResult {
   id: string;
@@ -50,18 +52,25 @@ export class ExaProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  private async request<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  private async request<T>(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Exa API key not configured.");
 
-    const response = await fetch(`${EXA_BASE}${path}`, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const requestSignal = composeAbortSignal(EXA_REQUEST_TIMEOUT_MS, signal);
+    let response: Response;
+    try {
+      response = await fetch(`${EXA_BASE}${path}`, {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -85,6 +94,7 @@ export class ExaProvider implements DataSourceProvider {
       includeDomains?: string[];
       excludeDomains?: string[];
       category?: "news" | "research paper" | "company" | "people";
+      signal?: AbortSignal;
     } = {}
   ): Promise<ExaResult[]> {
     const {
@@ -95,6 +105,7 @@ export class ExaProvider implements DataSourceProvider {
       includeDomains,
       excludeDomains,
       category,
+      signal,
     } = options;
 
     const body: Record<string, unknown> = {
@@ -109,7 +120,7 @@ export class ExaProvider implements DataSourceProvider {
     if (excludeDomains?.length) body["excludeDomains"] = excludeDomains;
     if (category) body["category"] = category;
 
-    const data = await this.request<ExaSearchResponse>("/search", body);
+    const data = await this.request<ExaSearchResponse>("/search", body, signal);
     return data.results ?? [];
   }
 
@@ -119,7 +130,8 @@ export class ExaProvider implements DataSourceProvider {
   async searchWithContent(
     query: string,
     numResults = 5,
-    maxChars = 10000
+    maxChars = 10000,
+    options: { signal?: AbortSignal } = {},
   ): Promise<ExaResult[]> {
     const body: Record<string, unknown> = {
       query,
@@ -128,25 +140,32 @@ export class ExaProvider implements DataSourceProvider {
       contents: { text: { max_characters: maxChars } },
     };
 
-    const data = await this.request<ExaSearchResponse>("/search", body);
+    const data = await this.request<ExaSearchResponse>("/search", body, options.signal);
     return data.results ?? [];
   }
 
   /**
    * Get full content for known URLs.
    */
-  async getContents(urls: string[], maxChars = 10000): Promise<ExaResult[]> {
+  async getContents(urls: string[], maxChars = 10000, options: { signal?: AbortSignal } = {}): Promise<ExaResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return [];
 
-    const response = await fetch(`${EXA_BASE}/contents`, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        urls,
-        text: { max_characters: maxChars },
-      }),
-    });
+    const requestSignal = composeAbortSignal(EXA_REQUEST_TIMEOUT_MS, options.signal);
+    let response: Response;
+    try {
+      response = await fetch(`${EXA_BASE}/contents`, {
+        method: "POST",
+        headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          urls,
+          text: { max_characters: maxChars },
+        }),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) return [];
 
@@ -157,9 +176,9 @@ export class ExaProvider implements DataSourceProvider {
   /**
    * Run multiple search queries in parallel and deduplicate by URL.
    */
-  async searchMultiple(queries: string[], numPerQuery = 8): Promise<ExaResult[]> {
+  async searchMultiple(queries: string[], numPerQuery = 8, options: { signal?: AbortSignal } = {}): Promise<ExaResult[]> {
     const batches = await Promise.allSettled(
-      queries.map((q) => this.search(q, { numResults: numPerQuery }))
+      queries.map((q) => this.search(q, { numResults: numPerQuery, signal: options.signal }))
     );
 
     const seen = new Set<string>();
