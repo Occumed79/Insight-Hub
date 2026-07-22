@@ -27,6 +27,7 @@ import {
   opportunityListSelection,
 } from "./opportunityListQuery";
 import multer from "multer";
+import { classifyOpportunityQuality, opportunityQualityRank, qualityMatchesView, type OpportunityViewMode } from "../lib/opportunityQuality";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -269,7 +270,7 @@ router.get("/opportunities", async (req, res) => {
   try {
     const {
       search, status, type, naicsCode, agency, source,
-      dateRange, freshOnly,
+      dateRange, freshOnly, view,
       page = "1", limit = "50",
     } = req.query as Record<string, string>;
 
@@ -282,6 +283,8 @@ router.get("/opportunities", async (req, res) => {
       ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       : null;
     const onlyFresh = freshOnly === "true" || freshOnly === "1";
+    const viewMode: OpportunityViewMode = view === "needs-verification" || view === "closed" || view === "all" ? view : "actionable";
+    const requestNow = new Date();
 
     // ── Build WHERE conditions ────────────────────────────────────────────────
 
@@ -477,10 +480,17 @@ router.get("/opportunities", async (req, res) => {
       .from(opportunitiesTable)
       .where(where)
       .orderBy(desc(rankExpr), desc(dateKnownExpr), desc(opportunitiesTable.postedDate))
-      .limit(limitNum)
-      .offset(offset);
+      .limit(viewMode === "actionable" ? Math.max(1000, limitNum * 10) : limitNum)
+      .offset(viewMode === "actionable" ? 0 : offset);
 
-    let page_data = rows.map(mapOpportunity);
+    const mappedRows = rows.map(mapOpportunity).map((opp) => ({
+      ...opp,
+      quality: classifyOpportunityQuality(opp, requestNow),
+    }));
+    const filteredRows = mappedRows
+      .filter((opp) => qualityMatchesView(opp.quality, viewMode))
+      .sort((a, b) => opportunityQualityRank(b, b.quality, requestNow) - opportunityQualityRank(a, a.quality, requestNow));
+    let page_data = viewMode === "actionable" ? filteredRows.slice(offset, offset + limitNum) : filteredRows;
 
     // Optional semantic re-rank applied only to the returned page (not the full DB).
     // Falls back to the SQL order on any failure.
@@ -503,7 +513,7 @@ router.get("/opportunities", async (req, res) => {
       }
     }
 
-    return res.json({ data: page_data, total: Number(totalCount), page: pageNum, limit: limitNum });
+    return res.json({ data: page_data, total: viewMode === "actionable" ? filteredRows.length : Number(totalCount), page: pageNum, limit: limitNum, view: viewMode });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({

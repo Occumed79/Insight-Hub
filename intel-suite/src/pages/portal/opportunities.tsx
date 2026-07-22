@@ -124,7 +124,8 @@ export default function OpportunitiesDashboard() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | "active" | "archived">("active");
+  const [status, setStatus] = useState<"all" | "active" | "archived">("all");
+  const [qualityView, setQualityView] = useState<"actionable" | "needs-verification" | "closed" | "all">("actionable");
   const [type, setType] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -173,6 +174,7 @@ export default function OpportunitiesDashboard() {
   } = useListOpportunities({
     search: search || undefined,
     status: status !== "all" ? status as any : undefined,
+    view: qualityView as any,
     type: type !== "all" ? type : undefined,
     source: sourceFilter !== "all" ? sourceFilter : undefined,
     dateRange: dateFilter !== "all" ? Number(dateFilter) : undefined,
@@ -460,6 +462,31 @@ export default function OpportunitiesDashboard() {
     return null;
   };
 
+  const getQualityBadge = (opp: any) => {
+    const cls = opp.quality?.classification ?? "needs-verification";
+    const styles: Record<string, string> = {
+      "verified-open": "bg-emerald-500/10 text-emerald-300 border-emerald-500/25",
+      "needs-verification": "bg-amber-500/10 text-amber-300 border-amber-500/25",
+      "discovery-only": "bg-cyan-500/10 text-cyan-300 border-cyan-500/25",
+      closed: "bg-white/5 text-white/50 border-white/10",
+      archived: "bg-white/5 text-white/50 border-white/10",
+      award: "bg-purple-500/10 text-purple-300 border-purple-500/25",
+      forecast: "bg-blue-500/10 text-blue-300 border-blue-500/25",
+    };
+    return <Badge className={`${styles[cls] ?? styles["needs-verification"]} text-[10px] border capitalize`}>{(opp.quality?.label ?? cls).replaceAll("-", " ")}</Badge>;
+  };
+
+  const getSourceTypeLabel = (opp: any) => {
+    const sourceType = opp.quality?.sourceType;
+    if (sourceType === "official-direct") return "Official/direct";
+    if (sourceType === "verified-solicitation-page") return "Verified solicitation page";
+    if (sourceType === "search-discovery") return "Search/discovery";
+    if (sourceType === "aggregator") return "Aggregator";
+    return "Source unverified";
+  };
+
+  const canViewAiBrief = (opp: any) => Boolean(opp.quality?.summaryEligible);
+
   const getSourceBadge = (source: string | null | undefined, name: string | null | undefined) => {
     const rawName = name || source || "manual";
     const providerMeta: Record<string, { label: string; classes: string }> = {
@@ -596,6 +623,23 @@ export default function OpportunitiesDashboard() {
           )}
         </div>
       </form>
+
+      <div className="flex items-center gap-2 px-1 overflow-x-auto">
+        {[
+          ["actionable", "Open & Verified"],
+          ["needs-verification", "Needs Verification"],
+          ["closed", "Closed/Archived"],
+          ["all", "All Records"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => { setQualityView(value as any); setPage(1); }}
+            className={"px-3 py-1.5 rounded-full border text-xs transition-all " + (qualityView === value ? "bg-primary/20 border-primary/40 text-primary font-semibold" : "bg-white/5 border-white/10 text-white/65 hover:text-white")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center">
         <div className="relative flex-1 w-full">
@@ -773,20 +817,21 @@ export default function OpportunitiesDashboard() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ delay: Math.min(i * 0.025, 0.25) }}
-                    onClick={() => handleOpenSummary(opp)}
-                    className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
+                    onClick={() => { if (canViewAiBrief(opp)) handleOpenSummary(opp); }}
+                    className={"group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 " + (canViewAiBrief(opp) ? "cursor-pointer" : "cursor-default")}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-wrap gap-2 items-center">
                         {getSourceBadge(opp.source, opp.providerName)}
+                        {getQualityBadge(opp)}
                         {relScore != null && (
                           <Badge className={`${relTone} font-semibold tabular-nums text-[10px] border`} title="Occu-Med relevance score">
                             {relScore}% match
                           </Badge>
                         )}
                       </div>
-                      <Badge className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
-                        {opp.status}
+                      <Badge className={opp.quality?.classification === "verified-open" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
+                        {opp.quality?.classification === "verified-open" ? "open" : (opp.quality?.classification ?? opp.status)}
                       </Badge>
                     </div>
 
@@ -802,13 +847,13 @@ export default function OpportunitiesDashboard() {
                         <span className="text-muted-foreground">{dateLabel}:</span> {dateValue}
                       </div>
                       <div className="text-[11px] text-primary/70 font-medium">
-                        {getServiceFitLabel(opp)}
+                        {getServiceFitLabel(opp)} · {getSourceTypeLabel(opp)}
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
-                      <div className="flex items-center gap-1 text-[10px] text-primary/70 group-hover:text-primary transition-colors">
-                        <Sparkles className="w-3 h-3" /> View AI brief
+                      <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.quality?.reasons?.[0] ?? undefined}>
+                        <Sparkles className="w-3 h-3" /> {canViewAiBrief(opp) ? "View AI brief" : "Verify before AI brief"}
                       </div>
                       <div className="flex items-center gap-1">
                         {href && (

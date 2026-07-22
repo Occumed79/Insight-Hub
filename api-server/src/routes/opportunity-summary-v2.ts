@@ -5,6 +5,7 @@ import { opportunitiesTable } from "@workspace/db/schema";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
+import { classifyOpportunityQuality } from "../lib/opportunityQuality";
 
 const router = Router();
 
@@ -107,6 +108,9 @@ Title: ${opp.title ?? "N/A"}
 Buyer: ${base.buyer ?? "N/A"}
 Posted: ${base.keyDates.posted ?? "N/A"}
 Due: ${base.keyDates.due ?? "N/A"}
+Classification: ${base.fitVerdict ? (base as any).classification ?? "N/A" : "N/A"}
+Evidence source: ${(base as any).evidenceSource ?? "N/A"}
+Source authority: ${(base as any).sourceAuthority ?? "N/A"}
 Value: ${base.estimatedValue ?? "N/A"}
 URL: ${base.sourceUrl ?? "N/A"}
 Description: ${cleanText(opp.description, 2200) || "N/A"}
@@ -144,6 +148,15 @@ router.post("/opportunities/:id/summary", async (req, res) => {
     const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
     if (!rows.length) return res.status(404).json({ error: "Opportunity not found" });
     const opp = rows[0] as any;
+    const initialQuality = classifyOpportunityQuality(opp);
+    if (!initialQuality.summaryEligible) {
+      return res.status(422).json({
+        eligible: false,
+        classification: initialQuality.classification,
+        quality: initialQuality,
+        reason: initialQuality.reasons[0] ?? "This opportunity does not have sufficient verified evidence for an AI brief.",
+      });
+    }
     let extracted: string | null = null;
     const url = sourceUrl(opp);
 
@@ -158,8 +171,17 @@ router.post("/opportunities/:id/summary", async (req, res) => {
       }
     }
 
-    const base = baseBrief(opp, extracted);
-    const prompt = promptFor(opp, base, extracted);
+    const quality = classifyOpportunityQuality(opp);
+    if (!extracted && !quality.sourceVerified) {
+      return res.status(422).json({
+        eligible: false,
+        classification: quality.classification,
+        quality,
+        reason: "Authoritative solicitation content has not been verified.",
+      });
+    }
+    const base = { ...baseBrief(opp, extracted), classification: quality.classification, evidenceSource: quality.sourceType, sourceAuthority: quality.sourceAuthority, eligible: true };
+    const prompt = promptFor({ ...opp, quality }, base, extracted);
 
     try {
       if (await groqProvider.isConfigured()) return res.json(merge(await complete(prompt, "groq"), base, "groq-v2"));

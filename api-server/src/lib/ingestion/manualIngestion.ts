@@ -464,7 +464,7 @@ async function processOneRecord(
       existing &&
       shouldProtectCanonicalFromRefresh(
         existing.matchType,
-        record.rawData?.fallback === true,
+        record.rawData?.fallback === true || ["serper", "exa", "tavily", "you", "langsearch", "websearch"].includes(provider),
       );
     let opportunityId = existing?.opportunityId ?? randomUUID();
     let created = 0;

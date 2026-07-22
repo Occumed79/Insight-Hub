@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
 import { passesQualityFilter } from "../search/relevance";
 import { normalizedToDbRecord } from "../search/normalization";
+import { canonicalSamOpportunityUrl } from "../opportunityQuality";
 
 export type OpportunityDedupeKeyType =
   | "provider"
@@ -40,6 +41,8 @@ export function canonicalizeOpportunityUrl(
     for (const key of Array.from(url.searchParams.keys())) {
       if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
     }
+    const sam = canonicalSamOpportunityUrl(url.toString());
+    if (sam) return sam;
     url.searchParams.sort();
     return url.toString();
   } catch {
