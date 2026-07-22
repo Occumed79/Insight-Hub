@@ -1,0 +1,44 @@
+{
+  "before": {
+    "recall": 0.25,
+    "precision": 0.5,
+    "missedKnownOpportunities": [
+      "https://portal.example.gov/bids/medical-surveillance-2",
+      "https://portal.example.gov/bids/drug-testing-3",
+      "https://portal.example.gov/bids/pdf-only-4.pdf"
+    ],
+    "falsePositives": [
+      "https://portal.example.gov/news/award-5"
+    ],
+    "coverageByPortal": {
+      "portal.example.gov": 1
+    },
+    "coverageByQueryBundle": {
+      "occupational_health": 1
+    },
+    "nativeVersusSearchFallbackDiscovery": {
+      "native": 0,
+      "searchFallback": 1
+    },
+    "directVerificationRate": 0
+  },
+  "after": {
+    "recall": 1,
+    "precision": 0.8,
+    "missedKnownOpportunities": [],
+    "falsePositives": [
+      "https://portal.example.gov/news/award-5"
+    ],
+    "coverageByPortal": {
+      "portal.example.gov": 4
+    },
+    "coverageByQueryBundle": {
+      "occupational_health": 4
+    },
+    "nativeVersusSearchFallbackDiscovery": {
+      "native": 5,
+      "searchFallback": 0
+    },
+    "directVerificationRate": 1
+  }
+}

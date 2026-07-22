@@ -1350,10 +1350,43 @@ export const SEARCH_QUERY_BUNDLES: SearchQueryBundle[] = [
 export function buildOccuMedSearchQueries(
   year = new Date().getFullYear(),
 ): string[] {
+  const runYear = Number.isFinite(year) ? year : new Date().getFullYear();
+  const month = new Date().getMonth();
+  const yearVariants = [
+    `${runYear}`,
+    `${runYear - 1} still open`,
+    "",
+    ...(month >= 9 ? [`${runYear + 1}`] : []),
+  ];
+  const codeVariants = [
+    "",
+    "PSC Q201 OR Q301 OR Q999",
+    "NAICS 621111 OR 621340 OR 621399 OR 621999 OR 541612",
+  ];
+  const buyerVariants = [
+    "",
+    "employee health OR occupational medicine OR medical surveillance",
+    "pre-employment physicals OR fit for duty OR drug testing",
+  ];
+
   return SEARCH_QUERY_BUNDLES.flatMap((b) =>
-    b.serviceTerms.map(
-      (t) =>
-        `${t} (${b.procurementTerms.join(" OR ")}) ${year} -awarded -\"award notice\"`,
+    b.serviceTerms.flatMap((t) =>
+      yearVariants.flatMap((yearTerm) =>
+        codeVariants.flatMap((codeTerm) =>
+          buyerVariants.map((buyerTerm) =>
+            [
+              t,
+              `(${b.procurementTerms.join(" OR ")})`,
+              yearTerm,
+              codeTerm,
+              buyerTerm,
+              '-awarded -"award notice" -expired -insurance',
+            ]
+              .filter(Boolean)
+              .join(" "),
+          ),
+        ),
+      ),
     ),
   );
 }
