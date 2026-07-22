@@ -126,7 +126,7 @@ export function makeCrawlerOpportunity(options: {
     status: "active",
     postedDate: options.postedDate ?? new Date(),
     responseDeadline: options.responseDeadline,
-    location: options.location ?? inferredLocation || undefined,
+    location: options.location ?? (inferredLocation || undefined),
     description: options.description?.trim(),
     solicitationNumber: options.solicitationNumber?.trim(),
     sourceUrl,
