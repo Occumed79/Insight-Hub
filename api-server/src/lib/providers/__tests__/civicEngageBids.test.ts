@@ -8,6 +8,10 @@ import {
   parseCivicEngageDetailHtml,
   parseCivicEngageListingHtml,
 } from "../civicEngageBids";
+import { BONFIRE_COLLECTIBLE_PORTAL_IDS } from "../bonfirePortal";
+import { IONWAVE_COLLECTIBLE_PORTAL_IDS } from "../ionWavePortal";
+import { JAGGAER_COLLECTIBLE_PORTAL_IDS } from "../jaggaerSciQuest";
+import { bsoPortalProviders } from "../bsoPortal";
 import {
   isDedicatedPublicPortalSourceId,
   publicPortalProvidersProvider,
@@ -103,6 +107,19 @@ describe("CivicEngage source manifest", () => {
     for (const portalId of CIVICENGAGE_PORTAL_IDS) {
       assert.ok(runtimeSources.has(portalId), `runtime source missing ${portalId}`);
       assert.equal(isDedicatedPublicPortalSourceId(portalId), true);
+    }
+  });
+
+  it("registers shared public portal adapters as dedicated sources", () => {
+    const dedicatedIds = [
+      ...Object.keys(bsoPortalProviders),
+      ...JAGGAER_COLLECTIBLE_PORTAL_IDS,
+      ...BONFIRE_COLLECTIBLE_PORTAL_IDS,
+      ...IONWAVE_COLLECTIBLE_PORTAL_IDS,
+    ];
+
+    for (const portalId of dedicatedIds) {
+      assert.equal(isDedicatedPublicPortalSourceId(portalId), true, `adapter missing ${portalId}`);
     }
   });
 

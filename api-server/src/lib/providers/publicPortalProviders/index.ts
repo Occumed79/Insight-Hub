@@ -1,7 +1,11 @@
 import { nyScrProvider } from "../nyScr";
 import { texasEsbdProvider } from "../texasEsbd";
-import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "../openGov";
+import { bsoPortalProviders } from "../bsoPortal";
+import { bonfireTenantProvider, BONFIRE_COLLECTIBLE_PORTAL_IDS } from "../bonfirePortal";
 import { civicEngageTenantProvider, CIVICENGAGE_PORTAL_IDS } from "../civicEngageBids";
+import { ionWaveTenantProvider, IONWAVE_COLLECTIBLE_PORTAL_IDS } from "../ionWavePortal";
+import { jaggaerSciQuestTenantProvider, JAGGAER_COLLECTIBLE_PORTAL_IDS } from "../jaggaerSciQuest";
+import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "../openGov";
 import { publicPortalDiscovery } from "../publicPortalDiscovery";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "../types";
 import { PUBLIC_PORTAL_SOURCES, type PublicPortalSource, validatePublicPortalSource } from "./catalog";
@@ -34,9 +38,22 @@ const SOURCE_ADAPTERS: Record<string, DataSourceProvider> = (() => {
   const adapters: Record<string, DataSourceProvider> = {
     "tx-esbd": texasEsbdProvider,
     "ny-contract-reporter": nyScrProvider,
+    ...bsoPortalProviders,
   };
   for (const portalId of OPENGOV_PORTAL_IDS) {
     const provider = openGovTenantProvider(portalId);
+    if (provider) adapters[portalId] = provider;
+  }
+  for (const portalId of JAGGAER_COLLECTIBLE_PORTAL_IDS) {
+    const provider = jaggaerSciQuestTenantProvider(portalId);
+    if (provider) adapters[portalId] = provider;
+  }
+  for (const portalId of BONFIRE_COLLECTIBLE_PORTAL_IDS) {
+    const provider = bonfireTenantProvider(portalId);
+    if (provider) adapters[portalId] = provider;
+  }
+  for (const portalId of IONWAVE_COLLECTIBLE_PORTAL_IDS) {
+    const provider = ionWaveTenantProvider(portalId);
     if (provider) adapters[portalId] = provider;
   }
   for (const portalId of CIVICENGAGE_PORTAL_IDS) {
