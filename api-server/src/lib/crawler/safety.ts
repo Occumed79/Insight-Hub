@@ -39,7 +39,6 @@ export function canonicalizeCrawlerUrl(
     if (!["http:", "https:"].includes(url.protocol)) return null;
     if (!isAllowedCrawlerHost(url.toString(), allowedHosts)) return null;
     url.hash = "";
-    url.hostname = normalizeHost(url.hostname);
     if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
     return url.toString();
   } catch {
