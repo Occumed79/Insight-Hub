@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ListOpportunitiesStatus } from "./listOpportunitiesStatus";
+import type { ListOpportunitiesView } from "./listOpportunitiesView";
 
 export type ListOpportunitiesParams = {
   search?: string;
@@ -25,6 +26,11 @@ export type ListOpportunitiesParams = {
    * When true, exclude results flagged stale or with an unknown date.
    */
   freshOnly?: boolean;
+  /**
+   * Derived quality view. Defaults to actionable verified-open opportunities.
+   */
+  view?: ListOpportunitiesView;
   page?: number;
   limit?: number;
 };
+

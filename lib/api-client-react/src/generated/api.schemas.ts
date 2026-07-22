@@ -79,6 +79,55 @@ export interface RelevanceView {
   postedDate?: string | null;
 }
 
+export type OpportunityQualityClassification =
+  (typeof OpportunityQualityClassification)[keyof typeof OpportunityQualityClassification];
+
+export const OpportunityQualityClassification = {
+  "verified-open": "verified-open",
+  "needs-verification": "needs-verification",
+  closed: "closed",
+  archived: "archived",
+  award: "award",
+  forecast: "forecast",
+  "discovery-only": "discovery-only",
+} as const;
+
+export type OpportunityQualitySourceType =
+  (typeof OpportunityQualitySourceType)[keyof typeof OpportunityQualitySourceType];
+
+export const OpportunityQualitySourceType = {
+  "official-direct": "official-direct",
+  "verified-solicitation-page": "verified-solicitation-page",
+  "search-discovery": "search-discovery",
+  aggregator: "aggregator",
+  unknown: "unknown",
+} as const;
+
+export type OpportunityQualitySourceAuthority =
+  (typeof OpportunityQualitySourceAuthority)[keyof typeof OpportunityQualitySourceAuthority];
+
+export const OpportunityQualitySourceAuthority = {
+  trusted: "trusted",
+  medium: "medium",
+  low: "low",
+} as const;
+
+export interface OpportunityQuality {
+  classification: OpportunityQualityClassification;
+  label: string;
+  actionable: boolean;
+  summaryEligible: boolean;
+  sourceType: OpportunityQualitySourceType;
+  reasons: string[];
+  hasFutureDeadline: boolean;
+  deadlineKnown: boolean;
+  buyerKnown: boolean;
+  solicitationLike: boolean;
+  sourceVerified: boolean;
+  sourceAuthority: OpportunityQualitySourceAuthority;
+  evidenceFingerprint: string;
+}
+
 export interface Opportunity {
   id: string;
   noticeId?: string;
@@ -121,6 +170,7 @@ export interface Opportunity {
   /** Quality/category tags (e.g. date-unknown, stale, category name) */
   tags?: string[];
   relevance?: RelevanceView;
+  quality?: OpportunityQuality;
   notes?: string;
   /** Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history */
   userConfidence?: number;
@@ -130,11 +180,36 @@ export interface Opportunity {
   updatedAt?: string;
 }
 
+export type SummaryIneligibilityReason =
+  (typeof SummaryIneligibilityReason)[keyof typeof SummaryIneligibilityReason];
+
+export const SummaryIneligibilityReason = {
+  authoritative_content_unavailable: "authoritative_content_unavailable",
+  future_deadline_unverified: "future_deadline_unverified",
+  discovery_only: "discovery_only",
+  record_not_actionable: "record_not_actionable",
+} as const;
+
+/**
+ * Selected quality view; total counts this complete view after classification and deduplication.
+ */
+export type OpportunitiesResponseView =
+  (typeof OpportunitiesResponseView)[keyof typeof OpportunitiesResponseView];
+
+export const OpportunitiesResponseView = {
+  actionable: "actionable",
+  "needs-verification": "needs-verification",
+  closed: "closed",
+  all: "all",
+} as const;
+
 export interface OpportunitiesResponse {
   data: Opportunity[];
   total: number;
   page: number;
   limit: number;
+  /** Selected quality view; total counts this complete view after classification and deduplication. */
+  view: OpportunitiesResponseView;
 }
 
 export type IngestionRunStartedStatus =
@@ -404,7 +479,10 @@ export type ListOpportunitiesParams = {
    * When true, exclude results flagged stale or with an unknown date.
    */
   freshOnly?: boolean;
-  view?: "actionable" | "needs-verification" | "closed" | "all";
+  /**
+   * Derived quality view. Defaults to actionable verified-open opportunities.
+   */
+  view?: ListOpportunitiesView;
   page?: number;
   limit?: number;
 };
@@ -415,6 +493,16 @@ export type ListOpportunitiesStatus =
 export const ListOpportunitiesStatus = {
   active: "active",
   archived: "archived",
+  all: "all",
+} as const;
+
+export type ListOpportunitiesView =
+  (typeof ListOpportunitiesView)[keyof typeof ListOpportunitiesView];
+
+export const ListOpportunitiesView = {
+  actionable: "actionable",
+  "needs-verification": "needs-verification",
+  closed: "closed",
   all: "all",
 } as const;
 
@@ -489,3 +577,4 @@ export type UpdateProvider200 = {
   name?: string;
   status?: ProviderStatus;
 };
+

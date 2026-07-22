@@ -14,6 +14,7 @@ import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, ilike, or, and, gte } from "drizzle-orm";
 import type { Opportunity } from "@workspace/db/schema";
+import { classifyOpportunityQuality, plainSummaryIneligibilityReason, summaryIneligibilityReason, type OpportunityQualityView, type SummaryIneligibilityReason } from "../opportunityQuality";
 
 export interface SearchFilters {
   source?: string;
@@ -39,6 +40,10 @@ export interface SearchResult {
   status: "active" | "archived";
   matchScore: number;
   matchReasons: string[];
+  quality: OpportunityQualityView;
+  summaryEligible: boolean;
+  summaryIneligibilityReasonCode: SummaryIneligibilityReason | null;
+  summaryIneligibilityReason: string | null;
 }
 
 export interface SearchResponse {
@@ -212,6 +217,8 @@ export async function searchOpportunities(query: string, limit = 50, filters: Se
     .map((opp: Opportunity): SearchResult => {
       const { reasons, score } = buildMatchReasons(opp, terms);
       const finalScore = rankAdjust(opp, score);
+      const quality = classifyOpportunityQuality(opp);
+      const reasonCode = summaryIneligibilityReason(quality, quality.summaryEligible);
       return {
         id: opp.id,
         title: opp.title,
@@ -228,6 +235,10 @@ export async function searchOpportunities(query: string, limit = 50, filters: Se
         status: opp.status,
         matchScore: finalScore,
         matchReasons: cardReasons(opp, finalScore, reasons),
+        quality,
+        summaryEligible: quality.summaryEligible,
+        summaryIneligibilityReasonCode: reasonCode,
+        summaryIneligibilityReason: reasonCode ? plainSummaryIneligibilityReason(reasonCode) : null,
       };
     })
     .sort((a: SearchResult, b: SearchResult) => b.matchScore - a.matchScore)

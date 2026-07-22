@@ -5,6 +5,7 @@
  * Occu-Med Insight Hub API
  * OpenAPI spec version: 1.0.0
  */
+import type { OpportunitiesResponseView } from "./opportunitiesResponseView";
 import type { Opportunity } from "./opportunity";
 
 export interface OpportunitiesResponse {
@@ -12,4 +13,7 @@ export interface OpportunitiesResponse {
   total: number;
   page: number;
   limit: number;
+  /** Selected quality view; total counts this complete view after classification and deduplication. */
+  view: OpportunitiesResponseView;
 }
+

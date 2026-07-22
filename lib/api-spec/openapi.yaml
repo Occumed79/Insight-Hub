@@ -72,6 +72,13 @@ paths:
             type: boolean
             description: When true, exclude results flagged stale or with an unknown date.
         - in: query
+          name: view
+          schema:
+            type: string
+            enum: [actionable, needs-verification, closed, all]
+            default: actionable
+            description: Derived quality view. Defaults to actionable verified-open opportunities.
+        - in: query
           name: page
           schema:
             type: integer
@@ -582,6 +589,8 @@ components:
           description: Quality/category tags (e.g. date-unknown, stale, category name)
         relevance:
           $ref: "#/components/schemas/RelevanceView"
+        quality:
+          $ref: "#/components/schemas/OpportunityQuality"
         notes:
           type: string
         # Learning model fields
@@ -600,6 +609,46 @@ components:
           type: string
           format: date-time
 
+
+    OpportunityQuality:
+      type: object
+      required: [classification, label, actionable, summaryEligible, sourceType, reasons, hasFutureDeadline, deadlineKnown, buyerKnown, solicitationLike, sourceVerified, sourceAuthority, evidenceFingerprint]
+      properties:
+        classification:
+          type: string
+          enum: [verified-open, needs-verification, closed, archived, award, forecast, discovery-only]
+        label:
+          type: string
+        actionable:
+          type: boolean
+        summaryEligible:
+          type: boolean
+        sourceType:
+          type: string
+          enum: [official-direct, verified-solicitation-page, search-discovery, aggregator, unknown]
+        reasons:
+          type: array
+          items:
+            type: string
+        hasFutureDeadline:
+          type: boolean
+        deadlineKnown:
+          type: boolean
+        buyerKnown:
+          type: boolean
+        solicitationLike:
+          type: boolean
+        sourceVerified:
+          type: boolean
+        sourceAuthority:
+          type: string
+          enum: [trusted, medium, low]
+        evidenceFingerprint:
+          type: string
+
+    SummaryIneligibilityReason:
+      type: string
+      enum: [authoritative_content_unavailable, future_deadline_unverified, discovery_only, record_not_actionable]
     RelevanceView:
       type: object
       description: Transparent relevance summary used by the UI to explain ranking.
@@ -633,7 +682,7 @@ components:
 
     OpportunitiesResponse:
       type: object
-      required: [data, total, page, limit]
+      required: [data, total, page, limit, view]
       properties:
         data:
           type: array
@@ -645,6 +694,10 @@ components:
           type: integer
         limit:
           type: integer
+        view:
+          type: string
+          enum: [actionable, needs-verification, closed, all]
+          description: Selected quality view; total counts this complete view after classification and deduplication.
 
     IngestionRunStarted:
       type: object
@@ -1043,3 +1096,4 @@ components:
           type: string
         details:
           type: string
+

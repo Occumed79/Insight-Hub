@@ -5,6 +5,7 @@
  * Occu-Med Insight Hub API
  * OpenAPI spec version: 1.0.0
  */
+import type { OpportunityQuality } from "./opportunityQuality";
 import type { OpportunitySource } from "./opportunitySource";
 import type { OpportunitySourceConfidence } from "./opportunitySourceConfidence";
 import type { OpportunityStatus } from "./opportunityStatus";
@@ -53,6 +54,7 @@ export interface Opportunity {
   /** Quality/category tags (e.g. date-unknown, stale, category name) */
   tags?: string[];
   relevance?: RelevanceView;
+  quality?: OpportunityQuality;
   notes?: string;
   /** Model-predicted confidence (0-100) that this opportunity is a good fit, based on your grading history */
   userConfidence?: number;
@@ -61,3 +63,4 @@ export interface Opportunity {
   createdAt?: Date;
   updatedAt?: Date;
 }
+

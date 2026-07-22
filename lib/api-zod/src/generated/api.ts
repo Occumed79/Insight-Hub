@@ -18,6 +18,7 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List opportunities
  */
+export const listOpportunitiesQueryViewDefault = `actionable`;
 export const listOpportunitiesQueryPageDefault = 1;
 export const listOpportunitiesQueryLimitDefault = 50;
 
@@ -30,6 +31,9 @@ export const ListOpportunitiesQueryParams = zod.object({
   source: zod.coerce.string().optional(),
   dateRange: zod.coerce.number().optional(),
   freshOnly: zod.coerce.boolean().optional(),
+  view: zod
+    .enum(["actionable", "needs-verification", "closed", "all"])
+    .default(listOpportunitiesQueryViewDefault),
   page: zod.coerce.number().default(listOpportunitiesQueryPageDefault),
   limit: zod.coerce.number().default(listOpportunitiesQueryLimitDefault),
 });
@@ -122,6 +126,37 @@ export const ListOpportunitiesResponse = zod.object({
         .describe(
           "Transparent relevance summary used by the UI to explain ranking.",
         ),
+      quality: zod
+        .object({
+          classification: zod.enum([
+            "verified-open",
+            "needs-verification",
+            "closed",
+            "archived",
+            "award",
+            "forecast",
+            "discovery-only",
+          ]),
+          label: zod.string(),
+          actionable: zod.boolean(),
+          summaryEligible: zod.boolean(),
+          sourceType: zod.enum([
+            "official-direct",
+            "verified-solicitation-page",
+            "search-discovery",
+            "aggregator",
+            "unknown",
+          ]),
+          reasons: zod.array(zod.string()),
+          hasFutureDeadline: zod.boolean(),
+          deadlineKnown: zod.boolean(),
+          buyerKnown: zod.boolean(),
+          solicitationLike: zod.boolean(),
+          sourceVerified: zod.boolean(),
+          sourceAuthority: zod.enum(["trusted", "medium", "low"]),
+          evidenceFingerprint: zod.string(),
+        })
+        .optional(),
       notes: zod.string().optional(),
       userConfidence: zod
         .number()
@@ -140,6 +175,11 @@ export const ListOpportunitiesResponse = zod.object({
   total: zod.number(),
   page: zod.number(),
   limit: zod.number(),
+  view: zod
+    .enum(["actionable", "needs-verification", "closed", "all"])
+    .describe(
+      "Selected quality view; total counts this complete view after classification and deduplication.",
+    ),
 });
 
 /**
@@ -481,6 +521,37 @@ export const GetOpportunityResponse = zod.object({
     .describe(
       "Transparent relevance summary used by the UI to explain ranking.",
     ),
+  quality: zod
+    .object({
+      classification: zod.enum([
+        "verified-open",
+        "needs-verification",
+        "closed",
+        "archived",
+        "award",
+        "forecast",
+        "discovery-only",
+      ]),
+      label: zod.string(),
+      actionable: zod.boolean(),
+      summaryEligible: zod.boolean(),
+      sourceType: zod.enum([
+        "official-direct",
+        "verified-solicitation-page",
+        "search-discovery",
+        "aggregator",
+        "unknown",
+      ]),
+      reasons: zod.array(zod.string()),
+      hasFutureDeadline: zod.boolean(),
+      deadlineKnown: zod.boolean(),
+      buyerKnown: zod.boolean(),
+      solicitationLike: zod.boolean(),
+      sourceVerified: zod.boolean(),
+      sourceAuthority: zod.enum(["trusted", "medium", "low"]),
+      evidenceFingerprint: zod.string(),
+    })
+    .optional(),
   notes: zod.string().optional(),
   userConfidence: zod
     .number()
@@ -732,3 +803,4 @@ export const UpdateSettingsResponse = zod.object({
   defaultDateRange: zod.number().optional(),
   organizationName: zod.string().optional(),
 });
+
