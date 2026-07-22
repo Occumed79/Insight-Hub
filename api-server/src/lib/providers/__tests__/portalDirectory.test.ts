@@ -9,6 +9,7 @@ import {
   buildProcurementPortalInventory,
 } from "../portalDirectory";
 import { withPortalConnectorCapability } from "../portalCapabilities";
+import { publicPortalSourceFromImport, validatePublicPortalCatalog, validatePublicPortalSource } from "../publicPortalProviders/catalog";
 
 describe("procurement portal directory", () => {
   it("resolves all featured United States portals in the requested order", () => {
@@ -78,4 +79,25 @@ describe("procurement portal directory", () => {
         ),
     );
   });
+
+  it("hardens public portal source URLs and imported directory rows", () => {
+    const imported = publicPortalSourceFromImport({
+      agencyName: "Example City",
+      state: "ca",
+      sourceUrl: "https://procurement.example.gov/bids",
+      searchUrl: "https://procurement.example.gov/bids?status=open",
+      enabled: "true",
+      verificationStatus: "verified",
+    });
+    assert.equal(imported.domain, "procurement.example.gov");
+    assert.deepEqual(validatePublicPortalSource(imported), []);
+
+    const invalid = { ...imported, id: "bad id", searchUrl: "https://evil.example.com/bids" };
+    assert.deepEqual(validatePublicPortalSource(invalid), [
+      "id must not contain whitespace",
+      "searchUrl hostname must match domain",
+    ]);
+    assert.deepEqual(validatePublicPortalCatalog([invalid]).invalidUrls, ["bad id"]);
+  });
+
 });

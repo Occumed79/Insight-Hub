@@ -183,14 +183,27 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     }
     const runSignal = composeAbortSignal(COMBINED_PORTAL_RUN_TIMEOUT_MS, options.signal);
     let runTimeout: ReturnType<typeof setTimeout> | undefined;
-    const tasks = dedicatedGroups.flatMap((group) => group.sources.map((source) => runDedicatedSource(source, group.providers[source.id], group.statuses, { ...sourceOptions, signal: runSignal.signal }, target)));
-    const catalogTask = catalogPortalProvider.fetch({ ...sourceOptions, signal: runSignal.signal });
-    const allTasks = Promise.allSettled([...tasks, catalogTask]);
+    const completedResults: PromiseSettledResult<ProviderFetchResult>[] = [];
+    const track = async (task: Promise<ProviderFetchResult>): Promise<PromiseSettledResult<ProviderFetchResult>> => {
+      const settled: PromiseSettledResult<ProviderFetchResult> = await task.then(
+        (value): PromiseSettledResult<ProviderFetchResult> => ({ status: "fulfilled", value }),
+        (reason): PromiseSettledResult<ProviderFetchResult> => ({ status: "rejected", reason }),
+      );
+      completedResults.push(settled);
+      return settled;
+    };
+    const tasks = dedicatedGroups.flatMap((group) =>
+      group.sources.map((source) =>
+        track(runDedicatedSource(source, group.providers[source.id], group.statuses, { ...sourceOptions, signal: runSignal.signal }, target)),
+      ),
+    );
+    const catalogTask = track(catalogPortalProvider.fetch({ ...sourceOptions, signal: runSignal.signal }));
+    const allTasks = Promise.all([...tasks, catalogTask]);
     const runDeadline = new Promise<PromiseSettledResult<ProviderFetchResult>[]>((resolve) => {
       runTimeout = setTimeout(() => {
         errors.push(`publicPortalProviders: combined run deadline reached after ${COMBINED_PORTAL_RUN_TIMEOUT_MS}ms; returning completed portal results`);
         runSignal.cleanup();
-        resolve([]);
+        resolve([...completedResults]);
       }, COMBINED_PORTAL_RUN_TIMEOUT_MS + 500);
     });
     allTasks.catch(() => undefined);

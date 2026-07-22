@@ -344,6 +344,8 @@ describe("run retry and deadline rules", () => {
       "composeAbortSignal",
       "Promise.race([sourcePromise, sourceDeadline])",
       "Promise.race([allTasks, runDeadline])",
+      "completedResults",
+      "returning completed portal results",
     ]) assert.ok(combined.includes(required), `missing combined public-portal bound ${required}`);
     for (const required of [
       "waitForDomainRateLimit(domain, signal)",
