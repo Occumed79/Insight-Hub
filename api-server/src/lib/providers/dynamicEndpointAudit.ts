@@ -11,13 +11,22 @@ export interface DynamicEndpointAuditOptions {
   activateOpportunityTab?: boolean;
   activateFilterText?: string;
   paginateOnce?: boolean;
+  signal?: AbortSignal;
+}
+
+function abortError(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  return new DOMException("Dynamic endpoint audit cancelled", "AbortError");
 }
 
 export async function auditPublicDynamicEndpoints(
   pageUrl: string,
   options: DynamicEndpointAuditOptions = {},
 ): Promise<DynamicEndpointFingerprint[]> {
+  if (options.signal?.aborted) throw abortError(options.signal);
   const playwright = await import("playwright");
+  if (options.signal?.aborted) throw abortError(options.signal);
   const browser = await playwright.chromium.launch({ headless: true });
   const fingerprints: DynamicEndpointFingerprint[] = [];
   const pageHost = new URL(pageUrl).hostname.replace(/^www\./, "");
@@ -30,13 +39,20 @@ export async function auditPublicDynamicEndpoints(
   const isAllowedHost = (host: string) => {
     const normalized = host.replace(/^www\./, "");
     return [...allowedHosts].some(
-      (allowed) => normalized === allowed || normalized.endsWith(`.${allowed}`),
+      (allowed) =>
+        normalized === allowed || normalized.endsWith(`.${allowed}`),
     );
   };
+  const onAbort = () => {
+    void browser.close().catch(() => undefined);
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
+    if (options.signal?.aborted) throw abortError(options.signal);
     const page = await browser.newPage();
     page.on("response", async (response) => {
       try {
+        if (options.signal?.aborted) return;
         if (fingerprints.length >= (options.maxResponses ?? 10)) return;
         const request = response.request();
         if (!["xhr", "fetch"].includes(request.resourceType())) return;
@@ -80,6 +96,7 @@ export async function auditPublicDynamicEndpoints(
       waitUntil: "domcontentloaded",
       timeout: options.timeoutMs ?? 15_000,
     });
+    if (options.signal?.aborted) throw abortError(options.signal);
     if (options.searchText) {
       const input = page
         .locator(
@@ -91,6 +108,7 @@ export async function auditPublicDynamicEndpoints(
         await input.press("Enter", { timeout: 1000 });
       }
     }
+    if (options.signal?.aborted) throw abortError(options.signal);
     if (options.activateOpportunityTab) {
       await page
         .getByRole("tab", { name: /bid|rfp|opportunit|solicitation/i })
@@ -103,6 +121,7 @@ export async function auditPublicDynamicEndpoints(
         .click({ timeout: 1000 })
         .catch(() => undefined);
     }
+    if (options.signal?.aborted) throw abortError(options.signal);
     if (options.activateFilterText) {
       await page
         .getByText(options.activateFilterText, { exact: false })
@@ -110,6 +129,7 @@ export async function auditPublicDynamicEndpoints(
         .click({ timeout: 1000 })
         .catch(() => undefined);
     }
+    if (options.signal?.aborted) throw abortError(options.signal);
     if (options.paginateOnce) {
       await page
         .getByRole("link", { name: /next|more/i })
@@ -122,9 +142,14 @@ export async function auditPublicDynamicEndpoints(
         .click({ timeout: 1000 })
         .catch(() => undefined);
     }
+    if (options.signal?.aborted) throw abortError(options.signal);
     await page.waitForTimeout(Math.min(2000, options.timeoutMs ?? 2000));
+  } catch (error) {
+    if (options.signal?.aborted) throw abortError(options.signal);
+    throw error;
   } finally {
-    await browser.close();
+    options.signal?.removeEventListener("abort", onAbort);
+    await browser.close().catch(() => undefined);
   }
   return fingerprints;
 }
