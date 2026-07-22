@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -54,6 +54,44 @@ import {
   getListOpportunitiesQueryKey,
   useListProviders,
 } from "@workspace/api-client-react";
+
+
+export type OpportunityQualityViewMode = "actionable" | "needs-verification" | "closed" | "all";
+
+export const QUALITY_VIEW_TABS: Array<[OpportunityQualityViewMode, string]> = [
+  ["actionable", "Open & Verified"],
+  ["needs-verification", "Needs Verification"],
+  ["closed", "Closed/Archived"],
+  ["all", "All Records"],
+];
+
+export function qualityViewStatusFilter(currentView: OpportunityQualityViewMode, requestedStatus: "all" | "active" | "archived") {
+  return currentView === "all" ? requestedStatus : "all";
+}
+
+export function QualityViewTabs({ value, onChange }: { value: OpportunityQualityViewMode; onChange: (value: OpportunityQualityViewMode) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-1 overflow-x-auto">
+      {QUALITY_VIEW_TABS.map(([tabValue, label]) => (
+        <button
+          key={tabValue}
+          onClick={() => onChange(tabValue)}
+          className={"px-3 py-1.5 rounded-full border text-xs transition-all " + (value === tabValue ? "bg-primary/20 border-primary/40 text-primary font-semibold" : "bg-white/5 border-white/10 text-white/65 hover:text-white")}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function opportunityBriefAction(opp: any): { enabled: boolean; label: string } {
+  if (opp.quality?.summaryEligible) return { enabled: true, label: "View AI brief" };
+  if (opp.quality?.classification === "verified-open" && opp.quality?.sourceType === "verified-solicitation-page") {
+    return { enabled: true, label: "Verify source & build brief" };
+  }
+  return { enabled: false, label: "Verify before AI brief" };
+}
 
 type FeedbackGrade = "excellent" | "good" | "poor" | "spam";
 
@@ -125,7 +163,7 @@ export default function OpportunitiesDashboard() {
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "archived">("all");
-  const [qualityView, setQualityView] = useState<"actionable" | "needs-verification" | "closed" | "all">("actionable");
+  const [qualityView, setQualityView] = useState<OpportunityQualityViewMode>("actionable");
   const [type, setType] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -173,8 +211,8 @@ export default function OpportunitiesDashboard() {
     refetch: refetchOpportunities,
   } = useListOpportunities({
     search: search || undefined,
-    status: status !== "all" ? status as any : undefined,
-    view: qualityView as any,
+    status: qualityViewStatusFilter(qualityView, status) !== "all" ? qualityViewStatusFilter(qualityView, status) as any : undefined,
+    view: qualityView,
     type: type !== "all" ? type : undefined,
     source: sourceFilter !== "all" ? sourceFilter : undefined,
     dateRange: dateFilter !== "all" ? Number(dateFilter) : undefined,
@@ -435,7 +473,7 @@ export default function OpportunitiesDashboard() {
       });
 
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Summary failed");
+      if (!resp.ok) throw new Error(data.reason || data.error || "Summary failed");
 
       setSummaryData(data);
     } catch (err: any) {
@@ -486,6 +524,8 @@ export default function OpportunitiesDashboard() {
   };
 
   const canViewAiBrief = (opp: any) => Boolean(opp.quality?.summaryEligible);
+  const canAttemptAiBrief = (opp: any) => opportunityBriefAction(opp).enabled;
+  const aiBriefLabel = (opp: any) => opportunityBriefAction(opp).label;
 
   const getSourceBadge = (source: string | null | undefined, name: string | null | undefined) => {
     const rawName = name || source || "manual";
@@ -624,22 +664,7 @@ export default function OpportunitiesDashboard() {
         </div>
       </form>
 
-      <div className="flex items-center gap-2 px-1 overflow-x-auto">
-        {[
-          ["actionable", "Open & Verified"],
-          ["needs-verification", "Needs Verification"],
-          ["closed", "Closed/Archived"],
-          ["all", "All Records"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => { setQualityView(value as any); setPage(1); }}
-            className={"px-3 py-1.5 rounded-full border text-xs transition-all " + (qualityView === value ? "bg-primary/20 border-primary/40 text-primary font-semibold" : "bg-white/5 border-white/10 text-white/65 hover:text-white")}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <QualityViewTabs value={qualityView} onChange={(value) => { setQualityView(value); setStatus("all"); setPage(1); }} />
 
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center">
         <div className="relative flex-1 w-full">
@@ -647,7 +672,7 @@ export default function OpportunitiesDashboard() {
           <Input placeholder="Search by title, agency, or NAICS..." className="pl-9 bg-background/50 border-white/10 focus-visible:ring-primary/50 text-white" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          <Select value={status} onValueChange={(v: any) => { setStatus(v); setPage(1); }}>
+          <Select value={status} disabled={qualityView !== "all"} onValueChange={(v: any) => { setStatus(v); setPage(1); }}>
             <SelectTrigger className="w-[140px] bg-background/50 border-white/10 text-white"><div className="flex items-center gap-2"><Filter className="w-3 h-3 text-muted-foreground" /><SelectValue placeholder="Status" /></div></SelectTrigger>
             <SelectContent className="bg-popover border-white/10">
               <SelectItem value="all">All Statuses</SelectItem>
@@ -723,20 +748,21 @@ export default function OpportunitiesDashboard() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -8 }}
                           transition={{ delay: Math.min(i * 0.025, 0.25) }}
-                          onClick={() => handleOpenSummary(opp)}
-                          className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
+                          onClick={() => { if (canAttemptAiBrief(opp)) handleOpenSummary(opp); }}
+                          className={"group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 " + (canAttemptAiBrief(opp) ? "cursor-pointer" : "cursor-default")}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex flex-wrap gap-2 items-center">
                               {getSourceBadge(opp.source, opp.providerName)}
+                              {getQualityBadge(opp)}
                               {localRelScore != null && (
                                 <Badge className={`${localRelTone} font-semibold tabular-nums text-[10px] border`} title="Occu-Med relevance score">
                                   {localRelScore}% match
                                 </Badge>
                               )}
                             </div>
-                            <Badge className={opp.status === "active" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
-                              {opp.status}
+                            <Badge className={opp.quality?.classification === "verified-open" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] border" : "bg-white/5 text-muted-foreground border-white/10 text-[10px] border"}>
+                              {opp.quality?.classification === "verified-open" ? "open" : (opp.quality?.classification ?? opp.status)}
                             </Badge>
                           </div>
 
@@ -752,13 +778,13 @@ export default function OpportunitiesDashboard() {
                               <span className="text-muted-foreground">{opp.responseDeadline ? "Due:" : "Posted:"}</span> {localDate}
                             </div>
                             <div className="text-[11px] text-primary/70 font-medium">
-                              {getServiceFitLabel(opp)}
+                              {getServiceFitLabel(opp)} · {getSourceTypeLabel(opp)}
                             </div>
                           </div>
 
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
-                            <div className="flex items-center gap-1 text-[10px] text-primary/70 group-hover:text-primary transition-colors">
-                              <Sparkles className="w-3 h-3" /> View AI brief
+                            <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
+                              <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
                             </div>
                             {href && (
                               <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
@@ -817,8 +843,8 @@ export default function OpportunitiesDashboard() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ delay: Math.min(i * 0.025, 0.25) }}
-                    onClick={() => { if (canViewAiBrief(opp)) handleOpenSummary(opp); }}
-                    className={"group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 " + (canViewAiBrief(opp) ? "cursor-pointer" : "cursor-default")}
+                    onClick={() => { if (canAttemptAiBrief(opp)) handleOpenSummary(opp); }}
+                    className={"group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 " + (canAttemptAiBrief(opp) ? "cursor-pointer" : "cursor-default")}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-wrap gap-2 items-center">
@@ -853,7 +879,7 @@ export default function OpportunitiesDashboard() {
 
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
                       <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.quality?.reasons?.[0] ?? undefined}>
-                        <Sparkles className="w-3 h-3" /> {canViewAiBrief(opp) ? "View AI brief" : "Verify before AI brief"}
+                        <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
                       </div>
                       <div className="flex items-center gap-1">
                         {href && (
