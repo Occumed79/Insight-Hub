@@ -26,7 +26,8 @@ function endpointForPage(
   const url = new URL(config.endpointUrl);
   if (pagination.mode === "page") {
     const key = pagination.parameter ?? "page";
-    if ((config.method ?? "GET") === "GET") url.searchParams.set(key, String(page));
+    if ((config.method ?? "GET") === "GET")
+      url.searchParams.set(key, String(page));
     else body[key] = page;
   } else if (pagination.mode === "offset") {
     const size = pagination.pageSize ?? 100;
@@ -41,7 +42,8 @@ function endpointForPage(
     }
   } else if (pagination.mode === "cursor" && cursor) {
     const key = pagination.parameter ?? "cursor";
-    if ((config.method ?? "GET") === "GET") url.searchParams.set(key, cursor);
+    if ((config.method ?? "GET") === "GET")
+      url.searchParams.set(key, cursor);
     else body[key] = cursor;
   }
   return { url: url.toString(), body };
@@ -75,8 +77,15 @@ export class JsonEndpointSpider implements PortalSpider {
     let sawNotModified = false;
 
     for (let page = 1; page <= context.limits.maxPages; page += 1) {
-      if (context.signal?.aborted)
-        throw context.signal.reason ?? new Error("JSON endpoint spider cancelled");
+      if (context.signal?.aborted) {
+        const reason = context.signal.reason;
+        diagnostics.errors.push(
+          reason instanceof Error
+            ? reason.message
+            : "JSON endpoint spider cancelled",
+        );
+        break;
+      }
       const request = endpointForPage(config, page, cursor);
       diagnostics.urlsVisited += 1;
       try {
@@ -155,13 +164,16 @@ export class JsonEndpointSpider implements PortalSpider {
           const next = config.pagination.cursorPath
             ? readPath(payload, config.pagination.cursorPath)
             : undefined;
-          cursor = typeof next === "string" && next.trim() ? next.trim() : undefined;
+          cursor =
+            typeof next === "string" && next.trim() ? next.trim() : undefined;
           if (!cursor) break;
         } else if (!config.pagination || config.pagination.mode === "none") {
           break;
         }
       } catch (error) {
-        diagnostics.errors.push(error instanceof Error ? error.message : String(error));
+        diagnostics.errors.push(
+          error instanceof Error ? error.message : String(error),
+        );
         break;
       }
     }
@@ -180,7 +192,9 @@ export class JsonEndpointSpider implements PortalSpider {
       diagnostics,
       etag: lastEtag,
       lastModified,
-      contentHash: hashes.length ? contentHash(hashes.join("|")) : context.frontier?.contentHash,
+      contentHash: hashes.length
+        ? contentHash(hashes.join("|"))
+        : context.frontier?.contentHash,
       cursor,
     };
   }
