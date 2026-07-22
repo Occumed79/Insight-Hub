@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { RobotsRules } from "../providers/nativePublicPortalDiscovery";
 import type {
   CrawlFetchResult,
   CrawlFrontierState,
@@ -7,6 +8,7 @@ import type {
 } from "./types";
 
 const lastDomainFetchAt = new Map<string, number>();
+const robotsCache = new Map<string, Promise<RobotsRules>>();
 
 export function normalizeHost(value: string): string {
   return value.trim().toLowerCase().replace(/^www\./, "");
@@ -34,7 +36,7 @@ export function canonicalizeCrawlerUrl(
 ): string | null {
   try {
     const url = new URL(value, baseUrl);
-    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (!["http:", "https:"].includes(url.protocol)) return null;
     if (!isAllowedCrawlerHost(url.toString(), allowedHosts)) return null;
     url.hash = "";
     url.hostname = normalizeHost(url.hostname);
@@ -54,9 +56,13 @@ function abortError(signal?: AbortSignal): Error {
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return;
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
     const onAbort = () => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       reject(abortError(signal));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -104,6 +110,70 @@ async function readLimited(response: Response, maxBytes: number): Promise<string
   return new TextDecoder().decode(merged);
 }
 
+async function loadRobotsRules(
+  targetUrl: string,
+  limits: CrawlLimits,
+  signal?: AbortSignal,
+): Promise<RobotsRules> {
+  const target = new URL(targetUrl);
+  const origin = target.origin;
+  const cached = robotsCache.get(origin);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Math.min(limits.requestTimeoutMs, 5_000),
+    );
+    const onParentAbort = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", onParentAbort, { once: true });
+    try {
+      const robotsUrl = new URL("/robots.txt", origin).toString();
+      const response = await fetch(robotsUrl, {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: {
+          accept: "text/plain,*/*;q=0.1",
+          "user-agent":
+            "OccuMed-InsightHub/1.0 controlled public procurement crawler (+https://www.occumed.com)",
+        },
+      });
+      if (!response.ok) return new RobotsRules();
+      const text = await readLimited(
+        response,
+        Math.min(limits.maxBytes, 250_000),
+      );
+      return RobotsRules.parse(text, origin);
+    } catch (error) {
+      if (signal?.aborted) throw abortError(signal);
+      // An unavailable robots file does not create a rule that is not published.
+      // Other crawler limits and official-host restrictions still apply.
+      return new RobotsRules();
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onParentAbort);
+    }
+  })();
+
+  robotsCache.set(origin, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    robotsCache.delete(origin);
+    throw error;
+  }
+}
+
+export async function assertCrawlerRobotsAllowed(
+  url: string,
+  limits: CrawlLimits,
+  signal?: AbortSignal,
+): Promise<void> {
+  const rules = await loadRobotsRules(url, limits, signal);
+  if (!rules.allows(url)) throw new Error(`robots disallow ${url}`);
+}
+
 export function contentHash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -118,7 +188,10 @@ export function makeCrawlerFetcher(options: {
 }) {
   const { limits, allowedHosts, frontier, signal, onBytes, onRetry } = options;
 
-  return async (rawUrl: string, init: RequestInit = {}): Promise<CrawlFetchResult> => {
+  return async (
+    rawUrl: string,
+    init: RequestInit = {},
+  ): Promise<CrawlFetchResult> => {
     const initial = canonicalizeCrawlerUrl(rawUrl, rawUrl, allowedHosts);
     if (!initial) throw new Error(`Crawler host is not allowed: ${rawUrl}`);
 
@@ -127,9 +200,13 @@ export function makeCrawlerFetcher(options: {
     let attempt = 0;
     while (true) {
       if (signal?.aborted) throw abortError(signal);
+      await assertCrawlerRobotsAllowed(current, limits, signal);
       await waitForDomain(current, limits.minDomainIntervalMs, signal);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), limits.requestTimeoutMs);
+      const timeout = setTimeout(
+        () => controller.abort(),
+        limits.requestTimeoutMs,
+      );
       const onParentAbort = () => controller.abort(signal?.reason);
       signal?.addEventListener("abort", onParentAbort, { once: true });
       try {
@@ -155,11 +232,17 @@ export function makeCrawlerFetcher(options: {
 
         if (response.status >= 300 && response.status < 400) {
           const location = response.headers.get("location");
-          if (!location) throw new Error(`Crawler redirect had no location: ${current}`);
+          if (!location)
+            throw new Error(`Crawler redirect had no location: ${current}`);
           if (redirects >= limits.maxRedirects)
             throw new Error(`Crawler redirect limit exceeded: ${current}`);
-          const next = canonicalizeCrawlerUrl(location, current, allowedHosts);
-          if (!next) throw new Error(`Crawler redirect left allowed hosts: ${location}`);
+          const next = canonicalizeCrawlerUrl(
+            location,
+            current,
+            allowedHosts,
+          );
+          if (!next)
+            throw new Error(`Crawler redirect left allowed hosts: ${location}`);
           current = next;
           redirects += 1;
           continue;
@@ -183,14 +266,20 @@ export function makeCrawlerFetcher(options: {
           if (retryable && attempt < limits.maxRetries) {
             attempt += 1;
             onRetry?.();
-            const retryAfter = Number(response.headers.get("retry-after") ?? 0);
+            const retryAfter = Number(
+              response.headers.get("retry-after") ?? 0,
+            );
             await sleep(
-              retryAfter > 0 ? retryAfter * 1_000 : Math.min(8_000, 500 * 2 ** attempt),
+              retryAfter > 0
+                ? retryAfter * 1_000
+                : Math.min(8_000, 500 * 2 ** attempt),
               signal,
             );
             continue;
           }
-          throw new Error(`Crawler request returned HTTP ${response.status}: ${current}`);
+          throw new Error(
+            `Crawler request returned HTTP ${response.status}: ${current}`,
+          );
         }
 
         const text = await readLimited(response, limits.maxBytes);
