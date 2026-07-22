@@ -6,17 +6,13 @@ import { JsonEndpointSpider } from "./spiders/jsonEndpointSpider";
 import { PortalFamilySpider } from "./spiders/portalFamilySpider";
 import { StaticListingSpider } from "./spiders/staticListingSpider";
 
-let initialized = false;
-
 export function initializeCrawlerSpiders(): void {
-  if (initialized) return;
   registerSpider(new StaticListingSpider());
   registerSpider(new FeedSpider());
   registerSpider(new JsonEndpointSpider());
   registerSpider(new DocumentSpider());
   registerSpider(new BrowserDiscoverySpider());
   registerSpider(new PortalFamilySpider());
-  initialized = true;
 }
 
 initializeCrawlerSpiders();
