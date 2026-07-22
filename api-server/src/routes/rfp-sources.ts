@@ -13,6 +13,7 @@ import {
   buildProcurementPortalInventory,
 } from "../lib/providers/portalDirectory";
 import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
+import { publicPortalProvidersProvider } from "../lib/providers/publicPortalProviders";
 
 const router = Router();
 
@@ -75,16 +76,69 @@ router.get("/rfp-sources", async (req, res) => {
   const directory = buildProcurementPortalDirectory(sources);
   const inventory = buildProcurementPortalInventory(sources);
 
+  // Hydrate the durable per-portal status cache before serializing it. Failure
+  // to read health must never make the source inventory endpoint unavailable.
+  await publicPortalProvidersProvider.getStatus().catch(() => undefined);
+  const portalHealthSources = publicPortalProvidersProvider
+    .getSourceStatuses()
+    .map((status) => {
+      const currentlyFailing = Boolean(
+        status.lastFailureAt &&
+          (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt),
+      );
+      return {
+        sourceId: status.sourceId,
+        sourceName: status.sourceName,
+        domain: status.domain,
+        lastCheckedAt: status.lastCheckedAt,
+        lastSuccessAt: status.lastSuccessAt,
+        lastFailureAt: status.lastFailureAt,
+        lastFailureReason: status.lastFailureReason,
+        resultCount: status.resultCount,
+        matchedCount: status.matchedCount,
+        totalAttempts: status.totalAttempts,
+        totalSuccesses: status.totalSuccesses,
+        totalFailures: status.totalFailures,
+        consecutiveFailures: status.consecutiveFailures,
+        lastOutcome: status.lastOutcome,
+        currentlyFailing,
+      };
+    });
+  const portalHealthSummary = portalHealthSources.reduce(
+    (summary, status) => {
+      summary.checked += 1;
+      if (status.currentlyFailing) summary.failing += 1;
+      else if (status.lastOutcome === "success") summary.success += 1;
+      else if (status.lastOutcome === "no_results") summary.noResults += 1;
+      else if (status.lastOutcome === "validation_failed") {
+        summary.validationFailed += 1;
+      }
+      return summary;
+    },
+    {
+      checked: 0,
+      success: 0,
+      noResults: 0,
+      failing: 0,
+      validationFailed: 0,
+    },
+  );
+
   return res.json({
     sources,
     directory,
     inventory,
+    health: {
+      summary: portalHealthSummary,
+      sources: portalHealthSources,
+    },
     totals: {
       ...totals,
       verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,
       likelyCount: totals.byOccumedFit.likely ?? 0,
       broadCount: totals.byOccumedFit.broad ?? 0,
-      insufficientEvidenceCount: totals.byOccumedFit.insufficient_evidence ?? 0,
+      insufficientEvidenceCount:
+        totals.byOccumedFit.insufficient_evidence ?? 0,
       irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
       unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
     },
