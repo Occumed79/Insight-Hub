@@ -172,6 +172,28 @@ function normalizeDomain(sourceUrl: string): string {
   return new URL(sourceUrl).hostname.replace(/^www\./, "").toLowerCase();
 }
 
+function validatePublicPortalUrl(
+  label: "sourceUrl" | "searchUrl",
+  value: string | undefined,
+  expectedDomain: string | undefined,
+  errors: string[],
+): void {
+  if (!value) return;
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/.test(parsed.protocol)) {
+      errors.push(`${label} must be http(s)`);
+    }
+    const normalizedExpectedDomain = expectedDomain?.replace(/^www\./, "").toLowerCase();
+    const normalizedUrlDomain = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    if (normalizedExpectedDomain && normalizedUrlDomain !== normalizedExpectedDomain) {
+      errors.push(`${label} hostname must match domain`);
+    }
+  } catch {
+    errors.push(`${label} must be a valid URL`);
+  }
+}
+
 export function validatePublicPortalSource(
   source: PublicPortalSource,
 ): string[] {
@@ -186,20 +208,10 @@ export function validatePublicPortalSource(
     errors.push(`invalid scraperType: ${source.scraperType}`);
   if (!VERIFICATION_STATUSES.includes(source.verificationStatus))
     errors.push(`invalid verificationStatus: ${source.verificationStatus}`);
-  try {
-    const parsed = new URL(source.sourceUrl);
-    if (!/^https?:$/.test(parsed.protocol))
-      errors.push("sourceUrl must be http(s)");
-    if (
-      source.domain &&
-      normalizeDomain(source.sourceUrl) !==
-        source.domain.replace(/^www\./, "").toLowerCase()
-    ) {
-      errors.push("domain must match sourceUrl hostname");
-    }
-  } catch {
-    errors.push("sourceUrl must be a valid URL");
-  }
+  if (/\s/.test(source.id)) errors.push("id must not contain whitespace");
+  if (/^https?:\/\//i.test(source.domain)) errors.push("domain must be a hostname, not a URL");
+  validatePublicPortalUrl("sourceUrl", source.sourceUrl, source.domain, errors);
+  validatePublicPortalUrl("searchUrl", source.searchUrl, source.domain, errors);
   if (source.enabled && source.verificationStatus !== "verified") {
     errors.push("enabled sources must be verified");
   }
@@ -228,10 +240,7 @@ export function validatePublicPortalCatalog(
 
   for (const source of sources) {
     ids.set(source.id, (ids.get(source.id) ?? 0) + 1);
-    try {
-      const parsed = new URL(source.sourceUrl);
-      if (!/^https?:$/.test(parsed.protocol)) invalidUrls.push(source.id);
-    } catch {
+    if (validatePublicPortalSource(source).some((error) => error.includes("Url") || error.includes("domain"))) {
       invalidUrls.push(source.id);
     }
     if (isAggregatorDomain(source.domain))
@@ -276,7 +285,8 @@ export function publicPortalSourceFromImport(
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "")}`,
   ).trim();
-  const domain = sourceUrl ? normalizeDomain(sourceUrl) : "";
+  const normalizedSearchUrl = String(row.searchUrl ?? "").trim() || undefined;
+  const domain = sourceUrl ? normalizeDomain(sourceUrl) : normalizedSearchUrl ? normalizeDomain(normalizedSearchUrl) : "";
   return {
     id,
     agencyName,
@@ -285,7 +295,7 @@ export function publicPortalSourceFromImport(
     county: String(row.county ?? "").trim() || undefined,
     city: String(row.city ?? "").trim() || undefined,
     sourceUrl,
-    searchUrl: String(row.searchUrl ?? "").trim() || undefined,
+    searchUrl: normalizedSearchUrl,
     domain,
     portalPlatform: String(row.portalPlatform ?? "").trim() || undefined,
     sourceLevel:
