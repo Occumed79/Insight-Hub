@@ -104,6 +104,13 @@ export function makeCrawlerOpportunity(options: {
   rawData?: Record<string, unknown>;
 }): NormalizedOpportunity {
   const sourceUrl = options.sourceUrl ?? options.source.sourceUrl;
+  const inferredLocation = [
+    options.source.city,
+    options.source.county,
+    options.source.state,
+  ]
+    .filter(Boolean)
+    .join(", ");
   return {
     externalId:
       options.externalId ??
@@ -119,12 +126,7 @@ export function makeCrawlerOpportunity(options: {
     status: "active",
     postedDate: options.postedDate ?? new Date(),
     responseDeadline: options.responseDeadline,
-    location:
-      options.location ??
-      [options.source.city, options.source.county, options.source.state]
-        .filter(Boolean)
-        .join(", ") ||
-      undefined,
+    location: options.location ?? inferredLocation || undefined,
     description: options.description?.trim(),
     solicitationNumber: options.solicitationNumber?.trim(),
     sourceUrl,
@@ -142,13 +144,22 @@ export function makeCrawlerOpportunity(options: {
 }
 
 export function xmlBlocks(text: string, tag: string): string[] {
-  return [...text.matchAll(new RegExp(`<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)<\\/[^:>]*:?${tag}>`, "gi"))]
-    .map((match) => match[1]);
+  return [
+    ...text.matchAll(
+      new RegExp(
+        `<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)<\\/[^:>]*:?${tag}>`,
+        "gi",
+      ),
+    ),
+  ].map((match) => match[1]);
 }
 
 export function xmlValue(text: string, tag: string): string | undefined {
   const match = text.match(
-    new RegExp(`<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)<\\/[^:>]*:?${tag}>`, "i"),
+    new RegExp(
+      `<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)<\\/[^:>]*:?${tag}>`,
+      "i",
+    ),
   );
   return match ? stripMarkup(match[1]) : undefined;
 }
