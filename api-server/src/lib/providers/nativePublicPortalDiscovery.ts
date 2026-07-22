@@ -12,15 +12,23 @@ export type NativeDiscoveryMethod =
   | "dynamic_endpoint"
   | "serper_fallback";
 
+export type NativeDiscoveryState =
+  | "candidate"
+  | "retrieved"
+  | "relevant_candidate"
+  | "authoritatively_extracted";
+
 export interface NativeDiscoveryCandidate {
   url: string;
   title?: string;
   snippet?: string;
   lastmodHint?: string;
   method: NativeDiscoveryMethod;
+  state: NativeDiscoveryState;
   verified: boolean;
   confidence: "high" | "medium" | "low";
   contentType?: string;
+  statusHint?: string;
 }
 
 export interface NativeDiscoveryDiagnostics {
@@ -46,7 +54,9 @@ export interface NativeDiscoveryOptions {
   maxRedirects?: number;
   maxSitemapDepth?: number;
   elapsedMs?: number;
+  requestTimeoutMs?: number;
   allowedHosts?: string[];
+  quotas?: Partial<Record<NativeDiscoveryMethod, number>>;
 }
 
 export interface DynamicEndpointFingerprint {
@@ -98,9 +108,8 @@ export class RobotsRules {
       if (lower === "user-agent") applies = value.trim() === "*";
       if (lower === "sitemap")
         rules.sitemaps.push(new URL(value.trim(), baseUrl).toString());
-      if ((lower === "allow" || lower === "disallow") && applies) {
+      if ((lower === "allow" || lower === "disallow") && applies)
         rules.rules.push({ allow: lower === "allow", path: value.trim() });
-      }
     }
     return rules;
   }
@@ -122,6 +131,13 @@ export class RobotsRules {
   }
 }
 
+function allowedHost(raw: string, allowedHosts: Set<string>): boolean {
+  const host = raw.toLowerCase().replace(/^www\./, "");
+  return [...allowedHosts].some(
+    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+  );
+}
+
 function canonicalizeUrl(
   raw: string,
   base: string,
@@ -131,14 +147,8 @@ function canonicalizeUrl(
     const url = new URL(raw, base);
     url.hash = "";
     if (!["http:", "https:"].includes(url.protocol)) return null;
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (
-      ![...allowedHosts].some(
-        (allowed) => host === allowed || host.endsWith(`.${allowed}`),
-      )
-    )
-      return null;
-    url.hostname = host;
+    if (!allowedHost(url.hostname, allowedHosts)) return null;
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
     if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
     return url.toString();
   } catch {
@@ -172,6 +182,21 @@ function xmlValues(text: string, tag: string): string[] {
   ].map((m) => m[1].trim());
 }
 
+function candidate(
+  url: string,
+  method: NativeDiscoveryMethod,
+  fields: Partial<NativeDiscoveryCandidate> = {},
+): NativeDiscoveryCandidate {
+  return {
+    url,
+    method,
+    state: "candidate",
+    verified: false,
+    confidence: "low",
+    ...fields,
+  };
+}
+
 export function parseSitemapLike(
   text: string,
   sourceUrl: string,
@@ -183,73 +208,53 @@ export function parseSitemapLike(
   const sitemaps = xmlValues(text, "sitemap")
     .flatMap((block) => xmlValues(block, "loc"))
     .map((u) => new URL(u, sourceUrl).toString());
-  const urlBlocks = xmlValues(text, "url");
-  const candidates = urlBlocks.flatMap((block) => {
+  const urlCandidates = xmlValues(text, "url").flatMap((block) => {
     const loc = xmlValues(block, "loc")[0];
-    if (!loc) return [];
-    return [
-      {
-        url: new URL(loc, sourceUrl).toString(),
-        lastmodHint: xmlValues(block, "lastmod")[0],
-        method: "sitemap_url" as const,
-        verified: false,
-        confidence: "low" as const,
-      },
-    ];
+    return loc
+      ? [
+          candidate(new URL(loc, sourceUrl).toString(), "sitemap_url", {
+            lastmodHint: xmlValues(block, "lastmod")[0],
+          }),
+        ]
+      : [];
   });
   const rssItems = xmlValues(text, "item").flatMap((block) => {
     const link = xmlValues(block, "link")[0];
-    if (!link) return [];
-    return [
-      {
-        url: new URL(link, sourceUrl).toString(),
-        title: xmlValues(block, "title")[0],
-        method: "rss_feed" as const,
-        verified: false,
-        confidence: "low" as const,
-      },
-    ];
+    return link
+      ? [
+          candidate(new URL(link, sourceUrl).toString(), "rss_feed", {
+            title: xmlValues(block, "title")[0],
+          }),
+        ]
+      : [];
   });
   const atomEntries = xmlValues(text, "entry").flatMap((block) => {
     const href = block.match(/<link[^>]+href=["']([^"']+)/i)?.[1];
-    if (!href) return [];
-    return [
-      {
-        url: new URL(href, sourceUrl).toString(),
-        title: xmlValues(block, "title")[0],
-        method: "atom_feed" as const,
-        verified: false,
-        confidence: "low" as const,
-      },
-    ];
+    return href
+      ? [
+          candidate(new URL(href, sourceUrl).toString(), "atom_feed", {
+            title: xmlValues(block, "title")[0],
+          }),
+        ]
+      : [];
   });
   const textUrls =
     text.trim().startsWith("http") && !text.includes("<")
       ? text
           .split(/\s+/)
           .filter(Boolean)
-          .map((url) => ({
-            url: new URL(url, sourceUrl).toString(),
-            method: "sitemap_url" as const,
-            verified: false,
-            confidence: "low" as const,
-          }))
+          .map((url) =>
+            candidate(new URL(url, sourceUrl).toString(), "sitemap_url"),
+          )
       : [];
   return {
     sitemaps,
-    candidates: [...candidates, ...rssItems, ...atomEntries, ...textUrls],
+    candidates: [...urlCandidates, ...rssItems, ...atomEntries, ...textUrls],
     feeds: [...rssItems, ...atomEntries].map((c) => c.url),
   };
 }
 
-function parseHtmlLinks(
-  html: string,
-  pageUrl: string,
-): {
-  candidates: NativeDiscoveryCandidate[];
-  feeds: string[];
-  pages: string[];
-} {
+function parseHtmlLinks(html: string, pageUrl: string) {
   const anchors = [
     ...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi),
   ];
@@ -265,29 +270,57 @@ function parseHtmlLinks(
     if (
       /rfp|bid|solicitation|opportunit|proposal|quote|\.pdf/i.test(label + href)
     )
-      candidates.push({
-        url,
-        title: label,
-        method: "html_listing",
-        verified: false,
-        confidence: "low",
-      });
+      candidates.push(candidate(url, "html_listing", { title: label }));
   }
   const feeds = [
     ...html.matchAll(
-      /<link\b[^>]*type=["']application\/(rss\+xml|atom\+xml)["'][^>]*href=["']([^"']+)/gi,
+      /<link\b[^>]*(?:rel=["'][^"']*alternate[^"']*["'][^>]*type=["']application\/(?:rss\+xml|atom\+xml)["']|type=["']application\/(?:rss\+xml|atom\+xml)["'][^>]*rel=["'][^"']*alternate[^"']*["'])[^>]*href=["']([^"']+)/gi,
     ),
-  ].map((m) => new URL(m[2], pageUrl).toString());
+    ...html.matchAll(
+      /<link\b[^>]*type=["']application\/(?:rss\+xml|atom\+xml)["'][^>]*href=["']([^"']+)/gi,
+    ),
+  ].map((m) => new URL(m[1], pageUrl).toString());
   return { candidates, feeds, pages };
+}
+
+function looksProcurementPath(c: NativeDiscoveryCandidate): boolean {
+  const haystack = `${c.title ?? ""} ${c.url}`.toLowerCase();
+  return /rfp|bid|solicitation|opportunit|proposal|quote|procure|purchas|contract|\.pdf/.test(
+    haystack,
+  );
+}
+
+function isRelevantProcurement(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (/award notice|awarded to|bid tab|closed|expired|cancelled/.test(lower))
+    return false;
+  return (
+    /(rfp|request for proposal|solicitation|bid|quote|proposal)/.test(lower) &&
+    /(occupational|employee health|medical surveillance|drug test|physicals?|fit for duty|clinic|health services)/.test(
+      lower,
+    )
+  );
+}
+
+async function readLimited(res: Response, maxBytes: number): Promise<string> {
+  if (!res.body) return res.text();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) throw new Error("oversized response");
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 export async function discoverNativePortal(
   baseUrl: string,
   options: NativeDiscoveryOptions = {},
-): Promise<{
-  candidates: NativeDiscoveryCandidate[];
-  diagnostics: NativeDiscoveryDiagnostics;
-}> {
+) {
   const fetcher = options.fetchImpl ?? fetch;
   const started = Date.now();
   const base = new URL(baseUrl);
@@ -301,6 +334,21 @@ export async function discoverNativePortal(
   const maxPages = options.maxPages ?? 25;
   const maxUrls = options.maxUrls ?? 100;
   const maxDepth = options.maxSitemapDepth ?? 2;
+  const maxRedirects = options.maxRedirects ?? 3;
+  const perRequestTimeout = options.requestTimeoutMs ?? 5_000;
+  const quotas: Record<NativeDiscoveryMethod, number> = {
+    dedicated_adapter: 0,
+    robots_sitemap: 0,
+    conventional_sitemap: 0,
+    sitemap_url: Math.max(3, Math.floor(maxUrls * 0.4)),
+    rss_feed: Math.max(3, Math.floor(maxUrls * 0.2)),
+    atom_feed: Math.max(3, Math.floor(maxUrls * 0.2)),
+    html_listing: Math.max(3, Math.floor(maxUrls * 0.3)),
+    http_link_pagination: Math.max(2, Math.floor(maxUrls * 0.1)),
+    dynamic_endpoint: Math.max(2, Math.floor(maxUrls * 0.1)),
+    serper_fallback: 0,
+    ...options.quotas,
+  };
   const diagnostics: NativeDiscoveryDiagnostics = {
     nativeSourcesAttempted: [],
     sitemapsFound: [],
@@ -314,41 +362,75 @@ export async function discoverNativePortal(
     candidatesVerifiedFromDirectOfficialContent: 0,
     errors: [],
   };
-  const candidates: NativeDiscoveryCandidate[] = [];
+  const buckets = new Map<NativeDiscoveryMethod, NativeDiscoveryCandidate[]>();
   const seenUrls = new Set<string>();
   const seenSignatures = new Set<string>();
-  const add = (candidate: NativeDiscoveryCandidate) => {
-    const url = canonicalizeUrl(candidate.url, baseUrl, allowed);
-    if (!url || seenUrls.has(url) || candidates.length >= maxUrls) return;
+  const add = (c: NativeDiscoveryCandidate) => {
+    const url = canonicalizeUrl(c.url, baseUrl, allowed);
+    if (!url || seenUrls.has(url) || !looksProcurementPath({ ...c, url }))
+      return;
+    const bucket = buckets.get(c.method) ?? [];
+    if (bucket.length >= (quotas[c.method] ?? maxUrls)) return;
     seenUrls.add(url);
-    candidate.url = url;
-    candidates.push(candidate);
-    diagnostics.candidateUrlsByMethod[candidate.method] =
-      (diagnostics.candidateUrlsByMethod[candidate.method] ?? 0) + 1;
+    c.url = url;
+    bucket.push(c);
+    buckets.set(c.method, bucket);
+    diagnostics.candidateUrlsByMethod[c.method] =
+      (diagnostics.candidateUrlsByMethod[c.method] ?? 0) + 1;
   };
   let robots = new RobotsRules();
-  async function get(url: string) {
+  async function get(
+    url: string,
+    redirectCount = 0,
+  ): Promise<{ res: Response; text: string; url: string }> {
     if (options.signal?.aborted)
       throw options.signal.reason ?? new Error("aborted");
     if (Date.now() - started > (options.elapsedMs ?? 10_000))
       throw new Error("native discovery timeout");
-    if (!robots.allows(url)) throw new Error(`robots disallow ${url}`);
-    const res = await fetcher(url, {
-      signal: options.signal,
-      redirect: "follow",
+    const canonical = canonicalizeUrl(url, baseUrl, allowed);
+    if (!canonical) throw new Error(`redirect outside official host ${url}`);
+    if (!robots.allows(canonical))
+      throw new Error(`robots disallow ${canonical}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), perRequestTimeout);
+    options.signal?.addEventListener("abort", () => controller.abort(), {
+      once: true,
     });
-    const len = Number(res.headers.get("content-length") ?? 0);
-    if (len > maxBytes) throw new Error(`oversized response ${url}`);
-    const text = await res.text();
-    if (text.length > maxBytes) throw new Error(`oversized response ${url}`);
-    return { res, text };
+    try {
+      const res = await fetcher(canonical, {
+        signal: controller.signal,
+        redirect: "manual",
+      });
+      if (
+        res.status >= 300 &&
+        res.status < 400 &&
+        res.headers.get("location")
+      ) {
+        if (redirectCount >= maxRedirects)
+          throw new Error(`redirect limit exceeded ${canonical}`);
+        const next = new URL(
+          res.headers.get("location")!,
+          canonical,
+        ).toString();
+        return get(next, redirectCount + 1);
+      }
+      const finalHost = new URL(res.url || canonical).hostname;
+      if (!allowedHost(finalHost, allowed))
+        throw new Error(`redirect outside official host ${res.url}`);
+      const len = Number(res.headers.get("content-length") ?? 0);
+      if (len > maxBytes) throw new Error(`oversized response ${canonical}`);
+      return { res, text: await readLimited(res, maxBytes), url: canonical };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   try {
     diagnostics.nativeSourcesAttempted.push("robots.txt");
     const out = await fetcher(new URL("/robots.txt", base).toString(), {
       signal: options.signal,
+      redirect: "manual",
     });
-    robots = RobotsRules.parse(await out.text(), baseUrl);
+    robots = RobotsRules.parse(await readLimited(out, maxBytes), baseUrl);
   } catch (e) {
     diagnostics.errors.push(String(e));
   }
@@ -357,12 +439,14 @@ export async function discoverNativePortal(
     "/sitemap.xml",
     "/sitemap_index.xml",
     "/sitemap.txt",
-  ]
-    .map((u) => new URL(u, base).toString())
-    .map((u) => ({ url: u, depth: 0 }));
-  for (const item of sitemapQueue) {
-    if (sitemapQueue.indexOf(item) >= maxPages || item.depth > maxDepth)
-      continue;
+    "/feed.xml",
+    "/rss.xml",
+    "/atom.xml",
+  ].map((u) => ({ url: new URL(u, base).toString(), depth: 0 }));
+  const feedQueue: string[] = [];
+  for (let i = 0; i < sitemapQueue.length && i < maxPages; i++) {
+    const item = sitemapQueue[i];
+    if (item.depth > maxDepth) continue;
     const url = canonicalizeUrl(item.url, baseUrl, allowed);
     if (!url) continue;
     try {
@@ -371,7 +455,10 @@ export async function discoverNativePortal(
       const { text } = await get(url);
       const parsed = parseSitemapLike(text, url);
       parsed.candidates.forEach(add);
-      parsed.feeds.forEach((f) => diagnostics.feedsFound.push(f));
+      parsed.feeds.forEach((f) => {
+        diagnostics.feedsFound.push(f);
+        feedQueue.push(f);
+      });
       parsed.sitemaps.forEach((s) =>
         sitemapQueue.push({ url: s, depth: item.depth + 1 }),
       );
@@ -400,24 +487,50 @@ export async function discoverNativePortal(
       parsed.candidates.forEach(add);
       parsed.feeds.forEach((feed) => {
         diagnostics.feedsFound.push(feed);
-        pageQueue.push(feed);
+        feedQueue.push(feed);
       });
       parsed.pages.forEach((p) => pageQueue.push(p));
     } catch (e) {
       diagnostics.errors.push(String(e));
     }
   }
+  for (const feed of feedQueue.slice(0, maxPages)) {
+    const url = canonicalizeUrl(feed, baseUrl, allowed);
+    if (!url) continue;
+    try {
+      diagnostics.nativeSourcesAttempted.push("feed");
+      const { text } = await get(url);
+      const parsed = parseSitemapLike(text, url);
+      parsed.candidates.forEach(add);
+    } catch (e) {
+      diagnostics.errors.push(String(e));
+    }
+  }
+  const ordered = [
+    "rss_feed",
+    "atom_feed",
+    "html_listing",
+    "sitemap_url",
+    "http_link_pagination",
+    "dynamic_endpoint",
+  ] as NativeDiscoveryMethod[];
+  const candidates = ordered
+    .flatMap((method) => buckets.get(method) ?? [])
+    .slice(0, maxUrls);
   for (const c of candidates) {
     try {
       const { res, text } = await get(c.url);
-      c.verified = true;
-      c.confidence = "medium";
+      c.state = "retrieved";
       c.contentType = res.headers.get("content-type") ?? undefined;
       c.snippet ??= text
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .slice(0, 500);
-      diagnostics.candidatesVerifiedFromDirectOfficialContent += 1;
+      if (isRelevantProcurement(`${c.title ?? ""} ${c.url} ${c.snippet}`)) {
+        c.state = "relevant_candidate";
+        c.confidence = "medium";
+        diagnostics.candidatesVerifiedFromDirectOfficialContent += 1;
+      }
     } catch (e) {
       diagnostics.errors.push(String(e));
     }
