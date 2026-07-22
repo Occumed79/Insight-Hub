@@ -49,8 +49,13 @@ export class DocumentSpider implements PortalSpider {
       diagnostics.pagesCrawled < context.limits.maxPages &&
       diagnostics.urlsVisited < context.limits.maxUrls
     ) {
-      if (context.signal?.aborted)
-        throw context.signal.reason ?? new Error("Document spider cancelled");
+      if (context.signal?.aborted) {
+        const reason = context.signal.reason;
+        diagnostics.errors.push(
+          reason instanceof Error ? reason.message : "Document spider cancelled",
+        );
+        break;
+      }
       const rawUrl = queue.shift();
       if (!rawUrl) break;
       const pageUrl = canonicalizeCrawlerUrl(
@@ -120,13 +125,16 @@ export class DocumentSpider implements PortalSpider {
             response.url,
             config.allowedHosts,
           );
-          if (!canonical || seenPages.has(canonical) || queue.includes(canonical)) continue;
+          if (!canonical || seenPages.has(canonical) || queue.includes(canonical))
+            continue;
           queue.push(canonical);
           context.recordDiscoveredUrl(canonical);
           diagnostics.discoveredUrls.push(canonical);
         }
       } catch (error) {
-        diagnostics.errors.push(error instanceof Error ? error.message : String(error));
+        diagnostics.errors.push(
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
 
@@ -144,7 +152,9 @@ export class DocumentSpider implements PortalSpider {
       diagnostics,
       etag: lastEtag,
       lastModified,
-      contentHash: hashes.length ? contentHash(hashes.join("|")) : context.frontier?.contentHash,
+      contentHash: hashes.length
+        ? contentHash(hashes.join("|"))
+        : context.frontier?.contentHash,
     };
   }
 }
