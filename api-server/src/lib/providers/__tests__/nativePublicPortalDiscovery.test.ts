@@ -8,7 +8,12 @@ import {
   classifyPortalFamily,
 } from "../nativePublicPortalDiscovery";
 import { buildOccuMedSearchQueries } from "../../search/occumedProcurementOntology";
-import { buildPublicPortalSearchPlan } from "../publicPortalDiscovery";
+import {
+  buildPublicPortalSearchPlan,
+  PublicPortalDiscovery,
+  PUBLIC_PORTAL_DISCOVERY_SOURCES,
+} from "../publicPortalDiscovery";
+import { serperProvider } from "../serper";
 
 function response(body: string, init: ResponseInit = {}) {
   return new Response(body, init);
@@ -149,6 +154,51 @@ describe("native public portal discovery", () => {
     assert.ok(out.diagnostics.candidatesVerifiedFromDirectOfficialContent >= 4);
   });
 
+  it("gives feed and HTML candidates capacity when a sitemap contains many generic URLs", async () => {
+    const genericUrls = Array.from(
+      { length: 40 },
+      (_, index) =>
+        `<url><loc>https://portal.example.gov/pages/generic-${index}</loc></url>`,
+    ).join("");
+    const routes: Record<string, Response> = {
+      "https://portal.example.gov/robots.txt": response(`User-agent: *`),
+      "https://portal.example.gov/sitemap.xml": response(
+        `<urlset>${genericUrls}</urlset>`,
+      ),
+      "https://portal.example.gov/sitemap_index.xml": response(``),
+      "https://portal.example.gov/sitemap.txt": response(``),
+      "https://portal.example.gov/feed.xml": response(
+        `<rss><channel><item><title>RFP Employee Health</title><link>/bids/feed-rfp</link></item></channel></rss>`,
+      ),
+      "https://portal.example.gov/rss.xml": response(``),
+      "https://portal.example.gov/atom.xml": response(``),
+      "https://portal.example.gov/search": response(
+        `<link rel="alternate" type="application/rss+xml" href="/feed.xml"><a href="/bids/html-rfp">RFP Occupational Health Services</a>`,
+      ),
+      "https://portal.example.gov/bids/feed-rfp": response(
+        `Open RFP employee health services deadline 2099-01-01`,
+      ),
+      "https://portal.example.gov/bids/html-rfp": response(
+        `Open RFP occupational health services deadline 2099-01-01`,
+      ),
+    };
+    for (let index = 0; index < 40; index += 1) {
+      routes[`https://portal.example.gov/pages/generic-${index}`] = response(
+        `Generic government sitemap page`,
+      );
+    }
+    const out = await discoverNativePortal(
+      "https://portal.example.gov/search",
+      {
+        fetchImpl: mockFetch(routes),
+        maxUrls: 8,
+        maxPages: 8,
+      },
+    );
+    assert.ok(out.candidates.some((c) => c.method === "rss_feed"));
+    assert.ok(out.candidates.some((c) => c.method === "html_listing"));
+  });
+
   it("enforces same-origin, oversized response, cancellation and timeout limits", async () => {
     const foreign = await discoverNativePortal("https://portal.example.gov/", {
       fetchImpl: mockFetch({
@@ -238,5 +288,76 @@ describe("native public portal discovery", () => {
       plan.diagnostics.deferredPortalIds.length > 0 ||
         plan.diagnostics.deferredQueryBundleIndexes.length > 0,
     );
+  });
+});
+
+describe("public portal discovery regressions", () => {
+  it("runs Serper per portal when another portal only has generic native pages and preserves normalized provenance", async () => {
+    const [portalA, portalB] = PUBLIC_PORTAL_DISCOVERY_SOURCES.slice(0, 2);
+    assert.ok(portalA);
+    assert.ok(portalB);
+    const routes: Record<string, Response> = {};
+    for (const portal of [portalA, portalB]) {
+      const origin = new URL(portal.searchUrl ?? `https://${portal.domain}/`)
+        .origin;
+      routes[`${origin}/robots.txt`] = response(
+        `User-agent: *\nSitemap: /sitemap.xml`,
+      );
+      routes[`${origin}/sitemap.xml`] = response(
+        `<urlset><url><loc>${origin}/about-procurement</loc></url></urlset>`,
+      );
+      routes[`${origin}/sitemap_index.xml`] = response(``);
+      routes[`${origin}/sitemap.txt`] = response(``);
+      routes[`${origin}/feed.xml`] = response(``);
+      routes[`${origin}/rss.xml`] = response(``);
+      routes[`${origin}/atom.xml`] = response(``);
+      routes[portal.searchUrl ?? `${origin}/`] = response(
+        `<a href="${origin}/about-procurement">Procurement information</a>`,
+      );
+      routes[`${origin}/about-procurement`] = response(
+        `General government procurement page with no occupational health solicitation.`,
+      );
+    }
+    const originalConfigured = serperProvider.isConfigured;
+    const originalSearchMultiple = serperProvider.searchMultiple;
+    serperProvider.isConfigured = async () => true;
+    serperProvider.searchMultiple = async (queries: string[]) => [
+      {
+        title: "RFP Occupational Health Services",
+        link: `https://${portalB.domain.replace(/^www\./, "")}/bids/serper-rfp`,
+        snippet:
+          "Solicitation for employee occupational health services and drug testing. Deadline 2099-01-01.",
+      },
+    ];
+    try {
+      const discovery = new PublicPortalDiscovery();
+      const results = await discovery.search({
+        executionBudget: 1,
+        continuationCursor: 0,
+        nativeFetchImpl: mockFetch(routes),
+      });
+      assert.ok(results.some((result) => result.url.includes("serper-rfp")));
+      const records = discovery.toOpportunities(results);
+      const serper = records.find((record) =>
+        record.sourceUrl?.includes("serper-rfp"),
+      );
+      assert.ok(serper);
+      assert.equal(serper.rawData?.discoveryMethod, "serper_fallback");
+      assert.equal(serper.rawData?.fallback, true);
+      assert.equal(serper.rawData?.authoritative, false);
+    } finally {
+      serperProvider.isConfigured = originalConfigured;
+      serperProvider.searchMultiple = originalSearchMultiple;
+    }
+  });
+
+  it("does not require Serper configuration for native discovery configuration", async () => {
+    const originalConfigured = serperProvider.isConfigured;
+    serperProvider.isConfigured = async () => false;
+    try {
+      assert.equal(await new PublicPortalDiscovery().isConfigured(), true);
+    } finally {
+      serperProvider.isConfigured = originalConfigured;
+    }
   });
 });

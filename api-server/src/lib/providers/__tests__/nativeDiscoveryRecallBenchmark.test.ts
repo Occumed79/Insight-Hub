@@ -3,16 +3,20 @@ import { describe, it } from "node:test";
 import { runNativeDiscoveryRecallBenchmark } from "../benchmarks/nativeDiscoveryRecallBenchmark";
 
 describe("native discovery recall benchmark", () => {
-  it("reports measurable before-and-after recall improvement and direct verification", async () => {
+  it("compares prior search behavior with corrected native-first behavior and separates retrieval from authority", async () => {
     const report = await runNativeDiscoveryRecallBenchmark();
-    assert.ok(report.after.recall > report.before.recall);
     assert.ok(
-      report.after.directVerificationRate >
-        report.before.directVerificationRate,
+      report.correctedNativeFirstBehavior.candidateRetrievalRecall >
+        report.priorSearchBehavior.candidateRetrievalRecall,
+    );
+    assert.equal(
+      report.correctedNativeFirstBehavior.authoritativeVerificationRecall <
+        report.correctedNativeFirstBehavior.candidateRetrievalRecall,
+      true,
     );
     assert.ok(
-      report.after.nativeVersusSearchFallbackDiscovery.native >
-        report.after.nativeVersusSearchFallbackDiscovery.searchFallback,
+      report.correctedNativeFirstBehavior.nativeVersusSearchFallbackDiscovery
+        .searchFallback >= 1,
     );
   });
 });

@@ -1,44 +1,47 @@
 {
-  "before": {
-    "recall": 0.25,
-    "precision": 0.5,
+  "priorSearchBehavior": {
+    "candidateRetrievalRecall": 0.25,
+    "authoritativeVerificationRecall": 0,
+    "precision": 0.6666666666666666,
     "missedKnownOpportunities": [
-      "https://portal.example.gov/bids/medical-surveillance-2",
-      "https://portal.example.gov/bids/drug-testing-3",
-      "https://portal.example.gov/bids/pdf-only-4.pdf"
+      "https://native.example.gov/bids/prior-year-open",
+      "https://native.example.gov/bids/no-year",
+      "https://native.example.gov/docs/pdf-only.pdf",
+      "https://feed.example.gov/bids/rss-health",
+      "https://feed.example.gov/bids/atom-health",
+      "https://dynamic-api.example.gov/api/opportunities"
     ],
     "falsePositives": [
-      "https://portal.example.gov/news/award-5"
+      "https://native.example.gov/news/award"
     ],
     "coverageByPortal": {
-      "portal.example.gov": 1
-    },
-    "coverageByQueryBundle": {
-      "occupational_health": 1
+      "native": 1,
+      "feed": 0,
+      "fallback": 1,
+      "dynamic": 0
     },
     "nativeVersusSearchFallbackDiscovery": {
-      "native": 0,
+      "native": 1,
       "searchFallback": 1
     },
     "directVerificationRate": 0
   },
-  "after": {
-    "recall": 1,
-    "precision": 0.8,
+  "correctedNativeFirstBehavior": {
+    "candidateRetrievalRecall": 1,
+    "authoritativeVerificationRecall": 0.125,
+    "precision": 1,
     "missedKnownOpportunities": [],
-    "falsePositives": [
-      "https://portal.example.gov/news/award-5"
-    ],
+    "falsePositives": [],
     "coverageByPortal": {
-      "portal.example.gov": 4
-    },
-    "coverageByQueryBundle": {
-      "occupational_health": 4
+      "native": 4,
+      "feed": 2,
+      "fallback": 1,
+      "dynamic": 1
     },
     "nativeVersusSearchFallbackDiscovery": {
-      "native": 5,
-      "searchFallback": 0
+      "native": 7,
+      "searchFallback": 1
     },
-    "directVerificationRate": 1
+    "directVerificationRate": 0.125
   }
 }
