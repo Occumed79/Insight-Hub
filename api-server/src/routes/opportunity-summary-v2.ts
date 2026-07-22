@@ -5,9 +5,11 @@ import { opportunitiesTable } from "@workspace/db/schema";
 import { tavilyProvider } from "../lib/providers/tavily";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
-import { classifyOpportunityQuality } from "../lib/opportunityQuality";
+import { classifyOpportunityQuality, plainSummaryIneligibilityReason, summaryEvidenceFingerprint, summaryIneligibilityReason } from "../lib/opportunityQuality";
+import { mergeSummaryWithVerifiedFacts } from "../lib/summaryEvidence";
 
 const router = Router();
+const summaryCache = new Map<string, any>();
 
 function cleanText(value: unknown, max = 4000): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -123,40 +125,11 @@ async function complete(prompt: string, provider: "groq" | "openrouter") {
   return jsonOnly(text);
 }
 
-function merge(ai: any, base: any, provider: string) {
-  return {
-    summary: typeof ai?.summary === "string" && ai.summary.trim() ? ai.summary.trim() : base.summary,
-    occumedFit: typeof ai?.occumedFit === "string" && !vague(ai.occumedFit) ? ai.occumedFit.trim() : base.occumedFit,
-    serviceLines: Array.isArray(ai?.serviceLines) && ai.serviceLines.length ? ai.serviceLines.filter((x: any) => typeof x === "string").slice(0, 5) : base.serviceLines,
-    keyDates: {
-      posted: typeof ai?.keyDates?.posted === "string" ? ai.keyDates.posted || null : base.keyDates.posted,
-      due: typeof ai?.keyDates?.due === "string" ? ai.keyDates.due || null : base.keyDates.due,
-    },
-    buyer: typeof ai?.buyer === "string" ? ai.buyer || null : base.buyer,
-    estimatedValue: typeof ai?.estimatedValue === "string" ? ai.estimatedValue || null : base.estimatedValue,
-    bidNotes: [`Decision status: ${base.fitVerdict}. Confidence: ${base.confidence}.`, ...(Array.isArray(ai?.bidNotes) ? ai.bidNotes : base.bidNotes)].filter((x: any) => typeof x === "string").slice(0, 5),
-    missingInfo: Array.isArray(ai?.missingInfo) ? ai.missingInfo.filter((x: any) => typeof x === "string").slice(0, 6) : base.missingInfo,
-    sourceUrl: base.sourceUrl,
-    provider,
-    fitVerdict: base.fitVerdict,
-    confidence: base.confidence,
-  };
-}
-
 router.post("/opportunities/:id/summary", async (req, res) => {
   try {
     const rows = await db.select().from(opportunitiesTable).where(eq(opportunitiesTable.id, req.params.id));
     if (!rows.length) return res.status(404).json({ error: "Opportunity not found" });
     const opp = rows[0] as any;
-    const initialQuality = classifyOpportunityQuality(opp);
-    if (!initialQuality.summaryEligible) {
-      return res.status(422).json({
-        eligible: false,
-        classification: initialQuality.classification,
-        quality: initialQuality,
-        reason: initialQuality.reasons[0] ?? "This opportunity does not have sufficient verified evidence for an AI brief.",
-      });
-    }
     let extracted: string | null = null;
     const url = sourceUrl(opp);
 
@@ -172,29 +145,39 @@ router.post("/opportunities/:id/summary", async (req, res) => {
     }
 
     const quality = classifyOpportunityQuality(opp);
-    if (!extracted && !quality.sourceVerified) {
+    const hasAuthoritativeContent = Boolean(extracted && extracted.length >= 400);
+    const hasStructuredDirectEvidence = quality.summaryEligible;
+    const reasonCode = !hasAuthoritativeContent && !hasStructuredDirectEvidence
+      ? (summaryIneligibilityReason(quality, false) ?? "authoritative_content_unavailable")
+      : summaryIneligibilityReason(quality, true);
+    if (reasonCode) {
       return res.status(422).json({
         eligible: false,
         classification: quality.classification,
+        reasonCode,
+        reason: plainSummaryIneligibilityReason(reasonCode),
         quality,
-        reason: "Authoritative solicitation content has not been verified.",
       });
     }
-    const base = { ...baseBrief(opp, extracted), classification: quality.classification, evidenceSource: quality.sourceType, sourceAuthority: quality.sourceAuthority, eligible: true };
+    const evidenceFingerprint = summaryEvidenceFingerprint(quality, cleanText(extracted, 6000));
+    const cached = summaryCache.get(opp.id);
+    if (cached?.evidenceFingerprint === evidenceFingerprint) return res.json({ ...cached, cached: true });
+    const base = { ...baseBrief(opp, extracted), classification: quality.classification, solicitationType: opp.type ?? null, evidenceSource: quality.sourceType, sourceAuthority: quality.sourceAuthority, eligible: true, evidenceFingerprint };
     const prompt = promptFor({ ...opp, quality }, base, extracted);
 
     try {
-      if (await groqProvider.isConfigured()) return res.json(merge(await complete(prompt, "groq"), base, "groq-v2"));
+      if (await groqProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "groq"), base, "groq-v2"); summaryCache.set(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "groq summary failed");
     }
 
     try {
-      if (await openrouterProvider.isConfigured()) return res.json(merge(await complete(prompt, "openrouter"), base, "openrouter-v2"));
+      if (await openrouterProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "openrouter"), base, "openrouter-v2"); summaryCache.set(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "openrouter summary failed");
     }
 
+    summaryCache.set(opp.id, base);
     return res.json(base);
   } catch (err) {
     req.log.error(err);
