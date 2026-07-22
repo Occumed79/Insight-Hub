@@ -209,23 +209,37 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
  * Returns null when neither source provides a non-empty value.
  * Never logs or exposes the resolved secret value.
  */
-export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
-  // 1. Environment variable takes priority.
+
+export interface ResolvedCredential {
+  value: string;
+  source: "environment" | "database";
+  key: string;
+}
+
+/**
+ * Resolve a provider credential and identify which backing source supplied it.
+ * This is useful for diagnostics when an invalid environment secret silently
+ * takes precedence over a Settings UI value.
+ */
+export async function resolveCredentialWithSource(dbKey: string, envKey?: string): Promise<ResolvedCredential | null> {
   if (envKey) {
     const envVal = process.env[envKey];
-    if (envVal && envVal.trim()) return envVal.trim();
+    if (envVal && envVal.trim()) return { value: envVal.trim(), source: "environment", key: envKey };
   }
 
-  // 2. Database fallback — only reached when env var is absent/empty.
   try {
     const rows = await db.select().from(settingsTable).where(eq(settingsTable.key, dbKey));
     const dbVal = rows[0]?.value;
-    if (dbVal && dbVal.trim()) return dbVal.trim();
+    if (dbVal && dbVal.trim()) return { value: dbVal.trim(), source: "database", key: dbKey };
   } catch {
     // DB may be unavailable during early startup; treat as unconfigured.
   }
 
   return null;
+}
+
+export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
+  return (await resolveCredentialWithSource(dbKey, envKey))?.value ?? null;
 }
 
 /**

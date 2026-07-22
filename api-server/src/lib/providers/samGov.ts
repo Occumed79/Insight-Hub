@@ -1,5 +1,5 @@
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
-import { resolveCredential } from "../config/providerConfig";
+import { resolveCredential, resolveCredentialWithSource, type ResolvedCredential } from "../config/providerConfig";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -28,11 +28,29 @@ interface SamOpportunity {
   award?: { amount?: number | string; awardee?: { name?: string } };
 }
 
+export function formatSamGovApiError(status: number, body: string, credential: Pick<ResolvedCredential, "source" | "key">): string {
+  const snippet = body.replace(/\s+/g, " ").trim().slice(0, 200);
+  const sourceLabel = credential.source === "environment"
+    ? `${credential.key} environment variable`
+    : `${credential.key} database setting`;
+
+  if (status === 401 && /API_KEY_INVALID/i.test(body)) {
+    return `SAM.gov API error 401: API_KEY_INVALID. The rejected key was loaded from the ${sourceLabel}. `
+      + `If the key you entered in Settings is correct, check for a stale SAM_GOV_API_KEY deployment secret because environment variables take precedence over database settings.`;
+  }
+
+  return `SAM.gov API error ${status}: ${snippet}`;
+}
+
 export class SamGovProvider implements DataSourceProvider {
   readonly name = "samGov" as const;
 
   private async getApiKey(): Promise<string | null> {
-    return resolveCredential("samApiKey", "SAM_GOV_API_KEY");
+    return (await this.getApiKeyCredential())?.value ?? null;
+  }
+
+  private async getApiKeyCredential(): Promise<ResolvedCredential | null> {
+    return resolveCredentialWithSource("samApiKey", "SAM_GOV_API_KEY");
   }
 
   private async getBaseUrl(): Promise<string> {
@@ -69,6 +87,7 @@ export class SamGovProvider implements DataSourceProvider {
    */
   private async runQuery(
     apiKey: string,
+    apiKeySource: ResolvedCredential,
     baseUrl: string,
     extra: Record<string, string>,
     fromDate: Date,
@@ -87,7 +106,7 @@ export class SamGovProvider implements DataSourceProvider {
     const response = await fetch(`${baseUrl}?${params}`);
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`SAM.gov API error ${response.status}: ${text.slice(0, 200)}`);
+      throw new Error(formatSamGovApiError(response.status, text, apiKeySource));
     }
 
     const json = (await response.json()) as { opportunitiesData?: SamOpportunity[]; totalRecords?: number; code?: string; message?: string; nextAccessTime?: string };
@@ -102,8 +121,9 @@ export class SamGovProvider implements DataSourceProvider {
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+    const apiKeyCredential = await this.getApiKeyCredential();
+    if (!apiKeyCredential) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+    const apiKey = apiKeyCredential.value;
 
     const baseUrl = await this.getBaseUrl();
     const dateRange = options.dateRange ?? 30;
@@ -120,7 +140,7 @@ export class SamGovProvider implements DataSourceProvider {
     // differently across API versions. Post-fetch relevance filtering handles quality instead.
 
     // Primary keyword pull — throws on quota so the caller surfaces the message.
-    const normalized = await this.runQuery(apiKey, baseUrl, { keywords: searchKeywords }, fromDate, today, limit);
+    const normalized = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { keywords: searchKeywords }, fromDate, today, limit);
 
     // NAICS/PSC-targeted pulls (PR B): structured codes surface solicitations that
     // keyword search misses (and come with real dates/values). Bounded to keep
@@ -132,7 +152,7 @@ export class SamGovProvider implements DataSourceProvider {
       ...SamGovProvider.OCCUMED_PSC.map((ccode) => ({ ccode })),
     ];
     const targetedResults = await Promise.allSettled(
-      targetedQueries.map((extra) => this.runQuery(apiKey, baseUrl, extra, fromDate, today, limit))
+      targetedQueries.map((extra) => this.runQuery(apiKey, apiKeyCredential, baseUrl, extra, fromDate, today, limit))
     );
     for (const r of targetedResults) {
       if (r.status === "fulfilled") {
