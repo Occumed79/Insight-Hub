@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronUp,
+  ClipboardCopy,
   ExternalLink,
   Globe2,
   Loader2,
@@ -10,13 +12,19 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 
-type PortalConnectorStatus =
+ type PortalConnectorStatus =
   | "direct_api"
   | "direct_adapter"
   | "generic_extraction"
   | "serper_discovery"
   | "directory_only"
   | "stub";
+
+type PortalRunOutcome =
+  | "success"
+  | "no_results"
+  | "failed"
+  | "validation_failed";
 
 type PortalSource = {
   id: string;
@@ -31,6 +39,35 @@ type PortalSource = {
   connectorDescription: string;
 };
 
+type PortalHealthStatus = {
+  sourceId: string;
+  sourceName?: string;
+  domain?: string;
+  lastCheckedAt: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  lastFailureReason?: string;
+  resultCount: number;
+  matchedCount: number;
+  totalAttempts: number;
+  totalSuccesses: number;
+  totalFailures: number;
+  consecutiveFailures: number;
+  lastOutcome: PortalRunOutcome;
+  currentlyFailing: boolean;
+};
+
+type PortalHealth = {
+  summary: {
+    checked: number;
+    success: number;
+    noResults: number;
+    failing: number;
+    validationFailed: number;
+  };
+  sources: PortalHealthStatus[];
+};
+
 type InventoryGroup = {
   id: string;
   title: string;
@@ -43,6 +80,7 @@ type PortalInventoryResponse = {
     total: number;
     groups: InventoryGroup[];
   };
+  health?: PortalHealth;
 };
 
 function accessLabel(source: PortalSource): string {
@@ -66,14 +104,54 @@ function connectorBadgeClass(status: PortalConnectorStatus): string {
   return "border-white/10 bg-white/5 text-white/55";
 }
 
-function PortalCard({ source }: { source: PortalSource }) {
+function healthLabel(status?: PortalHealthStatus): string {
+  if (!status) return "Not checked";
+  if (status.currentlyFailing) {
+    return status.lastOutcome === "validation_failed"
+      ? "Validation failed"
+      : "Failed";
+  }
+  if (status.lastOutcome === "success") {
+    return `${status.resultCount.toLocaleString()} returned`;
+  }
+  if (status.lastOutcome === "no_results") return "No results";
+  return status.lastOutcome.replaceAll("_", " ");
+}
+
+function healthBadgeClass(status?: PortalHealthStatus): string {
+  if (!status) return "border-white/10 bg-white/5 text-white/45";
+  if (status.currentlyFailing) {
+    return "border-red-400/25 bg-red-400/10 text-red-200";
+  }
+  if (status.lastOutcome === "success") {
+    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  }
+  if (status.lastOutcome === "no_results") {
+    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+  }
+  return "border-white/10 bg-white/5 text-white/55";
+}
+
+function PortalCard({
+  source,
+  health,
+}: {
+  source: PortalSource;
+  health?: PortalHealthStatus;
+}) {
   const href = source.searchUrl || source.url;
+  const healthDetail = health?.currentlyFailing
+    ? health.lastFailureReason
+    : health
+      ? `Last checked ${new Date(health.lastCheckedAt).toLocaleString()}`
+      : undefined;
+
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      title={source.connectorDescription}
+      title={healthDetail ?? source.connectorDescription}
       className="group rounded-xl border border-white/10 bg-white/[0.035] p-3.5 transition-all hover:border-primary/35 hover:bg-white/[0.06]"
     >
       <div className="flex items-start justify-between gap-3">
@@ -101,9 +179,17 @@ function PortalCard({ source }: { source: PortalSource }) {
         >
           {source.connectorLabel}
         </Badge>
+        <Badge
+          variant="outline"
+          className={`text-[9px] font-normal ${healthBadgeClass(health)}`}
+        >
+          {healthLabel(health)}
+        </Badge>
       </div>
       <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
-        {source.connectorDescription}
+        {health?.currentlyFailing && health.lastFailureReason
+          ? health.lastFailureReason
+          : source.connectorDescription}
       </p>
     </a>
   );
@@ -112,10 +198,12 @@ function PortalCard({ source }: { source: PortalSource }) {
 export function ProcurementPortalDirectory() {
   const [inventory, setInventory] =
     useState<PortalInventoryResponse["inventory"]>();
+  const [health, setHealth] = useState<PortalHealth>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [activeGroupId, setActiveGroupId] = useState("direct");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -123,6 +211,7 @@ export function ProcurementPortalDirectory() {
 
     fetch(`${baseUrl}/api/rfp-sources?includeTier3=true`, {
       signal: controller.signal,
+      cache: "no-store",
     })
       .then(async (response) => {
         if (!response.ok)
@@ -131,6 +220,7 @@ export function ProcurementPortalDirectory() {
       })
       .then((data) => {
         setInventory(data.inventory);
+        setHealth(data.health);
         const firstPopulatedGroup = data.inventory?.groups.find(
           (group) => group.sources.length > 0,
         );
@@ -148,6 +238,29 @@ export function ProcurementPortalDirectory() {
     () => inventory?.groups.find((group) => group.id === activeGroupId),
     [activeGroupId, inventory],
   );
+  const healthBySourceId = useMemo(
+    () => new Map(health?.sources.map((status) => [status.sourceId, status])),
+    [health],
+  );
+  const failingSources = useMemo(
+    () => health?.sources.filter((status) => status.currentlyFailing) ?? [],
+    [health],
+  );
+
+  const copyFailures = async () => {
+    const report = failingSources
+      .map(
+        (status) =>
+          `${status.sourceName ?? status.sourceId} (${status.sourceId}): ${
+            status.lastFailureReason ?? "Unknown failure"
+          }`,
+      )
+      .join("\n");
+    if (!report) return;
+    await navigator.clipboard.writeText(report);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2_000);
+  };
 
   return (
     <section className="glass-panel overflow-hidden rounded-2xl border border-white/10">
@@ -165,12 +278,19 @@ export function ProcurementPortalDirectory() {
               Configured Source & Adapter Inventory
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              The complete configured catalog, separated by the collection
-              method actually implemented.
+              Complete configured catalog with durable portal-by-portal health.
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {health && health.summary.failing > 0 && (
+            <Badge
+              variant="outline"
+              className="border-red-400/25 bg-red-400/10 text-[10px] font-normal text-red-200"
+            >
+              {health.summary.failing.toLocaleString()} failing
+            </Badge>
+          )}
           {inventory && (
             <Badge
               variant="outline"
@@ -200,6 +320,50 @@ export function ProcurementPortalDirectory() {
             </div>
           ) : (
             <div className="space-y-5">
+              {health && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-white/45">
+                        Latest persisted portal health
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
+                          {health.summary.success.toLocaleString()} returned results
+                        </Badge>
+                        <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
+                          {health.summary.noResults.toLocaleString()} no results
+                        </Badge>
+                        <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
+                          {health.summary.failing.toLocaleString()} failing
+                        </Badge>
+                        <Badge className="border border-white/10 bg-white/5 text-[10px] text-white/60">
+                          {health.summary.checked.toLocaleString()} checked
+                        </Badge>
+                      </div>
+                    </div>
+                    {failingSources.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void copyFailures()}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        {copied ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <ClipboardCopy className="h-3 w-3" />
+                        )}
+                        {copied ? "Copied" : "Copy all failures"}
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                    Health is stored per portal. A failed adapter no longer makes
+                    the entire public-portal provider appear to have failed.
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-1.5">
                 {inventory.groups.map((group) => {
                   const selected = group.id === activeGroupId;
@@ -237,7 +401,11 @@ export function ProcurementPortalDirectory() {
                   </div>
                   <div className="grid max-h-[560px] grid-cols-1 gap-2.5 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
                     {activeGroup.sources.map((source) => (
-                      <PortalCard key={source.id} source={source} />
+                      <PortalCard
+                        key={source.id}
+                        source={source}
+                        health={healthBySourceId.get(source.id)}
+                      />
                     ))}
                   </div>
                 </div>

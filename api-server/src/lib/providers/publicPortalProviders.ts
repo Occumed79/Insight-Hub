@@ -1,15 +1,40 @@
-import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  NormalizedOpportunity,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { bsoPortalProviders } from "./bsoPortal";
-import { JAGGAER_SCIQUEST_TENANTS, jaggaerSciQuestProviders } from "./jaggaerSciQuest";
+import {
+  JAGGAER_SCIQUEST_TENANTS,
+  jaggaerSciQuestProviders,
+} from "./jaggaerSciQuest";
 import { BONFIRE_TENANTS, bonfirePortalProviders } from "./bonfirePortal";
 import { IONWAVE_TENANTS, ionWavePortalProviders } from "./ionWavePortal";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
-import { DEEP_RECOVERY_SOURCES, deepRecoveryProviders } from "./deepRecoveryProviders";
-import { STATEWIDE_PROCUREMENT_SOURCES, statewideProcurementProviders } from "./statewideProcurementPortals";
-import { PublicPortalProvidersProvider, PUBLIC_PORTAL_SOURCES, type PublicPortalSourceRunStatus } from "./publicPortalProviders/index";
+import {
+  DEEP_RECOVERY_SOURCES,
+  deepRecoveryProviders,
+} from "./deepRecoveryProviders";
+import {
+  STATEWIDE_PROCUREMENT_SOURCES,
+  statewideProcurementProviders,
+} from "./statewideProcurementPortals";
+import {
+  PublicPortalProvidersProvider,
+  PUBLIC_PORTAL_SOURCES,
+  type PublicPortalSourceRunStatus,
+} from "./publicPortalProviders/index";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import { composeAbortSignal } from "./abortSignals";
-import { failedPortalStatus, loadPublicPortalHealth, savePublicPortalHealth, successfulPortalStatus } from "./publicPortalProviders/portalHealthStore";
+import {
+  failedPortalStatus,
+  loadPublicPortalHealth,
+  savePublicPortalHealth,
+  selectFairPortalSources,
+  successfulPortalStatus,
+} from "./publicPortalProviders/portalHealthStore";
 
 export * from "./publicPortalProviders/index";
 export * from "./bsoPortal";
@@ -25,22 +50,140 @@ export * from "./southDakotaPostingBoard";
 export * from "./statewideProcurementPortals";
 
 const BSO_SOURCES: PublicPortalSource[] = [
-  { id: "ma-commbuys", agencyName: "Massachusetts COMMBUYS", agencyType: "state", state: "MA", sourceUrl: "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", searchUrl: "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", domain: "commbuys.com", portalPlatform: "Periscope S2G / BSO", sourceLevel: "state", level: "state", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public listing/detail adapter for Massachusetts COMMBUYS." },
-  { id: "nv-epro", agencyName: "NEVADAePro", agencyType: "state", state: "NV", sourceUrl: "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", searchUrl: "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", domain: "nevadaepro.com", portalPlatform: "Periscope S2G / BSO", sourceLevel: "state", level: "state", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public listing/detail adapter for NEVADAePro." },
-  { id: "nj-start", agencyName: "New Jersey START", agencyType: "state", state: "NJ", sourceUrl: "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", searchUrl: "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true", domain: "njstart.gov", portalPlatform: "Periscope S2G / BSO", sourceLevel: "state", level: "state", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public listing/detail adapter for New Jersey START." },
+  {
+    id: "ma-commbuys",
+    agencyName: "Massachusetts COMMBUYS",
+    agencyType: "state",
+    state: "MA",
+    sourceUrl:
+      "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    searchUrl:
+      "https://www.commbuys.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    domain: "commbuys.com",
+    portalPlatform: "Periscope S2G / BSO",
+    sourceLevel: "state",
+    level: "state",
+    accessMode: "portal",
+    scraperType: "existing_parser",
+    enabled: true,
+    verificationStatus: "verified",
+    notes:
+      "Dedicated public listing/detail adapter for Massachusetts COMMBUYS.",
+  },
+  {
+    id: "nv-epro",
+    agencyName: "NEVADAePro",
+    agencyType: "state",
+    state: "NV",
+    sourceUrl:
+      "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    searchUrl:
+      "https://nevadaepro.com/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    domain: "nevadaepro.com",
+    portalPlatform: "Periscope S2G / BSO",
+    sourceLevel: "state",
+    level: "state",
+    accessMode: "portal",
+    scraperType: "existing_parser",
+    enabled: true,
+    verificationStatus: "verified",
+    notes: "Dedicated public listing/detail adapter for NEVADAePro.",
+  },
+  {
+    id: "nj-start",
+    agencyName: "New Jersey START",
+    agencyType: "state",
+    state: "NJ",
+    sourceUrl:
+      "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    searchUrl:
+      "https://www.njstart.gov/bso/view/search/external/advancedSearchBid.xhtml?openBids=true",
+    domain: "njstart.gov",
+    portalPlatform: "Periscope S2G / BSO",
+    sourceLevel: "state",
+    level: "state",
+    accessMode: "portal",
+    scraperType: "existing_parser",
+    enabled: true,
+    verificationStatus: "verified",
+    notes: "Dedicated public listing/detail adapter for New Jersey START.",
+  },
 ];
 
-const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS.filter((tenant) => tenant.capability === "dedicated_listing").map((tenant) => ({ id: tenant.portalId, agencyName: tenant.buyerName, agencyType: "state", state: tenant.state, sourceUrl: tenant.listingUrl, searchUrl: tenant.listingUrl, domain: new URL(tenant.listingUrl).hostname, portalPlatform: "Jaggaer / SciQuest", sourceLevel: "state", level: "state", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public Jaggaer/SciQuest event-listing adapter." }));
-const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({ id: tenant.portalId, agencyName: tenant.buyerName, agencyType: "county", state: tenant.state, sourceUrl: tenant.listingUrl, searchUrl: tenant.listingUrl, domain: new URL(tenant.listingUrl).hostname, portalPlatform: "Bonfire / Euna", sourceLevel: "county", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public Bonfire/Euna opportunity-listing adapter." }));
-const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({ id: tenant.portalId, agencyName: tenant.buyerName, agencyType: "county", state: tenant.state, sourceUrl: tenant.listingUrl, searchUrl: tenant.listingUrl, domain: new URL(tenant.listingUrl).hostname, portalPlatform: "IonWave / Euna", sourceLevel: "county", accessMode: "portal", scraperType: "existing_parser", enabled: true, verificationStatus: "verified", notes: "Dedicated public IonWave/Euna bid-listing adapter." }));
+const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS.filter(
+  (tenant) => tenant.capability === "dedicated_listing",
+).map((tenant) => ({
+  id: tenant.portalId,
+  agencyName: tenant.buyerName,
+  agencyType: "state",
+  state: tenant.state,
+  sourceUrl: tenant.listingUrl,
+  searchUrl: tenant.listingUrl,
+  domain: new URL(tenant.listingUrl).hostname,
+  portalPlatform: "Jaggaer / SciQuest",
+  sourceLevel: "state",
+  level: "state",
+  accessMode: "portal",
+  scraperType: "existing_parser",
+  enabled: true,
+  verificationStatus: "verified",
+  notes: "Dedicated public Jaggaer/SciQuest event-listing adapter.",
+}));
+const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({
+  id: tenant.portalId,
+  agencyName: tenant.buyerName,
+  agencyType: "county",
+  state: tenant.state,
+  sourceUrl: tenant.listingUrl,
+  searchUrl: tenant.listingUrl,
+  domain: new URL(tenant.listingUrl).hostname,
+  portalPlatform: "Bonfire / Euna",
+  sourceLevel: "county",
+  accessMode: "portal",
+  scraperType: "existing_parser",
+  enabled: true,
+  verificationStatus: "verified",
+  notes: "Dedicated public Bonfire/Euna opportunity-listing adapter.",
+}));
+const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({
+  id: tenant.portalId,
+  agencyName: tenant.buyerName,
+  agencyType: "county",
+  state: tenant.state,
+  sourceUrl: tenant.listingUrl,
+  searchUrl: tenant.listingUrl,
+  domain: new URL(tenant.listingUrl).hostname,
+  portalPlatform: "IonWave / Euna",
+  sourceLevel: "county",
+  accessMode: "portal",
+  scraperType: "existing_parser",
+  enabled: true,
+  verificationStatus: "verified",
+  notes: "Dedicated public IonWave/Euna bid-listing adapter.",
+}));
 const CAL_EPROCURE_SOURCES: PublicPortalSource[] = [CAL_EPROCURE_SOURCE];
-const DEEP_RECOVERY_SOURCE_IDS = new Set(DEEP_RECOVERY_SOURCES.map((source) => source.id));
-const STATEWIDE_SHARED_SOURCES = STATEWIDE_PROCUREMENT_SOURCES.filter((source) => !DEEP_RECOVERY_SOURCE_IDS.has(source.id));
-const STATEWIDE_SOURCE_IDS = new Set(STATEWIDE_PROCUREMENT_SOURCES.map((source) => source.id));
+const DEEP_RECOVERY_SOURCE_IDS = new Set(
+  DEEP_RECOVERY_SOURCES.map((source) => source.id),
+);
+const STATEWIDE_SHARED_SOURCES = STATEWIDE_PROCUREMENT_SOURCES.filter(
+  (source) => !DEEP_RECOVERY_SOURCE_IDS.has(source.id),
+);
+const STATEWIDE_SOURCE_IDS = new Set(
+  STATEWIDE_PROCUREMENT_SOURCES.map((source) => source.id),
+);
+
 const COMBINED_PORTAL_SOURCE_TIMEOUT_MS = 30_000;
 const COMBINED_PORTAL_RUN_TIMEOUT_MS = 75_000;
+const DEFAULT_DEDICATED_ROTATION_BATCH_SIZE = 12;
+const DEFAULT_DEDICATED_CONCURRENCY = 4;
+
 const catalogPortalProvider = new PublicPortalProvidersProvider(
-  PUBLIC_PORTAL_SOURCES.filter((source) => !STATEWIDE_SOURCE_IDS.has(source.id)),
+  PUBLIC_PORTAL_SOURCES.filter(
+    (source) => !STATEWIDE_SOURCE_IDS.has(source.id),
+  ),
+);
+const catalogSourceIds = new Set(
+  catalogPortalProvider.getSources().map((source) => source.id),
 );
 
 interface DedicatedGroup {
@@ -49,15 +192,57 @@ interface DedicatedGroup {
   statuses: Map<string, PublicPortalSourceRunStatus>;
 }
 
-const dedicatedGroups: DedicatedGroup[] = [
+const ALL_DEDICATED_GROUPS: DedicatedGroup[] = [
   { sources: BSO_SOURCES, providers: bsoPortalProviders, statuses: new Map() },
-  { sources: JAGGAER_SOURCES, providers: jaggaerSciQuestProviders, statuses: new Map() },
-  { sources: BONFIRE_SOURCES, providers: bonfirePortalProviders, statuses: new Map() },
-  { sources: IONWAVE_SOURCES, providers: ionWavePortalProviders, statuses: new Map() },
-  { sources: CAL_EPROCURE_SOURCES, providers: { [CAL_EPROCURE_SOURCE.id]: calEprocureProvider }, statuses: new Map() },
-  { sources: DEEP_RECOVERY_SOURCES, providers: deepRecoveryProviders, statuses: new Map() },
-  { sources: STATEWIDE_SHARED_SOURCES, providers: statewideProcurementProviders, statuses: new Map() },
+  {
+    sources: JAGGAER_SOURCES,
+    providers: jaggaerSciQuestProviders,
+    statuses: new Map(),
+  },
+  {
+    sources: BONFIRE_SOURCES,
+    providers: bonfirePortalProviders,
+    statuses: new Map(),
+  },
+  {
+    sources: IONWAVE_SOURCES,
+    providers: ionWavePortalProviders,
+    statuses: new Map(),
+  },
+  {
+    sources: CAL_EPROCURE_SOURCES,
+    providers: { [CAL_EPROCURE_SOURCE.id]: calEprocureProvider },
+    statuses: new Map(),
+  },
+  {
+    sources: DEEP_RECOVERY_SOURCES,
+    providers: deepRecoveryProviders,
+    statuses: new Map(),
+  },
+  {
+    sources: STATEWIDE_SHARED_SOURCES,
+    providers: statewideProcurementProviders,
+    statuses: new Map(),
+  },
 ];
+
+// Shared BSO/Jaggaer/Bonfire/IonWave adapters are now registered inside the
+// catalog provider. Do not execute the same portal ID a second time here.
+const dedicatedGroups: DedicatedGroup[] = ALL_DEDICATED_GROUPS.map((group) => ({
+  ...group,
+  sources: group.sources.filter((source) => !catalogSourceIds.has(source.id)),
+})).filter((group) => group.sources.length > 0);
+
+function positiveIntegerEnv(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
 
 async function hydrateDedicatedStatuses(): Promise<void> {
   const persisted = await loadPublicPortalHealth();
@@ -69,18 +254,29 @@ async function hydrateDedicatedStatuses(): Promise<void> {
   }
 }
 
-async function saveDedicatedStatus(status: PublicPortalSourceRunStatus, target: Map<string, PublicPortalSourceRunStatus>, errors: string[]): Promise<void> {
+async function saveDedicatedStatus(
+  status: PublicPortalSourceRunStatus,
+  target: Map<string, PublicPortalSourceRunStatus>,
+  errors: string[],
+): Promise<void> {
   target.set(status.sourceId, status);
   try {
     await savePublicPortalHealth(status);
   } catch (error) {
-    errors.push(`${status.sourceId}: portal health persistence failed: ${error instanceof Error ? error.message : String(error)}`);
+    errors.push(
+      `${status.sourceId}: portal health persistence failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 
 function recordKey(record: NormalizedOpportunity): string {
-  const sourceId = typeof record.rawData?.sourceId === "string" ? record.rawData.sourceId : "";
-  const solicitation = record.solicitationNumber?.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const sourceId =
+    typeof record.rawData?.sourceId === "string" ? record.rawData.sourceId : "";
+  const solicitation = record.solicitationNumber
+    ?.replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
   if (sourceId && solicitation) return `sol:${sourceId}:${solicitation}`;
   if (record.sourceUrl) {
     try {
@@ -95,8 +291,12 @@ function recordKey(record: NormalizedOpportunity): string {
 }
 
 function mergedSources(): PublicPortalSource[] {
-  const byId = new Map(catalogPortalProvider.getSources().map((source) => [source.id, source]));
-  for (const group of dedicatedGroups) for (const source of group.sources) byId.set(source.id, source);
+  const byId = new Map(
+    catalogPortalProvider.getSources().map((source) => [source.id, source]),
+  );
+  for (const group of ALL_DEDICATED_GROUPS) {
+    for (const source of group.sources) byId.set(source.id, source);
+  }
   return Array.from(byId.values());
 }
 
@@ -108,7 +308,13 @@ async function runDedicatedSource(
   limit: number,
   timeoutMs = COMBINED_PORTAL_SOURCE_TIMEOUT_MS,
 ): Promise<ProviderFetchResult> {
-  if (!provider) return { records: [], total: 0, errors: [`${source.id}: dedicated provider is not registered`] };
+  if (!provider) {
+    return {
+      records: [],
+      total: 0,
+      errors: [`${source.id}: dedicated provider is not registered`],
+    };
+  }
   const prior = statuses.get(source.id);
   const checkedAt = new Date();
   try {
@@ -121,7 +327,11 @@ async function runDedicatedSource(
         reject(error);
       }, timeoutMs + 250);
     });
-    const sourcePromise = provider.fetch({ ...options, limit, signal: sourceSignal.signal });
+    const sourcePromise = provider.fetch({
+      ...options,
+      limit,
+      signal: sourceSignal.signal,
+    });
     sourcePromise.catch(() => undefined);
     let result: ProviderFetchResult;
     try {
@@ -139,25 +349,71 @@ async function runDedicatedSource(
       if (timeout) clearTimeout(timeout);
       sourceSignal.cleanup();
     }
-    const status = result.records.length === 0 && result.errors.length > 0
-      ? failedPortalStatus(source, prior, checkedAt, result.errors.join("; "))
-      : successfulPortalStatus(source, prior, new Date(), result.records.length, 0);
+    const status =
+      result.records.length === 0 && result.errors.length > 0
+        ? failedPortalStatus(
+            source,
+            prior,
+            checkedAt,
+            result.errors.join("; "),
+          )
+        : successfulPortalStatus(
+            source,
+            prior,
+            new Date(),
+            result.records.length,
+            0,
+          );
     await saveDedicatedStatus(status, statuses, result.errors);
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const errors = [`${source.id}: ${reason}`];
-    await saveDedicatedStatus(failedPortalStatus(source, prior, checkedAt, reason), statuses, errors);
+    await saveDedicatedStatus(
+      failedPortalStatus(source, prior, checkedAt, reason),
+      statuses,
+      errors,
+    );
     return { records: [], total: 0, errors };
   }
+}
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  let cursor = 0;
+  const workerCount = Math.min(
+    Math.max(1, concurrency),
+    Math.max(1, items.length),
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        if (signal?.aborted) return;
+        const index = cursor;
+        cursor += 1;
+        if (index >= items.length) return;
+        const item = items[index];
+        if (item === undefined) return;
+        await worker(item);
+      }
+    }),
+  );
 }
 
 class CombinedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
 
   async isConfigured(): Promise<boolean> {
-    return (await catalogPortalProvider.isConfigured().catch(() => false))
-      || dedicatedGroups.some((group) => group.sources.some((source) => Boolean(group.providers[source.id])));
+    return (
+      (await catalogPortalProvider.isConfigured().catch(() => false)) ||
+      dedicatedGroups.some((group) =>
+        group.sources.some((source) => Boolean(group.providers[source.id])),
+      )
+    );
   }
 
   getSources(): PublicPortalSource[] {
@@ -165,9 +421,20 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
   }
 
   getSourceStatuses(): PublicPortalSourceRunStatus[] {
-    const byId = new Map(catalogPortalProvider.getSourceStatuses().map((status) => [status.sourceId, status]));
-    for (const group of dedicatedGroups) for (const status of group.statuses.values()) byId.set(status.sourceId, status);
-    return Array.from(byId.values()).sort((left, right) => right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime());
+    const byId = new Map(
+      catalogPortalProvider
+        .getSourceStatuses()
+        .map((status) => [status.sourceId, status]),
+    );
+    for (const group of dedicatedGroups) {
+      for (const status of group.statuses.values()) {
+        byId.set(status.sourceId, status);
+      }
+    }
+    return Array.from(byId.values()).sort(
+      (left, right) =>
+        right.lastCheckedAt.getTime() - left.lastCheckedAt.getTime(),
+    );
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
@@ -176,36 +443,106 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
     const target = Math.min(300, offset + requestedLimit);
     const sourceOptions: FetchOptions = { ...options, limit: target, offset: 0 };
     const errors: string[] = [];
+    const candidates: NormalizedOpportunity[] = [];
+
     try {
       await hydrateDedicatedStatuses();
     } catch (error) {
-      errors.push(`dedicated-portal-health-load: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(
+        `dedicated-portal-health-load: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
-    const runSignal = composeAbortSignal(COMBINED_PORTAL_RUN_TIMEOUT_MS, options.signal);
-    let runTimeout: ReturnType<typeof setTimeout> | undefined;
-    const tasks = dedicatedGroups.flatMap((group) => group.sources.map((source) => runDedicatedSource(source, group.providers[source.id], group.statuses, { ...sourceOptions, signal: runSignal.signal }, target)));
-    const catalogTask = catalogPortalProvider.fetch({ ...sourceOptions, signal: runSignal.signal });
-    const allTasks = Promise.allSettled([...tasks, catalogTask]);
-    const runDeadline = new Promise<PromiseSettledResult<ProviderFetchResult>[]>((resolve) => {
-      runTimeout = setTimeout(() => {
-        errors.push(`publicPortalProviders: combined run deadline reached after ${COMBINED_PORTAL_RUN_TIMEOUT_MS}ms; returning completed portal results`);
-        runSignal.cleanup();
-        resolve([]);
-      }, COMBINED_PORTAL_RUN_TIMEOUT_MS + 500);
-    });
-    allTasks.catch(() => undefined);
-    const settled = await Promise.race([allTasks, runDeadline]);
-    if (runTimeout) clearTimeout(runTimeout);
-    runSignal.cleanup();
-    const candidates: NormalizedOpportunity[] = [];
-    for (const result of settled) {
-      if (result.status === "fulfilled") {
-        candidates.push(...result.value.records);
-        errors.push(...result.value.errors);
-      } else {
-        errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
+
+    const sourceEntries = dedicatedGroups.flatMap((group) =>
+      group.sources.map((source) => ({
+        source,
+        provider: group.providers[source.id],
+        statuses: group.statuses,
+      })),
+    );
+    const statusMap = new Map<string, PublicPortalSourceRunStatus>();
+    for (const group of dedicatedGroups) {
+      for (const [sourceId, status] of group.statuses) {
+        statusMap.set(sourceId, status);
       }
     }
+    const dedicatedBatchSize = positiveIntegerEnv(
+      "PUBLIC_PORTAL_DEDICATED_ROTATION_BATCH_SIZE",
+      DEFAULT_DEDICATED_ROTATION_BATCH_SIZE,
+      1,
+      50,
+    );
+    const dedicatedConcurrency = positiveIntegerEnv(
+      "PUBLIC_PORTAL_DEDICATED_CONCURRENCY",
+      DEFAULT_DEDICATED_CONCURRENCY,
+      1,
+      8,
+    );
+    const dedicatedIds = new Set(
+      sourceEntries.map((entry) => entry.source.id),
+    );
+    const selectedIds = new Set(
+      selectFairPortalSources(
+        sourceEntries.map((entry) => entry.source),
+        statusMap,
+        dedicatedBatchSize,
+        dedicatedIds,
+      ).selected.map((source) => source.id),
+    );
+    const selectedEntries = sourceEntries.filter((entry) =>
+      selectedIds.has(entry.source.id),
+    );
+
+    const runSignal = composeAbortSignal(
+      COMBINED_PORTAL_RUN_TIMEOUT_MS,
+      options.signal,
+    );
+    let runTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    const catalogTask = (async () => {
+      const result = await catalogPortalProvider.fetch({
+        ...sourceOptions,
+        signal: runSignal.signal,
+      });
+      candidates.push(...result.records);
+      errors.push(...result.errors);
+    })();
+
+    const dedicatedTask = runWithConcurrency(
+      selectedEntries,
+      dedicatedConcurrency,
+      async (entry) => {
+        const result = await runDedicatedSource(
+          entry.source,
+          entry.provider,
+          entry.statuses,
+          { ...sourceOptions, signal: runSignal.signal },
+          target,
+        );
+        candidates.push(...result.records);
+        errors.push(...result.errors);
+      },
+      runSignal.signal,
+    );
+
+    const allTasks = Promise.allSettled([catalogTask, dedicatedTask]);
+    const runDeadline = new Promise<void>((resolve) => {
+      runTimeout = setTimeout(() => {
+        errors.push(
+          `publicPortalProviders: combined run deadline reached after ${COMBINED_PORTAL_RUN_TIMEOUT_MS}ms; completed portal results were retained`,
+        );
+        runSignal.cleanup();
+        resolve();
+      }, COMBINED_PORTAL_RUN_TIMEOUT_MS + 500);
+    });
+
+    allTasks.catch(() => undefined);
+    await Promise.race([allTasks.then(() => undefined), runDeadline]);
+    if (runTimeout) clearTimeout(runTimeout);
+    runSignal.cleanup();
+
     const seen = new Set<string>();
     const deduped = candidates.filter((record) => {
       const key = recordKey(record);
@@ -224,21 +561,46 @@ class CombinedPublicPortalProvider implements DataSourceProvider {
       // Retain in-memory health if durable status is temporarily unavailable.
     }
     const base = await catalogPortalProvider.getStatus().catch(() => undefined);
-    const statuses = dedicatedGroups.flatMap((group) => Array.from(group.statuses.values()));
-    const failures = statuses.filter((status) => status.lastFailureAt && (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt));
-    const dates = statuses.map((status) => status.lastCheckedAt).concat(base?.lastAttempt ? [base.lastAttempt] : []);
-    const successes = statuses.flatMap((status) => status.lastSuccessAt ? [status.lastSuccessAt] : []).concat(base?.lastSuccess ? [base.lastSuccess] : []);
+    const statuses = dedicatedGroups.flatMap((group) =>
+      Array.from(group.statuses.values()),
+    );
+    const failures = statuses.filter(
+      (status) =>
+        status.lastFailureAt &&
+        (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt),
+    );
+    const dates = statuses
+      .map((status) => status.lastCheckedAt)
+      .concat(base?.lastAttempt ? [base.lastAttempt] : []);
+    const successes = statuses
+      .flatMap((status) => (status.lastSuccessAt ? [status.lastSuccessAt] : []))
+      .concat(base?.lastSuccess ? [base.lastSuccess] : []);
     return {
       name: this.name,
-      configured: Boolean(base?.configured) || dedicatedGroups.some((group) => group.sources.length > 0),
+      configured:
+        Boolean(base?.configured) ||
+        dedicatedGroups.some((group) => group.sources.length > 0),
       healthy: failures.length === 0 && (base?.healthy ?? true),
-      errorMessage: [
-        base?.errorMessage,
-        failures.length ? `${failures.length} dedicated portal${failures.length === 1 ? " is" : "s are"} currently failing` : undefined,
-      ].filter(Boolean).join("; ") || undefined,
-      recordCount: (base?.recordCount ?? 0) + statuses.reduce((sum, status) => sum + status.resultCount, 0),
-      lastAttempt: dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : undefined,
-      lastSuccess: successes.length ? new Date(Math.max(...successes.map((date) => date.getTime()))) : undefined,
+      errorMessage:
+        [
+          base?.errorMessage,
+          failures.length
+            ? `${failures.length} dedicated portal${
+                failures.length === 1 ? " is" : "s are"
+              } currently failing`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("; ") || undefined,
+      recordCount:
+        (base?.recordCount ?? 0) +
+        statuses.reduce((sum, status) => sum + status.resultCount, 0),
+      lastAttempt: dates.length
+        ? new Date(Math.max(...dates.map((date) => date.getTime())))
+        : undefined,
+      lastSuccess: successes.length
+        ? new Date(Math.max(...successes.map((date) => date.getTime())))
+        : undefined,
     };
   }
 }
