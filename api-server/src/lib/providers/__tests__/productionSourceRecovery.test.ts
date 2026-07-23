@@ -9,6 +9,7 @@ const {
   DEEP_RECOVERY_SOURCES,
   deepRecoveryProviders,
 } = await import("../deepRecoveryProviders");
+const { parseVermontOpenBidRows } = await import("../vermontBidRecovery");
 
 const sourceById = new Map(
   DEEP_RECOVERY_SOURCES.map((source) => [source.id, source]),
@@ -70,4 +71,21 @@ test("legacy BSO tenants are replaced by listing-only Periscope recovery provide
       "PeriscopeListingOnlyProvider",
     );
   }
+});
+
+test("Vermont legacy bid results produce active listing records", () => {
+  const rows = parseVermontOpenBidRows(`
+    <div>7/23/2026</div>
+    <div>2026 Retainer Contract Opportunity for Information Technology (IT) Services</div>
+    <div>Buildings &amp; General Svs, Office of Purchasing &amp; Contracting Close Date:&nbsp;9/2/2026 4:30:00 PM</div>
+    <div>7/20/2026</div>
+    <div>Medicaid Physician Review and Consulting Services RFP/RFQ: 03410-245-27</div>
+    <div>Department of Vermont Health Access Close Date:&nbsp;7/10/2027 2:00:00 PM</div>
+  `);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]?.agency, "Buildings & General Svs, Office of Purchasing & Contracting");
+  assert.equal(rows[1]?.solicitationNumber, "03410-245-27");
+  assert.equal(rows[1]?.type, "RFP");
+  assert.equal(rows[1]?.responseDeadline?.toISOString(), "2027-07-10T14:00:00.000Z");
 });
