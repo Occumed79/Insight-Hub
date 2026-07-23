@@ -1,6 +1,10 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
 import { OPENGOV_PORTAL_IDS } from "./openGov";
 import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
+import {
+  PLANETBIDS_AUTOMATION_BLOCK_REASON,
+  PLANETBIDS_WAF_BLOCKED_PORTAL_IDS,
+} from "./planetBidsAccessPolicy";
 import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementConfigs";
 
 registerOpenGovCountyExtensions();
@@ -49,6 +53,16 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
 ]);
 
 export function portalConnectorCapability(portal: PortalCapabilityInput): PortalConnectorCapability {
+  if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(portal.id)) {
+    return {
+      connectorStatus: "directory_only",
+      connectorLabel: "Manual browser access",
+      connectorDescription: PLANETBIDS_AUTOMATION_BLOCK_REASON,
+      directCollection: false,
+      requiresSerper: false,
+    };
+  }
+
   if (AUTOMATION_RESTRICTED_PORTAL_IDS.has(portal.id)) {
     return {
       connectorStatus: "directory_only",
