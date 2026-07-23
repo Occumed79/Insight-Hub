@@ -1,6 +1,10 @@
 import type { DataSourceProvider } from "./types";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import {
+  BOUNDED_STATE_RECOVERY_SOURCES,
+  boundedStateRecoveryProviders,
+} from "./boundedStateRecoveryOverrides";
+import {
   KENTUCKY_CGI_ADVANTAGE_SOURCE,
   MICHIGAN_CGI_ADVANTAGE_SOURCE,
   kentuckyCgiAdvantageProvider,
@@ -40,6 +44,7 @@ for (const source of [
   ...STATE_PLATFORM_ADAPTER_SOURCES,
   ...PRODUCTION_RECOVERY_SOURCES,
   VERMONT_BID_RECOVERY_SOURCE,
+  ...BOUNDED_STATE_RECOVERY_SOURCES,
 ]) sourceById.set(source.id, source);
 
 export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = Array.from(
@@ -56,4 +61,5 @@ export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   ...statePlatformAdapterProviders,
   ...productionRecoveryProviders,
   [VERMONT_BID_RECOVERY_SOURCE.id]: vermontBidRecoveryProvider,
+  ...boundedStateRecoveryProviders,
 };
