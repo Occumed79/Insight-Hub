@@ -1,7 +1,19 @@
 import type { PublicPortalSource } from "../providers/publicPortalProviders/catalog";
-import { runRegisteredSpider, type RunRegisteredSpiderOptions } from "./orchestrator";
+import {
+  DOCUMENT_INDEX_FAMILY_TEMPLATE_ID,
+  FEED_FAMILY_TEMPLATE_ID,
+  STATIC_LISTING_FAMILY_TEMPLATE_ID,
+} from "./familyTemplates";
+import {
+  runRegisteredSpider,
+  type RunRegisteredSpiderOptions,
+} from "./orchestrator";
 import { getSpiderConfig, registerSpiderConfig } from "./registry";
 import type { SpiderConfig, SpiderRunResult } from "./types";
+
+function familyName(source: PublicPortalSource, fallback: string): string {
+  return source.portalPlatform?.trim() || fallback;
+}
 
 export function defaultSpiderConfigForSource(
   source: PublicPortalSource,
@@ -24,13 +36,29 @@ export function defaultSpiderConfigForSource(
   };
 
   if (source.scraperType === "static_html" || source.scraperType === "scrapy") {
-    return { ...base, kind: "static_listing" };
+    return {
+      ...base,
+      kind: "portal_family",
+      family: familyName(source, "bounded-static-listing"),
+      delegateSpiderId: STATIC_LISTING_FAMILY_TEMPLATE_ID,
+    };
   }
   if (source.scraperType === "pdf_links") {
-    return { ...base, kind: "document" };
+    return {
+      ...base,
+      kind: "portal_family",
+      family: familyName(source, "official-document-index"),
+      delegateSpiderId: DOCUMENT_INDEX_FAMILY_TEMPLATE_ID,
+      scheduleMinutes: 120,
+    };
   }
   if (source.scraperType === "rss") {
-    return { ...base, kind: "feed" };
+    return {
+      ...base,
+      kind: "portal_family",
+      family: familyName(source, "rss-atom-feed"),
+      delegateSpiderId: FEED_FAMILY_TEMPLATE_ID,
+    };
   }
   if (source.scraperType === "playwright_public") {
     return {
@@ -48,15 +76,44 @@ export function defaultSpiderConfigForSource(
       kind: "json_endpoint",
       endpointUrl: startUrl,
       method: "GET",
-      pagination: { mode: "page", parameter: "page", pageSizeParameter: "limit", pageSize: 100 },
+      pagination: {
+        mode: "page",
+        parameter: "page",
+        pageSizeParameter: "limit",
+        pageSize: 100,
+      },
       fields: {
         id: ["id", "noticeId", "solicitationId", "bidId", "number"],
         title: ["title", "name", "subject", "description"],
-        agency: ["agency", "agencyName", "department", "buyerName", "organization"],
+        agency: [
+          "agency",
+          "agencyName",
+          "department",
+          "buyerName",
+          "organization",
+        ],
         description: ["description", "summary", "details", "scope"],
-        solicitationNumber: ["solicitationNumber", "solicitation", "bidNumber", "referenceNumber", "number"],
-        postedDate: ["postedDate", "publishDate", "publishedAt", "createdDate", "datePosted"],
-        responseDeadline: ["responseDeadline", "closingDate", "closeDate", "dueDate", "deadline"],
+        solicitationNumber: [
+          "solicitationNumber",
+          "solicitation",
+          "bidNumber",
+          "referenceNumber",
+          "number",
+        ],
+        postedDate: [
+          "postedDate",
+          "publishDate",
+          "publishedAt",
+          "createdDate",
+          "datePosted",
+        ],
+        responseDeadline: [
+          "responseDeadline",
+          "closingDate",
+          "closeDate",
+          "dueDate",
+          "deadline",
+        ],
         status: ["status", "state"],
         detailUrl: ["detailUrl", "url", "link", "href"],
         location: ["location", "placeOfPerformance", "state"],
