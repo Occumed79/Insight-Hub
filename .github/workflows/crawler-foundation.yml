@@ -6,7 +6,8 @@ on:
       - "api-server/src/lib/crawler/**"
       - "api-server/src/lib/providers/crawlerAugmentedPublicPortalProvider.ts"
       - "api-server/src/lib/providers/index.ts"
-      - "api-server/src/lib/ingestion/__tests__/manualIngestion.test.ts"
+      - "api-server/src/lib/ingestion/**"
+      - "api-server/package.json"
       - "api-server/src/routes/rfp-sources.ts"
       - ".github/workflows/crawler-foundation.yml"
   workflow_dispatch:
