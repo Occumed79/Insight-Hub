@@ -6,6 +6,7 @@ import {
   openGovTenantProvider,
 } from "../openGov";
 import { OPENGOV_COUNTY_EXTENSIONS } from "../openGovCountyExtensions";
+import { PLANETBIDS_WAF_BLOCKED_PORTAL_IDS } from "../planetBidsAccessPolicy";
 import { portalConnectorCapability } from "../portalCapabilities";
 import { PUBLIC_PORTAL_SOURCES } from "../publicPortalProviders/catalog";
 
@@ -52,6 +53,31 @@ describe("OpenGov county tenant extensions", () => {
         requiresLogin: true,
       });
       assert.equal(capability.connectorStatus, "directory_only", portalId);
+      assert.equal(capability.directCollection, false, portalId);
+      assert.equal(capability.requiresSerper, false, portalId);
+    }
+  });
+
+  it("removes AWS WAF-blocked PlanetBids buyers from automated collection", () => {
+    const catalogById = new Map(
+      PUBLIC_PORTAL_SOURCES.map((source) => [source.id, source]),
+    );
+
+    for (const portalId of PLANETBIDS_WAF_BLOCKED_PORTAL_IDS) {
+      const source = catalogById.get(portalId);
+      assert.ok(source, `${portalId} missing from public catalog`);
+      assert.equal(source.enabled, false, portalId);
+      assert.equal(source.verificationStatus, "needs_review", portalId);
+      assert.match(source.notes ?? "", /AWS WAF browser challenge/i, portalId);
+
+      const capability = portalConnectorCapability({
+        id: portalId,
+        country: "US",
+        level: "district",
+        accessMode: source.accessMode ?? "public_html",
+      });
+      assert.equal(capability.connectorStatus, "directory_only", portalId);
+      assert.equal(capability.connectorLabel, "Manual browser access", portalId);
       assert.equal(capability.directCollection, false, portalId);
       assert.equal(capability.requiresSerper, false, portalId);
     }
