@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import opportunitySummaryRouter from "./opportunity-summary-v2";
+import ingestionDiagnosticsRouter from "./ingestion-diagnostics";
 import opportunitiesRouter from "./opportunities";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
@@ -18,16 +19,19 @@ import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
+import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(opportunitySummaryRouter);
 router.use(rfpProviderBoundaryRouter);
+router.use(ingestionDiagnosticsRouter);
 router.use(opportunitiesRouter);
 router.use(opportunityFeedbackRouter);
 router.use(settingsRouter);
 router.use(providersRouter);
+router.use(manualOnlyPortalHealthBoundaryRouter);
 router.use(rfpSourcesRouter);
 router.use(crawlerAdminRouter);
 router.use(competitorsRouter);
