@@ -7,7 +7,7 @@ import {
 } from "../openGov";
 import { OPENGOV_COUNTY_EXTENSIONS } from "../openGovCountyExtensions";
 import { portalConnectorCapability } from "../portalCapabilities";
-import { isDedicatedPublicPortalSourceId } from "../publicPortalProviders/index";
+import { PUBLIC_PORTAL_SOURCES } from "../publicPortalProviders/catalog";
 
 const EXPECTED_TENANTS = new Map([
   ["ca-solano-county", "solanocounty"],
@@ -20,11 +20,12 @@ const EXPECTED_TENANTS = new Map([
 describe("OpenGov county tenant extensions", () => {
   it("routes confirmed county catalog IDs through the shared OpenGov adapter", async () => {
     assert.equal(OPENGOV_COUNTY_EXTENSIONS.length, EXPECTED_TENANTS.size);
+    const catalogIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
     for (const [portalId, tenantSlug] of EXPECTED_TENANTS) {
+      assert.equal(catalogIds.has(portalId), true, `${portalId} missing from public catalog`);
       assert.equal(OPENGOV_PORTAL_IDS.has(portalId), true, portalId);
       assert.equal(OPENGOV_TENANT_BY_PORTAL_ID.get(portalId)?.tenantSlug, tenantSlug);
-      assert.equal(isDedicatedPublicPortalSourceId(portalId), true, portalId);
 
       const provider = openGovTenantProvider(portalId);
       assert.ok(provider, `missing OpenGov provider for ${portalId}`);
