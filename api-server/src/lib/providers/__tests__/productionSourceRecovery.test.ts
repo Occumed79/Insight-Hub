@@ -29,6 +29,7 @@ test("production recovery sources replace broken statewide routes exactly once",
     "ak-iris-vss",
     "nd-spo",
     "ut-purchasing",
+    "wi-vendornet",
   ]) {
     assert.ok(sourceById.has(id), `${id} recovery source is registered`);
     assert.ok(deepRecoveryProviders[id], `${id} recovery provider is registered`);
@@ -46,11 +47,15 @@ test("corrected official routes and manual access policy are visible in source i
   );
   assert.equal(
     sourceById.get("ri-bids")?.sourceUrl,
-    "https://www.purchasing.ri.gov/bidding/ExternalBidSearch.aspx",
+    "https://purchasing.ri.gov/bidding/ExternalBidSearch.aspx",
   );
   assert.equal(
     sourceById.get("ut-purchasing")?.sourceUrl,
     "https://utah.bonfirehub.com/opportunities",
+  );
+  assert.equal(
+    sourceById.get("wi-vendornet")?.sourceUrl,
+    "https://vendornet.wi.gov/Bids.aspx",
   );
 
   const northDakota = sourceById.get("nd-spo");
