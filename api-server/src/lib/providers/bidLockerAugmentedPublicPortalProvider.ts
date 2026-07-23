@@ -1,3 +1,4 @@
+import { enrichBidLockerRecordDates } from "./bidLockerDateEnrichment";
 import { bidLockerPortalProvider } from "./bidLockerPortal";
 import { crawlerAugmentedPublicPortalProvider } from "./crawlerAugmentedPublicPortalProvider";
 import type {
@@ -35,6 +36,7 @@ function latestDate(...values: Array<Date | undefined>): Date | undefined {
 
 class BidLockerAugmentedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
+  private lastEnrichmentError?: string;
 
   async isConfigured(): Promise<boolean> {
     const [baseConfigured, bidLockerConfigured] = await Promise.all([
@@ -49,9 +51,17 @@ class BidLockerAugmentedPublicPortalProvider implements DataSourceProvider {
       crawlerAugmentedPublicPortalProvider.fetch(options),
       bidLockerPortalProvider.fetch(options),
     ]);
+    const enrichedBidLocker = await enrichBidLockerRecordDates(
+      bidLockerResult.records,
+      options,
+    );
+    this.lastEnrichmentError = enrichedBidLocker.errors.length
+      ? enrichedBidLocker.errors.join("; ")
+      : undefined;
+
     const seen = new Set<string>();
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const records = [...baseResult.records, ...bidLockerResult.records]
+    const records = [...baseResult.records, ...enrichedBidLocker.records]
       .filter((record) => {
         const key = recordKey(record);
         if (seen.has(key)) return false;
@@ -63,7 +73,11 @@ class BidLockerAugmentedPublicPortalProvider implements DataSourceProvider {
     return {
       records,
       total: records.length,
-      errors: [...baseResult.errors, ...bidLockerResult.errors],
+      errors: [
+        ...baseResult.errors,
+        ...bidLockerResult.errors,
+        ...enrichedBidLocker.errors,
+      ],
     };
   }
 
@@ -72,14 +86,18 @@ class BidLockerAugmentedPublicPortalProvider implements DataSourceProvider {
       crawlerAugmentedPublicPortalProvider.getStatus(),
       bidLockerPortalProvider.getStatus(),
     ]);
-    const errorMessage = [base.errorMessage, bidLocker.errorMessage]
+    const errorMessage = [
+      base.errorMessage,
+      bidLocker.errorMessage,
+      this.lastEnrichmentError,
+    ]
       .filter(Boolean)
       .join("; ");
 
     return {
       ...base,
       configured: base.configured || bidLocker.configured,
-      healthy: base.healthy && bidLocker.healthy,
+      healthy: base.healthy && bidLocker.healthy && !this.lastEnrichmentError,
       errorMessage: errorMessage || undefined,
       recordCount: (base.recordCount ?? 0) + (bidLocker.recordCount ?? 0),
       lastAttempt: latestDate(base.lastAttempt, bidLocker.lastAttempt),
