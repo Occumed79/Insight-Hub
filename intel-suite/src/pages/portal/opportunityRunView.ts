@@ -64,6 +64,11 @@ const REJECTION_METRIC_LABELS: Record<string, string> = {
   legacy_relevance_filter: "Reject: Legacy relevance rule",
 };
 
+function compactSampleTitle(value: string | null | undefined): string {
+  const title = value?.replace(/\s+/g, " ").trim() || "Untitled rejected record";
+  return title.length > 56 ? `${title.slice(0, 53)}...` : title;
+}
+
 export function opportunityRunMetrics(run: {
   fetched: number;
   staged: number;
@@ -81,6 +86,11 @@ export function opportunityRunMetrics(run: {
       label: string;
       count: number;
     }>;
+    samples?: Array<{
+      title?: string | null;
+      provider?: string;
+      reasonLabel?: string;
+    }>;
   };
 }) {
   const coreMetrics = [
@@ -94,7 +104,7 @@ export function opportunityRunMetrics(run: {
     ["Archived", run.archived],
     ["Errors", run.providerErrors?.length ?? 0],
     ["Timeouts", run.providersTimedOut ?? 0],
-  ] as Array<readonly [string, number]>;
+  ] as Array<readonly [string, string | number]>;
   const rejectionMetrics = (run.rejectionDiagnostics?.reasons ?? [])
     .filter((reason) => reason.count > 0)
     .slice(0, 3)
@@ -105,5 +115,14 @@ export function opportunityRunMetrics(run: {
           reason.count,
         ] as const,
     );
-  return [...coreMetrics, ...rejectionMetrics] as const;
+  const sampleMetrics = (run.rejectionDiagnostics?.samples ?? [])
+    .slice(0, 3)
+    .map(
+      (sample) =>
+        [
+          `Sample · ${sample.reasonLabel ?? "Rejected"}${sample.provider ? ` · ${sample.provider}` : ""}`,
+          compactSampleTitle(sample.title),
+        ] as const,
+    );
+  return [...coreMetrics, ...rejectionMetrics, ...sampleMetrics] as const;
 }
