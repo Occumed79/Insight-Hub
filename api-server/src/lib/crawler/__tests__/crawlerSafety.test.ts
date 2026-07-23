@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { makeCrawlerFetcher } from "../safety";
+import { canonicalizeCrawlerUrl, makeCrawlerFetcher } from "../safety";
 import { DEFAULT_CRAWL_LIMITS } from "../types";
+
+test("crawler preserves the catalog hostname after allowlist comparison", () => {
+  assert.equal(
+    canonicalizeCrawlerUrl(
+      "https://www.agency.gov/bids/#open",
+      "https://www.agency.gov/bids/",
+      ["agency.gov"],
+    ),
+    "https://www.agency.gov/bids",
+  );
+});
 
 test("crawler rejects robots-disallowed targets before requesting them", async () => {
   const originalFetch = globalThis.fetch;
