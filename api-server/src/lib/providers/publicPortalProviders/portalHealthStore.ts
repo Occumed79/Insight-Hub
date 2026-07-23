@@ -5,6 +5,23 @@ import type { PublicPortalSource } from "./catalog";
 
 const HEALTH_KEY_PREFIX = "internal:public-portal-health:";
 
+const SOURCE_HEALTH_RESET_AT = new Map<string, number>([
+  ["ak-iris-vss", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["fl-vbs", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["in-idoa", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["la-lapac", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["ma-commbuys", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["nd-spo", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["nj-start", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["nv-epro", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["pa-emarketplace", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["ri-bids", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["ut-purchasing", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["vt-bids", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["wi-vendornet", Date.parse("2026-07-23T20:16:19.000Z")],
+  ["mn-swift", Date.parse("2026-07-23T20:25:00.000Z")],
+]);
+
 export const DEFAULT_PORTAL_FAILURE_QUARANTINE_THRESHOLD = 3;
 export const DEFAULT_PORTAL_EMPTY_QUARANTINE_THRESHOLD = 6;
 
@@ -90,6 +107,13 @@ function finiteNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+export function isSupersededPublicPortalHealth(
+  status: PublicPortalSourceRunStatus,
+): boolean {
+  const resetAt = SOURCE_HEALTH_RESET_AT.get(status.sourceId);
+  return resetAt !== undefined && status.lastCheckedAt.getTime() < resetAt;
+}
+
 function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefined {
   try {
     const stored = JSON.parse(value) as Partial<StoredPortalSourceRunStatus>;
@@ -152,7 +176,9 @@ export async function loadPublicPortalHealth(): Promise<Map<string, PublicPortal
   const statuses = new Map<string, PublicPortalSourceRunStatus>();
   for (const row of rows) {
     const parsed = parseStoredStatus(row.value);
-    if (parsed) statuses.set(parsed.sourceId, parsed);
+    if (parsed && !isSupersededPublicPortalHealth(parsed)) {
+      statuses.set(parsed.sourceId, parsed);
+    }
   }
   return statuses;
 }

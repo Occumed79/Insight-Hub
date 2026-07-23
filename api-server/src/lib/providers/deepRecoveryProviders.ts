@@ -13,6 +13,10 @@ import {
 import { GEORGIA_GAWORK_SOURCE, georgiaGaworkProvider } from "./georgiaGawork";
 import { HAWAII_HANDS_SOURCE, hawaiiHandsProvider } from "./hawaiiHands";
 import {
+  MINNESOTA_OSP_SOURCE,
+  minnesotaOspProvider,
+} from "./minnesotaOsp";
+import {
   NEW_HAMPSHIRE_BIDS_SOURCE,
   newHampshireBidsProvider,
 } from "./newHampshireBids";
@@ -38,6 +42,7 @@ for (const source of [
   NEW_HAMPSHIRE_BIDS_SOURCE,
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
   ...STATE_PLATFORM_ADAPTER_SOURCES,
+  MINNESOTA_OSP_SOURCE,
   ...PRODUCTION_RECOVERY_SOURCES,
   ...BOUNDED_STATE_RECOVERY_SOURCES,
 ]) sourceById.set(source.id, source);
@@ -54,6 +59,7 @@ export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   [NEW_HAMPSHIRE_BIDS_SOURCE.id]: newHampshireBidsProvider,
   [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id]: southDakotaPostingBoardProvider,
   ...statePlatformAdapterProviders,
+  [MINNESOTA_OSP_SOURCE.id]: minnesotaOspProvider,
   ...productionRecoveryProviders,
   ...boundedStateRecoveryProviders,
 };
