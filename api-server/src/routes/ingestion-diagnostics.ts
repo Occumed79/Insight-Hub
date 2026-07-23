@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import {
   getCurrentIngestionRun,
   getIngestionRun,
@@ -7,7 +7,7 @@ import { getIngestionRejectionDiagnostics } from "../lib/ingestion/rejectionDiag
 
 const router = Router();
 
-function disableCaching(res: Parameters<Parameters<typeof router.get>[1]>[1]): void {
+function disableCaching(res: Response): void {
   res.setHeader(
     "Cache-Control",
     "no-store, no-cache, must-revalidate, proxy-revalidate",
