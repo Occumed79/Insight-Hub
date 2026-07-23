@@ -56,39 +56,93 @@ function exactDate(value: string): boolean {
   return /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value.trim());
 }
 
+function noise(value: string): boolean {
+  return (
+    value.length < 2
+    || exactDate(value)
+    || /^(?:view|details?|more|print|image|open|close|search|next|previous|back|home)$/i.test(value)
+    || /search results|sort results|list open bids|bid quick search|bid power search/i.test(value)
+  );
+}
+
+function priorContentLine(lines: readonly string[], start: number): number {
+  for (let index = start; index >= Math.max(0, start - 14); index -= 1) {
+    const value = lines[index] ?? "";
+    if (!noise(value) && !/\bClose Date\s*:/i.test(value)) return index;
+  }
+  return -1;
+}
+
+function splitCombinedTitleAgency(value: string): {
+  title?: string;
+  agency?: string;
+} {
+  const marker = value.search(
+    /\b(?:Buildings\s*&\s*General\s+Svs|Department\b|Dept\.|Agency\b|State of Vermont|Town of\b|City of\b|Village of\b|DEC\b|Fish\s*&\s*Wildlife|Military Department|Regional Planning Commission|Natural Resources Conservation District|Unified School District)\b/i,
+  );
+  if (marker <= 5) return {};
+  return {
+    title: value.slice(0, marker).trim(),
+    agency: value.slice(marker).trim(),
+  };
+}
+
 export function parseVermontOpenBidRows(
   html: string,
   pageUrl = LISTING_URL,
 ): StatewideListingRecord[] {
-  const lines = statewideHtmlToText(html)
+  const expanded = html
+    .replace(/<img\b[^>]*>/gi, "\n")
+    .replace(/<\/(?:span|a|font|strong|b|em|label)>/gi, "$&\n");
+  const lines = statewideHtmlToText(expanded)
     .split("\n")
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   const rows: StatewideListingRecord[] = [];
   const seen = new Set<string>();
 
-  for (let index = 1; index < lines.length; index += 1) {
-    const agencyAndDeadline = lines[index] ?? "";
-    const closeAt = agencyAndDeadline.search(/\bClose Date\s*:/i);
-    if (closeAt <= 0) continue;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const closeAt = line.search(/\bClose Date\s*:/i);
+    if (closeAt < 0) continue;
 
-    const title = (lines[index - 1] ?? "").trim();
-    const agency = agencyAndDeadline.slice(0, closeAt).trim();
-    const deadlineText = agencyAndDeadline
+    const deadlineText = line
       .slice(closeAt)
       .replace(/^Close Date\s*:\s*/i, "")
       .trim();
+    let agency = line.slice(0, closeAt).trim();
+    let titleIndex = priorContentLine(lines, index - 1);
+    let title = titleIndex >= 0 ? (lines[titleIndex] ?? "").trim() : "";
+
+    if (!agency) {
+      const agencyIndex = priorContentLine(lines, index - 1);
+      if (agencyIndex >= 0) {
+        agency = (lines[agencyIndex] ?? "").trim();
+        titleIndex = priorContentLine(lines, agencyIndex - 1);
+        title = titleIndex >= 0 ? (lines[titleIndex] ?? "").trim() : "";
+      }
+    }
+
+    const combined = splitCombinedTitleAgency(agency);
+    if (combined.title && combined.agency) {
+      title = combined.title;
+      agency = combined.agency;
+    } else if (title === agency || noise(title)) {
+      const previous = priorContentLine(lines, titleIndex - 1);
+      title = previous >= 0 ? (lines[previous] ?? "").trim() : title;
+    }
+
     if (
       title.length < 6
       || agency.length < 2
-      || exactDate(title)
-      || /search results|sort results|list open bids/i.test(title)
+      || noise(title)
+      || !deadlineText
     ) {
       continue;
     }
 
     let postedDate: Date | undefined;
-    for (let prior = index - 2; prior >= Math.max(0, index - 12); prior -= 1) {
+    for (let prior = Math.max(0, titleIndex - 1); prior >= Math.max(0, titleIndex - 18); prior -= 1) {
       const value = lines[prior] ?? "";
       if (exactDate(value)) {
         postedDate = parseDate(value);
