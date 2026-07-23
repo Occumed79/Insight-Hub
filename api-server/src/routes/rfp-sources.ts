@@ -112,7 +112,7 @@ router.get("/rfp-sources", async (req, res) => {
         resultCount: status.resultCount,
         matchedCount: status.matchedCount,
         lifetimeResultCount: status.lifetimeResultCount,
-        consecutiveEmptyResults: status.consecutiveEmptyResults,
+        consecutiveNoResultSuccesses: status.consecutiveNoResultSuccesses,
         totalAttempts: status.totalAttempts,
         totalSuccesses: status.totalSuccesses,
         totalFailures: status.totalFailures,
