@@ -99,7 +99,7 @@ describe("persisted opportunity run view", () => {
     ]);
   });
 
-  it("appends the top persisted rejection categories", () => {
+  it("appends top rejection categories and representative titles", () => {
     const metrics = opportunityRunMetrics({
       fetched: 94,
       staged: 94,
@@ -127,12 +127,34 @@ describe("persisted opportunity run view", () => {
             count: 4,
           },
         ],
+        samples: [
+          {
+            title: "Statewide office furniture replacement solicitation",
+            provider: "publicPortalProviders",
+            reasonLabel: "No Occu-Med service evidence",
+          },
+          {
+            title: "Informational procurement landing page",
+            provider: "sam_gov",
+            reasonLabel: "No procurement signal",
+          },
+        ],
       },
     });
-    assert.deepEqual(metrics.slice(-3), [
+    assert.deepEqual(metrics.slice(10, 13), [
       ["Reject: No Occu-Med evidence", 70],
       ["Reject: No procurement signal", 20],
       ["Reject: Hard-reject wording", 4],
+    ]);
+    assert.deepEqual(metrics.slice(13), [
+      [
+        "Sample · No Occu-Med service evidence · publicPortalProviders",
+        "Statewide office furniture replacement solicitation",
+      ],
+      [
+        "Sample · No procurement signal · sam_gov",
+        "Informational procurement landing page",
+      ],
     ]);
   });
 });
