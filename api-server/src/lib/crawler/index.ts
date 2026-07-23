@@ -1,3 +1,4 @@
+import { registerPortalFamilyTemplates } from "./familyTemplates";
 import { registerSpider } from "./registry";
 import { BrowserDiscoverySpider } from "./spiders/browserDiscoverySpider";
 import { DocumentSpider } from "./spiders/documentSpider";
@@ -13,12 +14,14 @@ export function initializeCrawlerSpiders(): void {
   registerSpider(new DocumentSpider());
   registerSpider(new BrowserDiscoverySpider());
   registerSpider(new PortalFamilySpider());
+  registerPortalFamilyTemplates();
 }
 
 initializeCrawlerSpiders();
 
 export * from "./types";
 export * from "./registry";
+export * from "./familyTemplates";
 export * from "./frontierStore";
 export * from "./discoveryCandidateStore";
 export * from "./orchestrator";

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { PublicPortalSource } from "../../providers/publicPortalProviders/catalog";
 import {
+  defaultSpiderConfigForSource,
   getSpider,
   initializeCrawlerSpiders,
   listSpiderKinds,
@@ -90,6 +91,33 @@ test("portal-family config delegates while preserving source-specific URLs", () 
   assert.equal(resolved.id, "city-member");
   assert.deepEqual(resolved.startUrls, ["https://city.example.gov/bids"]);
   assert.deepEqual(resolved.allowedHosts, ["city.example.gov"]);
+});
+
+test("catalog static document and feed sources use shared portal-family templates", () => {
+  resetSpiderRegistryForTests();
+  initializeCrawlerSpiders();
+  const cases: Array<[
+    PublicPortalSource["scraperType"],
+    "static_listing" | "document" | "feed",
+  ]> = [
+    ["static_html", "static_listing"],
+    ["scrapy", "static_listing"],
+    ["pdf_links", "document"],
+    ["rss", "feed"],
+  ];
+
+  for (const [scraperType, expectedKind] of cases) {
+    const config = defaultSpiderConfigForSource(source(scraperType));
+    assert.ok(config, `missing generated config for ${scraperType}`);
+    assert.equal(config.kind, "portal_family");
+    registerSpiderConfig(config);
+    const resolved = resolveSpiderConfig(config);
+    assert.equal(resolved.kind, expectedKind);
+    assert.deepEqual(resolved.allowedHosts, ["procurement.example.gov"]);
+    assert.deepEqual(resolved.startUrls, [
+      "https://procurement.example.gov/opportunities",
+    ]);
+  }
 });
 
 test("JSON endpoint spider maps common procurement fields", async () => {

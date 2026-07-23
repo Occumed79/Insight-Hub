@@ -1,8 +1,11 @@
 import {
   defaultSpiderConfigForSource,
   ensureSourceSpiderConfig,
+  getSpiderConfig,
   initializeCrawlerSpiders,
+  listApprovedDiscoverySpiderConfigs,
   listCrawlFrontier,
+  registerSpiderConfig,
   runCrawlerForSource,
   type CrawlFrontierState,
 } from "../crawler";
@@ -18,11 +21,16 @@ import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
 const DEFAULT_CRAWLER_BATCH_SIZE = 6;
 const DEFAULT_CRAWLER_CONCURRENCY = 2;
-const CRAWLER_ONLY_SCRAPER_TYPES = new Set([
+const AUGMENTED_SCRAPER_TYPES = new Set([
   "rss",
   "public_json",
   "playwright_public",
   "scrapy",
+]);
+const SCHEDULED_SCRAPER_TYPES = new Set([
+  ...AUGMENTED_SCRAPER_TYPES,
+  "static_html",
+  "pdf_links",
 ]);
 
 function positiveIntegerEnv(
@@ -38,6 +46,11 @@ function positiveIntegerEnv(
 
 function browserDiscoveryEnabled(): boolean {
   return process.env.PUBLIC_PORTAL_BROWSER_DISCOVERY_ENABLED === "true";
+}
+
+async function hydrateApprovedCrawlerConfigs(): Promise<void> {
+  const approved = await listApprovedDiscoverySpiderConfigs().catch(() => []);
+  for (const config of approved) registerSpiderConfig(config);
 }
 
 function recordKey(record: NormalizedOpportunity): string {
@@ -77,22 +90,34 @@ async function runWithConcurrency<T>(
   );
 }
 
-function crawlerSources(): PublicPortalSource[] {
+function crawlerSources(
+  scraperTypes: ReadonlySet<string>,
+): PublicPortalSource[] {
   initializeCrawlerSpiders();
   return basePublicPortalProvider
     .getSources()
-    .filter(
-      (source) =>
+    .filter((source) => {
+      const registered = getSpiderConfig(`public-portal:${source.id}`);
+      const approvedJson =
+        registered?.kind === "json_endpoint" &&
+        registered.notes?.startsWith("Approved from browser discovery candidate");
+      return (
         source.enabled &&
         source.verificationStatus === "verified" &&
-        CRAWLER_ONLY_SCRAPER_TYPES.has(source.scraperType) &&
-        (source.scraperType !== "playwright_public" || browserDiscoveryEnabled()) &&
-        Boolean(defaultSpiderConfigForSource(source)),
-    );
+        (scraperTypes.has(source.scraperType) || approvedJson) &&
+        (source.scraperType !== "playwright_public" ||
+          browserDiscoveryEnabled() ||
+          approvedJson) &&
+        Boolean(registered ?? defaultSpiderConfigForSource(source))
+      );
+    });
 }
 
-async function selectedCrawlerSources(): Promise<PublicPortalSource[]> {
-  const sources = crawlerSources();
+async function selectedCrawlerSources(
+  scraperTypes: ReadonlySet<string>,
+): Promise<PublicPortalSource[]> {
+  await hydrateApprovedCrawlerConfigs();
+  const sources = crawlerSources(scraperTypes);
   for (const source of sources) ensureSourceSpiderConfig(source);
   const frontier = await listCrawlFrontier().catch(
     () => [] as CrawlFrontierState[],
@@ -128,80 +153,137 @@ async function selectedCrawlerSources(): Promise<PublicPortalSource[]> {
     .slice(0, batchSize);
 }
 
-class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
-  readonly name = "publicPortalProviders" as const;
+async function crawlerSourcesForIds(
+  sourceIds: readonly string[],
+): Promise<PublicPortalSource[]> {
+  await hydrateApprovedCrawlerConfigs();
+  const byId = new Map(
+    crawlerSources(SCHEDULED_SCRAPER_TYPES).map((source) => [source.id, source]),
+  );
+  const selected = Array.from(new Set(sourceIds)).flatMap((sourceId) => {
+    const source = byId.get(sourceId);
+    return source ? [source] : [];
+  });
+  for (const source of selected) ensureSourceSpiderConfig(source);
+  return selected;
+}
 
-  async isConfigured(): Promise<boolean> {
-    return (
-      (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
-      crawlerSources().length > 0
-    );
-  }
+async function fetchSelectedCrawlerSources(
+  selected: PublicPortalSource[],
+  options: FetchOptions,
+): Promise<ProviderFetchResult> {
+  const records: NormalizedOpportunity[] = [];
+  const errors: string[] = [];
+  const concurrency = positiveIntegerEnv(
+    "PUBLIC_PORTAL_CRAWLER_CONCURRENCY",
+    DEFAULT_CRAWLER_CONCURRENCY,
+    1,
+    4,
+  );
 
-  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const crawlerRecords: NormalizedOpportunity[] = [];
-    const crawlerErrors: string[] = [];
-    const selected = await selectedCrawlerSources();
-    const concurrency = positiveIntegerEnv(
-      "PUBLIC_PORTAL_CRAWLER_CONCURRENCY",
-      DEFAULT_CRAWLER_CONCURRENCY,
-      1,
-      4,
-    );
-
-    const crawlerTask = runWithConcurrency(
-      selected,
-      concurrency,
-      async (source) => {
-        try {
-          const result = await runCrawlerForSource(source, {
-            signal: options.signal,
-          });
-          if (!result || result.outcome === "deferred") return;
-          crawlerRecords.push(...result.records);
-          if (result.diagnostics.errors.length > 0) {
-            const prefix = result.records.length > 0
+  await runWithConcurrency(
+    selected,
+    concurrency,
+    async (source) => {
+      try {
+        const result = await runCrawlerForSource(source, {
+          signal: options.signal,
+        });
+        if (!result || result.outcome === "deferred") return;
+        records.push(...result.records);
+        if (result.diagnostics.errors.length > 0) {
+          const prefix =
+            result.records.length > 0
               ? `partial results retained (${result.records.length})`
               : result.outcome;
-            crawlerErrors.push(
-              `${source.id}: ${prefix}: ${result.diagnostics.errors.join("; ")}`,
-            );
-          } else if (result.outcome === "failed" || result.outcome === "blocked") {
-            crawlerErrors.push(`${source.id}: ${result.outcome}`);
-          }
-        } catch (error) {
-          crawlerErrors.push(
-            `${source.id}: ${error instanceof Error ? error.message : String(error)}`,
+          errors.push(
+            `${source.id}: ${prefix}: ${result.diagnostics.errors.join("; ")}`,
           );
+        } else if (result.outcome === "failed" || result.outcome === "blocked") {
+          errors.push(`${source.id}: ${result.outcome}`);
         }
-      },
-      options.signal,
-    );
+      } catch (error) {
+        errors.push(
+          `${source.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+    options.signal,
+  );
 
-    const [baseResult] = await Promise.all([
-      basePublicPortalProvider.fetch(options),
-      crawlerTask,
-    ]);
-    const seen = new Set<string>();
-    const merged = [...baseResult.records, ...crawlerRecords].filter((record) => {
+  const seen = new Set<string>();
+  const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
+  const deduped = records
+    .filter((record) => {
       const key = recordKey(record);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
+    })
+    .slice(0, limit);
+  return { records: deduped, total: deduped.length, errors };
+}
+
+export async function listDueCrawlerSourceIds(): Promise<string[]> {
+  return (await selectedCrawlerSources(SCHEDULED_SCRAPER_TYPES)).map(
+    (source) => source.id,
+  );
+}
+
+export async function fetchCrawlerRecordsForSourceIds(
+  sourceIds: readonly string[],
+  options: FetchOptions = {},
+): Promise<ProviderFetchResult> {
+  const selected = await crawlerSourcesForIds(sourceIds);
+  return fetchSelectedCrawlerSources(selected, options);
+}
+
+export async function fetchDueCrawlerRecords(
+  options: FetchOptions = {},
+): Promise<ProviderFetchResult> {
+  const sourceIds = await listDueCrawlerSourceIds();
+  return fetchCrawlerRecordsForSourceIds(sourceIds, options);
+}
+
+class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
+  readonly name = "publicPortalProviders" as const;
+
+  async isConfigured(): Promise<boolean> {
+    await hydrateApprovedCrawlerConfigs();
+    return (
+      (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
+      crawlerSources(AUGMENTED_SCRAPER_TYPES).length > 0
+    );
+  }
+
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    const selected = await selectedCrawlerSources(AUGMENTED_SCRAPER_TYPES);
+    const [baseResult, crawlerResult] = await Promise.all([
+      basePublicPortalProvider.fetch(options),
+      fetchSelectedCrawlerSources(selected, options),
+    ]);
+    const seen = new Set<string>();
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const records = merged.slice(0, limit);
+    const records = [...baseResult.records, ...crawlerResult.records]
+      .filter((record) => {
+        const key = recordKey(record);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit);
     return {
       records,
       total: records.length,
-      errors: [...baseResult.errors, ...crawlerErrors],
+      errors: [...baseResult.errors, ...crawlerResult.errors],
     };
   }
 
   async getStatus(): Promise<ProviderStatus> {
+    await hydrateApprovedCrawlerConfigs();
     const base = await basePublicPortalProvider.getStatus();
     const activeCrawlerSourceIds = new Set(
-      crawlerSources().map((source) => source.id),
+      crawlerSources(SCHEDULED_SCRAPER_TYPES).map((source) => source.id),
     );
     const frontier = (
       await listCrawlFrontier().catch(() => [] as CrawlFrontierState[])
