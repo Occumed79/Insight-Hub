@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:ingestion": "node --import tsx --test src/lib/ingestion/__tests__/manualIngestion.test.ts src/lib/providers/__tests__/portalDirectory.test.ts src/routes/__tests__/opportunityIngestionHandlers.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/ingestionApiGeneration.test.ts",
+    "test:ingestion": "node --import tsx --test src/lib/ingestion/__tests__/manualIngestion.test.ts src/lib/ingestion/__tests__/opportunityExpiration.test.ts src/lib/providers/__tests__/portalDirectory.test.ts src/routes/__tests__/opportunityIngestionHandlers.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/ingestionApiGeneration.test.ts",
     "test:quality": "node --import tsx --test src/lib/__tests__/opportunityQuality.test.ts src/routes/__tests__/opportunityListQuery.test.ts src/routes/__tests__/opportunitySummaryQuality.test.ts src/lib/ingestion/__tests__/manualIngestion.test.ts",
     "test:evidence": "node --import tsx --test src/lib/__tests__/opportunityEvidence.test.ts src/lib/__tests__/opportunityQuality.test.ts src/routes/__tests__/opportunitySummaryQuality.test.ts src/lib/ingestion/__tests__/manualIngestion.test.ts"
   },
@@ -16,7 +16,7 @@
     "@types/multer": "^2.1.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
-    "cookie-parser": "^1.4.7",
+    "cookie-parser": "^2",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
@@ -25,7 +25,7 @@
     "pino-http": "^10"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10",
+    "@types/cookie-parser": "^4.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
