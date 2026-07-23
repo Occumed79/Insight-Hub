@@ -50,6 +50,18 @@ export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
     "az-phoenix",
     "Repeated automated fetch failures. Retained as a manual official buyer link.",
   ],
+  [
+    "ct-ctsource",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
+  [
+    "al-state-procurement",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
+  [
+    "nm-active-procurements",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
 ]);
 
 export const MANUAL_ONLY_PORTAL_IDS = new Set(MANUAL_ONLY_PORTAL_REASONS.keys());
