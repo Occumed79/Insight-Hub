@@ -1,4 +1,5 @@
 import { ENRICHED_DIRECT_RFP_PORTALS } from "./directRfpPortalRelevanceCatalog";
+import { STATEWIDE_PROCUREMENT_SOURCES } from "./statewideProcurementConfigs";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
 export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
@@ -103,5 +104,11 @@ export function registerManualOnlyDirectPortalPolicy(): void {
       requiresLogin: true,
       notes: `${portal.notes} ${reason}`.trim(),
     };
+  }
+
+  for (let index = 0; index < STATEWIDE_PROCUREMENT_SOURCES.length; index += 1) {
+    const source = STATEWIDE_PROCUREMENT_SOURCES[index];
+    if (!source || !isManualOnlyPortalSourceId(source.id)) continue;
+    STATEWIDE_PROCUREMENT_SOURCES[index] = applyManualOnlyPortalPolicy(source);
   }
 }
