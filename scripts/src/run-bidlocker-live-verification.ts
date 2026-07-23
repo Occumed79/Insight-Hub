@@ -1,3 +1,4 @@
+import { enrichBidLockerRecordDates } from "../../api-server/src/lib/providers/bidLockerDateEnrichment";
 import {
   BIDLOCKER_TENANTS,
   BidLockerPortalProvider,
@@ -17,16 +18,25 @@ const results: TenantVerification[] = [];
 for (const tenant of BIDLOCKER_TENANTS) {
   const provider = new BidLockerPortalProvider([tenant]);
   const result = await provider.fetch({ limit: 5 });
+  const enriched = await enrichBidLockerRecordDates(result.records, { limit: 5 });
+  const errors = [...result.errors, ...enriched.errors];
+  const completeDates = enriched.records.filter(
+    (record) =>
+      record.postedDate.getTime() > 0 && Boolean(record.responseDeadline),
+  ).length;
+  if (enriched.records.length > 0 && completeDates !== enriched.records.length) {
+    errors.push(
+      `${tenant.portalId}: ${enriched.records.length - completeDates} record(s) still have incomplete public dates`,
+    );
+  }
+
   results.push({
     portalId: tenant.portalId,
     tenantSlug: tenant.tenantSlug,
-    recordCount: result.records.length,
-    errors: result.errors,
-    sampleTitles: result.records.slice(0, 3).map((record) => record.title),
-    completeDates: result.records.filter(
-      (record) =>
-        record.postedDate.getTime() > 0 && Boolean(record.responseDeadline),
-    ).length,
+    recordCount: enriched.records.length,
+    errors,
+    sampleTitles: enriched.records.slice(0, 3).map((record) => record.title),
+    completeDates,
   });
 }
 
