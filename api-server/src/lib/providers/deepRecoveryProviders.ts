@@ -28,10 +28,6 @@ import {
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
   southDakotaPostingBoardProvider,
 } from "./southDakotaPostingBoard";
-import {
-  VERMONT_BID_RECOVERY_SOURCE,
-  vermontBidRecoveryProvider,
-} from "./vermontBidRecovery";
 
 const sourceById = new Map<string, PublicPortalSource>();
 for (const source of [
@@ -43,7 +39,6 @@ for (const source of [
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
   ...STATE_PLATFORM_ADAPTER_SOURCES,
   ...PRODUCTION_RECOVERY_SOURCES,
-  VERMONT_BID_RECOVERY_SOURCE,
   ...BOUNDED_STATE_RECOVERY_SOURCES,
 ]) sourceById.set(source.id, source);
 
@@ -60,6 +55,5 @@ export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id]: southDakotaPostingBoardProvider,
   ...statePlatformAdapterProviders,
   ...productionRecoveryProviders,
-  [VERMONT_BID_RECOVERY_SOURCE.id]: vermontBidRecoveryProvider,
   ...boundedStateRecoveryProviders,
 };
