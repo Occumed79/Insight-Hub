@@ -1,4 +1,5 @@
 import app from "./app";
+import { startCrawlerScheduler } from "./lib/crawler/scheduler";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
 import { runRfpStartupMigrations } from "./lib/rfp-startup-migrate";
@@ -31,11 +32,18 @@ async function bootstrap(): Promise<void> {
       if (err) {
         reject(err);
       } else {
-        logger.info({ port, databases: getDatabaseConfigSummary() }, "Server listening");
+        logger.info(
+          { port, databases: getDatabaseConfigSummary() },
+          "Server listening",
+        );
         resolve();
       }
     });
   });
+
+  // The scheduler uses the same durable ingestion pipeline and starts only
+  // after migrations and the HTTP listener are healthy.
+  startCrawlerScheduler();
 }
 
 bootstrap().catch((err) => {
