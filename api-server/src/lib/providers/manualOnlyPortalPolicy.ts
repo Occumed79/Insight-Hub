@@ -1,3 +1,4 @@
+import { ENRICHED_DIRECT_RFP_PORTALS } from "./directRfpPortalRelevanceCatalog";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
 export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
@@ -72,4 +73,23 @@ export function applyManualOnlyPortalPolicy(
     verificationStatus: "needs_review",
     notes: reason,
   };
+}
+
+let directCatalogPolicyRegistered = false;
+
+export function registerManualOnlyDirectPortalPolicy(): void {
+  if (directCatalogPolicyRegistered) return;
+  directCatalogPolicyRegistered = true;
+
+  for (let index = 0; index < ENRICHED_DIRECT_RFP_PORTALS.length; index += 1) {
+    const portal = ENRICHED_DIRECT_RFP_PORTALS[index];
+    if (!portal) continue;
+    const reason = manualOnlyPortalReason(portal.id);
+    if (!reason) continue;
+    ENRICHED_DIRECT_RFP_PORTALS[index] = {
+      ...portal,
+      requiresLogin: true,
+      notes: `${portal.notes} ${reason}`.trim(),
+    };
+  }
 }
