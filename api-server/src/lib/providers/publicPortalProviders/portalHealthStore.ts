@@ -17,7 +17,7 @@ export type PublicPortalRunOutcome =
 export type PublicPortalQuarantineReason =
   | "validation_failed"
   | "repeated_failures"
-  | "never_yielded_results";
+  | "repeated_empty_results";
 
 export interface PublicPortalSourceRunStatus {
   sourceId: string;
@@ -34,6 +34,7 @@ export interface PublicPortalSourceRunStatus {
   totalSuccesses: number;
   totalFailures: number;
   consecutiveFailures: number;
+  consecutiveNoResultSuccesses: number;
   lastOutcome: PublicPortalRunOutcome;
 }
 
@@ -52,6 +53,7 @@ interface StoredPortalSourceRunStatus {
   totalSuccesses: number;
   totalFailures: number;
   consecutiveFailures: number;
+  consecutiveNoResultSuccesses?: number;
   lastOutcome: PublicPortalRunOutcome;
 }
 
@@ -109,6 +111,9 @@ function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefin
       totalSuccesses: finiteNumber(stored.totalSuccesses),
       totalFailures: finiteNumber(stored.totalFailures),
       consecutiveFailures: finiteNumber(stored.consecutiveFailures),
+      consecutiveNoResultSuccesses: finiteNumber(
+        stored.consecutiveNoResultSuccesses,
+      ),
       lastOutcome: stored.lastOutcome,
     };
   } catch {
@@ -132,6 +137,7 @@ function serializeStatus(status: PublicPortalSourceRunStatus): string {
     totalSuccesses: status.totalSuccesses,
     totalFailures: status.totalFailures,
     consecutiveFailures: status.consecutiveFailures,
+    consecutiveNoResultSuccesses: status.consecutiveNoResultSuccesses,
     lastOutcome: status.lastOutcome,
   };
   return JSON.stringify(stored);
@@ -183,6 +189,9 @@ export function successfulPortalStatus(
     totalSuccesses: (prior?.totalSuccesses ?? 0) + 1,
     totalFailures: prior?.totalFailures ?? 0,
     consecutiveFailures: 0,
+    consecutiveNoResultSuccesses: foundResults
+      ? 0
+      : (prior?.consecutiveNoResultSuccesses ?? 0) + 1,
     lastOutcome: foundResults ? "success" : "no_results",
   };
 }
@@ -209,6 +218,7 @@ export function failedPortalStatus(
     totalSuccesses: prior?.totalSuccesses ?? 0,
     totalFailures: (prior?.totalFailures ?? 0) + 1,
     consecutiveFailures: (prior?.consecutiveFailures ?? 0) + 1,
+    consecutiveNoResultSuccesses: 0,
     lastOutcome: outcome,
   };
 }
@@ -241,10 +251,9 @@ export function portalQuarantineDecision(
   );
   if (
     status.lastOutcome === "no_results" &&
-    status.totalSuccesses >= emptyThreshold &&
-    status.lifetimeResultCount === 0
+    status.consecutiveNoResultSuccesses >= emptyThreshold
   ) {
-    return { quarantined: true, reason: "never_yielded_results" };
+    return { quarantined: true, reason: "repeated_empty_results" };
   }
 
   return { quarantined: false };
@@ -255,7 +264,7 @@ export function portalQuarantineReasonLabel(
 ): string {
   if (reason === "validation_failed") return "Invalid source configuration";
   if (reason === "repeated_failures") return "Repeated collection failures";
-  return "Never returned records after repeated successful checks";
+  return "Repeated healthy checks returned no records";
 }
 
 function lastCheckedTime(
@@ -280,9 +289,8 @@ function oldestFirst(
 /**
  * Selects a bounded, durable rotation instead of running every dedicated adapter
  * at once. Dedicated sources receive most of the batch, while generic sources
- * retain guaranteed capacity. Sources that repeatedly fail or have never yielded
- * a record after repeated healthy checks are quarantined and removed from the
- * automated rotation.
+ * retain guaranteed capacity. Sources that repeatedly fail or repeatedly return
+ * no records are quarantined and removed from the automated rotation.
  */
 export function selectFairPortalSources(
   sources: readonly PublicPortalSource[],
