@@ -5,11 +5,19 @@ import type { PublicPortalSource } from "./catalog";
 
 const HEALTH_KEY_PREFIX = "internal:public-portal-health:";
 
+export const DEFAULT_PORTAL_FAILURE_QUARANTINE_THRESHOLD = 3;
+export const DEFAULT_PORTAL_EMPTY_QUARANTINE_THRESHOLD = 6;
+
 export type PublicPortalRunOutcome =
   | "success"
   | "no_results"
   | "failed"
   | "validation_failed";
+
+export type PublicPortalQuarantineReason =
+  | "validation_failed"
+  | "repeated_failures"
+  | "repeated_empty_results";
 
 export interface PublicPortalSourceRunStatus {
   sourceId: string;
@@ -21,10 +29,12 @@ export interface PublicPortalSourceRunStatus {
   lastFailureReason?: string;
   resultCount: number;
   matchedCount: number;
+  lifetimeResultCount: number;
   totalAttempts: number;
   totalSuccesses: number;
   totalFailures: number;
   consecutiveFailures: number;
+  consecutiveNoResultSuccesses: number;
   lastOutcome: PublicPortalRunOutcome;
 }
 
@@ -38,11 +48,32 @@ interface StoredPortalSourceRunStatus {
   lastFailureReason?: string;
   resultCount: number;
   matchedCount: number;
+  lifetimeResultCount?: number;
   totalAttempts: number;
   totalSuccesses: number;
   totalFailures: number;
   consecutiveFailures: number;
+  consecutiveNoResultSuccesses?: number;
   lastOutcome: PublicPortalRunOutcome;
+}
+
+export interface PublicPortalQuarantineDecision {
+  quarantined: boolean;
+  reason?: PublicPortalQuarantineReason;
+}
+
+export interface PublicPortalQuarantineThresholds {
+  failureThreshold?: number;
+  emptyThreshold?: number;
+}
+
+export interface PublicPortalSourceSelection {
+  selected: PublicPortalSource[];
+  deferred: PublicPortalSource[];
+  quarantined: Array<{
+    source: PublicPortalSource;
+    reason: PublicPortalQuarantineReason;
+  }>;
 }
 
 function healthKey(sourceId: string): string {
@@ -75,10 +106,14 @@ function parseStoredStatus(value: string): PublicPortalSourceRunStatus | undefin
       lastFailureReason: stored.lastFailureReason,
       resultCount: finiteNumber(stored.resultCount),
       matchedCount: finiteNumber(stored.matchedCount),
+      lifetimeResultCount: finiteNumber(stored.lifetimeResultCount),
       totalAttempts: finiteNumber(stored.totalAttempts),
       totalSuccesses: finiteNumber(stored.totalSuccesses),
       totalFailures: finiteNumber(stored.totalFailures),
       consecutiveFailures: finiteNumber(stored.consecutiveFailures),
+      consecutiveNoResultSuccesses: finiteNumber(
+        stored.consecutiveNoResultSuccesses,
+      ),
       lastOutcome: stored.lastOutcome,
     };
   } catch {
@@ -97,10 +132,12 @@ function serializeStatus(status: PublicPortalSourceRunStatus): string {
     lastFailureReason: status.lastFailureReason,
     resultCount: status.resultCount,
     matchedCount: status.matchedCount,
+    lifetimeResultCount: status.lifetimeResultCount,
     totalAttempts: status.totalAttempts,
     totalSuccesses: status.totalSuccesses,
     totalFailures: status.totalFailures,
     consecutiveFailures: status.consecutiveFailures,
+    consecutiveNoResultSuccesses: status.consecutiveNoResultSuccesses,
     lastOutcome: status.lastOutcome,
   };
   return JSON.stringify(stored);
@@ -147,10 +184,14 @@ export function successfulPortalStatus(
     lastFailureReason: prior?.lastFailureReason,
     resultCount,
     matchedCount,
+    lifetimeResultCount: (prior?.lifetimeResultCount ?? 0) + resultCount,
     totalAttempts: (prior?.totalAttempts ?? 0) + 1,
     totalSuccesses: (prior?.totalSuccesses ?? 0) + 1,
     totalFailures: prior?.totalFailures ?? 0,
     consecutiveFailures: 0,
+    consecutiveNoResultSuccesses: foundResults
+      ? 0
+      : (prior?.consecutiveNoResultSuccesses ?? 0) + 1,
     lastOutcome: foundResults ? "success" : "no_results",
   };
 }
@@ -172,12 +213,58 @@ export function failedPortalStatus(
     lastFailureReason: reason.slice(0, 1_000),
     resultCount: 0,
     matchedCount: 0,
+    lifetimeResultCount: prior?.lifetimeResultCount ?? 0,
     totalAttempts: (prior?.totalAttempts ?? 0) + 1,
     totalSuccesses: prior?.totalSuccesses ?? 0,
     totalFailures: (prior?.totalFailures ?? 0) + 1,
     consecutiveFailures: (prior?.consecutiveFailures ?? 0) + 1,
+    consecutiveNoResultSuccesses: 0,
     lastOutcome: outcome,
   };
+}
+
+export function portalQuarantineDecision(
+  status: PublicPortalSourceRunStatus | undefined,
+  thresholds: PublicPortalQuarantineThresholds = {},
+): PublicPortalQuarantineDecision {
+  if (!status) return { quarantined: false };
+
+  if (status.lastOutcome === "validation_failed") {
+    return { quarantined: true, reason: "validation_failed" };
+  }
+
+  const failureThreshold = Math.max(
+    1,
+    Math.floor(
+      thresholds.failureThreshold ?? DEFAULT_PORTAL_FAILURE_QUARANTINE_THRESHOLD,
+    ),
+  );
+  if (status.consecutiveFailures >= failureThreshold) {
+    return { quarantined: true, reason: "repeated_failures" };
+  }
+
+  const emptyThreshold = Math.max(
+    1,
+    Math.floor(
+      thresholds.emptyThreshold ?? DEFAULT_PORTAL_EMPTY_QUARANTINE_THRESHOLD,
+    ),
+  );
+  if (
+    status.lastOutcome === "no_results" &&
+    status.consecutiveNoResultSuccesses >= emptyThreshold
+  ) {
+    return { quarantined: true, reason: "repeated_empty_results" };
+  }
+
+  return { quarantined: false };
+}
+
+export function portalQuarantineReasonLabel(
+  reason: PublicPortalQuarantineReason,
+): string {
+  if (reason === "validation_failed") return "Invalid source configuration";
+  if (reason === "repeated_failures") return "Repeated collection failures";
+  return "Repeated healthy checks returned no records";
 }
 
 function lastCheckedTime(
@@ -202,26 +289,41 @@ function oldestFirst(
 /**
  * Selects a bounded, durable rotation instead of running every dedicated adapter
  * at once. Dedicated sources receive most of the batch, while generic sources
- * retain guaranteed capacity. Oldest/never-checked sources always move to the
- * front, so repeated manual runs eventually cover the complete catalog.
+ * retain guaranteed capacity. Sources that repeatedly fail or repeatedly return
+ * no records are quarantined and removed from the automated rotation.
  */
 export function selectFairPortalSources(
   sources: readonly PublicPortalSource[],
   statuses: ReadonlyMap<string, PublicPortalSourceRunStatus>,
   rotatingBatchSize: number,
   dedicatedSourceIds: ReadonlySet<string>,
-): { selected: PublicPortalSource[]; deferred: PublicPortalSource[] } {
+  quarantineThresholds: PublicPortalQuarantineThresholds = {},
+): PublicPortalSourceSelection {
+  const quarantined = sources.flatMap((source) => {
+    const decision = portalQuarantineDecision(
+      statuses.get(source.id),
+      quarantineThresholds,
+    );
+    return decision.quarantined && decision.reason
+      ? [{ source, reason: decision.reason }]
+      : [];
+  });
+  const quarantinedIds = new Set(quarantined.map((item) => item.source.id));
+  const activeSources = sources.filter((source) => !quarantinedIds.has(source.id));
+
   const batchSize = Math.min(
-    sources.length,
+    activeSources.length,
     Math.max(0, Math.floor(rotatingBatchSize)),
   );
-  if (batchSize === 0) return { selected: [], deferred: [...sources] };
+  if (batchSize === 0) {
+    return { selected: [], deferred: [...activeSources], quarantined };
+  }
 
   const compare = oldestFirst(statuses);
-  const dedicated = sources
+  const dedicated = activeSources
     .filter((source) => dedicatedSourceIds.has(source.id))
     .sort(compare);
-  const rotating = sources
+  const rotating = activeSources
     .filter((source) => !dedicatedSourceIds.has(source.id))
     .sort(compare);
 
@@ -248,8 +350,9 @@ export function selectFairPortalSources(
   const selectedIds = new Set(selected.map((source) => source.id));
   return {
     selected,
-    deferred: sources
+    deferred: activeSources
       .filter((source) => !selectedIds.has(source.id))
       .sort(compare),
+    quarantined,
   };
 }
