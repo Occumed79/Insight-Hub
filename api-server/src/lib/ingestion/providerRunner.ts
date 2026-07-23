@@ -1,6 +1,7 @@
 import { providerRegistry } from "../providers";
 import type { NormalizedOpportunity } from "../providers/types";
 import { webIntelligenceFetch } from "../search/webIntelligence";
+import { filterExpiredOpportunities } from "./opportunityExpiration";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -31,6 +32,7 @@ const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa"]);
 export interface ProviderRunResult {
   records: NormalizedOpportunity[];
   errors: string[];
+  expiredSkipped?: number;
 }
 
 export function resolveManualProviders(providers?: string[]): string[] {
@@ -49,6 +51,29 @@ export function resolveManualProviders(providers?: string[]): string[] {
   return resolved;
 }
 
+function applyExpirationGuard(
+  provider: string,
+  records: NormalizedOpportunity[],
+  errors: string[],
+): ProviderRunResult {
+  const filtered = filterExpiredOpportunities(records);
+  if (filtered.expiredSkipped > 0) {
+    console.info(
+      JSON.stringify({
+        event: "rfp_expired_records_skipped",
+        provider,
+        expiredSkipped: filtered.expiredSkipped,
+        reasons: filtered.reasons,
+      }),
+    );
+  }
+  return {
+    records: filtered.records,
+    errors,
+    expiredSkipped: filtered.expiredSkipped,
+  };
+}
+
 export async function fetchOneProvider(
   provider: string,
   options: { keywords?: string; dateRange?: number; signal?: AbortSignal },
@@ -61,12 +86,11 @@ export async function fetchOneProvider(
       useExa: provider === "exa",
       signal: options.signal,
     });
-    return {
-      records: result.opportunities.filter(
-        (record) => record.source === provider,
-      ),
-      errors: result.errors,
-    };
+    return applyExpirationGuard(
+      provider,
+      result.opportunities.filter((record) => record.source === provider),
+      result.errors,
+    );
   }
 
   const source = providerRegistry[provider as keyof typeof providerRegistry];
@@ -77,5 +101,5 @@ export async function fetchOneProvider(
     limit: 100,
     signal: options.signal,
   });
-  return { records: result.records, errors: result.errors ?? [] };
+  return applyExpirationGuard(provider, result.records, result.errors ?? []);
 }
