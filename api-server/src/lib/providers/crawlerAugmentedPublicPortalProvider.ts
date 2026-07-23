@@ -1,8 +1,11 @@
 import {
   defaultSpiderConfigForSource,
   ensureSourceSpiderConfig,
+  getSpiderConfig,
   initializeCrawlerSpiders,
+  listApprovedDiscoverySpiderConfigs,
   listCrawlFrontier,
+  registerSpiderConfig,
   runCrawlerForSource,
   type CrawlFrontierState,
 } from "../crawler";
@@ -43,6 +46,11 @@ function positiveIntegerEnv(
 
 function browserDiscoveryEnabled(): boolean {
   return process.env.PUBLIC_PORTAL_BROWSER_DISCOVERY_ENABLED === "true";
+}
+
+async function hydrateApprovedCrawlerConfigs(): Promise<void> {
+  const approved = await listApprovedDiscoverySpiderConfigs().catch(() => []);
+  for (const config of approved) registerSpiderConfig(config);
 }
 
 function recordKey(record: NormalizedOpportunity): string {
@@ -88,19 +96,27 @@ function crawlerSources(
   initializeCrawlerSpiders();
   return basePublicPortalProvider
     .getSources()
-    .filter(
-      (source) =>
+    .filter((source) => {
+      const registered = getSpiderConfig(`public-portal:${source.id}`);
+      const approvedJson =
+        registered?.kind === "json_endpoint" &&
+        registered.notes?.startsWith("Approved from browser discovery candidate");
+      return (
         source.enabled &&
         source.verificationStatus === "verified" &&
-        scraperTypes.has(source.scraperType) &&
-        (source.scraperType !== "playwright_public" || browserDiscoveryEnabled()) &&
-        Boolean(defaultSpiderConfigForSource(source)),
-    );
+        (scraperTypes.has(source.scraperType) || approvedJson) &&
+        (source.scraperType !== "playwright_public" ||
+          browserDiscoveryEnabled() ||
+          approvedJson) &&
+        Boolean(registered ?? defaultSpiderConfigForSource(source))
+      );
+    });
 }
 
 async function selectedCrawlerSources(
   scraperTypes: ReadonlySet<string>,
 ): Promise<PublicPortalSource[]> {
+  await hydrateApprovedCrawlerConfigs();
   const sources = crawlerSources(scraperTypes);
   for (const source of sources) ensureSourceSpiderConfig(source);
   const frontier = await listCrawlFrontier().catch(
@@ -209,6 +225,7 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
 
   async isConfigured(): Promise<boolean> {
+    await hydrateApprovedCrawlerConfigs();
     return (
       (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
       crawlerSources(AUGMENTED_SCRAPER_TYPES).length > 0
@@ -239,6 +256,7 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
   }
 
   async getStatus(): Promise<ProviderStatus> {
+    await hydrateApprovedCrawlerConfigs();
     const base = await basePublicPortalProvider.getStatus();
     const activeCrawlerSourceIds = new Set(
       crawlerSources(SCHEDULED_SCRAPER_TYPES).map((source) => source.id),
