@@ -16,6 +16,7 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
+import { PlanetBidsPortalProvider } from "./planetBidsPortal";
 import { publicPortalProvidersProvider as basePublicPortalProvider } from "./publicPortalProviders";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
@@ -32,6 +33,7 @@ const SCHEDULED_SCRAPER_TYPES = new Set([
   "static_html",
   "pdf_links",
 ]);
+const planetBidsProvider = new PlanetBidsPortalProvider();
 
 function positiveIntegerEnv(
   name: string,
@@ -67,6 +69,13 @@ function recordKey(record: NormalizedOpportunity): string {
     return `sol:${record.solicitationNumber.replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
   }
   return `id:${record.externalId.toLowerCase()}`;
+}
+
+function latestDate(...dates: Array<Date | undefined>): Date | undefined {
+  const values = dates.filter((date): date is Date => Boolean(date));
+  return values.length
+    ? new Date(Math.max(...values.map((date) => date.getTime())))
+    : undefined;
 }
 
 async function runWithConcurrency<T>(
@@ -252,19 +261,25 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
     await hydrateApprovedCrawlerConfigs();
     return (
       (await basePublicPortalProvider.isConfigured().catch(() => false)) ||
+      (await planetBidsProvider.isConfigured().catch(() => false)) ||
       crawlerSources(AUGMENTED_SCRAPER_TYPES).length > 0
     );
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const selected = await selectedCrawlerSources(AUGMENTED_SCRAPER_TYPES);
-    const [baseResult, crawlerResult] = await Promise.all([
+    const [baseResult, crawlerResult, planetBidsResult] = await Promise.all([
       basePublicPortalProvider.fetch(options),
       fetchSelectedCrawlerSources(selected, options),
+      planetBidsProvider.fetch(options),
     ]);
     const seen = new Set<string>();
     const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
-    const records = [...baseResult.records, ...crawlerResult.records]
+    const records = [
+      ...baseResult.records,
+      ...planetBidsResult.records,
+      ...crawlerResult.records,
+    ]
       .filter((record) => {
         const key = recordKey(record);
         if (seen.has(key)) return false;
@@ -275,13 +290,20 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
     return {
       records,
       total: records.length,
-      errors: [...baseResult.errors, ...crawlerResult.errors],
+      errors: [
+        ...baseResult.errors,
+        ...planetBidsResult.errors,
+        ...crawlerResult.errors,
+      ],
     };
   }
 
   async getStatus(): Promise<ProviderStatus> {
     await hydrateApprovedCrawlerConfigs();
-    const base = await basePublicPortalProvider.getStatus();
+    const [base, planetBids] = await Promise.all([
+      basePublicPortalProvider.getStatus(),
+      planetBidsProvider.getStatus(),
+    ]);
     const activeCrawlerSourceIds = new Set(
       crawlerSources(SCHEDULED_SCRAPER_TYPES).map((source) => source.id),
     );
@@ -291,12 +313,27 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
     const crawlerFailures = frontier.filter(
       (state) => state.lastOutcome === "failed" || state.lastOutcome === "blocked",
     );
+    const crawlerLastAttempt = frontier.reduce<Date | undefined>((latest, state) => {
+      if (!state.lastAttemptAt) return latest;
+      const attempt = new Date(state.lastAttemptAt);
+      return !latest || attempt > latest ? attempt : latest;
+    }, undefined);
+    const crawlerLastSuccess = frontier.reduce<Date | undefined>((latest, state) => {
+      if (!state.lastSuccessAt) return latest;
+      const success = new Date(state.lastSuccessAt);
+      return !latest || success > latest ? success : latest;
+    }, undefined);
+
     return {
       ...base,
-      healthy: base.healthy && crawlerFailures.length === 0,
+      healthy:
+        base.healthy && planetBids.healthy && crawlerFailures.length === 0,
       errorMessage:
         [
           base.errorMessage,
+          planetBids.errorMessage
+            ? `PlanetBids: ${planetBids.errorMessage}`
+            : undefined,
           crawlerFailures.length > 0
             ? `${crawlerFailures.length} crawler source${crawlerFailures.length === 1 ? " is" : "s are"} currently failing`
             : undefined,
@@ -305,17 +342,18 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
           .join("; ") || undefined,
       recordCount:
         (base.recordCount ?? 0) +
+        (planetBids.recordCount ?? 0) +
         frontier.reduce((sum, state) => sum + state.recordsFound, 0),
-      lastAttempt: frontier.reduce<Date | undefined>((latest, state) => {
-        if (!state.lastAttemptAt) return latest;
-        const attempt = new Date(state.lastAttemptAt);
-        return !latest || attempt > latest ? attempt : latest;
-      }, base.lastAttempt),
-      lastSuccess: frontier.reduce<Date | undefined>((latest, state) => {
-        if (!state.lastSuccessAt) return latest;
-        const success = new Date(state.lastSuccessAt);
-        return !latest || success > latest ? success : latest;
-      }, base.lastSuccess),
+      lastAttempt: latestDate(
+        base.lastAttempt,
+        planetBids.lastAttempt,
+        crawlerLastAttempt,
+      ),
+      lastSuccess: latestDate(
+        base.lastSuccess,
+        planetBids.lastSuccess,
+        crawlerLastSuccess,
+      ),
     };
   }
 }
