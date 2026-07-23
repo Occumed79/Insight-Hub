@@ -1,5 +1,9 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+import { OPENGOV_PORTAL_IDS } from "./openGov";
+import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
 import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementConfigs";
+
+registerOpenGovCountyExtensions();
 
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
@@ -30,34 +34,31 @@ export interface PortalConnectorCapability {
 }
 
 const DIRECT_API_PORTAL_IDS = new Set(["us-sam-gov"]);
+const AUTOMATION_RESTRICTED_PORTAL_IDS = new Set([
+  "wy-state-purchasing",
+  "ca-calaveras-county",
+]);
 const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "tx-esbd",
   "ny-contract-reporter",
   "ia-das",
   "ca-caleprocure",
-  "ca-city-of-santa-cruz-opengov",
-  "ca-city-of-palm-desert-opengov",
-  "ca-city-of-west-sacramento-opengov",
-  "pa-scranton-city-school-district-opengov",
-  "fl-monroe-county-school-district-opengov",
-  "nj-passaic-city-school-district-opengov",
-  "fl-volusia-county-opengov",
-  "fl-pinellas-county-school-district-opengov",
-  "nj-jersey-city-public-schools-opengov",
-  "fl-santa-rosa-county-opengov",
-  "oh-cleveland-metropolitan-school-district-opengov",
-  "ca-san-bernardino-city-unified-school-district-opengov",
-  "fl-alachua-county-opengov",
-  "va-richmond-public-schools-opengov",
-  "fl-clay-county-opengov",
-  "az-chandler-unified-school-district-opengov",
-  "md-wicomico-county-opengov",
-  "sc-richland-school-district-two-opengov",
+  ...OPENGOV_PORTAL_IDS,
   ...CIVICENGAGE_PORTAL_IDS,
   ...STATEWIDE_PROCUREMENT_PORTAL_IDS,
 ]);
 
 export function portalConnectorCapability(portal: PortalCapabilityInput): PortalConnectorCapability {
+  if (AUTOMATION_RESTRICTED_PORTAL_IDS.has(portal.id)) {
+    return {
+      connectorStatus: "directory_only",
+      connectorLabel: "Manual authenticated access",
+      connectorDescription: "The official buyer uses Public Purchase, which requires authenticated vendor access and does not permit unapproved automated monitoring. The source is retained for manual access only.",
+      directCollection: false,
+      requiresSerper: false,
+    };
+  }
+
   if (DIRECT_API_PORTAL_IDS.has(portal.id)) {
     return {
       connectorStatus: "direct_api",
