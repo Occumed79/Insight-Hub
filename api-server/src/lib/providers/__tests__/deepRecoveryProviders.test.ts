@@ -11,21 +11,16 @@ import {
   hawaiiHandsProvider,
   parseHawaiiHandsJson,
 } from "../hawaiiHands";
-import {
-  minnesotaOspProvider,
-  parseMinnesotaOspHtml,
-} from "../minnesotaOsp";
+import { parseMinnesotaOspHtml } from "../minnesotaOsp";
 import { newHampshireBidsProvider } from "../newHampshireBids";
 import { describeOfficialPortalRequestError } from "../officialPortalHttp";
-import {
-  oregonBuysProvider,
-  parseOregonBuysListingHtml,
-} from "../oregonBuys";
+import { parseOregonBuysListingHtml } from "../oregonBuys";
 import { STATEWIDE_LIVE_TARGETS } from "../runStatewideLiveVerification";
 import {
   parseSouthDakotaPostingBoardJson,
   southDakotaPostingBoardProvider,
 } from "../southDakotaPostingBoard";
+import { statePlatformAdapterProviders } from "../statePlatformAdapters";
 
 describe("blocked-state deep recovery providers", () => {
   it("extracts the CGI Advantage public initial state", () => {
@@ -140,9 +135,9 @@ describe("blocked-state deep recovery providers", () => {
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "HI")?.provider, hawaiiHandsProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "KY")?.provider, kentuckyCgiAdvantageProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MI")?.provider, michiganCgiAdvantageProvider);
-    assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN")?.provider, minnesotaOspProvider);
+    assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN")?.provider, statePlatformAdapterProviders["mn-swift"]);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "NH")?.provider, newHampshireBidsProvider);
-    assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR")?.provider, oregonBuysProvider);
+    assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR")?.provider, statePlatformAdapterProviders["or-oregonbuys"]);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "SD")?.provider, southDakotaPostingBoardProvider);
   });
 

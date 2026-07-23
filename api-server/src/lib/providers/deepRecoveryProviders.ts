@@ -8,12 +8,14 @@ import {
 } from "./cgiAdvantagePublic";
 import { GEORGIA_GAWORK_SOURCE, georgiaGaworkProvider } from "./georgiaGawork";
 import { HAWAII_HANDS_SOURCE, hawaiiHandsProvider } from "./hawaiiHands";
-import { MINNESOTA_OSP_SOURCE, minnesotaOspProvider } from "./minnesotaOsp";
 import {
   NEW_HAMPSHIRE_BIDS_SOURCE,
   newHampshireBidsProvider,
 } from "./newHampshireBids";
-import { OREGON_BUYS_SOURCE, oregonBuysProvider } from "./oregonBuys";
+import {
+  STATE_PLATFORM_ADAPTER_SOURCES,
+  statePlatformAdapterProviders,
+} from "./statePlatformAdapters";
 import {
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
   southDakotaPostingBoardProvider,
@@ -24,10 +26,9 @@ export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = [
   HAWAII_HANDS_SOURCE,
   KENTUCKY_CGI_ADVANTAGE_SOURCE,
   MICHIGAN_CGI_ADVANTAGE_SOURCE,
-  MINNESOTA_OSP_SOURCE,
   NEW_HAMPSHIRE_BIDS_SOURCE,
-  OREGON_BUYS_SOURCE,
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
+  ...STATE_PLATFORM_ADAPTER_SOURCES,
 ];
 
 export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
@@ -35,8 +36,7 @@ export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   [HAWAII_HANDS_SOURCE.id]: hawaiiHandsProvider,
   [KENTUCKY_CGI_ADVANTAGE_SOURCE.id]: kentuckyCgiAdvantageProvider,
   [MICHIGAN_CGI_ADVANTAGE_SOURCE.id]: michiganCgiAdvantageProvider,
-  [MINNESOTA_OSP_SOURCE.id]: minnesotaOspProvider,
   [NEW_HAMPSHIRE_BIDS_SOURCE.id]: newHampshireBidsProvider,
-  [OREGON_BUYS_SOURCE.id]: oregonBuysProvider,
   [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id]: southDakotaPostingBoardProvider,
+  ...statePlatformAdapterProviders,
 };
