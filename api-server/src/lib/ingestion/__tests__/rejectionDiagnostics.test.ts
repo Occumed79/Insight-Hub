@@ -30,8 +30,9 @@ describe("ingestion rejection diagnostics", () => {
   it("classifies missing procurement versus missing service evidence without changing acceptance", () => {
     const noProcurement = decideOpportunityQuality(
       record({
-        title: "Office Furniture Replacement",
+        title: "Office Furniture Catalog Update",
         description: "Chairs and desks for state offices.",
+        sourceUrl: "https://example.gov/information/furniture",
       }),
     );
     assert.equal(noProcurement.status, "rejected");
