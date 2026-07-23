@@ -4,6 +4,7 @@ import {
   OPENGOV_TENANT_BY_PORTAL_ID,
   type OpenGovTenant,
 } from "./openGov";
+import { registerManualOnlyDirectPortalPolicy } from "./manualOnlyPortalPolicy";
 
 /**
  * Existing direct-portal catalog IDs whose official buyer pages now route to
@@ -53,6 +54,8 @@ let registered = false;
 export function registerOpenGovCountyExtensions(): void {
   if (registered) return;
   registered = true;
+
+  registerManualOnlyDirectPortalPolicy();
 
   for (const tenant of OPENGOV_COUNTY_EXTENSIONS) {
     const existing = OPENGOV_TENANT_BY_PORTAL_ID.get(tenant.portalId);
