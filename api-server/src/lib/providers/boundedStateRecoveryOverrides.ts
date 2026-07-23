@@ -1,4 +1,8 @@
-import type { DataSourceProvider } from "./types";
+import type {
+  DataSourceProvider,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import { StaticOfficialRecoveryProvider } from "./productionSourceRecovery";
 
@@ -30,6 +34,35 @@ const WISCONSIN = {
   timeoutMs: 7_500,
 };
 
+const VERMONT_URL =
+  "https://www.vermontbusinessregistry.com/BidSearch.aspx?type=5";
+const VERMONT_MANUAL_REASON =
+  "The Vermont Business Registry displays current bids to interactive browsers, but repeated bounded server-side requests did not expose stable parseable bid rows. The official link is retained for manual browser access and removed from automated collection.";
+
+class ManualAccessProvider implements DataSourceProvider {
+  readonly name = "publicPortalProviders" as const;
+
+  constructor(readonly reason: string) {}
+
+  async isConfigured(): Promise<boolean> {
+    return true;
+  }
+
+  async fetch(): Promise<ProviderFetchResult> {
+    return { records: [], total: 0, errors: [] };
+  }
+
+  async getStatus(): Promise<ProviderStatus> {
+    return {
+      name: this.name,
+      configured: true,
+      healthy: true,
+      errorMessage: this.reason,
+      recordCount: 0,
+    };
+  }
+}
+
 function sourceFor(
   tenant: typeof RHODE_ISLAND | typeof WISCONSIN,
 ): PublicPortalSource {
@@ -53,9 +86,28 @@ function sourceFor(
   };
 }
 
+const VERMONT_MANUAL_SOURCE: PublicPortalSource = {
+  id: "vt-bids",
+  agencyName: "State of Vermont",
+  agencyType: "state",
+  state: "VT",
+  sourceUrl: VERMONT_URL,
+  searchUrl: VERMONT_URL,
+  domain: new URL(VERMONT_URL).hostname,
+  portalPlatform: "Vermont Business Registry Open Bids",
+  sourceLevel: "state",
+  level: "state",
+  accessMode: "public_html",
+  scraperType: "existing_parser",
+  enabled: false,
+  verificationStatus: "needs_review",
+  notes: VERMONT_MANUAL_REASON,
+};
+
 export const BOUNDED_STATE_RECOVERY_SOURCES: PublicPortalSource[] = [
   sourceFor(RHODE_ISLAND),
   sourceFor(WISCONSIN),
+  VERMONT_MANUAL_SOURCE,
 ];
 
 export const boundedStateRecoveryProviders: Record<
@@ -64,4 +116,5 @@ export const boundedStateRecoveryProviders: Record<
 > = {
   [RHODE_ISLAND.portalId]: new StaticOfficialRecoveryProvider(RHODE_ISLAND),
   [WISCONSIN.portalId]: new StaticOfficialRecoveryProvider(WISCONSIN),
+  [VERMONT_MANUAL_SOURCE.id]: new ManualAccessProvider(VERMONT_MANUAL_REASON),
 };
