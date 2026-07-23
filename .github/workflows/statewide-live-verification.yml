@@ -58,6 +58,7 @@ jobs:
             ../api-server/src/lib/providers/__tests__/deepRecoveryProviders.test.ts \
             ../api-server/src/lib/providers/__tests__/openGovCountyExtensions.test.ts \
             ../api-server/src/lib/providers/__tests__/portalHealthRotation.test.ts \
+            ../api-server/src/lib/providers/__tests__/productionSourceRecovery.test.ts \
             ../api-server/src/lib/providers/__tests__/statePlatformAdapters.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
