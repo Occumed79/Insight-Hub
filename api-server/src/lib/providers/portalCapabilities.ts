@@ -1,4 +1,5 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+import { manualOnlyPortalReason } from "./manualOnlyPortalPolicy";
 import { OPENGOV_PORTAL_IDS } from "./openGov";
 import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
 import {
@@ -53,6 +54,17 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
 ]);
 
 export function portalConnectorCapability(portal: PortalCapabilityInput): PortalConnectorCapability {
+  const manualOnlyReason = manualOnlyPortalReason(portal.id);
+  if (manualOnlyReason) {
+    return {
+      connectorStatus: "directory_only",
+      connectorLabel: "Manual browser access",
+      connectorDescription: manualOnlyReason,
+      directCollection: false,
+      requiresSerper: false,
+    };
+  }
+
   if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(portal.id)) {
     return {
       connectorStatus: "directory_only",
