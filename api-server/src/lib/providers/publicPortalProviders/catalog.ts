@@ -3,7 +3,10 @@ import {
   ENRICHED_DIRECT_RFP_PORTALS,
   type EnrichedDirectRfpPortal,
 } from "../directRfpPortalRelevanceCatalog";
+import { registerOpenGovCountyExtensions } from "../openGovCountyExtensions";
 import type { PortalFit } from "../portalRelevance";
+
+registerOpenGovCountyExtensions();
 
 export const AGENCY_TYPES = [
   "state",
