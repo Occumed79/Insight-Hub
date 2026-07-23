@@ -3,7 +3,14 @@ import {
   ENRICHED_DIRECT_RFP_PORTALS,
   type EnrichedDirectRfpPortal,
 } from "../directRfpPortalRelevanceCatalog";
+import { registerOpenGovCountyExtensions } from "../openGovCountyExtensions";
+import {
+  isPlanetBidsAutomationBlocked,
+  PLANETBIDS_AUTOMATION_BLOCK_REASON,
+} from "../planetBidsAccessPolicy";
 import type { PortalFit } from "../portalRelevance";
+
+registerOpenGovCountyExtensions();
 
 export const AGENCY_TYPES = [
   "state",
@@ -128,16 +135,21 @@ export function derivePublicPortalSourcesFromDirectCatalog(
 ): PublicPortalSource[] {
   return portals.filter(isSafeDirectPortal).map((portal) => {
     const sourceUrl = portal.searchUrl || portal.url;
+    const planetBidsBlocked = isPlanetBidsAutomationBlocked(portal.id);
     const enabled =
       portal.country === "US" &&
       portal.level !== "federal" &&
       !portal.requiresLogin &&
       !portal.requiresKey &&
+      !planetBidsBlocked &&
       Boolean(sourceUrl) &&
       !isAggregatorDomain(portal.domain) &&
       (portal.accessMode === "public_html" ||
         portal.accessMode === "csv" ||
         portal.accessMode === "api");
+    const accessNote = planetBidsBlocked
+      ? ` ${PLANETBIDS_AUTOMATION_BLOCK_REASON}`
+      : "";
     return {
       id: portal.id,
       agencyName: portal.name,
@@ -154,7 +166,7 @@ export function derivePublicPortalSourcesFromDirectCatalog(
       scraperType: scraperTypeFromAccessMode(portal.accessMode),
       enabled,
       verificationStatus: enabled ? "verified" : "needs_review",
-      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
+      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.${accessNote}`,
       occumedFit: portal.occumedFit,
       buyerSector: portal.buyerSector,
       occumedServiceCategories: portal.occumedServiceCategories,
