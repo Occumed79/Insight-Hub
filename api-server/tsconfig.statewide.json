@@ -6,6 +6,7 @@
   },
   "include": [
     "src/lib/providers/bidLockerPortal.ts",
+    "src/lib/providers/bidLockerDateEnrichment.ts",
     "src/lib/providers/bidLockerAugmentedPublicPortalProvider.ts",
     "src/lib/providers/cgiAdvantagePublic.ts",
     "src/lib/providers/deepRecoveryProviders.ts",
