@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { PublicPortalSource } from "../publicPortalProviders/catalog";
-import {
+import type { PublicPortalSourceRunStatus } from "../publicPortalProviders/portalHealthStore";
+
+process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
+process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
+
+const {
   portalQuarantineDecision,
   selectFairPortalSources,
-  type PublicPortalSourceRunStatus,
-} from "../publicPortalProviders/portalHealthStore";
+} = await import("../publicPortalProviders/portalHealthStore");
 
 function source(id: string): PublicPortalSource {
   return {
