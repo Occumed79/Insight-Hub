@@ -3,8 +3,11 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
+import {
+  applyManualOnlyPortalPolicy,
+  manualOnlyPortalReason,
+} from "./manualOnlyPortalPolicy";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
-import { StaticOfficialRecoveryProvider } from "./productionSourceRecovery";
 
 const RHODE_ISLAND = {
   portalId: "ri-bids",
@@ -104,9 +107,16 @@ const VERMONT_MANUAL_SOURCE: PublicPortalSource = {
   notes: VERMONT_MANUAL_REASON,
 };
 
-export const BOUNDED_STATE_RECOVERY_SOURCES: PublicPortalSource[] = [
+const RHODE_ISLAND_MANUAL_SOURCE = applyManualOnlyPortalPolicy(
   sourceFor(RHODE_ISLAND),
+);
+const WISCONSIN_MANUAL_SOURCE = applyManualOnlyPortalPolicy(
   sourceFor(WISCONSIN),
+);
+
+export const BOUNDED_STATE_RECOVERY_SOURCES: PublicPortalSource[] = [
+  RHODE_ISLAND_MANUAL_SOURCE,
+  WISCONSIN_MANUAL_SOURCE,
   VERMONT_MANUAL_SOURCE,
 ];
 
@@ -114,7 +124,11 @@ export const boundedStateRecoveryProviders: Record<
   string,
   DataSourceProvider
 > = {
-  [RHODE_ISLAND.portalId]: new StaticOfficialRecoveryProvider(RHODE_ISLAND),
-  [WISCONSIN.portalId]: new StaticOfficialRecoveryProvider(WISCONSIN),
+  [RHODE_ISLAND.portalId]: new ManualAccessProvider(
+    manualOnlyPortalReason(RHODE_ISLAND.portalId) ?? "Manual browser access only",
+  ),
+  [WISCONSIN.portalId]: new ManualAccessProvider(
+    manualOnlyPortalReason(WISCONSIN.portalId) ?? "Manual browser access only",
+  ),
   [VERMONT_MANUAL_SOURCE.id]: new ManualAccessProvider(VERMONT_MANUAL_REASON),
 };

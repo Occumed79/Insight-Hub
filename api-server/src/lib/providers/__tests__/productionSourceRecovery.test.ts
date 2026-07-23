@@ -9,9 +9,16 @@ const {
   DEEP_RECOVERY_SOURCES,
   deepRecoveryProviders,
 } = await import("../deepRecoveryProviders");
-const { isSupersededPublicPortalHealth } = await import(
-  "../publicPortalProviders/portalHealthStore"
-);
+const {
+  MANUAL_ONLY_PORTAL_IDS,
+  manualOnlyPortalReason,
+} = await import("../manualOnlyPortalPolicy");
+const { portalConnectorCapability } = await import("../portalCapabilities");
+const { PUBLIC_PORTAL_SOURCES } = await import("../publicPortalProviders/catalog");
+const {
+  isSupersededPublicPortalHealth,
+  selectFairPortalSources,
+} = await import("../publicPortalProviders/portalHealthStore");
 
 const sourceById = new Map(
   DEEP_RECOVERY_SOURCES.map((source) => [source.id, source]),
@@ -87,22 +94,70 @@ test("corrected official routes and manual access policies are visible in source
     "MinnesotaOspProvider",
   );
 
-  const northDakota = sourceById.get("nd-spo");
-  assert.equal(northDakota?.enabled, false);
-  assert.equal(northDakota?.verificationStatus, "needs_review");
-  assert.match(northDakota?.notes ?? "", /CAPTCHA|manual browser/i);
+  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
+    const source = sourceById.get(id);
+    assert.equal(source?.enabled, false, `${id} is disabled`);
+    assert.equal(
+      source?.verificationStatus,
+      "needs_review",
+      `${id} is manual-only`,
+    );
+  }
+});
 
-  const vermont = sourceById.get("vt-bids");
-  assert.equal(vermont?.enabled, false);
-  assert.equal(vermont?.verificationStatus, "needs_review");
-  assert.match(vermont?.notes ?? "", /manual browser|removed from automated/i);
+test("all twelve current failures are manual-only and excluded from direct catalog automation", () => {
+  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 12);
+  const derivedIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
+
+  for (const id of MANUAL_ONLY_PORTAL_IDS) {
+    assert.ok(manualOnlyPortalReason(id), `${id} has an audit reason`);
+    assert.equal(
+      portalConnectorCapability({
+        id,
+        country: "US",
+        level: "state",
+        accessMode: "public_html",
+      }).connectorStatus,
+      "directory_only",
+      `${id} is displayed as manual-only`,
+    );
+    if (!sourceById.has(id)) {
+      assert.equal(
+        derivedIds.has(id),
+        false,
+        `${id} is excluded from generic catalog automation`,
+      );
+    }
+  }
 });
 
 test("manual-access state providers complete immediately without network failures", async () => {
-  for (const id of ["nd-spo", "vt-bids"]) {
+  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
     const result = await deepRecoveryProviders[id]!.fetch({ limit: 5 });
     assert.deepEqual(result, { records: [], total: 0, errors: [] });
   }
+});
+
+test("disabled sources can never enter fair rotation", () => {
+  const active = sourceById.get("mn-swift");
+  const disabled = sourceById.get("ri-bids");
+  assert.ok(active);
+  assert.ok(disabled);
+
+  const selection = selectFairPortalSources(
+    [active, disabled],
+    new Map(),
+    2,
+    new Set([active.id, disabled.id]),
+  );
+  assert.deepEqual(
+    selection.selected.map((source) => source.id),
+    ["mn-swift"],
+  );
+  assert.equal(
+    selection.deferred.some((source) => source.id === "ri-bids"),
+    false,
+  );
 });
 
 test("legacy BSO tenants are replaced by listing-only Periscope recovery providers", () => {
@@ -114,29 +169,34 @@ test("legacy BSO tenants are replaced by listing-only Periscope recovery provide
   }
 });
 
-test("adapter replacement epochs discard only superseded health", () => {
-  assert.equal(
-    isSupersededPublicPortalHealth(
-      healthStatus("ri-bids", "2026-07-23T20:00:00.000Z"),
-    ),
-    true,
-  );
-  assert.equal(
-    isSupersededPublicPortalHealth(
-      healthStatus("ri-bids", "2026-07-23T20:20:00.000Z"),
-    ),
-    false,
-  );
-  assert.equal(
-    isSupersededPublicPortalHealth(
-      healthStatus("ca-sacramento-city", "2026-07-23T20:00:00.000Z"),
-    ),
-    false,
-  );
+test("manual-only epochs discard superseded health without touching newer rows", () => {
+  for (const id of MANUAL_ONLY_PORTAL_IDS) {
+    assert.equal(
+      isSupersededPublicPortalHealth(
+        healthStatus(id, "2026-07-23T21:25:00.000Z"),
+      ),
+      true,
+      `${id} old failure is superseded`,
+    );
+    assert.equal(
+      isSupersededPublicPortalHealth(
+        healthStatus(id, "2026-07-23T21:30:00.000Z"),
+      ),
+      false,
+      `${id} newer health remains valid`,
+    );
+  }
+
   assert.equal(
     isSupersededPublicPortalHealth(
       healthStatus("mn-swift", "2026-07-23T20:24:47.000Z"),
     ),
     true,
+  );
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("ca-solano-county", "2026-07-23T20:00:00.000Z"),
+    ),
+    false,
   );
 });

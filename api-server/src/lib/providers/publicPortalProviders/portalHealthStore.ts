@@ -15,11 +15,21 @@ const SOURCE_HEALTH_RESET_AT = new Map<string, number>([
   ["nj-start", Date.parse("2026-07-23T20:16:19.000Z")],
   ["nv-epro", Date.parse("2026-07-23T20:16:19.000Z")],
   ["pa-emarketplace", Date.parse("2026-07-23T20:16:19.000Z")],
-  ["ri-bids", Date.parse("2026-07-23T20:16:19.000Z")],
   ["ut-purchasing", Date.parse("2026-07-23T20:16:19.000Z")],
   ["vt-bids", Date.parse("2026-07-23T20:16:19.000Z")],
-  ["wi-vendornet", Date.parse("2026-07-23T20:16:19.000Z")],
   ["mn-swift", Date.parse("2026-07-23T20:25:00.000Z")],
+  ["ri-bids", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["wi-vendornet", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-siskiyou-county", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-sdsu-procurement", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-santa-barbara-county", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-sacramento-city", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-port-of-oakland", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-los-angeles-county", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-humboldt-county", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["ca-bakersfield-purchasing", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["az-tucson-airport-authority", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["az-phoenix", Date.parse("2026-07-23T21:26:57.000Z")],
 ]);
 
 export const DEFAULT_PORTAL_FAILURE_QUARANTINE_THRESHOLD = 3;
@@ -325,7 +335,10 @@ export function selectFairPortalSources(
   dedicatedSourceIds: ReadonlySet<string>,
   quarantineThresholds: PublicPortalQuarantineThresholds = {},
 ): PublicPortalSourceSelection {
-  const quarantined = sources.flatMap((source) => {
+  const runnableSources = sources.filter(
+    (source) => source.enabled && source.verificationStatus === "verified",
+  );
+  const quarantined = runnableSources.flatMap((source) => {
     const decision = portalQuarantineDecision(
       statuses.get(source.id),
       quarantineThresholds,
@@ -335,7 +348,9 @@ export function selectFairPortalSources(
       : [];
   });
   const quarantinedIds = new Set(quarantined.map((item) => item.source.id));
-  const activeSources = sources.filter((source) => !quarantinedIds.has(source.id));
+  const activeSources = runnableSources.filter(
+    (source) => !quarantinedIds.has(source.id),
+  );
 
   const batchSize = Math.min(
     activeSources.length,
