@@ -56,6 +56,7 @@ jobs:
           set -o pipefail
           pnpm --filter @workspace/scripts exec tsx --test \
             ../api-server/src/lib/providers/__tests__/deepRecoveryProviders.test.ts \
+            ../api-server/src/lib/providers/__tests__/portalHealthRotation.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementPortals.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementHotfix.test.ts \
             ../api-server/src/lib/providers/__tests__/statewideProcurementContentSignals.test.ts \
