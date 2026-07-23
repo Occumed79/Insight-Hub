@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
-import { passesQualityFilter } from "../search/relevance";
+import { classifyResult, type RelevanceResult } from "../search/relevance";
 import { normalizedToDbRecord } from "../search/normalization";
 import { canonicalSamOpportunityUrl } from "../opportunityQuality";
 
@@ -20,6 +20,58 @@ export interface QualityDecision {
   reason: string | null;
   completenessScore: number;
   sourceConfidence: number;
+}
+
+export const QUALITY_REJECTION_CODES = {
+  blockedDomain: "blocked_domain",
+  hardReject: "hard_reject",
+  conditionalFalsePositive: "conditional_false_positive",
+  missingProcurementSignal: "missing_procurement_signal",
+  missingServiceEvidence: "missing_occumed_service_evidence",
+  insufficientCombination: "insufficient_evidence_combination",
+} as const;
+
+function encodedQualityReason(code: string, detail: string): string {
+  return `${code}|${detail.replace(/\s+/g, " ").trim()}`;
+}
+
+export function relevanceRejectionReason(result: RelevanceResult): string {
+  const rejectReason = result.rejectReason ?? "Insufficient Occu-Med relevance evidence.";
+  if (/job board|non-procurement domain/i.test(rejectReason)) {
+    return encodedQualityReason(QUALITY_REJECTION_CODES.blockedDomain, rejectReason);
+  }
+  if (/excluded due to/i.test(rejectReason)) {
+    return encodedQualityReason(QUALITY_REJECTION_CODES.hardReject, rejectReason);
+  }
+  if (result.negativeSignals.length > 0) {
+    return encodedQualityReason(
+      QUALITY_REJECTION_CODES.conditionalFalsePositive,
+      `Negative context outweighed the service evidence: ${result.negativeSignals.join("; ")}.`,
+    );
+  }
+  if (result.matchedProcurementSignals.length === 0) {
+    return encodedQualityReason(
+      QUALITY_REJECTION_CODES.missingProcurementSignal,
+      "No procurement, solicitation, bid, RFP, or contracting signal was detected.",
+    );
+  }
+  const serviceEvidenceCount =
+    result.matchedExplicitPhrases.length +
+    result.matchedComponentTerms.length +
+    result.matchedRegulatorySignals.length;
+  if (serviceEvidenceCount === 0) {
+    return encodedQualityReason(
+      QUALITY_REJECTION_CODES.missingServiceEvidence,
+      "Procurement wording was present, but no Occu-Med service evidence was detected.",
+    );
+  }
+  const categories = result.matchedServiceCategories.length > 0
+    ? ` Matched categories: ${result.matchedServiceCategories.join(", ")}.`
+    : "";
+  return encodedQualityReason(
+    QUALITY_REJECTION_CODES.insufficientCombination,
+    `Some relevant terms were present, but they did not meet the required procurement plus service/workforce/regulatory evidence combination.${categories}`,
+  );
 }
 
 function normalizeIdentityText(value: string | null | undefined): string {
@@ -140,7 +192,7 @@ export function decideOpportunityQuality(
   if (!record.title?.trim() || record.title.trim().length < 10) {
     return {
       status: "quarantined",
-      reason: "Missing or implausibly short opportunity title.",
+      reason: "invalid_title|Missing or implausibly short opportunity title.",
       completenessScore,
       sourceConfidence,
     };
@@ -148,7 +200,7 @@ export function decideOpportunityQuality(
   if (!record.agency?.trim()) {
     return {
       status: "quarantined",
-      reason: "Missing buyer or agency identity.",
+      reason: "missing_agency|Missing buyer or agency identity.",
       completenessScore,
       sourceConfidence,
     };
@@ -159,24 +211,21 @@ export function decideOpportunityQuality(
   ) {
     return {
       status: "quarantined",
-      reason: "Provider supplied an invalid posted date.",
+      reason: "invalid_posted_date|Provider supplied an invalid posted date.",
       completenessScore,
       sourceConfidence,
     };
   }
-  if (
-    !passesQualityFilter({
-      title: record.title,
-      description: [record.description, record.agency]
-        .filter(Boolean)
-        .join(" "),
-      sourceUrl: record.sourceUrl,
-    })
-  ) {
+  const relevance = classifyResult({
+    title: record.title,
+    snippet: [record.description, record.agency].filter(Boolean).join(" "),
+    url: record.sourceUrl,
+    allowHistorical: true,
+  });
+  if (relevance.rejected) {
     return {
       status: "rejected",
-      reason:
-        "Record failed the configured Occu-Med opportunity relevance filter.",
+      reason: relevanceRejectionReason(relevance),
       completenessScore,
       sourceConfidence,
     };
