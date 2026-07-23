@@ -5,6 +5,7 @@ export * from "./nyScr";
 export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
+export * from "./crawlerAugmentedPublicPortalProvider";
 export * from "./publicPortalDiscovery";
 export * from "./eunaBonfire";
 export * from "./internationalPublicPortals";
@@ -36,7 +37,7 @@ import { texasEsbdProvider } from "./texasEsbd";
 import { nyScrProvider } from "./nyScr";
 import { usaSpendingProvider } from "./usaSpending";
 import { federalRegisterProvider } from "./federalRegister";
-import { publicPortalProvidersProvider } from "./publicPortalProviders";
+import { crawlerAugmentedPublicPortalProvider } from "./crawlerAugmentedPublicPortalProvider";
 import { eunaBonfireProvider } from "./eunaBonfire";
 import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
@@ -58,7 +59,12 @@ import { youProvider } from "./you";
 import { langsearchProvider } from "./langsearch";
 import { websearchProvider } from "./websearch";
 import { grantsGovProvider } from "./grantsGov";
-import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "./openAiCompatible";
+import {
+  cerebrasProvider,
+  deepseekProvider,
+  mistralProvider,
+  nvidiaProvider,
+} from "./openAiCompatible";
 import { cohereProvider } from "./cohere";
 import { voyageProvider } from "./voyage";
 import { huggingFaceProvider } from "./huggingFace";
@@ -73,7 +79,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   texasEsbd: texasEsbdProvider,
   nyScr: nyScrProvider,
-  publicPortalProviders: publicPortalProvidersProvider,
+  publicPortalProviders: crawlerAugmentedPublicPortalProvider,
   eunaBonfire: eunaBonfireProvider,
   internationalPublicPortals: internationalPublicPortalsProvider,
   usaSpending: usaSpendingProvider,

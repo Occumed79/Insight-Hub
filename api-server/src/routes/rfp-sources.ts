@@ -1,5 +1,13 @@
 import { Router } from "express";
 import {
+  listCrawlFrontier,
+  listDiscoveryCandidates,
+  listSpiderConfigs,
+  listSpiderKinds,
+  type CrawlFrontierState,
+  type StoredDiscoveryCandidate,
+} from "../lib/crawler";
+import {
   ENRICHED_DIRECT_RFP_PORTALS,
   validateDirectRfpPortalRelevanceCatalog,
 } from "../lib/providers/directRfpPortalRelevanceCatalog";
@@ -124,6 +132,33 @@ router.get("/rfp-sources", async (req, res) => {
     },
   );
 
+  const [crawlFrontier, discoveryCandidates] = await Promise.all([
+    listCrawlFrontier().catch(() => [] as CrawlFrontierState[]),
+    listDiscoveryCandidates().catch(() => [] as StoredDiscoveryCandidate[]),
+  ]);
+  const spiderConfigs = listSpiderConfigs();
+  const crawlerSummary = crawlFrontier.reduce(
+    (summary, state) => {
+      summary.tracked += 1;
+      summary.recordsFound += state.recordsFound;
+      if (state.lastOutcome === "success") summary.success += 1;
+      else if (state.lastOutcome === "no_results") summary.noResults += 1;
+      else if (state.lastOutcome === "not_modified") summary.notModified += 1;
+      else if (state.lastOutcome === "blocked") summary.blocked += 1;
+      else if (state.lastOutcome === "failed") summary.failed += 1;
+      return summary;
+    },
+    {
+      tracked: 0,
+      success: 0,
+      noResults: 0,
+      notModified: 0,
+      blocked: 0,
+      failed: 0,
+      recordsFound: 0,
+    },
+  );
+
   return res.json({
     sources,
     directory,
@@ -131,6 +166,23 @@ router.get("/rfp-sources", async (req, res) => {
     health: {
       summary: portalHealthSummary,
       sources: portalHealthSources,
+    },
+    crawler: {
+      spiderKinds: listSpiderKinds(),
+      configs: spiderConfigs.map((config) => ({
+        id: config.id,
+        sourceId: config.sourceId,
+        kind: config.kind,
+        enabled: config.enabled,
+        startUrls: config.startUrls,
+        allowedHosts: config.allowedHosts,
+        scheduleMinutes: config.scheduleMinutes,
+        limits: config.limits,
+        notes: config.notes,
+      })),
+      summary: crawlerSummary,
+      frontier: crawlFrontier,
+      discoveryCandidates,
     },
     totals: {
       ...totals,
@@ -177,6 +229,8 @@ router.get("/rfp-sources", async (req, res) => {
       },
       coveragePolicy:
         "Catalog inclusion proves an official source link only. connectorStatus reports the automation that actually exists; parserStatus remains legacy catalog-planning metadata and must not be presented as completed coverage.",
+      crawlerPolicy:
+        "Crawler spiders are bounded to official allowed hosts, preserve durable frontier state, use conditional requests and backoff, and do not bypass authentication, CAPTCHAs, robots rules, or explicit access controls.",
     },
   });
 });
