@@ -153,6 +153,21 @@ async function selectedCrawlerSources(
     .slice(0, batchSize);
 }
 
+async function crawlerSourcesForIds(
+  sourceIds: readonly string[],
+): Promise<PublicPortalSource[]> {
+  await hydrateApprovedCrawlerConfigs();
+  const byId = new Map(
+    crawlerSources(SCHEDULED_SCRAPER_TYPES).map((source) => [source.id, source]),
+  );
+  const selected = Array.from(new Set(sourceIds)).flatMap((sourceId) => {
+    const source = byId.get(sourceId);
+    return source ? [source] : [];
+  });
+  for (const source of selected) ensureSourceSpiderConfig(source);
+  return selected;
+}
+
 async function fetchSelectedCrawlerSources(
   selected: PublicPortalSource[],
   options: FetchOptions,
@@ -177,9 +192,10 @@ async function fetchSelectedCrawlerSources(
         if (!result || result.outcome === "deferred") return;
         records.push(...result.records);
         if (result.diagnostics.errors.length > 0) {
-          const prefix = result.records.length > 0
-            ? `partial results retained (${result.records.length})`
-            : result.outcome;
+          const prefix =
+            result.records.length > 0
+              ? `partial results retained (${result.records.length})`
+              : result.outcome;
           errors.push(
             `${source.id}: ${prefix}: ${result.diagnostics.errors.join("; ")}`,
           );
@@ -214,11 +230,19 @@ export async function listDueCrawlerSourceIds(): Promise<string[]> {
   );
 }
 
+export async function fetchCrawlerRecordsForSourceIds(
+  sourceIds: readonly string[],
+  options: FetchOptions = {},
+): Promise<ProviderFetchResult> {
+  const selected = await crawlerSourcesForIds(sourceIds);
+  return fetchSelectedCrawlerSources(selected, options);
+}
+
 export async function fetchDueCrawlerRecords(
   options: FetchOptions = {},
 ): Promise<ProviderFetchResult> {
-  const selected = await selectedCrawlerSources(SCHEDULED_SCRAPER_TYPES);
-  return fetchSelectedCrawlerSources(selected, options);
+  const sourceIds = await listDueCrawlerSourceIds();
+  return fetchCrawlerRecordsForSourceIds(sourceIds, options);
 }
 
 class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
