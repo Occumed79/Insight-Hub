@@ -5,7 +5,7 @@ import {
 } from "../ingestion/manualIngestion";
 import { logger } from "../logger";
 import {
-  fetchDueCrawlerRecords,
+  fetchCrawlerRecordsForSourceIds,
   listDueCrawlerSourceIds,
 } from "../providers/crawlerAugmentedPublicPortalProvider";
 
@@ -40,12 +40,12 @@ export function crawlerSchedulerIntervalMs(): number {
   );
 }
 
-function crawlerOnlyFetcher(): ProviderFetcher {
+function crawlerOnlyFetcher(sourceIds: readonly string[]): ProviderFetcher {
   return async (provider, options) => {
     if (provider !== "publicPortalProviders") {
       throw new Error(`Scheduled crawler cannot fetch provider ${provider}`);
     }
-    return fetchDueCrawlerRecords({
+    return fetchCrawlerRecordsForSourceIds(sourceIds, {
       ...options,
       limit: 300,
     });
@@ -78,7 +78,7 @@ export async function runCrawlerSchedulerTick(): Promise<{
           providers: ["publicPortalProviders"],
           dateRange: 30,
         },
-        crawlerOnlyFetcher(),
+        crawlerOnlyFetcher(dueSourceIds),
       );
       logger.info(
         { runId: run.id, dueSourceIds },
