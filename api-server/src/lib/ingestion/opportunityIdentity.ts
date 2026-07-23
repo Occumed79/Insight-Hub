@@ -32,7 +32,8 @@ export const QUALITY_REJECTION_CODES = {
 } as const;
 
 function encodedQualityReason(code: string, detail: string): string {
-  return `${code}|${detail.replace(/\s+/g, " ").trim()}`;
+  const legacy = "Record failed the configured Occu-Med opportunity relevance filter.";
+  return `${code}|${legacy} ${detail.replace(/\s+/g, " ").trim()}`;
 }
 
 export function relevanceRejectionReason(result: RelevanceResult): string {
