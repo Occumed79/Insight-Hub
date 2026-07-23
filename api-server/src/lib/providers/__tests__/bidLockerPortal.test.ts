@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { extractBidLockerPublicDates } from "../bidLockerDateEnrichment";
 import {
   BIDLOCKER_COLLECTIBLE_PORTAL_IDS,
   BIDLOCKER_TENANTS,
@@ -67,6 +68,22 @@ test("BidLocker detail parser extracts normalized project metadata", () => {
   assert.equal(
     detail.description,
     "Clackamas County is seeking disaster debris clearance and removal services.",
+  );
+});
+
+test("BidLocker date enrichment reads public labels across nested markup", () => {
+  const dates = extractBidLockerPublicDates(`
+    <div><strong>Publish Date:</strong> Jul 7, 2026 6:22PM</div>
+    <div>
+      <span>Proposals Due Date:</span>
+      <span>Jul 28, 2026 4:00PM (Pacific Daylight Time)</span>
+    </div>
+  `);
+
+  assert.equal(dates.postedDate?.toISOString(), "2026-07-08T01:22:00.000Z");
+  assert.equal(
+    dates.responseDeadline?.toISOString(),
+    "2026-07-28T23:00:00.000Z",
   );
 });
 
