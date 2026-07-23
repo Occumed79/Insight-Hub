@@ -31,6 +31,7 @@ describe("ingestion rejection diagnostics", () => {
     const noProcurement = decideOpportunityQuality(
       record({
         title: "Office Furniture Catalog Update",
+        agency: "State Facilities Office",
         description: "Chairs and desks for state offices.",
         sourceUrl: "https://example.gov/information/furniture",
       }),
