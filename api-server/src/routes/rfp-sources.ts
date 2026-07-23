@@ -22,6 +22,10 @@ import {
 } from "../lib/providers/portalDirectory";
 import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
 import { publicPortalProvidersProvider } from "../lib/providers/publicPortalProviders";
+import {
+  portalQuarantineDecision,
+  portalQuarantineReasonLabel,
+} from "../lib/providers/publicPortalProviders/portalHealthStore";
 
 const router = Router();
 
@@ -90,10 +94,13 @@ router.get("/rfp-sources", async (req, res) => {
   const portalHealthSources = publicPortalProvidersProvider
     .getSourceStatuses()
     .map((status) => {
-      const currentlyFailing = Boolean(
-        status.lastFailureAt &&
-          (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt),
-      );
+      const quarantine = portalQuarantineDecision(status);
+      const currentlyFailing =
+        !quarantine.quarantined &&
+        Boolean(
+          status.lastFailureAt &&
+            (!status.lastSuccessAt || status.lastFailureAt > status.lastSuccessAt),
+        );
       return {
         sourceId: status.sourceId,
         sourceName: status.sourceName,
@@ -104,18 +111,26 @@ router.get("/rfp-sources", async (req, res) => {
         lastFailureReason: status.lastFailureReason,
         resultCount: status.resultCount,
         matchedCount: status.matchedCount,
+        lifetimeResultCount: status.lifetimeResultCount,
+        consecutiveEmptyResults: status.consecutiveEmptyResults,
         totalAttempts: status.totalAttempts,
         totalSuccesses: status.totalSuccesses,
         totalFailures: status.totalFailures,
         consecutiveFailures: status.consecutiveFailures,
-        lastOutcome: status.lastOutcome,
+        lastOutcome: quarantine.quarantined ? "quarantined" : status.lastOutcome,
         currentlyFailing,
+        quarantined: quarantine.quarantined,
+        quarantineReason: quarantine.reason,
+        quarantineReasonLabel: quarantine.reason
+          ? portalQuarantineReasonLabel(quarantine.reason)
+          : undefined,
       };
     });
   const portalHealthSummary = portalHealthSources.reduce(
     (summary, status) => {
       summary.checked += 1;
-      if (status.currentlyFailing) summary.failing += 1;
+      if (status.quarantined) summary.quarantined += 1;
+      else if (status.currentlyFailing) summary.failing += 1;
       else if (status.lastOutcome === "success") summary.success += 1;
       else if (status.lastOutcome === "no_results") summary.noResults += 1;
       else if (status.lastOutcome === "validation_failed") {
@@ -128,6 +143,7 @@ router.get("/rfp-sources", async (req, res) => {
       success: 0,
       noResults: 0,
       failing: 0,
+      quarantined: 0,
       validationFailed: 0,
     },
   );
