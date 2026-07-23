@@ -159,10 +159,15 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
           });
           if (!result || result.outcome === "deferred") return;
           crawlerRecords.push(...result.records);
-          if (result.outcome === "failed" || result.outcome === "blocked") {
+          if (result.diagnostics.errors.length > 0) {
+            const prefix = result.records.length > 0
+              ? `partial results retained (${result.records.length})`
+              : result.outcome;
             crawlerErrors.push(
-              `${source.id}: ${result.diagnostics.errors.join("; ") || result.outcome}`,
+              `${source.id}: ${prefix}: ${result.diagnostics.errors.join("; ")}`,
             );
+          } else if (result.outcome === "failed" || result.outcome === "blocked") {
+            crawlerErrors.push(`${source.id}: ${result.outcome}`);
           }
         } catch (error) {
           crawlerErrors.push(
