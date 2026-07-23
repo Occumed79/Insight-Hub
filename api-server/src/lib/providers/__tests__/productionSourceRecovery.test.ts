@@ -94,3 +94,17 @@ test("Vermont legacy bid results produce active listing records", () => {
   assert.equal(rows[1]?.type, "RFP");
   assert.equal(rows[1]?.responseDeadline?.toISOString(), "2027-07-10T14:00:00.000Z");
 });
+
+test("Vermont parser separates title and agency from collapsed span markup", () => {
+  const rows = parseVermontOpenBidRows(`
+    <span>7/1/2026</span>
+    <span>HEARING AIDS</span><span>Buildings &amp; General Svs, Office of Purchasing &amp; Contracting Close Date:&nbsp;7/29/2026 4:30:00 PM</span>
+    <span>6/26/2026</span>
+    <span>Mental Health Urgent Care- Rutland County RFP/RFQ: RFP 142</span><font>Department of Mental Health Close Date:&nbsp;8/7/2026 4:00:00 PM</font>
+  `);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]?.title, "HEARING AIDS");
+  assert.equal(rows[1]?.agency, "Department of Mental Health");
+  assert.equal(rows[1]?.solicitationNumber, "RFP 142");
+});
