@@ -1,4 +1,5 @@
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
+import { PLANETBIDS_COLLECTIBLE_PORTAL_IDS } from "./planetBidsPortal";
 import { STATEWIDE_PROCUREMENT_PORTAL_IDS } from "./statewideProcurementConfigs";
 
 export const PORTAL_CONNECTOR_STATUSES = [
@@ -53,6 +54,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "az-chandler-unified-school-district-opengov",
   "md-wicomico-county-opengov",
   "sc-richland-school-district-two-opengov",
+  ...PLANETBIDS_COLLECTIBLE_PORTAL_IDS,
   ...CIVICENGAGE_PORTAL_IDS,
   ...STATEWIDE_PROCUREMENT_PORTAL_IDS,
 ]);
