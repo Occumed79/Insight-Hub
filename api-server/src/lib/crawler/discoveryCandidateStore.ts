@@ -9,6 +9,8 @@ import type {
 } from "./types";
 
 const DISCOVERY_KEY_PREFIX = "internal:crawler-discovery-candidate:";
+const SENSITIVE_HEADER_NAME =
+  /^(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token|x-access-token)$/i;
 
 export interface StoredDiscoveryCandidate {
   sourceId: string;
@@ -75,18 +77,38 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   );
 }
 
+function safePublicHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  for (const name of Object.keys(headers)) {
+    if (SENSITIVE_HEADER_NAME.test(name.trim())) {
+      throw new Error(
+        `Public crawler configurations cannot store sensitive header ${name}.`,
+      );
+    }
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+function discoveredDateFields(
+  candidate: StoredDiscoveryCandidate,
+  type: "posted" | "deadline",
+): string[] {
+  const fields = candidate.candidateDateFields ?? [];
+  const pattern =
+    type === "posted"
+      ? /post|publish|created|issued|released|opened/i
+      : /deadline|due|close|closing|response|end|expire/i;
+  return fields.filter((field) => pattern.test(field));
+}
+
 function defaultFields(
   candidate: StoredDiscoveryCandidate,
   overrides?: Partial<SpiderFieldMap>,
 ): SpiderFieldMap {
-  const dateFields = uniqueStrings([
-    ...(candidate.candidateDateFields ?? []),
-    "postedDate",
-    "publishDate",
-    "publishedAt",
-    "createdDate",
-    "datePosted",
-  ]);
+  const postedDiscovered = discoveredDateFields(candidate, "posted");
+  const deadlineDiscovered = discoveredDateFields(candidate, "deadline");
   return {
     id: uniqueStrings([
       ...(overrides?.id ?? []),
@@ -130,11 +152,16 @@ function defaultFields(
     ]),
     postedDate: uniqueStrings([
       ...(overrides?.postedDate ?? []),
-      ...dateFields,
+      ...postedDiscovered,
+      "postedDate",
+      "publishDate",
+      "publishedAt",
+      "createdDate",
+      "datePosted",
     ]),
     responseDeadline: uniqueStrings([
       ...(overrides?.responseDeadline ?? []),
-      ...(candidate.candidateDateFields ?? []),
+      ...deadlineDiscovered,
       "responseDeadline",
       "closingDate",
       "closeDate",
@@ -209,13 +236,14 @@ function inferredPagination(
   return { mode: "none" };
 }
 
-function approvedConfig(
+export function buildApprovedDiscoverySpiderConfig(
   candidate: StoredDiscoveryCandidate,
   input: ReviewDiscoveryCandidateInput,
 ): JsonEndpointSpiderConfig {
   const endpoint = new URL(candidate.endpointUrl);
   const page = new URL(candidate.pageUrl);
-  const method = input.config?.method ??
+  const method =
+    input.config?.method ??
     (candidate.method.toUpperCase() === "POST" ? "POST" : "GET");
   if (method === "POST" && !input.config?.body) {
     throw new Error(
@@ -235,7 +263,7 @@ function approvedConfig(
     ]),
     endpointUrl: candidate.endpointUrl,
     method,
-    headers: input.config?.headers,
+    headers: safePublicHeaders(input.config?.headers),
     body: input.config?.body,
     recordsPath: input.config?.recordsPath,
     pagination: input.config?.pagination ?? inferredPagination(candidate),
@@ -370,7 +398,7 @@ export async function reviewDiscoveryCandidate(
     state: input.decision,
     approvedConfig:
       input.decision === "approved"
-        ? approvedConfig(candidate, input)
+        ? buildApprovedDiscoverySpiderConfig(candidate, input)
         : undefined,
     reviewedAt,
     reviewNote: input.note?.trim() || undefined,
