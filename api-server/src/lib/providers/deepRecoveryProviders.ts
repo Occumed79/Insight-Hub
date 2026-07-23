@@ -13,6 +13,10 @@ import {
   newHampshireBidsProvider,
 } from "./newHampshireBids";
 import {
+  PRODUCTION_RECOVERY_SOURCES,
+  productionRecoveryProviders,
+} from "./productionSourceRecovery";
+import {
   STATE_PLATFORM_ADAPTER_SOURCES,
   statePlatformAdapterProviders,
 } from "./statePlatformAdapters";
@@ -21,7 +25,8 @@ import {
   southDakotaPostingBoardProvider,
 } from "./southDakotaPostingBoard";
 
-export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = [
+const sourceById = new Map<string, PublicPortalSource>();
+for (const source of [
   GEORGIA_GAWORK_SOURCE,
   HAWAII_HANDS_SOURCE,
   KENTUCKY_CGI_ADVANTAGE_SOURCE,
@@ -29,7 +34,12 @@ export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = [
   NEW_HAMPSHIRE_BIDS_SOURCE,
   SOUTH_DAKOTA_POSTING_BOARD_SOURCE,
   ...STATE_PLATFORM_ADAPTER_SOURCES,
-];
+  ...PRODUCTION_RECOVERY_SOURCES,
+]) sourceById.set(source.id, source);
+
+export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = Array.from(
+  sourceById.values(),
+);
 
 export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   [GEORGIA_GAWORK_SOURCE.id]: georgiaGaworkProvider,
@@ -39,4 +49,5 @@ export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
   [NEW_HAMPSHIRE_BIDS_SOURCE.id]: newHampshireBidsProvider,
   [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id]: southDakotaPostingBoardProvider,
   ...statePlatformAdapterProviders,
+  ...productionRecoveryProviders,
 };
