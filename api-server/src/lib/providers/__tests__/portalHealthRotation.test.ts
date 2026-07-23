@@ -42,6 +42,7 @@ function status(
     totalSuccesses: 1,
     totalFailures: 0,
     consecutiveFailures: 0,
+    consecutiveNoResultSuccesses: 1,
     lastOutcome: "no_results",
     ...overrides,
   };
@@ -129,6 +130,7 @@ test("three consecutive failures quarantine a portal from automated rotation", (
         totalSuccesses: 0,
         totalFailures: 3,
         consecutiveFailures: 3,
+        consecutiveNoResultSuccesses: 0,
         lastOutcome: "failed",
       }),
     ],
@@ -149,25 +151,30 @@ test("three consecutive failures quarantine a portal from automated rotation", (
   );
 });
 
-test("six healthy empty checks quarantine a source that has never produced a record", () => {
+test("six consecutive healthy empty checks quarantine a nonproductive source", () => {
   const emptyStatus = status("empty-source", "2026-07-22T10:00:00.000Z", {
     totalAttempts: 6,
     totalSuccesses: 6,
-    lifetimeResultCount: 0,
+    consecutiveNoResultSuccesses: 6,
     lastOutcome: "no_results",
   });
-  const priorProducer = status("prior-producer", "2026-07-22T10:00:00.000Z", {
-    totalAttempts: 12,
-    totalSuccesses: 12,
-    lifetimeResultCount: 4,
-    lastOutcome: "no_results",
-  });
+  const previouslyProductive = status(
+    "previously-productive",
+    "2026-07-22T10:00:00.000Z",
+    {
+      totalAttempts: 12,
+      totalSuccesses: 12,
+      lifetimeResultCount: 4,
+      consecutiveNoResultSuccesses: 1,
+      lastOutcome: "no_results",
+    },
+  );
 
   assert.deepEqual(portalQuarantineDecision(emptyStatus), {
     quarantined: true,
-    reason: "never_yielded_results",
+    reason: "repeated_empty_results",
   });
-  assert.deepEqual(portalQuarantineDecision(priorProducer), {
+  assert.deepEqual(portalQuarantineDecision(previouslyProductive), {
     quarantined: false,
   });
 });
