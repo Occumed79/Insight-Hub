@@ -1,3 +1,4 @@
+import { BIDLOCKER_COLLECTIBLE_PORTAL_IDS } from "./bidLockerPortal";
 import { CIVICENGAGE_PORTAL_IDS } from "./civicEngageBids";
 import { OPENGOV_PORTAL_IDS } from "./openGov";
 import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
@@ -47,6 +48,7 @@ const DIRECT_ADAPTER_PORTAL_IDS = new Set([
   "ny-contract-reporter",
   "ia-das",
   "ca-caleprocure",
+  ...BIDLOCKER_COLLECTIBLE_PORTAL_IDS,
   ...OPENGOV_PORTAL_IDS,
   ...CIVICENGAGE_PORTAL_IDS,
   ...STATEWIDE_PROCUREMENT_PORTAL_IDS,

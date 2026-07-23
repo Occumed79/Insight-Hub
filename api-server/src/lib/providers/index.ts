@@ -6,6 +6,8 @@ export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
 export * from "./crawlerAugmentedPublicPortalProvider";
+export * from "./bidLockerPortal";
+export * from "./bidLockerAugmentedPublicPortalProvider";
 export * from "./publicPortalDiscovery";
 export * from "./eunaBonfire";
 export * from "./internationalPublicPortals";
@@ -37,7 +39,7 @@ import { texasEsbdProvider } from "./texasEsbd";
 import { nyScrProvider } from "./nyScr";
 import { usaSpendingProvider } from "./usaSpending";
 import { federalRegisterProvider } from "./federalRegister";
-import { crawlerAugmentedPublicPortalProvider } from "./crawlerAugmentedPublicPortalProvider";
+import { bidLockerAugmentedPublicPortalProvider } from "./bidLockerAugmentedPublicPortalProvider";
 import { eunaBonfireProvider } from "./eunaBonfire";
 import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
@@ -79,7 +81,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   texasEsbd: texasEsbdProvider,
   nyScr: nyScrProvider,
-  publicPortalProviders: crawlerAugmentedPublicPortalProvider,
+  publicPortalProviders: bidLockerAugmentedPublicPortalProvider,
   eunaBonfire: eunaBonfireProvider,
   internationalPublicPortals: internationalPublicPortalsProvider,
   usaSpending: usaSpendingProvider,
