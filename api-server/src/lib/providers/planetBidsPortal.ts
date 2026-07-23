@@ -272,7 +272,7 @@ function rowToOpportunity(
     title: row.title,
     agency: tenant.buyerName,
     type: opportunityType(row),
-    status: row.status ?? "active",
+    status: row.status === "closed" ? "archived" : "active",
     postedDate: postedDate ?? UNKNOWN_POSTED_DATE,
     responseDeadline,
     placeOfPerformance: tenant.state,
@@ -345,10 +345,6 @@ async function collectTenant(
       timeoutMs,
       maxRetries,
       signal: options.signal,
-      headers: {
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        Referer: `${PLANETBIDS_ORIGIN}/portal/${tenant.buyerId}/portal-home`,
-      },
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
