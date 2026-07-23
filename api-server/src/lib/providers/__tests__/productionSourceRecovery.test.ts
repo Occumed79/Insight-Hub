@@ -9,10 +9,31 @@ const {
   DEEP_RECOVERY_SOURCES,
   deepRecoveryProviders,
 } = await import("../deepRecoveryProviders");
+const { isSupersededPublicPortalHealth } = await import(
+  "../publicPortalProviders/portalHealthStore"
+);
 
 const sourceById = new Map(
   DEEP_RECOVERY_SOURCES.map((source) => [source.id, source]),
 );
+
+function healthStatus(sourceId: string, lastCheckedAt: string) {
+  return {
+    sourceId,
+    lastCheckedAt: new Date(lastCheckedAt),
+    lastFailureAt: new Date(lastCheckedAt),
+    lastFailureReason: "legacy adapter failure",
+    resultCount: 0,
+    matchedCount: 0,
+    lifetimeResultCount: 0,
+    totalAttempts: 1,
+    totalSuccesses: 0,
+    totalFailures: 1,
+    consecutiveFailures: 1,
+    consecutiveNoResultSuccesses: 0,
+    lastOutcome: "failed" as const,
+  };
+}
 
 test("production recovery sources replace broken statewide routes exactly once", () => {
   const ids = DEEP_RECOVERY_SOURCES.map((source) => source.id);
@@ -29,6 +50,7 @@ test("production recovery sources replace broken statewide routes exactly once",
     "nd-spo",
     "ut-purchasing",
     "wi-vendornet",
+    "mn-swift",
   ]) {
     assert.ok(sourceById.has(id), `${id} recovery source is registered`);
     assert.ok(deepRecoveryProviders[id], `${id} recovery provider is registered`);
@@ -56,6 +78,14 @@ test("corrected official routes and manual access policies are visible in source
     sourceById.get("wi-vendornet")?.sourceUrl,
     "https://vendornet.wi.gov/Bids.aspx",
   );
+  assert.equal(
+    sourceById.get("mn-swift")?.sourceUrl,
+    "https://osp.admin.mn.gov/GS-auto",
+  );
+  assert.equal(
+    deepRecoveryProviders["mn-swift"]?.constructor.name,
+    "MinnesotaOspProvider",
+  );
 
   const northDakota = sourceById.get("nd-spo");
   assert.equal(northDakota?.enabled, false);
@@ -82,4 +112,31 @@ test("legacy BSO tenants are replaced by listing-only Periscope recovery provide
       "PeriscopeListingOnlyProvider",
     );
   }
+});
+
+test("adapter replacement epochs discard only superseded health", () => {
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("ri-bids", "2026-07-23T20:00:00.000Z"),
+    ),
+    true,
+  );
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("ri-bids", "2026-07-23T20:20:00.000Z"),
+    ),
+    false,
+  );
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("ca-sacramento-city", "2026-07-23T20:00:00.000Z"),
+    ),
+    false,
+  );
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("mn-swift", "2026-07-23T20:24:47.000Z"),
+    ),
+    true,
+  );
 });
