@@ -6,6 +6,7 @@ on:
       - "api-server/src/lib/providers/**"
       - "api-server/tsconfig.statewide.json"
       - "scripts/src/run-statewide-live-verification.ts"
+      - "scripts/src/run-planetbids-live-verification.ts"
       - "package.json"
       - ".github/workflows/statewide-live-verification.yml"
   workflow_dispatch:
@@ -66,6 +67,20 @@ jobs:
           echo "$code" > artifacts/statewide-live-verification/focused-tests.exit
           exit 0
 
+      - name: Run bounded PlanetBids live check
+        env:
+          PLANETBIDS_REQUEST_TIMEOUT_MS: "20000"
+          PLANETBIDS_MAX_RETRIES: "1"
+          PLANETBIDS_MAX_RESULTS_PER_TENANT: "2"
+        run: |
+          set +e
+          set -o pipefail
+          pnpm --filter @workspace/scripts exec tsx src/run-planetbids-live-verification.ts \
+            2>&1 | tee artifacts/statewide-live-verification/planetbids-live.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > artifacts/statewide-live-verification/planetbids-live.exit
+          exit 0
+
       - name: Run live 50-state sweep
         env:
           STATEWIDE_LIVE_CONCURRENCY: "8"
@@ -110,6 +125,10 @@ jobs:
           fi
           if [ "$(cat artifacts/statewide-live-verification/focused-tests.exit 2>/dev/null || echo 1)" != "0" ]; then
             echo "Focused tests failed"
+            failures=1
+          fi
+          if [ "$(cat artifacts/statewide-live-verification/planetbids-live.exit 2>/dev/null || echo 1)" != "0" ]; then
+            echo "PlanetBids public buyer verification failed"
             failures=1
           fi
           if [ "$(cat artifacts/statewide-live-verification/live-sweep.exit 2>/dev/null || echo 1)" != "0" ]; then
