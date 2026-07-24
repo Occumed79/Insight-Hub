@@ -214,11 +214,11 @@ function buildCrossCheckPrompt(
   const blocks = items
     .map(
       ({ localIndex, input, preliminary }) =>
-        `[${localIndex}]\nTITLE: ${input.title}\nURL: ${input.url}\nCONTENT: ${input.content.slice(0, 2_000)}\nCEREBRAS VERDICT: ${JSON.stringify(preliminary)}`,
+        `[${localIndex}]\nTITLE: ${input.title}\nURL: ${input.url}\nCONTENT: ${input.content.slice(0, 2_000)}\nPRIMARY VERDICT: ${JSON.stringify(preliminary)}`,
     )
     .join("\n\n");
 
-  return `Cross-check the following ambiguous ACCEPT decisions from the primary Cerebras procurement analysis.
+  return `Cross-check the following ambiguous ACCEPT decisions from the primary procurement analysis.
 Today: ${today}.
 Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
 
@@ -336,7 +336,8 @@ export async function extractOpportunitiesBatch(
       );
       if (review.rateLimited) rateLimited = true;
       if (review.rows?.length && review.scorer) {
-        usedScorers.add(review.scorer);
+        const reviewerName = review.scorer;
+        usedScorers.add(reviewerName);
         review.rows.forEach((raw, order) => {
           if (!raw || typeof raw !== "object") return;
           const object = raw as Record<string, unknown>;
@@ -352,12 +353,12 @@ export async function extractOpportunitiesBatch(
           }
           const corrected = extractionFromObject(raw, primary.scorer ?? "unknown");
           if (!corrected) return;
-          corrected.validatedBy = review.scorer;
+          corrected.validatedBy = reviewerName;
           corrected.validationReason =
             typeof object.validationReason === "string"
               ? object.validationReason
               : undefined;
-          corrected.winnerScorer = `${primary.scorer}+${review.scorer}`;
+          corrected.winnerScorer = `${primary.scorer}+${reviewerName}`;
           provisional.set(localIndex, corrected);
         });
       }
