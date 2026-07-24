@@ -119,7 +119,10 @@ describe("procurement portal directory", () => {
     const nova = DIRECT_RFP_PORTALS.find(
       (portal) => portal.id === "fl-nova-procurement",
     );
-    const ocps = PUBLIC_PORTAL_SOURCES.find(
+    const ocpsDirectory = DIRECT_RFP_PORTALS.find(
+      (portal) => portal.id === "fl-orange-county-public-schools",
+    );
+    const ocpsAutomated = PUBLIC_PORTAL_SOURCES.find(
       (source) => source.id === "fl-orange-county-public-schools",
     );
 
@@ -131,8 +134,8 @@ describe("procurement portal directory", () => {
       nova?.searchUrl,
       "https://www.nova.edu/procurement/index.html",
     );
+    assert.ok(ocpsDirectory, "OCPS should remain available in the directory");
     assert.equal(isManualOnlyPortalSourceId("fl-orange-county-public-schools"), true);
-    assert.equal(ocps?.enabled, false);
-    assert.equal(ocps?.verificationStatus, "needs_review");
+    assert.equal(ocpsAutomated, undefined);
   });
 });
