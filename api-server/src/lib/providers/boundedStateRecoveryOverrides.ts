@@ -8,6 +8,7 @@ import {
   manualOnlyPortalReason,
 } from "./manualOnlyPortalPolicy";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
+import { STATEWIDE_PROCUREMENT_SOURCES } from "./statewideProcurementConfigs";
 
 const RHODE_ISLAND = {
   portalId: "ri-bids",
@@ -41,6 +42,11 @@ const VERMONT_URL =
   "https://www.vermontbusinessregistry.com/BidSearch.aspx?type=5";
 const VERMONT_MANUAL_REASON =
   "The Vermont Business Registry displays current bids to interactive browsers, but repeated bounded server-side requests did not expose stable parseable bid rows. The official link is retained for manual browser access and removed from automated collection.";
+const ADDITIONAL_MANUAL_STATE_IDS = [
+  "ct-ctsource",
+  "al-state-procurement",
+  "nm-active-procurements",
+] as const;
 
 class ManualAccessProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
@@ -113,11 +119,20 @@ const RHODE_ISLAND_MANUAL_SOURCE = applyManualOnlyPortalPolicy(
 const WISCONSIN_MANUAL_SOURCE = applyManualOnlyPortalPolicy(
   sourceFor(WISCONSIN),
 );
+const ADDITIONAL_MANUAL_STATE_SOURCES = ADDITIONAL_MANUAL_STATE_IDS.flatMap(
+  (sourceId) => {
+    const source = STATEWIDE_PROCUREMENT_SOURCES.find(
+      (candidate) => candidate.id === sourceId,
+    );
+    return source ? [applyManualOnlyPortalPolicy(source)] : [];
+  },
+);
 
 export const BOUNDED_STATE_RECOVERY_SOURCES: PublicPortalSource[] = [
   RHODE_ISLAND_MANUAL_SOURCE,
   WISCONSIN_MANUAL_SOURCE,
   VERMONT_MANUAL_SOURCE,
+  ...ADDITIONAL_MANUAL_STATE_SOURCES,
 ];
 
 export const boundedStateRecoveryProviders: Record<
@@ -131,4 +146,12 @@ export const boundedStateRecoveryProviders: Record<
     manualOnlyPortalReason(WISCONSIN.portalId) ?? "Manual browser access only",
   ),
   [VERMONT_MANUAL_SOURCE.id]: new ManualAccessProvider(VERMONT_MANUAL_REASON),
+  ...Object.fromEntries(
+    ADDITIONAL_MANUAL_STATE_IDS.map((sourceId) => [
+      sourceId,
+      new ManualAccessProvider(
+        manualOnlyPortalReason(sourceId) ?? "Manual browser access only",
+      ),
+    ]),
+  ),
 };
