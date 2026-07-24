@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { cerebrasProvider } from "../providers/openAiCompatible";
+import { prioritizeCandidatesWithCloudflare } from "./candidateSemanticPriority";
 
 export interface AiExtraction {
   isOpportunity: boolean;
@@ -23,6 +24,9 @@ export interface BatchExtractInput {
   title: string;
   url: string;
   content: string;
+  sourceProvider?: string;
+  cloudflareSemanticScore?: number;
+  cloudflareSemanticRank?: number;
 }
 
 export interface BatchExtractResult {
@@ -30,6 +34,12 @@ export interface BatchExtractResult {
   rateLimited: boolean;
   usedScorers: string[];
   cacheHits: number;
+  cloudflarePrioritized: boolean;
+  cloudflareEmbedded: number;
+  cloudflareDirectReranked: number;
+  cloudflareDuplicatesRemoved: number;
+  cloudflareAiBudgetDeferred: number;
+  cloudflareErrors: string[];
 }
 
 interface AiTextProvider {
@@ -40,10 +50,13 @@ interface AiTextProvider {
 
 /**
  * Cerebras has the largest available working quota, so it is the normal path
- * rather than an edge-case reviewer. Groq and Gemini preserve continuity only
- * when Cerebras is unavailable, rate-limited, or returns malformed output.
+ * rather than an edge-case reviewer. Cloudflare Workers AI now orders and
+ * trims the uncached candidate pool before Cerebras receives it. Groq and
+ * Gemini preserve continuity only when Cerebras is unavailable, rate-limited,
+ * or returns malformed output.
  */
 export const AI_EXTRACTION_PROVIDER_ORDER = [
+  "cloudflare-workers-ai",
   "cerebras",
   "groq",
   "gemini",
@@ -61,6 +74,7 @@ const CONTENT_CHARS = 2_200;
 const MAX_OUTPUT_TOKENS = 3_000;
 const REVIEW_OUTPUT_TOKENS = 1_800;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
+const DEFAULT_AI_CANDIDATE_LIMIT = 240;
 
 interface CacheEntry {
   value: AiExtraction;
@@ -166,15 +180,20 @@ const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
 
 function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
   const blocks = items
-    .map(
-      (item, index) =>
-        `[${index}]\nTitle: ${item.title}\nURL: ${item.url}\nContent: ${item.content.slice(0, CONTENT_CHARS)}`,
-    )
+    .map((item, index) => {
+      const semantic =
+        item.cloudflareSemanticScore == null
+          ? "unavailable"
+          : `${item.cloudflareSemanticScore.toFixed(2)}/100 (rank ${item.cloudflareSemanticRank ?? "?"})`;
+      return `[${index}]\nTitle: ${item.title}\nURL: ${item.url}\nCloudflare semantic priority: ${semantic}\nContent: ${item.content.slice(0, CONTENT_CHARS)}`;
+    })
     .join("\n\n");
 
   return `You are the primary procurement intelligence engine for Occu-Med.
 Occu-Med services: ${ORG_SERVICES}.
 Today's date: ${today}.
+
+Cloudflare Workers AI has already semantically prioritized this batch. Its score is supporting evidence only; independently verify the page itself.
 
 Analyze EVERY indexed item. Determine whether it is a CURRENTLY OPEN procurement opportunity that Occu-Med could realistically pursue. Understand semantic equivalents such as workforce health, employee medical surveillance, pre-placement examinations, respiratory protection programs, audiometric conservation, deployment medical screening, occupational testing, and provider-network administration.
 
@@ -260,6 +279,24 @@ function chunk<T>(items: T[], size: number): T[][] {
   return output;
 }
 
+function sourceKey(input: BatchExtractInput): string {
+  if (input.sourceProvider?.trim()) return input.sourceProvider.trim();
+  try {
+    return new URL(input.url).hostname.replace(/^www\./, "") || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function aiCandidateLimit(): number {
+  const configured = Number.parseInt(
+    process.env.WEB_INTELLIGENCE_AI_CANDIDATE_LIMIT ?? "",
+    10,
+  );
+  if (!Number.isFinite(configured)) return DEFAULT_AI_CANDIDATE_LIMIT;
+  return Math.max(20, Math.min(500, configured));
+}
+
 export async function extractOpportunitiesBatch(
   inputs: BatchExtractInput[],
 ): Promise<BatchExtractResult> {
@@ -267,6 +304,12 @@ export async function extractOpportunitiesBatch(
   const usedScorers = new Set<string>();
   let rateLimited = false;
   let cacheHits = 0;
+  let cloudflarePrioritized = false;
+  let cloudflareEmbedded = 0;
+  let cloudflareDirectReranked = 0;
+  let cloudflareDuplicatesRemoved = 0;
+  let cloudflareAiBudgetDeferred = 0;
+  let cloudflareErrors: string[] = [];
 
   const pending: Array<{ input: BatchExtractInput; index: number }> = [];
   inputs.forEach((input, index) => {
@@ -285,12 +328,54 @@ export async function extractOpportunitiesBatch(
       rateLimited,
       usedScorers: [...usedScorers],
       cacheHits,
+      cloudflarePrioritized,
+      cloudflareEmbedded,
+      cloudflareDirectReranked,
+      cloudflareDuplicatesRemoved,
+      cloudflareAiBudgetDeferred,
+      cloudflareErrors,
     };
+  }
+
+  let prioritizedPending = pending;
+  const semantic = await prioritizeCandidatesWithCloudflare(
+    pending.map((entry) => ({
+      ...entry.input,
+      sourceProvider: sourceKey(entry.input),
+      originalIndex: entry.index,
+    })),
+    undefined,
+    aiCandidateLimit(),
+  );
+
+  cloudflarePrioritized = semantic.applied;
+  cloudflareEmbedded = semantic.embedded;
+  cloudflareDirectReranked = semantic.directReranked;
+  cloudflareDuplicatesRemoved = semantic.duplicatesRemoved;
+  cloudflareErrors = semantic.errors;
+  cloudflareAiBudgetDeferred = Math.max(
+    0,
+    pending.length - semantic.candidates.length,
+  );
+
+  if (semantic.applied) {
+    usedScorers.add("cloudflare-workers-ai");
+    prioritizedPending = semantic.candidates.map((candidate) => ({
+      index: candidate.originalIndex,
+      input: {
+        title: candidate.title,
+        url: candidate.url,
+        content: candidate.content,
+        sourceProvider: candidate.sourceProvider,
+        cloudflareSemanticScore: candidate.cloudflareSemanticScore,
+        cloudflareSemanticRank: candidate.cloudflareSemanticRank,
+      },
+    }));
   }
 
   const today = new Date().toISOString().split("T")[0] ?? "";
 
-  for (const group of chunk(pending, CHUNK_SIZE)) {
+  for (const group of chunk(prioritizedPending, CHUNK_SIZE)) {
     const primary = await runProviderChain(
       PRIMARY_PROVIDERS,
       buildBatchPrompt(group.map((entry) => entry.input), today),
@@ -377,6 +462,12 @@ export async function extractOpportunitiesBatch(
     rateLimited,
     usedScorers: [...usedScorers],
     cacheHits,
+    cloudflarePrioritized,
+    cloudflareEmbedded,
+    cloudflareDirectReranked,
+    cloudflareDuplicatesRemoved,
+    cloudflareAiBudgetDeferred,
+    cloudflareErrors,
   };
 }
 
