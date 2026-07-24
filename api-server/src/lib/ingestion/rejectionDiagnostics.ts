@@ -49,9 +49,11 @@ const REASON_LABELS: Record<string, string> = {
   missing_procurement_signal: "No procurement signal",
   missing_occumed_service_evidence: "No Occu-Med service evidence",
   insufficient_evidence_combination: "Insufficient evidence combination",
+  manual_query_mismatch: "Did not match the manual query",
   invalid_title: "Invalid title",
   missing_agency: "Missing agency",
   invalid_posted_date: "Invalid posted date",
+  unknown_posted_date: "Posted date unavailable",
   legacy_relevance_filter: "Legacy relevance rejection",
   unknown: "Unclassified rejection",
 };
@@ -116,7 +118,8 @@ export function buildIngestionRejectionDiagnostics(
   }
 
   const reasons = Array.from(grouped.values()).sort(
-    (left, right) => right.count - left.count || left.label.localeCompare(right.label),
+    (left, right) =>
+      right.count - left.count || left.label.localeCompare(right.label),
   );
   const perReasonSamples = new Map<string, number>();
   const samples: IngestionRejectionSample[] = [];
