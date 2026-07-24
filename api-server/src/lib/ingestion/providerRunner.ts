@@ -2,6 +2,7 @@ import { providerRegistry } from "../providers";
 import type { NormalizedOpportunity } from "../providers/types";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
+import { filterRecordsForManualQuery } from "./manualQueryFilter";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -51,12 +52,27 @@ export function resolveManualProviders(providers?: string[]): string[] {
   return resolved;
 }
 
-function applyExpirationGuard(
+function applyProviderGuards(
   provider: string,
   records: NormalizedOpportunity[],
   errors: string[],
+  keywords?: string,
 ): ProviderRunResult {
-  const filtered = filterExpiredOpportunities(records);
+  const queryFiltered = filterRecordsForManualQuery(records, keywords);
+  if (queryFiltered.skipped > 0) {
+    console.info(
+      JSON.stringify({
+        event: "rfp_provider_query_records_skipped",
+        provider,
+        query: keywords,
+        returned: records.length,
+        skipped: queryFiltered.skipped,
+        retained: queryFiltered.records.length,
+      }),
+    );
+  }
+
+  const filtered = filterExpiredOpportunities(queryFiltered.records);
   if (filtered.expiredSkipped > 0) {
     console.info(
       JSON.stringify({
@@ -86,10 +102,11 @@ export async function fetchOneProvider(
       useExa: provider === "exa",
       signal: options.signal,
     });
-    return applyExpirationGuard(
+    return applyProviderGuards(
       provider,
       result.opportunities.filter((record) => record.source === provider),
       result.errors,
+      options.keywords,
     );
   }
 
@@ -101,5 +118,10 @@ export async function fetchOneProvider(
     limit: 100,
     signal: options.signal,
   });
-  return applyExpirationGuard(provider, result.records, result.errors ?? []);
+  return applyProviderGuards(
+    provider,
+    result.records,
+    result.errors ?? [],
+    options.keywords,
+  );
 }
