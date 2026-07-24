@@ -109,6 +109,59 @@ describe("ingestion rejection diagnostics", () => {
     assert.equal(diagnostics.samples[0]?.completenessScore, 75);
   });
 
+  it("round-robins samples so a dominant reason cannot hide smaller groups", () => {
+    const dominantReason =
+      "missing_occumed_service_evidence|Procurement wording only.";
+    const smallerReason =
+      "missing_procurement_signal|No procurement wording.";
+    const diagnostics = buildIngestionRejectionDiagnostics(
+      [
+        {
+          qualityStatus: "rejected",
+          qualityReason: dominantReason,
+          count: 80,
+        },
+        {
+          qualityStatus: "rejected",
+          qualityReason: smallerReason,
+          count: 2,
+        },
+      ],
+      [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          provider: "publicPortalProviders",
+          title: `Dominant sample ${index + 1}`,
+          agency: "Agency A",
+          qualityStatus: "rejected",
+          qualityReason: dominantReason,
+          completenessScore: 70,
+          sourceConfidence: 70,
+        })),
+        {
+          provider: "sam_gov",
+          title: "Smaller reason sample",
+          agency: "Agency B",
+          qualityStatus: "rejected",
+          qualityReason: smallerReason,
+          completenessScore: 50,
+          sourceConfidence: 65,
+        },
+      ],
+      4,
+    );
+
+    assert.deepEqual(
+      diagnostics.samples.map((sample) => sample.reasonCode),
+      [
+        "missing_occumed_service_evidence",
+        "missing_procurement_signal",
+        "missing_occumed_service_evidence",
+        "missing_occumed_service_evidence",
+      ],
+    );
+    assert.equal(diagnostics.samples[1]?.title, "Smaller reason sample");
+  });
+
   it("keeps older generic reasons readable", () => {
     assert.deepEqual(
       parseStoredQualityReason(
