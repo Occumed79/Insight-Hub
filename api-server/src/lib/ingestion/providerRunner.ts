@@ -1,8 +1,8 @@
 import { providerRegistry } from "../providers";
 import type { NormalizedOpportunity } from "../providers/types";
+import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
-import { filterRecordsForManualQuery } from "./manualQueryFilter";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -58,21 +58,31 @@ function applyProviderGuards(
   errors: string[],
   keywords?: string,
 ): ProviderRunResult {
-  const queryFiltered = filterRecordsForManualQuery(records, keywords);
-  if (queryFiltered.skipped > 0) {
-    console.info(
-      JSON.stringify({
-        event: "rfp_provider_query_records_skipped",
-        provider,
-        query: keywords,
-        returned: records.length,
-        skipped: queryFiltered.skipped,
-        retained: queryFiltered.records.length,
-      }),
-    );
-  }
+  // The audited public-portal provider already partitions each portal before
+  // source-fair merging. Other top-level providers receive the same query guard
+  // here, but retain a bounded mismatch sample for raw/staging diagnostics.
+  const admitted =
+    provider === "publicPortalProviders"
+      ? records
+      : (() => {
+          const partition = partitionProviderRecordsForQuery(records, keywords, 3);
+          if (partition.rejectedCount > 0) {
+            console.info(
+              JSON.stringify({
+                event: "rfp_provider_query_partitioned",
+                provider,
+                query: keywords,
+                returned: partition.rawCount,
+                matched: partition.matchedCount,
+                rejected: partition.rejectedCount,
+                retainedRejectionSamples: partition.rejectedSamples.length,
+              }),
+            );
+          }
+          return [...partition.matched, ...partition.rejectedSamples];
+        })();
 
-  const filtered = filterExpiredOpportunities(queryFiltered.records);
+  const filtered = filterExpiredOpportunities(admitted);
   if (filtered.expiredSkipped > 0) {
     console.info(
       JSON.stringify({
