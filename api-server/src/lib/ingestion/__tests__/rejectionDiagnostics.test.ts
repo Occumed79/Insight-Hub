@@ -32,6 +32,8 @@ describe("ingestion rejection diagnostics", () => {
       record({
         title: "Office Furniture Catalog Update",
         agency: "State Facilities Office",
+        type: "Information",
+        solicitationNumber: "CATALOG-2026-100",
         description: "Chairs and desks for state offices.",
         sourceUrl: "https://example.gov/information/furniture",
       }),
