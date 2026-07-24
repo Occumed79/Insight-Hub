@@ -63,6 +63,10 @@ export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
     "nm-active-procurements",
     "Repeated automated request timeouts. Retained as a manual official buyer link.",
   ],
+  [
+    "nc-evp",
+    "The official public route returned a maintenance page instead of parseable active opportunities. Retained as a manual official buyer link.",
+  ],
 ]);
 
 export const MANUAL_ONLY_PORTAL_IDS = new Set(MANUAL_ONLY_PORTAL_REASONS.keys());
