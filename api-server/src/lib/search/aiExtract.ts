@@ -39,17 +39,27 @@ interface AiTextProvider {
 }
 
 /**
- * Deliberate provider roles. Groq performs the fast first pass, Gemini is the
- * generative fallback, and Cerebras is invoked only for ambiguous accepted
- * records that need deeper validation/normalization.
+ * Cerebras has the largest available working quota, so it is the normal path
+ * rather than an edge-case reviewer. Groq and Gemini preserve continuity only
+ * when Cerebras is unavailable, rate-limited, or returns malformed output.
  */
-export const AI_EXTRACTION_PROVIDER_ORDER = ["groq", "gemini"] as const;
-const PRIMARY_PROVIDERS: AiTextProvider[] = [groqProvider, geminiProvider];
+export const AI_EXTRACTION_PROVIDER_ORDER = [
+  "cerebras",
+  "groq",
+  "gemini",
+] as const;
 
-const CHUNK_SIZE = 8;
-const CONTENT_CHARS = 1_400;
-const MAX_OUTPUT_TOKENS = 2_048;
-const REVIEW_OUTPUT_TOKENS = 1_600;
+const PRIMARY_PROVIDERS: AiTextProvider[] = [
+  cerebrasProvider,
+  groqProvider,
+  geminiProvider,
+];
+
+const CROSS_CHECK_PROVIDERS: AiTextProvider[] = [groqProvider, geminiProvider];
+const CHUNK_SIZE = 10;
+const CONTENT_CHARS = 2_200;
+const MAX_OUTPUT_TOKENS = 3_000;
+const REVIEW_OUTPUT_TOKENS = 1_800;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 
 interface CacheEntry {
@@ -65,7 +75,7 @@ function cacheKey(input: BatchExtractInput): string {
     .update("\n")
     .update(input.title)
     .update("\n")
-    .update(input.content.slice(0, 4_000))
+    .update(input.content.slice(0, 6_000))
     .digest("hex")
     .slice(0, 24);
 }
@@ -97,7 +107,6 @@ function stripJson(text: string): string {
   return text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
 }
 
-/** Parse a JSON array, or an object containing a `results` array. */
 function parseJsonArray(text: string): unknown[] | null {
   const cleaned = stripJson(text);
   try {
@@ -110,18 +119,15 @@ function parseJsonArray(text: string): unknown[] | null {
     ) {
       return (direct as { results: unknown[] }).results;
     }
-  } catch {
-    // fall through to bounded array slicing
-  }
+  } catch {}
+
   const start = cleaned.indexOf("[");
   const end = cleaned.lastIndexOf("]");
   if (start >= 0 && end > start) {
     try {
-      const sliced = JSON.parse(cleaned.slice(start, end + 1));
-      return Array.isArray(sliced) ? sliced : null;
-    } catch {
-      return null;
-    }
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {}
   }
   return null;
 }
@@ -156,7 +162,7 @@ function extractionFromObject(
   };
 }
 
-const ORG_SERVICES = OCCUMED_PROFILE.services.slice(0, 9).join("; ");
+const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
 
 function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
   const blocks = items
@@ -166,35 +172,38 @@ function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
     )
     .join("\n\n");
 
-  return `You are the fast first-pass procurement intelligence analyst for Occu-Med.
+  return `You are the primary procurement intelligence engine for Occu-Med.
 Occu-Med services: ${ORG_SERVICES}.
-Today's date: ${today}
+Today's date: ${today}.
 
-For EACH indexed item, decide whether it is a CURRENTLY OPEN solicitation/RFP that Occu-Med could bid on.
-Reject news coverage, awards, expired/closed notices, jobs, regulations, unrelated healthcare, and pages without evidence that proposals are currently accepted.
+Analyze EVERY indexed item. Determine whether it is a CURRENTLY OPEN procurement opportunity that Occu-Med could realistically pursue. Understand semantic equivalents such as workforce health, employee medical surveillance, pre-placement examinations, respiratory protection programs, audiometric conservation, deployment medical screening, occupational testing, and provider-network administration.
+
+Reject awards, expired or closed notices, news coverage, jobs, regulations, unrelated clinical care, insurance administration, generic staffing, and pages without evidence that proposals are currently accepted.
 
 Return ONLY a JSON array in the same order. Every object must include index and isOpportunity.
-For accepted items include title, agency, description, deadline (YYYY-MM-DD or null), estimatedValue, location, relevanceScore (0-100), and relevanceReason.
-For rejected items include a specific reason.
+Accepted objects must include title, agency, description, deadline (YYYY-MM-DD or null), estimatedValue, location, relevanceScore (0-100), and relevanceReason.
+Rejected objects must include a specific reason.
 
 ITEMS:
 ${blocks}`;
 }
 
-export function shouldEscalateToCerebras(
+export function shouldCrossCheckExtraction(
   extraction: AiExtraction,
 ): boolean {
   if (!extraction.isOpportunity) return false;
   const score = extraction.relevanceScore ?? 0;
   return (
-    score < 75 ||
-    !extraction.deadline ||
+    score < 68 ||
     !extraction.agency?.trim() ||
-    (extraction.description?.trim().length ?? 0) < 100
+    (extraction.description?.trim().length ?? 0) < 80
   );
 }
 
-function buildValidationPrompt(
+/** Backward-compatible export retained for existing callers/tests. */
+export const shouldEscalateToCerebras = shouldCrossCheckExtraction;
+
+function buildCrossCheckPrompt(
   items: Array<{
     localIndex: number;
     input: BatchExtractInput;
@@ -205,19 +214,13 @@ function buildValidationPrompt(
   const blocks = items
     .map(
       ({ localIndex, input, preliminary }) =>
-        `[${localIndex}]
-ORIGINAL TITLE: ${input.title}
-URL: ${input.url}
-CONTENT: ${input.content.slice(0, 2_400)}
-PRELIMINARY VERDICT: ${JSON.stringify(preliminary)}`,
+        `[${localIndex}]\nTITLE: ${input.title}\nURL: ${input.url}\nCONTENT: ${input.content.slice(0, 2_000)}\nPRIMARY VERDICT: ${JSON.stringify(preliminary)}`,
     )
     .join("\n\n");
 
-  return `You are the bounded validation layer for Occu-Med procurement intelligence.
-Today's date: ${today}.
-Review only the ambiguous preliminary ACCEPT decisions below. Correct false positives, normalize dates and agencies, and preserve an acceptance only when the page itself supports an open procurement for Occu-Med services.
-
-Return ONLY JSON as {"results":[...]}. Each result must include index, isOpportunity, relevanceScore, validationReason, and all corrected fields. Use isOpportunity:false when evidence is insufficient, stale, awarded, expired, or unrelated.
+  return `Cross-check the following ambiguous ACCEPT decisions from the primary procurement analysis.
+Today: ${today}.
+Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
 
 ${blocks}`;
 }
@@ -228,14 +231,18 @@ interface ProviderAttemptResult {
   rateLimited: boolean;
 }
 
-async function runPrimaryBatch(
+async function runProviderChain(
+  providers: AiTextProvider[],
   prompt: string,
+  maxTokens: number,
+  skipProvider?: string,
 ): Promise<ProviderAttemptResult> {
   let rateLimited = false;
-  for (const provider of PRIMARY_PROVIDERS) {
+  for (const provider of providers) {
+    if (provider.name === skipProvider) continue;
     try {
       if (!(await provider.isConfigured())) continue;
-      const text = await provider.complete(prompt, MAX_OUTPUT_TOKENS);
+      const text = await provider.complete(prompt, maxTokens);
       const rows = parseJsonArray(text);
       if (rows) return { rows, scorer: provider.name, rateLimited };
     } catch (error) {
@@ -243,28 +250,6 @@ async function runPrimaryBatch(
     }
   }
   return { rows: null, scorer: null, rateLimited };
-}
-
-async function validateWithCerebras(
-  reviewItems: Array<{
-    localIndex: number;
-    input: BatchExtractInput;
-    preliminary: AiExtraction;
-  }>,
-  today: string,
-): Promise<{ rows: unknown[] | null; rateLimited: boolean }> {
-  if (reviewItems.length === 0 || !(await cerebrasProvider.isConfigured())) {
-    return { rows: null, rateLimited: false };
-  }
-  try {
-    const text = await cerebrasProvider.complete(
-      buildValidationPrompt(reviewItems, today),
-      REVIEW_OUTPUT_TOKENS,
-    );
-    return { rows: parseJsonArray(text), rateLimited: false };
-  } catch (error) {
-    return { rows: null, rateLimited: isRateLimit(error) };
-  }
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -306,11 +291,10 @@ export async function extractOpportunitiesBatch(
   const today = new Date().toISOString().split("T")[0] ?? "";
 
   for (const group of chunk(pending, CHUNK_SIZE)) {
-    const primary = await runPrimaryBatch(
-      buildBatchPrompt(
-        group.map((entry) => entry.input),
-        today,
-      ),
+    const primary = await runProviderChain(
+      PRIMARY_PROVIDERS,
+      buildBatchPrompt(group.map((entry) => entry.input), today),
+      MAX_OUTPUT_TOKENS,
     );
     if (primary.rateLimited) rateLimited = true;
     if (!primary.rows || !primary.scorer) continue;
@@ -332,40 +316,52 @@ export async function extractOpportunitiesBatch(
     });
 
     const reviewItems = [...provisional.entries()]
-      .filter(([, extraction]) => shouldEscalateToCerebras(extraction))
+      .filter(([, extraction]) => shouldCrossCheckExtraction(extraction))
       .map(([localIndex, preliminary]) => ({
         localIndex,
         input: group[localIndex]!.input,
         preliminary,
       }));
 
-    const review = await validateWithCerebras(reviewItems, today);
-    if (review.rateLimited) rateLimited = true;
-    if (review.rows?.length) {
-      usedScorers.add("cerebras");
-      review.rows.forEach((raw, order) => {
-        if (!raw || typeof raw !== "object") return;
-        const object = raw as Record<string, unknown>;
-        const localIndex =
-          typeof object.index === "number"
-            ? object.index
-            : reviewItems[order]?.localIndex;
-        if (
-          typeof localIndex !== "number" ||
-          !provisional.has(localIndex)
-        ) {
-          return;
-        }
-        const corrected = extractionFromObject(raw, primary.scorer ?? "unknown");
-        if (!corrected) return;
-        corrected.validatedBy = "cerebras";
-        corrected.validationReason =
-          typeof object.validationReason === "string"
-            ? object.validationReason
-            : undefined;
-        corrected.winnerScorer = `${primary.scorer}+cerebras`;
-        provisional.set(localIndex, corrected);
-      });
+    if (reviewItems.length > 0) {
+      const reviewers =
+        primary.scorer === "cerebras"
+          ? CROSS_CHECK_PROVIDERS
+          : [cerebrasProvider, ...CROSS_CHECK_PROVIDERS];
+      const review = await runProviderChain(
+        reviewers,
+        buildCrossCheckPrompt(reviewItems, today),
+        REVIEW_OUTPUT_TOKENS,
+        primary.scorer,
+      );
+      if (review.rateLimited) rateLimited = true;
+      if (review.rows?.length && review.scorer) {
+        const reviewerName = review.scorer;
+        usedScorers.add(reviewerName);
+        review.rows.forEach((raw, order) => {
+          if (!raw || typeof raw !== "object") return;
+          const object = raw as Record<string, unknown>;
+          const localIndex =
+            typeof object.index === "number"
+              ? object.index
+              : reviewItems[order]?.localIndex;
+          if (
+            typeof localIndex !== "number" ||
+            !provisional.has(localIndex)
+          ) {
+            return;
+          }
+          const corrected = extractionFromObject(raw, primary.scorer ?? "unknown");
+          if (!corrected) return;
+          corrected.validatedBy = reviewerName;
+          corrected.validationReason =
+            typeof object.validationReason === "string"
+              ? object.validationReason
+              : undefined;
+          corrected.winnerScorer = `${primary.scorer}+${reviewerName}`;
+          provisional.set(localIndex, corrected);
+        });
+      }
     }
 
     for (const [localIndex, extraction] of provisional) {
