@@ -29,6 +29,8 @@ export const QUALITY_REJECTION_CODES = {
   missingProcurementSignal: "missing_procurement_signal",
   missingServiceEvidence: "missing_occumed_service_evidence",
   insufficientCombination: "insufficient_evidence_combination",
+  manualQueryMismatch: "manual_query_mismatch",
+  unknownPostedDate: "unknown_posted_date",
 } as const;
 
 function encodedQualityReason(code: string, detail: string): string {
@@ -149,20 +151,23 @@ export function calculateOpportunityDedupeKeys(
   return keys;
 }
 
+export function knownPostedDate(record: NormalizedOpportunity): Date | null {
+  if (!(record.postedDate instanceof Date)) return null;
+  if (Number.isNaN(record.postedDate.getTime())) return null;
+  if (record.postedDate.getTime() <= 0) return null;
+  if (record.rawData?.dateUnknown === true) return null;
+  return record.postedDate;
+}
+
 export function calculateCompletenessScore(
   record: NormalizedOpportunity,
 ): number {
-  const knownPostedDate = Boolean(
-    record.postedDate &&
-      !Number.isNaN(record.postedDate.getTime()) &&
-      record.postedDate.getTime() > 0,
-  );
   const checks = [
     Boolean(record.title?.trim()),
     Boolean(record.agency?.trim()),
     Boolean(record.externalId?.trim()),
     Boolean(record.sourceUrl?.trim()),
-    knownPostedDate,
+    Boolean(knownPostedDate(record)),
     Boolean(
       record.responseDeadline &&
       !Number.isNaN(record.responseDeadline.getTime()),
@@ -211,6 +216,18 @@ export function decideOpportunityQuality(
       sourceConfidence,
     };
   }
+  if (record.rawData?.manualQueryMismatch === true) {
+    const query =
+      typeof record.rawData.manualQuery === "string"
+        ? record.rawData.manualQuery
+        : "the requested manual query";
+    return {
+      status: "rejected",
+      reason: `${QUALITY_REJECTION_CODES.manualQueryMismatch}|Record was retained only as a bounded diagnostic sample because it did not match ${JSON.stringify(query)}.`,
+      completenessScore,
+      sourceConfidence,
+    };
+  }
   if (
     !(record.postedDate instanceof Date) ||
     Number.isNaN(record.postedDate.getTime())
@@ -218,6 +235,14 @@ export function decideOpportunityQuality(
     return {
       status: "quarantined",
       reason: "invalid_posted_date|Provider supplied an invalid posted date.",
+      completenessScore,
+      sourceConfidence,
+    };
+  }
+  if (!knownPostedDate(record)) {
+    return {
+      status: "quarantined",
+      reason: `${QUALITY_REJECTION_CODES.unknownPostedDate}|The provider did not supply a trustworthy posted date; the record remains in staging and is not promoted with a 1970 placeholder.`,
       completenessScore,
       sourceConfidence,
     };
