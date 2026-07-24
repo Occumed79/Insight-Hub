@@ -46,6 +46,42 @@ function normalizedWords(value: string): string[] {
     .filter(Boolean);
 }
 
+function stringTags(record: NormalizedOpportunity): string[] {
+  return Array.isArray(record.rawData?.tags)
+    ? record.rawData.tags.filter(
+        (tag): tag is string => typeof tag === "string",
+      )
+    : [];
+}
+
+/**
+ * Provider contracts historically used the Unix epoch as an unknown-date
+ * sentinel. Convert that sentinel to a runtime null before raw/staging writes,
+ * while retaining an explicit evidence flag for the quality decision.
+ */
+export function normalizeProviderPostedDate(
+  record: NormalizedOpportunity,
+): NormalizedOpportunity {
+  const value = record.postedDate as Date | null | undefined;
+  const invalid = value instanceof Date && Number.isNaN(value.getTime());
+  const unknown =
+    record.rawData?.dateUnknown === true ||
+    value == null ||
+    (value instanceof Date && value.getTime() <= 0);
+  if (!invalid && !unknown) return record;
+
+  const marker = invalid ? "invalid-posted-date" : "date-unknown";
+  return {
+    ...record,
+    postedDate: null as unknown as Date,
+    rawData: {
+      ...(record.rawData ?? {}),
+      ...(invalid ? { invalidPostedDate: true } : { dateUnknown: true }),
+      tags: Array.from(new Set([...stringTags(record), marker])),
+    },
+  };
+}
+
 export function meaningfulProviderQueryTerms(query?: string): string[] {
   const words = Array.from(new Set(normalizedWords(query ?? "")));
   const meaningful = words.filter(
@@ -124,14 +160,7 @@ function mismatchSample(
       manualQueryMismatch: true,
       manualQuery: query,
       tags: Array.from(
-        new Set([
-          ...(Array.isArray(record.rawData?.tags)
-            ? record.rawData.tags.filter(
-                (tag): tag is string => typeof tag === "string",
-              )
-            : []),
-          "manual-query-mismatch",
-        ]),
+        new Set([...stringTags(record), "manual-query-mismatch"]),
       ),
     },
   };
@@ -150,19 +179,20 @@ export function partitionProviderRecordsForQuery(
   query?: string,
   rejectionSampleLimit = 2,
 ): ProviderQueryPartition {
+  const normalizedRecords = records.map(normalizeProviderPostedDate);
   if (!query?.trim()) {
     return {
-      matched: [...records],
+      matched: normalizedRecords,
       rejectedSamples: [],
-      rawCount: records.length,
-      matchedCount: records.length,
+      rawCount: normalizedRecords.length,
+      matchedCount: normalizedRecords.length,
       rejectedCount: 0,
     };
   }
 
   const matched: NormalizedOpportunity[] = [];
   const rejected: NormalizedOpportunity[] = [];
-  for (const record of records) {
+  for (const record of normalizedRecords) {
     if (recordMatchesProviderQuery(record, query)) matched.push(record);
     else rejected.push(record);
   }
@@ -181,7 +211,7 @@ export function partitionProviderRecordsForQuery(
   return {
     matched,
     rejectedSamples,
-    rawCount: records.length,
+    rawCount: normalizedRecords.length,
     matchedCount: matched.length,
     rejectedCount: rejected.length,
   };
