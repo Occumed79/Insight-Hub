@@ -228,21 +228,34 @@ export function decideOpportunityQuality(
       sourceConfidence,
     };
   }
-  if (
-    !(record.postedDate instanceof Date) ||
-    Number.isNaN(record.postedDate.getTime())
-  ) {
+  if (record.rawData?.invalidPostedDate === true) {
     return {
       status: "quarantined",
-      reason: "invalid_posted_date|Provider supplied an invalid posted date.",
+      reason: "invalid_posted_date|Provider supplied a malformed posted date.",
       completenessScore,
       sourceConfidence,
     };
   }
-  if (!knownPostedDate(record)) {
+  const runtimePostedDate = record.postedDate as Date | null | undefined;
+  if (
+    record.rawData?.dateUnknown === true ||
+    runtimePostedDate == null ||
+    (runtimePostedDate instanceof Date && runtimePostedDate.getTime() <= 0)
+  ) {
     return {
       status: "quarantined",
       reason: `${QUALITY_REJECTION_CODES.unknownPostedDate}|The provider did not supply a trustworthy posted date; the record remains in staging and is not promoted with a 1970 placeholder.`,
+      completenessScore,
+      sourceConfidence,
+    };
+  }
+  if (
+    !(runtimePostedDate instanceof Date) ||
+    Number.isNaN(runtimePostedDate.getTime())
+  ) {
+    return {
+      status: "quarantined",
+      reason: "invalid_posted_date|Provider supplied an invalid posted date.",
       completenessScore,
       sourceConfidence,
     };
