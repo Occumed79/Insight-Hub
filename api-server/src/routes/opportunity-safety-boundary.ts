@@ -124,7 +124,10 @@ router.get("/opportunities", async (req, res) => {
     )
       ? (viewRaw as OpportunityViewMode)
       : "actionable";
-    const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const page = Math.max(
+      1,
+      Number.parseInt(String(req.query.page ?? "1"), 10) || 1,
+    );
     const limit = Math.min(
       100,
       Math.max(1, Number.parseInt(String(req.query.limit ?? "50"), 10) || 50),
@@ -181,7 +184,7 @@ router.get("/opportunities", async (req, res) => {
     }
 
     const rows = await db
-      .select(opportunityListSelection)
+      .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(
@@ -200,8 +203,8 @@ router.get("/opportunities", async (req, res) => {
     for (const row of rows) accumulator.add(row);
     const qualityPage = accumulator.finish();
     return res.json({
-      data: qualityPage.items.map((item) => ({
-        ...mapOpportunity(item.row),
+      data: qualityPage.data.map((item) => ({
+        ...mapOpportunity(item),
         quality: item.quality,
       })),
       total: qualityPage.total,
