@@ -70,11 +70,11 @@ jobs:
           set -o pipefail
           pnpm --filter @workspace/api-server run test:ingestion 2>&1 | tee ingestion-tests.log
 
-      - name: Test rejection diagnostics and run view
+      - name: Test rejection diagnostics and manual-query boundary
         shell: bash
         run: |
           set -o pipefail
-          pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/ingestion/__tests__/rejectionDiagnostics.test.ts 2>&1 | tee rejection-diagnostics-tests.log
+          pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/ingestion/__tests__/rejectionDiagnostics.test.ts src/lib/ingestion/__tests__/manualQueryFilter.test.ts 2>&1 | tee rejection-diagnostics-tests.log
           pnpm --filter @workspace/intel-suite run test:ingestion 2>&1 | tee -a rejection-diagnostics-tests.log
 
       - name: Upload ingestion diagnostics
