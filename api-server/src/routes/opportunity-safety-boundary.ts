@@ -4,6 +4,10 @@ import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { classifyResult } from "../lib/search/relevance";
 import {
+  isSemanticRerankEnabled,
+  semanticRerank,
+} from "../lib/search/semanticRerank";
+import {
   OpportunityQualityPageAccumulator,
   type OpportunityViewMode,
 } from "../lib/opportunityQuality";
@@ -83,7 +87,7 @@ function relevanceView(opp: Record<string, any>) {
     feedbackScore:
       opp.userConfidence == null ? null : Number(opp.userConfidence),
     feedbackAdj: 0,
-    semanticSimilarity: null,
+    semanticSimilarity: null as number | null,
     postedDate: dateUnknown ? null : opp.postedDate,
   };
 }
@@ -106,10 +110,9 @@ function mapOpportunity(opp: Record<string, any>) {
 }
 
 /**
- * Canonical list boundary. The former route applied an unrelated hard-reject
- * dictionary in SQL before the quality-view classifier, which hid accepted
- * records and made view=all incomplete. This boundary keeps only user-requested
- * field filters in SQL and delegates actionability to one quality classifier.
+ * Canonical list boundary. SQL applies only explicit user filters; the quality
+ * classifier controls actionability, then the configured semantic stack may
+ * reorder the already-selected page. Semantic failure never blocks the list.
  */
 router.get("/opportunities", async (req, res) => {
   try {
@@ -202,11 +205,46 @@ router.get("/opportunities", async (req, res) => {
     );
     for (const row of rows) accumulator.add(row);
     const qualityPage = accumulator.finish();
+    let data = qualityPage.data.map((item) => ({
+      ...mapOpportunity(item),
+      quality: item.quality,
+    }));
+
+    if (isSemanticRerankEnabled() && data.length > 0) {
+      try {
+        const reranked = await semanticRerank(
+          data.map((item) => ({
+            item,
+            baseScore:
+              item.relevance.score + (item.relevance.feedbackAdj ?? 0),
+            text: [
+              item.title,
+              item.type,
+              item.solicitationNumber,
+              item.agency,
+              item.description,
+            ]
+              .filter(Boolean)
+              .join(". "),
+          })),
+          Math.min(80, data.length),
+          search || undefined,
+        );
+        data = reranked.map((result) => {
+          if (result.similarity != null) {
+            result.item.relevance.semanticSimilarity = Math.round(
+              result.similarity * 100,
+            );
+          }
+          return result.item;
+        });
+      } catch (error) {
+        req.log.warn(error, "semantic rerank failed; using quality order");
+      }
+    }
+
     return res.json({
-      data: qualityPage.data.map((item) => ({
-        ...mapOpportunity(item),
-        quality: item.quality,
-      })),
+      data,
       total: qualityPage.total,
       page,
       limit,
