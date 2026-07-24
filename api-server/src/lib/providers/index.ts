@@ -37,6 +37,7 @@ export * from "./pinecone";
 export * from "./cloudflareWorker";
 export * from "./configOnly";
 
+import "./manualCrawlerRegistration";
 import { samGovProvider } from "./samGov";
 import { texasEsbdProvider } from "./texasEsbd";
 import { nyScrProvider } from "./nyScr";
