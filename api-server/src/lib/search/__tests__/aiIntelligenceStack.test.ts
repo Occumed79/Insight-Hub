@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  AI_EXTRACTION_PROVIDER_ORDER,
+  shouldEscalateToCerebras,
+  type AiExtraction,
+} from "../aiExtract";
+import { normalizeCloudflareRerankScore } from "../../providers/cloudflareWorkersAi";
+import { OCCUMED_SEMANTIC_PROFILE } from "../semanticRerank";
+
+function accepted(overrides: Partial<AiExtraction> = {}): AiExtraction {
+  return {
+    isOpportunity: true,
+    title: "Occupational Health Services RFP",
+    agency: "State Procurement Office",
+    description:
+      "Open procurement for pre-employment physical examinations, drug testing, audiograms, and respiratory fit testing.",
+    deadline: "2026-09-01",
+    relevanceScore: 88,
+    relevanceReason: "Direct fit for Occu-Med services.",
+    ...overrides,
+  };
+}
+
+describe("coordinated AI search intelligence stack", () => {
+  it("keeps fast extraction ordered Groq then Gemini", () => {
+    assert.deepEqual(AI_EXTRACTION_PROVIDER_ORDER, ["groq", "gemini"]);
+  });
+
+  it("escalates only ambiguous accepted records to Cerebras", () => {
+    assert.equal(shouldEscalateToCerebras(accepted()), false);
+    assert.equal(
+      shouldEscalateToCerebras(accepted({ relevanceScore: 62 })),
+      true,
+    );
+    assert.equal(
+      shouldEscalateToCerebras(accepted({ deadline: null })),
+      true,
+    );
+    assert.equal(
+      shouldEscalateToCerebras({
+        isOpportunity: false,
+        reason: "Award notice",
+      }),
+      false,
+    );
+  });
+
+  it("normalizes Cloudflare reranker output to a stable 0..1 range", () => {
+    assert.equal(normalizeCloudflareRerankScore(0.75), 0.75);
+    assert.ok(normalizeCloudflareRerankScore(5) > 0.99);
+    assert.ok(normalizeCloudflareRerankScore(-5) < 0.01);
+    assert.equal(normalizeCloudflareRerankScore("not-a-number"), 0);
+  });
+
+  it("uses the full Occu-Med service profile for semantic search", () => {
+    assert.match(OCCUMED_SEMANTIC_PROFILE, /occupational health/i);
+    assert.match(OCCUMED_SEMANTIC_PROFILE, /audiograms/i);
+    assert.match(OCCUMED_SEMANTIC_PROFILE, /respirator/i);
+    assert.match(OCCUMED_SEMANTIC_PROFILE, /deployment medical/i);
+  });
+});
