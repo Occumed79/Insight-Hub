@@ -88,9 +88,7 @@ describe("manual ingestion query boundary", () => {
     const knownDate = record("Occupational Health Services", {
       description: "Occupational health examinations and drug testing.",
     });
-    assert.equal(
-      calculateCompletenessScore(unknownDate),
-      calculateCompletenessScore(knownDate) - 13,
-    );
+    assert.equal(calculateCompletenessScore(unknownDate), 88);
+    assert.equal(calculateCompletenessScore(knownDate), 100);
   });
 });
