@@ -34,6 +34,9 @@ export async function getIngestionRejectionDiagnostics(
         opportunityStagingTable.qualityReason,
       )
       .orderBy(desc(sql`count(*)`)),
+    // Manual ingestion is already bounded by provider result limits. Fetch all
+    // rejected rows for this run so a large recent reason group cannot hide
+    // representative titles from smaller or older reason groups.
     rfpDb
       .select({
         provider: opportunityStagingTable.provider,
@@ -46,8 +49,7 @@ export async function getIngestionRejectionDiagnostics(
       })
       .from(opportunityStagingTable)
       .where(where)
-      .orderBy(desc(opportunityStagingTable.createdAt))
-      .limit(60),
+      .orderBy(desc(opportunityStagingTable.createdAt)),
   ]);
 
   return buildIngestionRejectionDiagnostics(
