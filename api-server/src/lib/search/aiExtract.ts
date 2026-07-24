@@ -1,26 +1,7 @@
-/**
- * Batched AI extraction with caching and provider round-robin.
- *
- * Replaces the previous "one AI call per candidate, three providers in parallel"
- * approach (which burned ~3x the quota and tripped rate limits, forcing almost
- * everything into the heuristic fallback). Instead:
- *
- *  1. Batching      — many candidates are analyzed in a single prompt returning a
- *                     JSON array, cutting AI calls by ~CHUNK_SIZE x.
- *  2. Caching       — extractions are memoized by URL hash so re-runs of the same
- *                     opportunity don't re-spend quota.
- *  3. Round-robin   — a single ordered set of providers is tried per chunk; on a
- *                     rate limit or failure we fail over to the next configured
- *                     provider instead of giving up.
- */
-
 import { createHash } from "crypto";
 import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
-import { openrouterProvider } from "../providers/openrouter";
-import { minimaxProvider } from "../providers/minimax";
-import { cerebrasProvider, deepseekProvider, mistralProvider, nvidiaProvider } from "../providers/openAiCompatible";
-import { clodProvider } from "../providers/clod";
+import { cerebrasProvider } from "../providers/openAiCompatible";
 
 export interface AiExtraction {
   isOpportunity: boolean;
@@ -33,6 +14,8 @@ export interface AiExtraction {
   relevanceScore?: number;
   relevanceReason?: string;
   winnerScorer?: string;
+  validatedBy?: string;
+  validationReason?: string;
   reason?: string;
 }
 
@@ -43,41 +26,31 @@ export interface BatchExtractInput {
 }
 
 export interface BatchExtractResult {
-  /** Extraction per input, aligned by index. null = no AI verdict (caller should fall back). */
   extractions: (AiExtraction | null)[];
   rateLimited: boolean;
-  /** Providers that successfully answered at least one chunk. */
   usedScorers: string[];
   cacheHits: number;
 }
 
-/** Minimal text-completion surface shared by all AI providers. */
 interface AiTextProvider {
   name: string;
   isConfigured(): Promise<boolean>;
   complete(prompt: string, maxTokens?: number): Promise<string>;
 }
 
-const PROVIDER_ORDER: AiTextProvider[] = [
-  geminiProvider,
-  groqProvider,
-  openrouterProvider,
-  minimaxProvider,
-  cerebrasProvider,
-  deepseekProvider,
-  mistralProvider,
-  nvidiaProvider,
-  clodProvider,
-];
+/**
+ * Deliberate provider roles. Groq performs the fast first pass, Gemini is the
+ * generative fallback, and Cerebras is invoked only for ambiguous accepted
+ * records that need deeper validation/normalization.
+ */
+export const AI_EXTRACTION_PROVIDER_ORDER = ["groq", "gemini"] as const;
+const PRIMARY_PROVIDERS: AiTextProvider[] = [groqProvider, geminiProvider];
 
-/** How many candidates to analyze in a single AI prompt. */
 const CHUNK_SIZE = 8;
-/** Max characters of page content sent per candidate (keeps the batch prompt bounded). */
-const CONTENT_CHARS = 1100;
-/** Output token budget for a full chunk's JSON array. */
-const MAX_OUTPUT_TOKENS = 2048;
-/** Cache TTL — long enough to dedupe quota across repeated fetches, short enough to refresh. */
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CONTENT_CHARS = 1_400;
+const MAX_OUTPUT_TOKENS = 2_048;
+const REVIEW_OUTPUT_TOKENS = 1_600;
+const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 
 interface CacheEntry {
   value: AiExtraction;
@@ -86,205 +59,331 @@ interface CacheEntry {
 
 const extractionCache = new Map<string, CacheEntry>();
 
-function cacheKey(url: string): string {
-  return createHash("sha256").update(url).digest("hex").slice(0, 20);
+function cacheKey(input: BatchExtractInput): string {
+  return createHash("sha256")
+    .update(input.url)
+    .update("\n")
+    .update(input.title)
+    .update("\n")
+    .update(input.content.slice(0, 4_000))
+    .digest("hex")
+    .slice(0, 24);
 }
 
-function getCached(url: string): AiExtraction | undefined {
-  const entry = extractionCache.get(cacheKey(url));
+function getCached(input: BatchExtractInput): AiExtraction | undefined {
+  const key = cacheKey(input);
+  const entry = extractionCache.get(key);
   if (!entry) return undefined;
   if (Date.now() > entry.expires) {
-    extractionCache.delete(cacheKey(url));
+    extractionCache.delete(key);
     return undefined;
   }
   return entry.value;
 }
 
-function setCached(url: string, value: AiExtraction): void {
-  extractionCache.set(cacheKey(url), { value, expires: Date.now() + CACHE_TTL_MS });
+function setCached(input: BatchExtractInput, value: AiExtraction): void {
+  extractionCache.set(cacheKey(input), {
+    value,
+    expires: Date.now() + CACHE_TTL_MS,
+  });
 }
 
-/** True if an error indicates the provider is rate limited / out of quota. */
-function isRateLimit(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /QUOTA_EXCEEDED|RATE_LIMITED|\b429\b|rate limit/i.test(msg);
+function isRateLimit(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /QUOTA_EXCEEDED|RATE_LIMITED|\b429\b|rate limit/i.test(message);
 }
 
 function stripJson(text: string): string {
   return text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
 }
 
-/** Extract the first JSON array from a model response, tolerant of surrounding prose. */
+/** Parse a JSON array, or an object containing a `results` array. */
 function parseJsonArray(text: string): unknown[] | null {
   const cleaned = stripJson(text);
   try {
-    const direct = JSON.parse(cleaned);
+    const direct = JSON.parse(cleaned) as unknown;
     if (Array.isArray(direct)) return direct;
+    if (
+      direct &&
+      typeof direct === "object" &&
+      Array.isArray((direct as { results?: unknown[] }).results)
+    ) {
+      return (direct as { results: unknown[] }).results;
+    }
   } catch {
-    // fall through to bracket slicing
+    // fall through to bounded array slicing
   }
   const start = cleaned.indexOf("[");
   const end = cleaned.lastIndexOf("]");
   if (start >= 0 && end > start) {
     try {
       const sliced = JSON.parse(cleaned.slice(start, end + 1));
-      if (Array.isArray(sliced)) return sliced;
+      return Array.isArray(sliced) ? sliced : null;
     } catch {
-      // give up
+      return null;
     }
   }
   return null;
 }
 
-const ORG_SERVICES = OCCUMED_PROFILE.services.slice(0, 7).join("; ");
+function numberOrUndefined(value: unknown): number | undefined {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function extractionFromObject(
+  raw: unknown,
+  scorer: string,
+): AiExtraction | null {
+  if (!raw || typeof raw !== "object") return null;
+  const object = raw as Record<string, unknown>;
+  return {
+    isOpportunity: object.isOpportunity === true,
+    title: typeof object.title === "string" ? object.title : undefined,
+    agency: typeof object.agency === "string" ? object.agency : undefined,
+    description:
+      typeof object.description === "string" ? object.description : undefined,
+    deadline: typeof object.deadline === "string" ? object.deadline : null,
+    estimatedValue: numberOrUndefined(object.estimatedValue) ?? null,
+    location: typeof object.location === "string" ? object.location : null,
+    relevanceScore: numberOrUndefined(object.relevanceScore),
+    relevanceReason:
+      typeof object.relevanceReason === "string"
+        ? object.relevanceReason
+        : undefined,
+    reason: typeof object.reason === "string" ? object.reason : undefined,
+    winnerScorer: scorer,
+  };
+}
+
+const ORG_SERVICES = OCCUMED_PROFILE.services.slice(0, 9).join("; ");
 
 function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
   const blocks = items
     .map(
-      (it, i) =>
-        `[${i}]\nTitle: ${it.title}\nURL: ${it.url}\nContent: ${it.content.slice(0, CONTENT_CHARS)}`
+      (item, index) =>
+        `[${index}]\nTitle: ${item.title}\nURL: ${item.url}\nContent: ${item.content.slice(0, CONTENT_CHARS)}`,
     )
     .join("\n\n");
 
-  return `You are a strict procurement intelligence analyst for Occu-Med (an occupational health services company).
+  return `You are the fast first-pass procurement intelligence analyst for Occu-Med.
 Occu-Med services: ${ORG_SERVICES}.
 Today's date: ${today}
 
-You will be given ${items.length} web result(s), each marked with a numeric [index]. For EACH item decide with HIGH CONFIDENCE whether it is a CURRENTLY OPEN solicitation/RFP that Occu-Med could bid on right now.
+For EACH indexed item, decide whether it is a CURRENTLY OPEN solicitation/RFP that Occu-Med could bid on.
+Reject news coverage, awards, expired/closed notices, jobs, regulations, unrelated healthcare, and pages without evidence that proposals are currently accepted.
 
-Return isOpportunity:false for an item if ANY of these apply:
-1. It is a news article reporting on an RFP, not the actual solicitation posting.
-2. The deadline/due date has already passed (compare to ${today}).
-3. The title/content contains "awarded", "award notice", "contract award", or "selected vendor".
-4. It is a job posting, career page, or employment ad.
-5. There is no clear evidence the solicitation is currently accepting proposals.
-6. The services have nothing to do with occupational health, medical exams, drug testing, or employee health.
-7. It is a government regulation, policy, or federal register notice (not a bid).
-
-Respond with ONLY a JSON array — one object per input item, in the SAME order, each including its "index":
-[
-  {"index":0,"isOpportunity":true,"title":"exact solicitation title","agency":"procuring organization","description":"specific services being procured (2-3 sentences)","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city, state or null","relevanceScore":0-100,"relevanceReason":"one sentence on Occu-Med fit"},
-  {"index":1,"isOpportunity":false,"reason":"specific reason"}
-]
+Return ONLY a JSON array in the same order. Every object must include index and isOpportunity.
+For accepted items include title, agency, description, deadline (YYYY-MM-DD or null), estimatedValue, location, relevanceScore (0-100), and relevanceReason.
+For rejected items include a specific reason.
 
 ITEMS:
 ${blocks}`;
 }
 
-let roundRobinStart = 0;
+export function shouldEscalateToCerebras(
+  extraction: AiExtraction,
+): boolean {
+  if (!extraction.isOpportunity) return false;
+  const score = extraction.relevanceScore ?? 0;
+  return (
+    score < 75 ||
+    !extraction.deadline ||
+    !extraction.agency?.trim() ||
+    (extraction.description?.trim().length ?? 0) < 100
+  );
+}
 
-interface RoundRobinResult {
-  text: string | null;
+function buildValidationPrompt(
+  items: Array<{
+    localIndex: number;
+    input: BatchExtractInput;
+    preliminary: AiExtraction;
+  }>,
+  today: string,
+): string {
+  const blocks = items
+    .map(
+      ({ localIndex, input, preliminary }) =>
+        `[${localIndex}]
+ORIGINAL TITLE: ${input.title}
+URL: ${input.url}
+CONTENT: ${input.content.slice(0, 2_400)}
+PRELIMINARY VERDICT: ${JSON.stringify(preliminary)}`,
+    )
+    .join("\n\n");
+
+  return `You are the bounded validation layer for Occu-Med procurement intelligence.
+Today's date: ${today}.
+Review only the ambiguous preliminary ACCEPT decisions below. Correct false positives, normalize dates and agencies, and preserve an acceptance only when the page itself supports an open procurement for Occu-Med services.
+
+Return ONLY JSON as {"results":[...]}. Each result must include index, isOpportunity, relevanceScore, validationReason, and all corrected fields. Use isOpportunity:false when evidence is insufficient, stale, awarded, expired, or unrelated.
+
+${blocks}`;
+}
+
+interface ProviderAttemptResult {
+  rows: unknown[] | null;
   scorer: string | null;
   rateLimited: boolean;
 }
 
-/**
- * Run a single prompt against the provider chain, rotating the starting provider
- * each call and failing over on errors / rate limits. Returns the raw text plus
- * which provider answered; text is null if every configured provider failed.
- */
-async function runWithRoundRobin(prompt: string, maxTokens: number): Promise<RoundRobinResult> {
-  const n = PROVIDER_ORDER.length;
-  const offset = roundRobinStart++ % n;
+async function runPrimaryBatch(
+  prompt: string,
+): Promise<ProviderAttemptResult> {
   let rateLimited = false;
-
-  for (let i = 0; i < n; i++) {
-    const provider = PROVIDER_ORDER[(offset + i) % n];
+  for (const provider of PRIMARY_PROVIDERS) {
     try {
       if (!(await provider.isConfigured())) continue;
-      const text = await provider.complete(prompt, maxTokens);
-      if (text && text.trim()) return { text, scorer: provider.name, rateLimited };
-    } catch (err) {
-      if (isRateLimit(err)) rateLimited = true;
-      // try the next provider
+      const text = await provider.complete(prompt, MAX_OUTPUT_TOKENS);
+      const rows = parseJsonArray(text);
+      if (rows) return { rows, scorer: provider.name, rateLimited };
+    } catch (error) {
+      if (isRateLimit(error)) rateLimited = true;
     }
   }
-  return { text: null, scorer: null, rateLimited };
+  return { rows: null, scorer: null, rateLimited };
+}
+
+async function validateWithCerebras(
+  reviewItems: Array<{
+    localIndex: number;
+    input: BatchExtractInput;
+    preliminary: AiExtraction;
+  }>,
+  today: string,
+): Promise<{ rows: unknown[] | null; rateLimited: boolean }> {
+  if (reviewItems.length === 0 || !(await cerebrasProvider.isConfigured())) {
+    return { rows: null, rateLimited: false };
+  }
+  try {
+    const text = await cerebrasProvider.complete(
+      buildValidationPrompt(reviewItems, today),
+      REVIEW_OUTPUT_TOKENS,
+    );
+    return { rows: parseJsonArray(text), rateLimited: false };
+  } catch (error) {
+    return { rows: null, rateLimited: isRateLimit(error) };
+  }
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    output.push(items.slice(index, index + size));
+  }
+  return output;
 }
 
-/**
- * Extract structured opportunity data for many candidates using batched AI calls,
- * memoized by URL. Results are aligned by input index; a null entry means no AI
- * provider produced a verdict (caller should apply its heuristic fallback).
- */
 export async function extractOpportunitiesBatch(
-  inputs: BatchExtractInput[]
+  inputs: BatchExtractInput[],
 ): Promise<BatchExtractResult> {
   const extractions: (AiExtraction | null)[] = new Array(inputs.length).fill(null);
   const usedScorers = new Set<string>();
   let rateLimited = false;
   let cacheHits = 0;
 
-  // 1. Serve from cache where possible; collect the rest for batched AI calls.
-  const pending: { input: BatchExtractInput; index: number }[] = [];
+  const pending: Array<{ input: BatchExtractInput; index: number }> = [];
   inputs.forEach((input, index) => {
-    const cached = getCached(input.url);
+    const cached = getCached(input);
     if (cached) {
       extractions[index] = cached;
-      cacheHits++;
+      cacheHits += 1;
     } else {
       pending.push({ input, index });
     }
   });
 
   if (pending.length === 0) {
-    return { extractions, rateLimited, usedScorers: [...usedScorers], cacheHits };
+    return {
+      extractions,
+      rateLimited,
+      usedScorers: [...usedScorers],
+      cacheHits,
+    };
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0] ?? "";
 
-  // 2. Batched extraction with provider round-robin, one prompt per chunk.
   for (const group of chunk(pending, CHUNK_SIZE)) {
-    const prompt = buildBatchPrompt(group.map((g) => g.input), today);
-    const res = await runWithRoundRobin(prompt, MAX_OUTPUT_TOKENS);
-    if (res.rateLimited) rateLimited = true;
-    if (!res.text || !res.scorer) continue; // every provider failed → heuristic fallback
+    const primary = await runPrimaryBatch(
+      buildBatchPrompt(
+        group.map((entry) => entry.input),
+        today,
+      ),
+    );
+    if (primary.rateLimited) rateLimited = true;
+    if (!primary.rows || !primary.scorer) continue;
+    usedScorers.add(primary.scorer);
 
-    usedScorers.add(res.scorer);
-    const parsed = parseJsonArray(res.text);
-    if (!parsed) continue;
-    const scorer = res.scorer;
-
-    // Map each returned object back to its candidate by declared index (fallback to order).
-    parsed.forEach((raw, order) => {
+    const provisional = new Map<number, AiExtraction>();
+    primary.rows.forEach((raw, order) => {
       if (!raw || typeof raw !== "object") return;
-      const obj = raw as Record<string, unknown>;
-      const localIdx =
-        typeof obj.index === "number" && obj.index >= 0 && obj.index < group.length
-          ? obj.index
+      const object = raw as Record<string, unknown>;
+      const localIndex =
+        typeof object.index === "number" &&
+        object.index >= 0 &&
+        object.index < group.length
+          ? object.index
           : order;
-      const target = group[localIdx];
-      if (!target) return;
-
-      const extraction: AiExtraction = {
-        isOpportunity: obj.isOpportunity === true,
-        title: typeof obj.title === "string" ? obj.title : undefined,
-        agency: typeof obj.agency === "string" ? obj.agency : undefined,
-        description: typeof obj.description === "string" ? obj.description : undefined,
-        deadline: typeof obj.deadline === "string" ? obj.deadline : null,
-        estimatedValue: typeof obj.estimatedValue === "number" ? obj.estimatedValue : null,
-        location: typeof obj.location === "string" ? obj.location : null,
-        relevanceScore: typeof obj.relevanceScore === "number" ? obj.relevanceScore : undefined,
-        relevanceReason: typeof obj.relevanceReason === "string" ? obj.relevanceReason : undefined,
-        reason: typeof obj.reason === "string" ? obj.reason : undefined,
-        winnerScorer: scorer,
-      };
-      extractions[target.index] = extraction;
-      setCached(target.input.url, extraction);
+      if (!group[localIndex]) return;
+      const extraction = extractionFromObject(raw, primary.scorer ?? "unknown");
+      if (extraction) provisional.set(localIndex, extraction);
     });
+
+    const reviewItems = [...provisional.entries()]
+      .filter(([, extraction]) => shouldEscalateToCerebras(extraction))
+      .map(([localIndex, preliminary]) => ({
+        localIndex,
+        input: group[localIndex]!.input,
+        preliminary,
+      }));
+
+    const review = await validateWithCerebras(reviewItems, today);
+    if (review.rateLimited) rateLimited = true;
+    if (review.rows?.length) {
+      usedScorers.add("cerebras");
+      review.rows.forEach((raw, order) => {
+        if (!raw || typeof raw !== "object") return;
+        const object = raw as Record<string, unknown>;
+        const localIndex =
+          typeof object.index === "number"
+            ? object.index
+            : reviewItems[order]?.localIndex;
+        if (
+          typeof localIndex !== "number" ||
+          !provisional.has(localIndex)
+        ) {
+          return;
+        }
+        const corrected = extractionFromObject(raw, primary.scorer ?? "unknown");
+        if (!corrected) return;
+        corrected.validatedBy = "cerebras";
+        corrected.validationReason =
+          typeof object.validationReason === "string"
+            ? object.validationReason
+            : undefined;
+        corrected.winnerScorer = `${primary.scorer}+cerebras`;
+        provisional.set(localIndex, corrected);
+      });
+    }
+
+    for (const [localIndex, extraction] of provisional) {
+      const target = group[localIndex];
+      if (!target) continue;
+      extractions[target.index] = extraction;
+      setCached(target.input, extraction);
+    }
   }
 
-  return { extractions, rateLimited, usedScorers: [...usedScorers], cacheHits };
+  return {
+    extractions,
+    rateLimited,
+    usedScorers: [...usedScorers],
+    cacheHits,
+  };
 }
 
-/** Test/maintenance helper — clears the in-memory extraction cache. */
 export function clearExtractionCache(): void {
   extractionCache.clear();
 }
