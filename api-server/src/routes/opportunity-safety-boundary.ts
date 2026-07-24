@@ -205,7 +205,7 @@ router.get("/opportunities", async (req, res) => {
     );
     for (const row of rows) accumulator.add(row);
     const qualityPage = accumulator.finish();
-    let data = qualityPage.data.map((item) => ({
+    let data: any[] = qualityPage.data.map((item) => ({
       ...mapOpportunity(item),
       quality: item.quality,
     }));
