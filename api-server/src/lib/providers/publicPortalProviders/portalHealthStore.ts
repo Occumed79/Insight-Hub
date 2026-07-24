@@ -30,6 +30,7 @@ const SOURCE_HEALTH_RESET_AT = new Map<string, number>([
   ["ca-bakersfield-purchasing", Date.parse("2026-07-23T21:26:57.000Z")],
   ["az-tucson-airport-authority", Date.parse("2026-07-23T21:26:57.000Z")],
   ["az-phoenix", Date.parse("2026-07-23T21:26:57.000Z")],
+  ["fl-orange-county-public-schools", Date.parse("2026-07-23T21:26:57.000Z")],
   ["ct-ctsource", Date.parse("2026-07-23T23:19:00.000Z")],
   ["al-state-procurement", Date.parse("2026-07-23T23:19:00.000Z")],
   ["nm-active-procurements", Date.parse("2026-07-23T23:19:00.000Z")],

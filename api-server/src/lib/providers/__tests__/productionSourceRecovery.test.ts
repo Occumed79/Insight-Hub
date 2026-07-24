@@ -127,8 +127,8 @@ test("corrected official routes and manual access policies are visible in source
   }
 });
 
-test("all sixteen current failures are manual-only and excluded from automation", () => {
-  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 16);
+test("all seventeen current failures are manual-only and excluded from automation", () => {
+  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 17);
   const derivedIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
   for (const id of MANUAL_ONLY_PORTAL_IDS) {

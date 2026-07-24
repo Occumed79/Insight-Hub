@@ -1,6 +1,9 @@
 import { providerRegistry } from "../providers";
 import type { NormalizedOpportunity } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
+import { serperProvider } from "../providers/serper";
+import { tavilyProvider } from "../providers/tavily";
+import { exaProvider } from "../providers/exa";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
@@ -29,6 +32,7 @@ export const MANUAL_RFP_PROVIDERS = new Set([
 ]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa"]);
+const DIRECT_RESULT_SHARE = 0.7;
 
 export interface ProviderRunResult {
   records: NormalizedOpportunity[];
@@ -58,9 +62,9 @@ function applyProviderGuards(
   errors: string[],
   keywords?: string,
 ): ProviderRunResult {
-  // The audited public-portal provider already partitions each portal before
-  // source-fair merging. Other top-level providers receive the same query guard
-  // here, but retain a bounded mismatch sample for raw/staging diagnostics.
+  // The audited public-portal provider partitions each portal before source-fair
+  // merging and then applies the Cloudflare/Cerebras adjudication layer. Other
+  // top-level providers receive the shared query guard here.
   const admitted =
     provider === "publicPortalProviders"
       ? records
@@ -100,6 +104,111 @@ function applyProviderGuards(
   };
 }
 
+function recordKey(record: NormalizedOpportunity): string {
+  if (record.sourceUrl?.trim()) return `url:${record.sourceUrl.trim().toLowerCase()}`;
+  return `id:${record.externalId.toLowerCase()}`;
+}
+
+/**
+ * Preserve direct-portal authority for duplicate URLs while reserving meaningful
+ * capacity for AI discovery. Direct records receive 70% of the bounded result
+ * set when both pools are populated; either pool can consume unused capacity.
+ */
+function mergeDirectAndDiscovery(
+  direct: NormalizedOpportunity[],
+  discovery: NormalizedOpportunity[],
+  limit: number,
+): NormalizedOpportunity[] {
+  const boundedLimit = Math.max(0, Math.floor(limit));
+  if (boundedLimit === 0) return [];
+
+  const directKeys = new Set<string>();
+  const uniqueDirect: NormalizedOpportunity[] = [];
+  for (const record of direct) {
+    const key = recordKey(record);
+    if (directKeys.has(key)) continue;
+    directKeys.add(key);
+    uniqueDirect.push(record);
+  }
+
+  const uniqueDiscovery: NormalizedOpportunity[] = [];
+  const discoveryKeys = new Set<string>();
+  for (const record of discovery) {
+    const key = recordKey(record);
+    // Any collision resolves to the authoritative direct-portal version, even
+    // when that direct record falls outside the initial reserved slice.
+    if (directKeys.has(key) || discoveryKeys.has(key)) continue;
+    discoveryKeys.add(key);
+    uniqueDiscovery.push(record);
+  }
+
+  if (uniqueDirect.length === 0) return uniqueDiscovery.slice(0, boundedLimit);
+  if (uniqueDiscovery.length === 0) return uniqueDirect.slice(0, boundedLimit);
+
+  const directTarget = Math.min(
+    uniqueDirect.length,
+    Math.max(1, Math.ceil(boundedLimit * DIRECT_RESULT_SHARE)),
+  );
+  const merged = uniqueDirect.slice(0, directTarget);
+  merged.push(
+    ...uniqueDiscovery.slice(0, Math.max(0, boundedLimit - merged.length)),
+  );
+
+  if (merged.length < boundedLimit) {
+    merged.push(
+      ...uniqueDirect.slice(directTarget, directTarget + boundedLimit - merged.length),
+    );
+  }
+  if (merged.length < boundedLimit) {
+    const usedDiscovery = Math.max(0, boundedLimit - directTarget);
+    merged.push(
+      ...uniqueDiscovery.slice(
+        usedDiscovery,
+        usedDiscovery + boundedLimit - merged.length,
+      ),
+    );
+  }
+
+  return merged.slice(0, boundedLimit);
+}
+
+async function fetchConfiguredAiDiscovery(options: {
+  keywords?: string;
+  signal?: AbortSignal;
+}): Promise<NormalizedOpportunity[]> {
+  const [useSerper, useTavily, useExa] = await Promise.all([
+    serperProvider.isConfigured().catch(() => false),
+    tavilyProvider.isConfigured().catch(() => false),
+    exaProvider.isConfigured().catch(() => false),
+  ]);
+  if (!useSerper && !useTavily && !useExa) return [];
+
+  const result = await webIntelligenceFetch({
+    keywords: options.keywords,
+    useSerper,
+    useTavily,
+    useExa,
+    signal: options.signal,
+  });
+  for (const error of result.errors) {
+    console.warn(`[publicPortalProviders:ai-discovery] ${error}`);
+  }
+  console.info(
+    JSON.stringify({
+      event: "public_portal_ai_discovery",
+      query: options.keywords,
+      serper: useSerper,
+      tavily: useTavily,
+      exa: useExa,
+      candidates: result.stats.totalCandidates,
+      preFiltered: result.stats.preFiltered,
+      accepted: result.opportunities.length,
+      aiScorers: result.stats.aiScorers,
+    }),
+  );
+  return result.opportunities;
+}
+
 export async function fetchOneProvider(
   provider: string,
   options: { keywords?: string; dateRange?: number; signal?: AbortSignal },
@@ -122,6 +231,35 @@ export async function fetchOneProvider(
 
   const source = providerRegistry[provider as keyof typeof providerRegistry];
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
+
+  if (provider === "publicPortalProviders") {
+    const [directResult, discoveryRecords] = await Promise.all([
+      source.fetch({
+        keywords: options.keywords,
+        dateRange: options.dateRange,
+        limit: 100,
+        signal: options.signal,
+      }),
+      fetchConfiguredAiDiscovery({
+        keywords: options.keywords,
+        signal: options.signal,
+      }).catch((error) => {
+        console.warn(
+          `[publicPortalProviders:ai-discovery] ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return [];
+      }),
+    ]);
+    return applyProviderGuards(
+      provider,
+      mergeDirectAndDiscovery(directResult.records, discoveryRecords, 100),
+      directResult.errors ?? [],
+      options.keywords,
+    );
+  }
+
   const result = await source.fetch({
     keywords: options.keywords,
     dateRange: options.dateRange,

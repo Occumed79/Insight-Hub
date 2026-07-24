@@ -67,6 +67,10 @@ export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
     "nc-evp",
     "The official public route returned a maintenance page instead of parseable active opportunities. Retained as a manual official buyer link.",
   ],
+  [
+    "fl-orange-county-public-schools",
+    "The official OCPS site explicitly disallows automated crawling through robots.txt. Retained as a manual official buyer link and excluded from automated rotation.",
+  ],
 ]);
 
 export const MANUAL_ONLY_PORTAL_IDS = new Set(MANUAL_ONLY_PORTAL_REASONS.keys());

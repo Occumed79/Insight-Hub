@@ -8,8 +8,8 @@ export const GENERATED_DIRECT_RFP_PORTALS_024: DirectRfpPortal[] = [
     state: "FL",
     country: "US",
     level: "district",
-    url: "https://www.nova.edu/procurement/",
-    searchUrl: "https://www.nova.edu/procurement/",
+    url: "https://www.nova.edu/procurement/index.html",
+    searchUrl: "https://www.nova.edu/procurement/index.html",
     domain: "www.nova.edu",
     accessMode: "public_html",
     requiresKey: false,
@@ -17,7 +17,7 @@ export const GENERATED_DIRECT_RFP_PORTALS_024: DirectRfpPortal[] = [
     tier: 3,
     parserStatus: "catalog_only",
     notes:
-      "Official Nova Southeastern University procurement or business opportunities page.",
+      "Official Nova Southeastern University Office of Procurement Services page.",
   },
   {
     id: "ny-cornell-procurement",
@@ -36,5 +36,5 @@ export const GENERATED_DIRECT_RFP_PORTALS_024: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes:
       "Official Cornell University procurement or business opportunities page.",
-  }
+  },
 ];

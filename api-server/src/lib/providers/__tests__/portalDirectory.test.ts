@@ -9,7 +9,13 @@ import {
   buildProcurementPortalInventory,
 } from "../portalDirectory";
 import { withPortalConnectorCapability } from "../portalCapabilities";
-import { publicPortalSourceFromImport, validatePublicPortalCatalog, validatePublicPortalSource } from "../publicPortalProviders/catalog";
+import { isManualOnlyPortalSourceId } from "../manualOnlyPortalPolicy";
+import {
+  PUBLIC_PORTAL_SOURCES,
+  publicPortalSourceFromImport,
+  validatePublicPortalCatalog,
+  validatePublicPortalSource,
+} from "../publicPortalProviders/catalog";
 
 describe("procurement portal directory", () => {
   it("resolves all featured United States portals in the requested order", () => {
@@ -92,12 +98,44 @@ describe("procurement portal directory", () => {
     assert.equal(imported.domain, "procurement.example.gov");
     assert.deepEqual(validatePublicPortalSource(imported), []);
 
-    const invalid = { ...imported, id: "bad id", searchUrl: "https://evil.example.com/bids" };
+    const invalid = {
+      ...imported,
+      id: "bad id",
+      searchUrl: "https://evil.example.com/bids",
+    };
     assert.deepEqual(validatePublicPortalSource(invalid), [
       "id must not contain whitespace",
       "searchUrl hostname must match domain",
     ]);
-    assert.deepEqual(validatePublicPortalCatalog([invalid]).invalidUrls, ["bad id"]);
+    assert.deepEqual(validatePublicPortalCatalog([invalid]).invalidUrls, [
+      "bad id",
+    ]);
   });
 
+  it("uses current Florida procurement pages and excludes the robots-blocked OCPS directory from automation", () => {
+    const miami = DIRECT_RFP_PORTALS.find(
+      (portal) => portal.id === "fl-miami-procurement",
+    );
+    const nova = DIRECT_RFP_PORTALS.find(
+      (portal) => portal.id === "fl-nova-procurement",
+    );
+    const ocpsDirectory = DIRECT_RFP_PORTALS.find(
+      (portal) => portal.id === "fl-orange-county-public-schools",
+    );
+    const ocpsAutomated = PUBLIC_PORTAL_SOURCES.find(
+      (source) => source.id === "fl-orange-county-public-schools",
+    );
+
+    assert.equal(
+      miami?.searchUrl,
+      "https://www.miami.gov/My-Government/Departments/Procurement",
+    );
+    assert.equal(
+      nova?.searchUrl,
+      "https://www.nova.edu/procurement/index.html",
+    );
+    assert.ok(ocpsDirectory, "OCPS should remain available in the directory");
+    assert.equal(isManualOnlyPortalSourceId("fl-orange-county-public-schools"), true);
+    assert.equal(ocpsAutomated, undefined);
+  });
 });
