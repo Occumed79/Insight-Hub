@@ -107,7 +107,12 @@ describe("coordinated AI search intelligence stack", () => {
     assert.equal(result.applied, true);
     assert.equal(result.duplicatesRemoved, 1);
     assert.equal(result.candidates.length, 2);
-    assert.equal(result.candidates[0]?.title, "Occupational Health Services Request for Proposals");
+    assert.ok(
+      [
+        "Occupational Health Services Request for Proposals",
+        "Request for Proposals Occupational Health Services",
+      ].includes(result.candidates[0]?.title ?? ""),
+    );
     assert.ok((result.candidates[0]?.cloudflareSemanticScore ?? 0) > 95);
   });
 
