@@ -70,6 +70,7 @@ test("production recovery sources replace broken statewide routes exactly once",
     "ct-ctsource",
     "al-state-procurement",
     "nm-active-procurements",
+    "nc-evp",
   ]) {
     assert.ok(sourceById.has(id), `${id} recovery source is registered`);
     assert.ok(deepRecoveryProviders[id], `${id} recovery provider is registered`);
@@ -114,6 +115,7 @@ test("corrected official routes and manual access policies are visible in source
     "ct-ctsource",
     "al-state-procurement",
     "nm-active-procurements",
+    "nc-evp",
   ]) {
     const source = sourceById.get(id);
     assert.equal(source?.enabled, false, `${id} is disabled`);
@@ -125,8 +127,8 @@ test("corrected official routes and manual access policies are visible in source
   }
 });
 
-test("all fifteen current failures are manual-only and excluded from automation", () => {
-  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 15);
+test("all sixteen current failures are manual-only and excluded from automation", () => {
+  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 16);
   const derivedIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
   for (const id of MANUAL_ONLY_PORTAL_IDS) {
@@ -154,6 +156,7 @@ test("all fifteen current failures are manual-only and excluded from automation"
     "ct-ctsource",
     "al-state-procurement",
     "nm-active-procurements",
+    "nc-evp",
   ]) {
     const source = statewideSourceById.get(id);
     assert.equal(source?.enabled, false, `${id} is disabled`);
@@ -170,6 +173,7 @@ test("manual-access state providers complete immediately without network failure
     "ct-ctsource",
     "al-state-procurement",
     "nm-active-procurements",
+    "nc-evp",
   ]) {
     const result = await deepRecoveryProviders[id]!.fetch({ limit: 5 });
     assert.deepEqual(result, { records: [], total: 0, errors: [] });
@@ -209,7 +213,7 @@ test("manual-only sources are removed from serialized active health", () => {
           lastOutcome: "failed",
         },
         {
-          sourceId: "al-state-procurement",
+          sourceId: "nc-evp",
           currentlyFailing: true,
           lastOutcome: "failed",
         },
@@ -246,6 +250,7 @@ test("legacy BSO tenants are replaced by listing-only Periscope recovery provide
 
 test("manual-only epochs discard superseded health without touching newer rows", () => {
   for (const id of MANUAL_ONLY_PORTAL_IDS) {
+    if (id === "nc-evp") continue;
     assert.equal(
       isSupersededPublicPortalHealth(
         healthStatus(id, "2026-07-23T21:25:00.000Z"),
@@ -262,6 +267,13 @@ test("manual-only epochs discard superseded health without touching newer rows",
     );
   }
 
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("nc-evp", "2026-07-24T00:02:45.000Z"),
+    ),
+    false,
+    "North Carolina is hidden by the manual-only health boundary without rewriting stored history",
+  );
   assert.equal(
     isSupersededPublicPortalHealth(
       healthStatus("mn-swift", "2026-07-23T20:24:47.000Z"),
