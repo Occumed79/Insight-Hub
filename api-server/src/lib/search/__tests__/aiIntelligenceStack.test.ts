@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   AI_EXTRACTION_PROVIDER_ORDER,
-  shouldEscalateToCerebras,
+  shouldCrossCheckExtraction,
   type AiExtraction,
 } from "../aiExtract";
 import { normalizeCloudflareRerankScore } from "../../providers/cloudflareWorkersAi";
@@ -23,22 +23,26 @@ function accepted(overrides: Partial<AiExtraction> = {}): AiExtraction {
 }
 
 describe("coordinated AI search intelligence stack", () => {
-  it("keeps fast extraction ordered Groq then Gemini", () => {
-    assert.deepEqual(AI_EXTRACTION_PROVIDER_ORDER, ["groq", "gemini"]);
+  it("uses Cerebras as the normal extraction path", () => {
+    assert.deepEqual(AI_EXTRACTION_PROVIDER_ORDER, [
+      "cerebras",
+      "groq",
+      "gemini",
+    ]);
   });
 
-  it("escalates only ambiguous accepted records to Cerebras", () => {
-    assert.equal(shouldEscalateToCerebras(accepted()), false);
+  it("cross-checks only ambiguous accepted records", () => {
+    assert.equal(shouldCrossCheckExtraction(accepted()), false);
     assert.equal(
-      shouldEscalateToCerebras(accepted({ relevanceScore: 62 })),
+      shouldCrossCheckExtraction(accepted({ relevanceScore: 62 })),
       true,
     );
     assert.equal(
-      shouldEscalateToCerebras(accepted({ deadline: null })),
+      shouldCrossCheckExtraction(accepted({ agency: undefined })),
       true,
     );
     assert.equal(
-      shouldEscalateToCerebras({
+      shouldCrossCheckExtraction({
         isOpportunity: false,
         reason: "Award notice",
       }),
