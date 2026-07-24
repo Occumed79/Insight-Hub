@@ -32,6 +32,7 @@ export const MANUAL_RFP_PROVIDERS = new Set([
 ]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa"]);
+const DIRECT_RESULT_SHARE = 0.7;
 
 export interface ProviderRunResult {
   records: NormalizedOpportunity[];
@@ -108,21 +109,67 @@ function recordKey(record: NormalizedOpportunity): string {
   return `id:${record.externalId.toLowerCase()}`;
 }
 
-function mergeDiscoveryFirst(
-  discovery: NormalizedOpportunity[],
+/**
+ * Preserve direct-portal authority for duplicate URLs while reserving meaningful
+ * capacity for AI discovery. Direct records receive 70% of the bounded result
+ * set when both pools are populated; either pool can consume unused capacity.
+ */
+function mergeDirectAndDiscovery(
   direct: NormalizedOpportunity[],
+  discovery: NormalizedOpportunity[],
   limit: number,
 ): NormalizedOpportunity[] {
-  const seen = new Set<string>();
-  const merged: NormalizedOpportunity[] = [];
-  for (const record of [...discovery, ...direct]) {
+  const boundedLimit = Math.max(0, Math.floor(limit));
+  if (boundedLimit === 0) return [];
+
+  const directKeys = new Set<string>();
+  const uniqueDirect: NormalizedOpportunity[] = [];
+  for (const record of direct) {
     const key = recordKey(record);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(record);
-    if (merged.length >= limit) break;
+    if (directKeys.has(key)) continue;
+    directKeys.add(key);
+    uniqueDirect.push(record);
   }
-  return merged;
+
+  const uniqueDiscovery: NormalizedOpportunity[] = [];
+  const discoveryKeys = new Set<string>();
+  for (const record of discovery) {
+    const key = recordKey(record);
+    // Any collision resolves to the authoritative direct-portal version, even
+    // when that direct record falls outside the initial reserved slice.
+    if (directKeys.has(key) || discoveryKeys.has(key)) continue;
+    discoveryKeys.add(key);
+    uniqueDiscovery.push(record);
+  }
+
+  if (uniqueDirect.length === 0) return uniqueDiscovery.slice(0, boundedLimit);
+  if (uniqueDiscovery.length === 0) return uniqueDirect.slice(0, boundedLimit);
+
+  const directTarget = Math.min(
+    uniqueDirect.length,
+    Math.max(1, Math.ceil(boundedLimit * DIRECT_RESULT_SHARE)),
+  );
+  const merged = uniqueDirect.slice(0, directTarget);
+  merged.push(
+    ...uniqueDiscovery.slice(0, Math.max(0, boundedLimit - merged.length)),
+  );
+
+  if (merged.length < boundedLimit) {
+    merged.push(
+      ...uniqueDirect.slice(directTarget, directTarget + boundedLimit - merged.length),
+    );
+  }
+  if (merged.length < boundedLimit) {
+    const usedDiscovery = Math.max(0, boundedLimit - directTarget);
+    merged.push(
+      ...uniqueDiscovery.slice(
+        usedDiscovery,
+        usedDiscovery + boundedLimit - merged.length,
+      ),
+    );
+  }
+
+  return merged.slice(0, boundedLimit);
 }
 
 async function fetchConfiguredAiDiscovery(options: {
@@ -207,7 +254,7 @@ export async function fetchOneProvider(
     ]);
     return applyProviderGuards(
       provider,
-      mergeDiscoveryFirst(discoveryRecords, directResult.records, 100),
+      mergeDirectAndDiscovery(directResult.records, discoveryRecords, 100),
       directResult.errors ?? [],
       options.keywords,
     );
