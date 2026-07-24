@@ -46,6 +46,7 @@ const ADDITIONAL_MANUAL_STATE_IDS = [
   "ct-ctsource",
   "al-state-procurement",
   "nm-active-procurements",
+  "nc-evp",
 ] as const;
 
 class ManualAccessProvider implements DataSourceProvider {
