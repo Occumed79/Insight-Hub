@@ -152,12 +152,17 @@ export function calculateOpportunityDedupeKeys(
 export function calculateCompletenessScore(
   record: NormalizedOpportunity,
 ): number {
+  const knownPostedDate = Boolean(
+    record.postedDate &&
+      !Number.isNaN(record.postedDate.getTime()) &&
+      record.postedDate.getTime() > 0,
+  );
   const checks = [
     Boolean(record.title?.trim()),
     Boolean(record.agency?.trim()),
     Boolean(record.externalId?.trim()),
     Boolean(record.sourceUrl?.trim()),
-    Boolean(record.postedDate && !Number.isNaN(record.postedDate.getTime())),
+    knownPostedDate,
     Boolean(
       record.responseDeadline &&
       !Number.isNaN(record.responseDeadline.getTime()),
@@ -219,7 +224,14 @@ export function decideOpportunityQuality(
   }
   const relevance = classifyResult({
     title: record.title,
-    snippet: [record.description, record.agency].filter(Boolean).join(" "),
+    snippet: [
+      record.type,
+      record.solicitationNumber,
+      record.description,
+      record.agency,
+    ]
+      .filter(Boolean)
+      .join(" "),
     url: record.sourceUrl,
     allowHistorical: true,
   });
