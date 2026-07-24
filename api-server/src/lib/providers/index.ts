@@ -6,8 +6,13 @@ export * from "./usaSpending";
 export * from "./federalRegister";
 export * from "./publicPortalProviders";
 export * from "./crawlerAugmentedPublicPortalProvider";
+export * from "./auditedPublicPortalProvider";
+export * from "./productionPublicPortalProvider";
+export * from "./providerQueryMatch";
+export * from "./fairOpportunityMerge";
 export * from "./publicPortalDiscovery";
 export * from "./eunaBonfire";
+export * from "./disabledEunaDiscoveryProvider";
 export * from "./internationalPublicPortals";
 export * from "./gemini";
 export * from "./serper";
@@ -32,13 +37,14 @@ export * from "./pinecone";
 export * from "./cloudflareWorker";
 export * from "./configOnly";
 
+import "./manualCrawlerRegistration";
 import { samGovProvider } from "./samGov";
 import { texasEsbdProvider } from "./texasEsbd";
 import { nyScrProvider } from "./nyScr";
 import { usaSpendingProvider } from "./usaSpending";
 import { federalRegisterProvider } from "./federalRegister";
-import { crawlerAugmentedPublicPortalProvider } from "./crawlerAugmentedPublicPortalProvider";
-import { eunaBonfireProvider } from "./eunaBonfire";
+import { productionPublicPortalProvider } from "./productionPublicPortalProvider";
+import { disabledEunaDiscoveryProvider } from "./disabledEunaDiscoveryProvider";
 import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
 import { serperProvider } from "./serper";
@@ -79,8 +85,8 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   samGov: samGovProvider,
   texasEsbd: texasEsbdProvider,
   nyScr: nyScrProvider,
-  publicPortalProviders: crawlerAugmentedPublicPortalProvider,
-  eunaBonfire: eunaBonfireProvider,
+  publicPortalProviders: productionPublicPortalProvider,
+  eunaBonfire: disabledEunaDiscoveryProvider,
   internationalPublicPortals: internationalPublicPortalsProvider,
   usaSpending: usaSpendingProvider,
   federalRegister: federalRegisterProvider,

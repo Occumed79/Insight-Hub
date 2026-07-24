@@ -4,6 +4,9 @@ import test from "node:test";
 process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
+const { filterManualOnlyPortalHealth } = await import(
+  "../../../middleware/manual-only-portal-health-boundary"
+);
 const { bsoPortalProviders } = await import("../bsoPortal");
 const {
   DEEP_RECOVERY_SOURCES,
@@ -19,9 +22,15 @@ const {
   isSupersededPublicPortalHealth,
   selectFairPortalSources,
 } = await import("../publicPortalProviders/portalHealthStore");
+const { STATEWIDE_PROCUREMENT_SOURCES } = await import(
+  "../statewideProcurementConfigs"
+);
 
 const sourceById = new Map(
   DEEP_RECOVERY_SOURCES.map((source) => [source.id, source]),
+);
+const statewideSourceById = new Map(
+  STATEWIDE_PROCUREMENT_SOURCES.map((source) => [source.id, source]),
 );
 
 function healthStatus(sourceId: string, lastCheckedAt: string) {
@@ -58,6 +67,10 @@ test("production recovery sources replace broken statewide routes exactly once",
     "ut-purchasing",
     "wi-vendornet",
     "mn-swift",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+    "nc-evp",
   ]) {
     assert.ok(sourceById.has(id), `${id} recovery source is registered`);
     assert.ok(deepRecoveryProviders[id], `${id} recovery provider is registered`);
@@ -94,7 +107,16 @@ test("corrected official routes and manual access policies are visible in source
     "MinnesotaOspProvider",
   );
 
-  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
+  for (const id of [
+    "nd-spo",
+    "vt-bids",
+    "ri-bids",
+    "wi-vendornet",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+    "nc-evp",
+  ]) {
     const source = sourceById.get(id);
     assert.equal(source?.enabled, false, `${id} is disabled`);
     assert.equal(
@@ -105,8 +127,8 @@ test("corrected official routes and manual access policies are visible in source
   }
 });
 
-test("all twelve current failures are manual-only and excluded from direct catalog automation", () => {
-  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 12);
+test("all sixteen current failures are manual-only and excluded from automation", () => {
+  assert.equal(MANUAL_ONLY_PORTAL_IDS.size, 16);
   const derivedIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
   for (const id of MANUAL_ONLY_PORTAL_IDS) {
@@ -121,7 +143,7 @@ test("all twelve current failures are manual-only and excluded from direct catal
       "directory_only",
       `${id} is displayed as manual-only`,
     );
-    if (!sourceById.has(id)) {
+    if (!sourceById.has(id) && !statewideSourceById.has(id)) {
       assert.equal(
         derivedIds.has(id),
         false,
@@ -129,10 +151,30 @@ test("all twelve current failures are manual-only and excluded from direct catal
       );
     }
   }
+
+  for (const id of [
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+    "nc-evp",
+  ]) {
+    const source = statewideSourceById.get(id);
+    assert.equal(source?.enabled, false, `${id} is disabled`);
+    assert.equal(source?.verificationStatus, "needs_review");
+  }
 });
 
 test("manual-access state providers complete immediately without network failures", async () => {
-  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
+  for (const id of [
+    "nd-spo",
+    "vt-bids",
+    "ri-bids",
+    "wi-vendornet",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+    "nc-evp",
+  ]) {
     const result = await deepRecoveryProviders[id]!.fetch({ limit: 5 });
     assert.deepEqual(result, { records: [], total: 0, errors: [] });
   }
@@ -140,7 +182,7 @@ test("manual-access state providers complete immediately without network failure
 
 test("disabled sources can never enter fair rotation", () => {
   const active = sourceById.get("mn-swift");
-  const disabled = sourceById.get("ri-bids");
+  const disabled = sourceById.get("ct-ctsource");
   assert.ok(active);
   assert.ok(disabled);
 
@@ -155,9 +197,46 @@ test("disabled sources can never enter fair rotation", () => {
     ["mn-swift"],
   );
   assert.equal(
-    selection.deferred.some((source) => source.id === "ri-bids"),
+    selection.deferred.some((source) => source.id === "ct-ctsource"),
     false,
   );
+});
+
+test("manual-only sources are removed from serialized active health", () => {
+  const result = filterManualOnlyPortalHealth({
+    health: {
+      summary: {},
+      sources: [
+        {
+          sourceId: "ct-ctsource",
+          currentlyFailing: true,
+          lastOutcome: "failed",
+        },
+        {
+          sourceId: "nc-evp",
+          currentlyFailing: true,
+          lastOutcome: "failed",
+        },
+        {
+          sourceId: "ca-solano-county",
+          currentlyFailing: false,
+          lastOutcome: "success",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(
+    result.health.sources.map((status) => status.sourceId),
+    ["ca-solano-county"],
+  );
+  assert.deepEqual(result.health.summary, {
+    checked: 1,
+    success: 1,
+    noResults: 0,
+    failing: 0,
+    quarantined: 0,
+    validationFailed: 0,
+  });
 });
 
 test("legacy BSO tenants are replaced by listing-only Periscope recovery providers", () => {
@@ -171,6 +250,7 @@ test("legacy BSO tenants are replaced by listing-only Periscope recovery provide
 
 test("manual-only epochs discard superseded health without touching newer rows", () => {
   for (const id of MANUAL_ONLY_PORTAL_IDS) {
+    if (id === "nc-evp") continue;
     assert.equal(
       isSupersededPublicPortalHealth(
         healthStatus(id, "2026-07-23T21:25:00.000Z"),
@@ -180,13 +260,20 @@ test("manual-only epochs discard superseded health without touching newer rows",
     );
     assert.equal(
       isSupersededPublicPortalHealth(
-        healthStatus(id, "2026-07-23T21:30:00.000Z"),
+        healthStatus(id, "2026-07-23T23:30:00.000Z"),
       ),
       false,
       `${id} newer health remains valid`,
     );
   }
 
+  assert.equal(
+    isSupersededPublicPortalHealth(
+      healthStatus("nc-evp", "2026-07-24T00:02:45.000Z"),
+    ),
+    false,
+    "North Carolina is hidden by the manual-only health boundary without rewriting stored history",
+  );
   assert.equal(
     isSupersededPublicPortalHealth(
       healthStatus("mn-swift", "2026-07-23T20:24:47.000Z"),

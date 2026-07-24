@@ -1,4 +1,5 @@
 import { ENRICHED_DIRECT_RFP_PORTALS } from "./directRfpPortalRelevanceCatalog";
+import { STATEWIDE_PROCUREMENT_SOURCES } from "./statewideProcurementConfigs";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
 export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
@@ -50,6 +51,22 @@ export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
     "az-phoenix",
     "Repeated automated fetch failures. Retained as a manual official buyer link.",
   ],
+  [
+    "ct-ctsource",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
+  [
+    "al-state-procurement",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
+  [
+    "nm-active-procurements",
+    "Repeated automated request timeouts. Retained as a manual official buyer link.",
+  ],
+  [
+    "nc-evp",
+    "The official public route returned a maintenance page instead of parseable active opportunities. Retained as a manual official buyer link.",
+  ],
 ]);
 
 export const MANUAL_ONLY_PORTAL_IDS = new Set(MANUAL_ONLY_PORTAL_REASONS.keys());
@@ -91,5 +108,11 @@ export function registerManualOnlyDirectPortalPolicy(): void {
       requiresLogin: true,
       notes: `${portal.notes} ${reason}`.trim(),
     };
+  }
+
+  for (let index = 0; index < STATEWIDE_PROCUREMENT_SOURCES.length; index += 1) {
+    const source = STATEWIDE_PROCUREMENT_SOURCES[index];
+    if (!source || !isManualOnlyPortalSourceId(source.id)) continue;
+    STATEWIDE_PROCUREMENT_SOURCES[index] = applyManualOnlyPortalPolicy(source);
   }
 }

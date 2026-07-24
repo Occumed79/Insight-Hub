@@ -1,5 +1,6 @@
 import { providerRegistry } from "../providers";
 import type { NormalizedOpportunity } from "../providers/types";
+import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
@@ -51,12 +52,37 @@ export function resolveManualProviders(providers?: string[]): string[] {
   return resolved;
 }
 
-function applyExpirationGuard(
+function applyProviderGuards(
   provider: string,
   records: NormalizedOpportunity[],
   errors: string[],
+  keywords?: string,
 ): ProviderRunResult {
-  const filtered = filterExpiredOpportunities(records);
+  // The audited public-portal provider already partitions each portal before
+  // source-fair merging. Other top-level providers receive the same query guard
+  // here, but retain a bounded mismatch sample for raw/staging diagnostics.
+  const admitted =
+    provider === "publicPortalProviders"
+      ? records
+      : (() => {
+          const partition = partitionProviderRecordsForQuery(records, keywords, 3);
+          if (partition.rejectedCount > 0) {
+            console.info(
+              JSON.stringify({
+                event: "rfp_provider_query_partitioned",
+                provider,
+                query: keywords,
+                returned: partition.rawCount,
+                matched: partition.matchedCount,
+                rejected: partition.rejectedCount,
+                retainedRejectionSamples: partition.rejectedSamples.length,
+              }),
+            );
+          }
+          return [...partition.matched, ...partition.rejectedSamples];
+        })();
+
+  const filtered = filterExpiredOpportunities(admitted);
   if (filtered.expiredSkipped > 0) {
     console.info(
       JSON.stringify({
@@ -86,10 +112,11 @@ export async function fetchOneProvider(
       useExa: provider === "exa",
       signal: options.signal,
     });
-    return applyExpirationGuard(
+    return applyProviderGuards(
       provider,
       result.opportunities.filter((record) => record.source === provider),
       result.errors,
+      options.keywords,
     );
   }
 
@@ -101,5 +128,10 @@ export async function fetchOneProvider(
     limit: 100,
     signal: options.signal,
   });
-  return applyExpirationGuard(provider, result.records, result.errors ?? []);
+  return applyProviderGuards(
+    provider,
+    result.records,
+    result.errors ?? [],
+    options.keywords,
+  );
 }

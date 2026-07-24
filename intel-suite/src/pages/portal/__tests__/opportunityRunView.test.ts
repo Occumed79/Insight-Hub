@@ -98,4 +98,63 @@ describe("persisted opportunity run view", () => {
       "Timeouts",
     ]);
   });
+
+  it("appends top rejection categories and representative titles", () => {
+    const metrics = opportunityRunMetrics({
+      fetched: 94,
+      staged: 94,
+      accepted: 0,
+      rejected: 94,
+      duplicates: 0,
+      created: 0,
+      updated: 0,
+      archived: 0,
+      rejectionDiagnostics: {
+        reasons: [
+          {
+            code: "missing_occumed_service_evidence",
+            label: "No Occu-Med service evidence",
+            count: 70,
+          },
+          {
+            code: "missing_procurement_signal",
+            label: "No procurement signal",
+            count: 20,
+          },
+          {
+            code: "hard_reject",
+            label: "Hard-reject wording",
+            count: 4,
+          },
+        ],
+        samples: [
+          {
+            title: "Statewide office furniture replacement solicitation",
+            provider: "publicPortalProviders",
+            reasonLabel: "No Occu-Med service evidence",
+          },
+          {
+            title: "Informational procurement landing page",
+            provider: "sam_gov",
+            reasonLabel: "No procurement signal",
+          },
+        ],
+      },
+    });
+    assert.deepEqual(metrics.slice(10, 13), [
+      ["Reject: No Occu-Med evidence", 70],
+      ["Reject: No procurement signal", 20],
+      ["Reject: Hard-reject wording", 4],
+    ]);
+    assert.deepEqual(metrics.slice(13), [
+      [
+        "Sample · No Occu-Med service evidence · publicPortalProviders",
+        "Statewide office furniture replacement solicitation",
+      ],
+      [
+        "Sample · No procurement signal · sam_gov",
+        "Informational procurement landing page",
+      ],
+    ]);
+  });
 });
