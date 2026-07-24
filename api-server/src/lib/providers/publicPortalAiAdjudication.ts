@@ -116,6 +116,29 @@ function applyAiExtraction(
   };
 }
 
+function preserveDeterministicMatch(
+  candidate: PrioritizedCandidate<PortalAiCandidate>,
+  extraction: AiExtraction | null,
+): NormalizedOpportunity {
+  return {
+    ...candidate.record,
+    rawData: {
+      ...(candidate.record.rawData ?? {}),
+      cloudflareSemanticScore: candidate.cloudflareSemanticScore,
+      cloudflareSemanticRank: candidate.cloudflareSemanticRank,
+      aiAdjudicationUnavailable: extraction == null,
+      aiAdjudicationDisagreed:
+        extraction != null &&
+        (!extraction.isOpportunity || (extraction.relevanceScore ?? 0) < 50),
+      aiRejectionReason:
+        extraction && !extraction.isOpportunity ? extraction.reason : undefined,
+      aiRelevanceScore: extraction?.relevanceScore,
+      aiRelevanceReason: extraction?.relevanceReason,
+      winnerScorer: extraction?.winnerScorer,
+    },
+  };
+}
+
 function stableKey(record: NormalizedOpportunity): string {
   return record.sourceUrl?.trim().toLowerCase() || record.externalId.toLowerCase();
 }
@@ -123,8 +146,8 @@ function stableKey(record: NormalizedOpportunity): string {
 /**
  * Run direct portal output through the same Cloudflare -> Cerebras -> fallback
  * intelligence path used by web discovery. Deterministic query matches remain
- * available when the AI stack is unavailable, while AI can recover semantic
- * matches that the lexical query boundary marked as diagnostic mismatches.
+ * authoritative and AI may enrich them, while AI can recover semantic matches
+ * that the lexical query boundary marked as diagnostic mismatches.
  */
 export async function adjudicatePublicPortalResult(
   result: ProviderFetchResult,
@@ -182,32 +205,30 @@ export async function adjudicatePublicPortalResult(
     const record = candidate.record;
     const extraction = extractions[index];
     const mismatch = record.rawData?.manualQueryMismatch === true;
+    const aiAccepted =
+      extraction?.isOpportunity === true &&
+      (extraction.relevanceScore ?? 0) >= 50;
 
-    if (extraction?.isOpportunity) {
-      const score = extraction.relevanceScore ?? 0;
-      if (score >= 50) {
-        kept.push(applyAiExtraction(candidate, extraction));
-        return;
-      }
-    }
-
-    if (!extraction && !mismatch) {
-      kept.push({
-        ...record,
-        rawData: {
-          ...(record.rawData ?? {}),
-          cloudflareSemanticScore: candidate.cloudflareSemanticScore,
-          cloudflareSemanticRank: candidate.cloudflareSemanticRank,
-          aiAdjudicationUnavailable: true,
-        },
-      });
+    // A record that already passed the deterministic portal query boundary is
+    // authoritative. AI can enrich it, but a model disagreement must never make
+    // that direct official record disappear.
+    if (!mismatch) {
+      kept.push(
+        aiAccepted && extraction
+          ? applyAiExtraction(candidate, extraction)
+          : preserveDeterministicMatch(candidate, extraction),
+      );
       return;
     }
 
-    if (
-      mismatch &&
-      mismatchDiagnostics.length < MISMATCH_DIAGNOSTIC_LIMIT
-    ) {
+    // Lexical mismatches require affirmative semantic recovery. Otherwise retain
+    // only a globally bounded diagnostic sample for the run UI.
+    if (aiAccepted && extraction) {
+      kept.push(applyAiExtraction(candidate, extraction));
+      return;
+    }
+
+    if (mismatchDiagnostics.length < MISMATCH_DIAGNOSTIC_LIMIT) {
       mismatchDiagnostics.push(record);
     }
   });
