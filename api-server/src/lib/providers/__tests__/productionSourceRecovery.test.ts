@@ -67,6 +67,9 @@ test("production recovery sources replace broken statewide routes exactly once",
     "ut-purchasing",
     "wi-vendornet",
     "mn-swift",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
   ]) {
     assert.ok(sourceById.has(id), `${id} recovery source is registered`);
     assert.ok(deepRecoveryProviders[id], `${id} recovery provider is registered`);
@@ -103,7 +106,15 @@ test("corrected official routes and manual access policies are visible in source
     "MinnesotaOspProvider",
   );
 
-  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
+  for (const id of [
+    "nd-spo",
+    "vt-bids",
+    "ri-bids",
+    "wi-vendornet",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+  ]) {
     const source = sourceById.get(id);
     assert.equal(source?.enabled, false, `${id} is disabled`);
     assert.equal(
@@ -151,7 +162,15 @@ test("all fifteen current failures are manual-only and excluded from automation"
 });
 
 test("manual-access state providers complete immediately without network failures", async () => {
-  for (const id of ["nd-spo", "vt-bids", "ri-bids", "wi-vendornet"]) {
+  for (const id of [
+    "nd-spo",
+    "vt-bids",
+    "ri-bids",
+    "wi-vendornet",
+    "ct-ctsource",
+    "al-state-procurement",
+    "nm-active-procurements",
+  ]) {
     const result = await deepRecoveryProviders[id]!.fetch({ limit: 5 });
     assert.deepEqual(result, { records: [], total: 0, errors: [] });
   }
@@ -159,7 +178,7 @@ test("manual-access state providers complete immediately without network failure
 
 test("disabled sources can never enter fair rotation", () => {
   const active = sourceById.get("mn-swift");
-  const disabled = statewideSourceById.get("ct-ctsource");
+  const disabled = sourceById.get("ct-ctsource");
   assert.ok(active);
   assert.ok(disabled);
 
