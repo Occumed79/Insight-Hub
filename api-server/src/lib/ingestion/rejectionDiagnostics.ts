@@ -97,6 +97,22 @@ function rejectedStatus(value: string): IngestionRejectedStatus {
   return value === "quarantined" ? "quarantined" : "rejected";
 }
 
+function rejectionSample(row: RejectionSampleRow): IngestionRejectionSample {
+  const status = rejectedStatus(row.qualityStatus);
+  const parsed = parseStoredQualityReason(row.qualityReason);
+  return {
+    provider: row.provider,
+    title: row.title,
+    agency: row.agency,
+    status,
+    reasonCode: parsed.code,
+    reasonLabel: parsed.label,
+    reason: parsed.detail,
+    completenessScore: numeric(row.completenessScore),
+    sourceConfidence: numeric(row.sourceConfidence),
+  };
+}
+
 export function buildIngestionRejectionDiagnostics(
   reasonRows: RejectionReasonCountRow[],
   sampleRows: RejectionSampleRow[],
@@ -121,27 +137,26 @@ export function buildIngestionRejectionDiagnostics(
     (left, right) =>
       right.count - left.count || left.label.localeCompare(right.label),
   );
-  const perReasonSamples = new Map<string, number>();
-  const samples: IngestionRejectionSample[] = [];
+
+  const sampleBuckets = new Map<string, RejectionSampleRow[]>();
   for (const row of sampleRows) {
-    if (samples.length >= sampleLimit) break;
     const status = rejectedStatus(row.qualityStatus);
     const parsed = parseStoredQualityReason(row.qualityReason);
     const key = `${status}:${parsed.code}`;
-    const priorCount = perReasonSamples.get(key) ?? 0;
-    if (priorCount >= 3) continue;
-    perReasonSamples.set(key, priorCount + 1);
-    samples.push({
-      provider: row.provider,
-      title: row.title,
-      agency: row.agency,
-      status,
-      reasonCode: parsed.code,
-      reasonLabel: parsed.label,
-      reason: parsed.detail,
-      completenessScore: numeric(row.completenessScore),
-      sourceConfidence: numeric(row.sourceConfidence),
-    });
+    const bucket = sampleBuckets.get(key) ?? [];
+    if (bucket.length < 3) bucket.push(row);
+    sampleBuckets.set(key, bucket);
+  }
+
+  const samples: IngestionRejectionSample[] = [];
+  const boundedLimit = Math.max(0, Math.floor(sampleLimit));
+  for (let round = 0; round < 3 && samples.length < boundedLimit; round += 1) {
+    for (const reason of reasons) {
+      if (samples.length >= boundedLimit) break;
+      const key = `${reason.status}:${reason.code}`;
+      const row = sampleBuckets.get(key)?.[round];
+      if (row) samples.push(rejectionSample(row));
+    }
   }
 
   return {
