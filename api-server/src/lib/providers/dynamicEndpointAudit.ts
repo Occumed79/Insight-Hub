@@ -2,6 +2,10 @@ import {
   fingerprintJsonEndpoint,
   type DynamicEndpointFingerprint,
 } from "./nativePublicPortalDiscovery";
+import {
+  cloudflareBrowserCdpEndpoint,
+  resolveCloudflareBrowserCredentials,
+} from "./cloudflareBrowserRun";
 
 export interface DynamicEndpointAuditOptions {
   timeoutMs?: number;
@@ -20,6 +24,39 @@ function abortError(signal?: AbortSignal): Error {
   return new DOMException("Dynamic endpoint audit cancelled", "AbortError");
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function connectBrowser(
+  playwright: typeof import("playwright"),
+  timeoutMs: number,
+) {
+  const cloudflare = await resolveCloudflareBrowserCredentials();
+  if (cloudflare) {
+    const endpoint = cloudflareBrowserCdpEndpoint(
+      cloudflare.accountId,
+      timeoutMs + 15_000,
+    );
+    try {
+      const browser = await playwright.chromium.connectOverCDP(endpoint, {
+        headers: {
+          Authorization: `Bearer ${cloudflare.apiToken}`,
+        },
+        timeout: timeoutMs,
+      });
+      return { browser, backend: "cloudflare-browser-run-cdp" as const };
+    } catch (error) {
+      throw new Error(
+        `Cloudflare Browser Run CDP connection failed: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  const browser = await playwright.chromium.launch({ headless: true });
+  return { browser, backend: "local-playwright" as const };
+}
+
 export async function auditPublicDynamicEndpoints(
   pageUrl: string,
   options: DynamicEndpointAuditOptions = {},
@@ -27,7 +64,9 @@ export async function auditPublicDynamicEndpoints(
   if (options.signal?.aborted) throw abortError(options.signal);
   const playwright = await import("playwright");
   if (options.signal?.aborted) throw abortError(options.signal);
-  const browser = await playwright.chromium.launch({ headless: true });
+
+  const timeoutMs = Math.max(5_000, options.timeoutMs ?? 15_000);
+  const { browser, backend } = await connectBrowser(playwright, timeoutMs);
   const fingerprints: DynamicEndpointFingerprint[] = [];
   const pageHost = new URL(pageUrl).hostname.replace(/^www\./, "");
   const allowedHosts = new Set([
@@ -47,9 +86,22 @@ export async function auditPublicDynamicEndpoints(
     void browser.close().catch(() => undefined);
   };
   options.signal?.addEventListener("abort", onAbort, { once: true });
+
+  console.info(
+    JSON.stringify({
+      event: "dynamic_endpoint_browser_started",
+      backend,
+      pageHost,
+    }),
+  );
+
   try {
     if (options.signal?.aborted) throw abortError(options.signal);
-    const page = await browser.newPage();
+    const defaultContext = browser.contexts()[0];
+    const page = defaultContext
+      ? defaultContext.pages()[0] ?? (await defaultContext.newPage())
+      : await browser.newPage();
+
     page.on("response", async (response) => {
       try {
         if (options.signal?.aborted) return;
@@ -94,7 +146,7 @@ export async function auditPublicDynamicEndpoints(
     });
     await page.goto(pageUrl, {
       waitUntil: "domcontentloaded",
-      timeout: options.timeoutMs ?? 15_000,
+      timeout: timeoutMs,
     });
     if (options.signal?.aborted) throw abortError(options.signal);
     if (options.searchText) {
@@ -143,7 +195,7 @@ export async function auditPublicDynamicEndpoints(
         .catch(() => undefined);
     }
     if (options.signal?.aborted) throw abortError(options.signal);
-    await page.waitForTimeout(Math.min(2000, options.timeoutMs ?? 2000));
+    await page.waitForTimeout(Math.min(2000, timeoutMs));
   } catch (error) {
     if (options.signal?.aborted) throw abortError(options.signal);
     throw error;
