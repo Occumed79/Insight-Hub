@@ -4,6 +4,7 @@ import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatc
 import { serperProvider } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
 import { exaProvider } from "../providers/exa";
+import { langsearchProvider } from "../providers/langsearch";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
@@ -29,9 +30,10 @@ export const MANUAL_RFP_PROVIDERS = new Set([
   "serper",
   "tavily",
   "exa",
+  "langsearch",
 ]);
 
-const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa"]);
+const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa", "langsearch"]);
 const DIRECT_RESULT_SHARE = 0.7;
 
 export interface ProviderRunResult {
@@ -176,18 +178,20 @@ async function fetchConfiguredAiDiscovery(options: {
   keywords?: string;
   signal?: AbortSignal;
 }): Promise<NormalizedOpportunity[]> {
-  const [useSerper, useTavily, useExa] = await Promise.all([
+  const [useSerper, useTavily, useExa, useLangsearch] = await Promise.all([
     serperProvider.isConfigured().catch(() => false),
     tavilyProvider.isConfigured().catch(() => false),
     exaProvider.isConfigured().catch(() => false),
+    langsearchProvider.isConfigured().catch(() => false),
   ]);
-  if (!useSerper && !useTavily && !useExa) return [];
+  if (!useSerper && !useTavily && !useExa && !useLangsearch) return [];
 
   const result = await webIntelligenceFetch({
     keywords: options.keywords,
     useSerper,
     useTavily,
     useExa,
+    useLangsearch,
     signal: options.signal,
   });
   for (const error of result.errors) {
@@ -200,6 +204,7 @@ async function fetchConfiguredAiDiscovery(options: {
       serper: useSerper,
       tavily: useTavily,
       exa: useExa,
+      langsearch: useLangsearch,
       candidates: result.stats.totalCandidates,
       preFiltered: result.stats.preFiltered,
       accepted: result.opportunities.length,
@@ -219,6 +224,7 @@ export async function fetchOneProvider(
       useSerper: provider === "serper",
       useTavily: provider === "tavily",
       useExa: provider === "exa",
+      useLangsearch: provider === "langsearch",
       signal: options.signal,
     });
     return applyProviderGuards(
