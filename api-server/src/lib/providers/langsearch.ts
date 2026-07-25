@@ -9,8 +9,20 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { composeAbortSignal } from "./abortSignals";
 
 const LANGSEARCH_BASE = "https://api.langsearch.com/v1";
+const LANGSEARCH_REQUEST_TIMEOUT_MS = 30_000;
+const TRANSIENT_COOLDOWN_MS = 15 * 60 * 1_000;
+const QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
+
+const KEY_SLOTS = [
+  { dbKey: "langsearchApiKey", envKey: "LANGSEARCH_API_KEY", slot: "primary" },
+  { dbKey: "langsearchApiKey2", envKey: "LANGSEARCH_API_KEY_2", slot: "secondary" },
+  { dbKey: "langsearchApiKey3", envKey: "LANGSEARCH_API_KEY_3", slot: "tertiary" },
+] as const;
+
+type LangsearchKeySlot = (typeof KEY_SLOTS)[number]["slot"];
 
 type LangsearchWebPage = {
   id?: string;
@@ -32,28 +44,71 @@ type LangsearchResponse = {
   webPages?: { value?: LangsearchWebPage[] };
 };
 
+interface ResolvedLangsearchKey {
+  value: string;
+  slot: LangsearchKeySlot;
+}
+
+interface LangsearchRequestResult {
+  pages: LangsearchWebPage[];
+  errors: string[];
+  slot?: LangsearchKeySlot;
+}
+
 export class LangsearchProvider implements DataSourceProvider {
   readonly name = "langsearch" as const;
 
-  private async getApiKey(): Promise<string | null> {
-    return resolveCredential("langsearchApiKey", "LANGSEARCH_API_KEY");
+  private readonly cooldownUntil = new Map<LangsearchKeySlot, number>();
+
+  private async getApiKeys(): Promise<ResolvedLangsearchKey[]> {
+    const resolved = await Promise.all(
+      KEY_SLOTS.map(async ({ dbKey, envKey, slot }) => ({
+        value: await resolveCredential(dbKey, envKey),
+        slot,
+      })),
+    );
+
+    const seen = new Set<string>();
+    return resolved.flatMap(({ value, slot }) => {
+      const normalized = value?.trim();
+      if (!normalized || seen.has(normalized)) return [];
+      seen.add(normalized);
+      return [{ value: normalized, slot }];
+    });
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return (await this.getApiKeys()).length > 0;
   }
 
-  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) return { records: [], total: 0, errors: ["LangSearch API key not configured"] };
+  private cooldownFor(status: number, body: string): number {
+    if (status === 401 || status === 403) return QUOTA_COOLDOWN_MS;
+    if (/quota|daily|exhaust|limit reached/i.test(body)) return QUOTA_COOLDOWN_MS;
+    return TRANSIENT_COOLDOWN_MS;
+  }
 
-    const queries = this.buildQueries(options.keywords);
-    const records = [];
+  private shouldFailOver(status: number): boolean {
+    return status === 401 || status === 403 || status === 408 || status === 409 || status === 429 || status >= 500;
+  }
+
+  private async requestWebSearch(
+    query: string,
+    options: { dateRange?: number; signal?: AbortSignal } = {},
+  ): Promise<LangsearchRequestResult> {
+    const keys = await this.getApiKeys();
+    if (keys.length === 0) {
+      return { pages: [], errors: ["LangSearch API key not configured"] };
+    }
+
+    const now = Date.now();
+    const available = keys.filter(({ slot }) => (this.cooldownUntil.get(slot) ?? 0) <= now);
+    const candidates = available.length > 0 ? available : keys;
     const errors: string[] = [];
 
-    for (const query of queries.slice(0, 4)) {
+    for (const { value: apiKey, slot } of candidates) {
+      const requestSignal = composeAbortSignal(LANGSEARCH_REQUEST_TIMEOUT_MS, options.signal);
       try {
-        const res = await fetch(`${LANGSEARCH_BASE}/web-search`, {
+        const response = await fetch(`${LANGSEARCH_BASE}/web-search`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -65,43 +120,96 @@ export class LangsearchProvider implements DataSourceProvider {
             freshness: this.freshnessForDateRange(options.dateRange),
             summary: true,
           }),
+          signal: requestSignal.signal,
         });
 
-        if (!res.ok) {
-          errors.push(`LangSearch error ${res.status}: ${await res.text().catch(() => "")}`);
+        const body = await response.text();
+        if (!response.ok) {
+          errors.push(`LangSearch ${slot} key HTTP ${response.status}: ${body.slice(0, 180)}`);
+          if (this.shouldFailOver(response.status)) {
+            this.cooldownUntil.set(slot, Date.now() + this.cooldownFor(response.status, body));
+            continue;
+          }
           continue;
         }
 
-        const data = await res.json() as LangsearchResponse;
+        let data: LangsearchResponse;
+        try {
+          data = JSON.parse(body) as LangsearchResponse;
+        } catch {
+          errors.push(`LangSearch ${slot} key returned malformed JSON`);
+          this.cooldownUntil.set(slot, Date.now() + TRANSIENT_COOLDOWN_MS);
+          continue;
+        }
+
         if (data.code && data.code !== 200) {
-          errors.push(`LangSearch API error ${data.code}: ${data.msg ?? "unknown error"}`);
+          const message = data.msg ?? "unknown error";
+          errors.push(`LangSearch ${slot} key API error ${data.code}: ${message}`);
+          this.cooldownUntil.set(
+            slot,
+            Date.now() + this.cooldownFor(data.code, message),
+          );
           continue;
         }
 
         const pages = data.data?.webPages?.value ?? data.webPages?.value ?? [];
-        if (pages.length === 0) {
-          errors.push(`LangSearch returned 0 web results for query: ${query}`);
-          continue;
+        if (errors.length > 0) {
+          console.warn(
+            JSON.stringify({
+              event: "langsearch_key_failover",
+              successfulSlot: slot,
+              failedAttempts: errors.length,
+            }),
+          );
         }
+        return { pages, errors: [], slot };
+      } catch (error) {
+        errors.push(
+          `LangSearch ${slot} key request failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.cooldownUntil.set(slot, Date.now() + TRANSIENT_COOLDOWN_MS);
+      } finally {
+        requestSignal.cleanup();
+      }
+    }
 
-        for (const page of pages) {
-          const url = page.url ?? page.displayUrl;
-          if (!url) continue;
+    return { pages: [], errors };
+  }
 
-          records.push({
-            id: `langsearch-${Buffer.from(url).toString("base64").slice(0, 16)}`,
-            title: page.name ?? url,
-            description: page.summary || page.snippet || "",
-            url,
-            source: "langsearch" as const,
-            providerName: "langsearch",
-            status: "active" as const,
-            relevanceScore: 50,
-            rawData: { query, page },
-          });
-        }
-      } catch (err: any) {
-        errors.push(`LangSearch: ${err.message ?? String(err)}`);
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    const queries = this.buildQueries(options.keywords);
+    const records = [];
+    const errors: string[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const query of queries.slice(0, 4)) {
+      const result = await this.requestWebSearch(query, {
+        dateRange: options.dateRange,
+        signal: options.signal,
+      });
+      errors.push(...result.errors);
+
+      if (result.pages.length === 0 && result.errors.length === 0) {
+        errors.push(`LangSearch returned 0 web results for query: ${query}`);
+        continue;
+      }
+
+      for (const page of result.pages) {
+        const url = page.url ?? page.displayUrl;
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+
+        records.push({
+          id: `langsearch-${Buffer.from(url).toString("base64").slice(0, 16)}`,
+          title: page.name ?? url,
+          description: page.summary || page.snippet || "",
+          url,
+          source: "langsearch" as const,
+          providerName: "LangSearch",
+          status: "active" as const,
+          relevanceScore: 50,
+          rawData: { query, page, keySlot: result.slot },
+        });
       }
     }
 
