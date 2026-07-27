@@ -2,6 +2,7 @@ import {
   DIRECT_RFP_PORTALS,
   type DirectRfpPortal,
 } from "./directRfpPortals";
+import { OPENGOV_TENANT_BY_PORTAL_ID } from "./openGov";
 import {
   isRegisteredPublicPortalAdapter,
   listRegisteredPublicPortalAdapterIds,
@@ -24,12 +25,43 @@ function safeHostname(value: string): string {
 const rawById = new Map(DIRECT_RFP_PORTALS.map((portal) => [portal.id, portal]));
 const registeredAdapterIds = listRegisteredPublicPortalAdapterIds();
 
+function runtimeEndpoint(
+  portalId: string,
+  metadata: PublicPortalRuntimeMetadata,
+): {
+  sourceUrl: string;
+  searchUrl: string;
+  domain: string;
+  accessMode: PublicPortalRuntimeMetadata["accessMode"];
+  adapterFamily: string;
+} {
+  const openGovTenant = OPENGOV_TENANT_BY_PORTAL_ID.get(portalId);
+  if (openGovTenant) {
+    const searchUrl = `https://procurement.opengov.com/portal/embed/${openGovTenant.tenantSlug}/project-list?departmentId=all&status=all`;
+    return {
+      sourceUrl: searchUrl,
+      searchUrl,
+      domain: "procurement.opengov.com",
+      accessMode: "public_html",
+      adapterFamily: "opengov-html",
+    };
+  }
+  const searchUrl = metadata.searchUrl || metadata.sourceUrl;
+  return {
+    sourceUrl: metadata.sourceUrl,
+    searchUrl,
+    domain: metadata.domain || safeHostname(searchUrl),
+    accessMode: metadata.accessMode,
+    adapterFamily: metadata.adapterFamily,
+  };
+}
+
 function buildRuntimePortal(
   portalId: string,
   metadata: PublicPortalRuntimeMetadata,
 ): DirectRfpPortal {
   const raw = rawById.get(portalId);
-  const searchUrl = metadata.searchUrl || metadata.sourceUrl;
+  const endpoint = runtimeEndpoint(portalId, metadata);
   return {
     id: portalId,
     name: raw?.name ?? metadata.buyerName,
@@ -37,15 +69,15 @@ function buildRuntimePortal(
     state: raw?.state ?? metadata.state,
     country: raw?.country ?? metadata.country,
     level: raw?.level ?? metadata.level,
-    url: metadata.sourceUrl,
-    searchUrl,
-    domain: metadata.domain || safeHostname(searchUrl),
-    accessMode: metadata.accessMode,
+    url: endpoint.sourceUrl,
+    searchUrl: endpoint.searchUrl,
+    domain: endpoint.domain,
+    accessMode: endpoint.accessMode,
     requiresKey: false,
     requiresLogin: false,
     tier: raw?.tier ?? 3,
     parserStatus: "ready_to_parse",
-    notes: `${raw?.notes ?? "Official public procurement source."} Published from the registered ${metadata.adapterFamily} runtime adapter; the runtime endpoint is authoritative.`,
+    notes: `${raw?.notes ?? "Official public procurement source."} Published from the registered ${endpoint.adapterFamily} runtime adapter; the runtime endpoint is authoritative.`,
     occumedFit: raw?.occumedFit,
     occumedServiceCategories: raw?.occumedServiceCategories,
     relevanceReasonCodes: raw?.relevanceReasonCodes,
