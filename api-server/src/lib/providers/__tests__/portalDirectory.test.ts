@@ -118,7 +118,7 @@ describe("procurement portal directory", () => {
 
   it("uses the adapter registry as the sole source-specific runtime authority", () => {
     assert.equal(isRegisteredPublicPortalAdapter("tx-esbd"), true);
-    assert.equal(isRegisteredPublicPortalAdapter("id-purchasing"), false);
+    assert.equal(isRegisteredPublicPortalAdapter("es-placsp"), false);
     assert.ok(listRegisteredPublicPortalAdapterIds().includes("tx-esbd"));
 
     const texas = portalConnectorCapability({
