@@ -1,12 +1,5 @@
-import { manualOnlyPortalReason } from "./manualOnlyPortalPolicy";
-import {
-  PLANETBIDS_AUTOMATION_BLOCK_REASON,
-  PLANETBIDS_WAF_BLOCKED_PORTAL_IDS,
-} from "./planetBidsAccessPolicy";
-import {
-  isRegisteredPublicPortalAdapter,
-  publicPortalRuntimeDisabledReason,
-} from "./publicPortalAdapterRegistry";
+import { isDeletedPortalSourceId } from "./deletedPortalPolicy";
+import { isRegisteredPublicPortalAdapter } from "./publicPortalAdapterRegistry";
 
 export const PORTAL_CONNECTOR_STATUSES = [
   "direct_api",
@@ -42,27 +35,13 @@ export interface PortalConnectorCapability {
   registrationKind: "direct_api" | "adapter" | "none";
 }
 
-function disabledCapability(
-  reason: string,
-  connectorLabel = "Manual browser access",
-): PortalConnectorCapability {
-  return {
-    connectorStatus: "directory_only",
-    connectorLabel,
-    connectorDescription: reason,
-    directCollection: false,
-    requiresSerper: false,
-    registeredAdapter: false,
-    runtimeRunnable: false,
-    unfinished: false,
-    disabled: true,
-    registrationKind: "none",
-  };
-}
-
 export function portalConnectorCapability(
   portal: PortalCapabilityInput,
 ): PortalConnectorCapability {
+  if (isDeletedPortalSourceId(portal.id)) {
+    throw new Error(`Deleted portal source cannot be classified: ${portal.id}`);
+  }
+
   if (portal.id === "us-sam-gov") {
     return {
       connectorStatus: "direct_api",
@@ -78,27 +57,9 @@ export function portalConnectorCapability(
     };
   }
 
-  if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(portal.id)) {
-    return disabledCapability(
-      PLANETBIDS_AUTOMATION_BLOCK_REASON,
-      "Manual browser access",
-    );
-  }
-
-  const manualOnlyReason = manualOnlyPortalReason(portal.id);
-  if (manualOnlyReason) {
-    return disabledCapability(manualOnlyReason, "Manual browser access");
-  }
-
-  const runtimeDisabled = publicPortalRuntimeDisabledReason(portal.id);
-  if (runtimeDisabled) {
-    return disabledCapability(runtimeDisabled, "Manual browser access");
-  }
-
   if (portal.requiresKey || portal.requiresLogin) {
-    return disabledCapability(
-      "The catalogued source requires credentials or authenticated vendor access and has no approved runtime adapter.",
-      "Manual browser access",
+    throw new Error(
+      `Authenticated or key-gated portal source must be deleted or backed by an approved API adapter: ${portal.id}`,
     );
   }
 
@@ -125,8 +86,8 @@ export function portalConnectorCapability(
     connectorStatus: unfinished ? "stub" : "directory_only",
     connectorLabel: unfinished ? "Unfinished source" : "Catalogued only",
     connectorDescription: unfinished
-      ? "The source is catalogued, but no registered adapter, approved official API, or deliberately vetted extractor exists."
-      : "The source is retained as inventory metadata and a manual link only.",
+      ? "The published official opportunity source still requires a registered adapter or approved extractor."
+      : "The published source is metadata-only and has no runtime collection authority.",
     directCollection: false,
     requiresSerper: false,
     registeredAdapter: false,
