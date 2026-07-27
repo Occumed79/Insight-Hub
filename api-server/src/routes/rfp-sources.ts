@@ -21,6 +21,10 @@ import {
 import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/publicPortalDiscovery";
 import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
 import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
+import {
+  PUBLISHED_DIRECT_RFP_PORTAL_IDS,
+  validatePublishedDirectRfpCatalogue,
+} from "../lib/providers/publishedDirectRfpCatalogue";
 import { publicPortalProvidersProvider } from "../lib/providers/publicPortalProviders";
 import {
   portalQuarantineDecision,
@@ -58,56 +62,56 @@ router.get("/rfp-sources", async (req, res) => {
     allPersistedHealth.map((status) => [status.sourceId, status]),
   );
 
-  const sources = ENRICHED_DIRECT_RFP_PORTALS.map(
-    withPortalConnectorCapability,
-  ).map((source) => {
-    const approvedCrawler = approvedCrawlerBySourceId.get(source.id);
-    const crawlerRunnable = Boolean(approvedCrawler);
-    const runtimeRunnable = source.runtimeRunnable || crawlerRunnable;
-    const registrationKind = source.registeredAdapter
-      ? source.registrationKind
-      : approvedCrawler?.kind === "json_endpoint"
-        ? "approved_api"
-        : approvedCrawler
-          ? "vetted_extractor"
-          : "none";
-    const quarantine = runtimeRunnable
-      ? portalQuarantineDecision(healthBySourceId.get(source.id))
-      : { quarantined: false as const };
+  const sources = ENRICHED_DIRECT_RFP_PORTALS.filter((source) =>
+    PUBLISHED_DIRECT_RFP_PORTAL_IDS.has(source.id),
+  )
+    .map(withPortalConnectorCapability)
+    .map((source) => {
+      const approvedCrawler = approvedCrawlerBySourceId.get(source.id);
+      const crawlerRunnable = Boolean(approvedCrawler);
+      const runtimeRunnable = source.runtimeRunnable || crawlerRunnable;
+      const registrationKind = source.registeredAdapter
+        ? source.registrationKind
+        : approvedCrawler?.kind === "json_endpoint"
+          ? "approved_api"
+          : approvedCrawler
+            ? "vetted_extractor"
+            : "none";
+      const quarantine = runtimeRunnable
+        ? portalQuarantineDecision(healthBySourceId.get(source.id))
+        : { quarantined: false as const };
 
-    return {
-      ...source,
-      connectorStatus: crawlerRunnable
-        ? ("generic_extraction" as const)
-        : source.connectorStatus,
-      connectorLabel: crawlerRunnable
-        ? approvedCrawler?.kind === "json_endpoint"
-          ? "Approved official API"
-          : "Vetted extractor"
-        : source.connectorLabel,
-      connectorDescription: crawlerRunnable
-        ? approvedCrawler?.kind === "json_endpoint"
-          ? "Collected through an explicitly approved official structured endpoint registered in the crawler registry."
-          : "Collected through a deliberately vetted bounded extractor registered in the crawler registry."
-        : source.connectorDescription,
-      runtimeRunnable,
-      registrationKind,
-      unfinished: runtimeRunnable ? false : source.unfinished,
-      quarantined: quarantine.quarantined,
-      quarantineReason: quarantine.reason,
-      quarantineReasonLabel: quarantine.reason
-        ? portalQuarantineReasonLabel(quarantine.reason)
-        : undefined,
-    };
-  });
+      return {
+        ...source,
+        connectorStatus: crawlerRunnable
+          ? ("generic_extraction" as const)
+          : source.connectorStatus,
+        connectorLabel: crawlerRunnable
+          ? approvedCrawler?.kind === "json_endpoint"
+            ? "Approved official API"
+            : "Vetted extractor"
+          : source.connectorLabel,
+        connectorDescription: crawlerRunnable
+          ? approvedCrawler?.kind === "json_endpoint"
+            ? "Collected through an explicitly approved official structured endpoint registered in the crawler registry."
+            : "Collected through a deliberately vetted bounded extractor registered in the crawler registry."
+          : source.connectorDescription,
+        runtimeRunnable,
+        registrationKind,
+        unfinished: false,
+        disabled: false,
+        quarantined: quarantine.quarantined,
+        quarantineReason: quarantine.reason,
+        quarantineReasonLabel: quarantine.reason
+          ? portalQuarantineReasonLabel(quarantine.reason)
+          : undefined,
+      };
+    })
+    .filter((source) => source.runtimeRunnable);
 
   const runtimeSourceIds = new Set(
     sources
-      .filter(
-        (source) =>
-          source.runtimeRunnable &&
-          source.registrationKind !== "direct_api",
-      )
+      .filter((source) => source.registrationKind !== "direct_api")
       .map((source) => source.id),
   );
 
@@ -187,8 +191,7 @@ router.get("/rfp-sources", async (req, res) => {
       if (source.relevanceEvidenceUrls.length > 0) acc.withEvidence += 1;
       else acc.withoutEvidence += 1;
       if (source.registeredAdapter) acc.registeredAdapters += 1;
-      if (source.runtimeRunnable && !source.quarantined) acc.runnable += 1;
-      if (source.unfinished) acc.unfinished += 1;
+      if (!source.quarantined) acc.runnable += 1;
       if (source.quarantined) acc.quarantined += 1;
       return acc;
     },
@@ -206,11 +209,13 @@ router.get("/rfp-sources", async (req, res) => {
       registeredAdapters: 0,
       runnable: 0,
       unfinished: 0,
+      disabled: 0,
       quarantined: 0,
     },
   );
 
-  const catalogValidation = validateDirectRfpPortalRelevanceCatalog();
+  const relevanceValidation = validateDirectRfpPortalRelevanceCatalog();
+  const publishedValidation = validatePublishedDirectRfpCatalogue();
   const runtimePlan = getPublicPortalSearchPlanDiagnostics({
     includeTier3,
     fullCoverage,
@@ -269,7 +274,10 @@ router.get("/rfp-sources", async (req, res) => {
       summary: portalHealthSummary,
       sources: portalHealthSources,
     },
-    validation: catalogValidation,
+    validation: {
+      published: publishedValidation,
+      relevance: relevanceValidation,
+    },
     runtimePlan,
     crawler: {
       spiderKinds: listSpiderKinds(),
