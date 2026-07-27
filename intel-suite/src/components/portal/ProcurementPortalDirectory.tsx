@@ -15,16 +15,9 @@ import { Badge } from "@/components/ui/badge";
 type PortalConnectorStatus =
   | "direct_api"
   | "direct_adapter"
-  | "generic_extraction"
-  | "serper_discovery"
-  | "directory_only"
-  | "stub";
+  | "generic_extraction";
 
-type PortalOperationalStatus =
-  | "runnable"
-  | "unfinished"
-  | "quarantined"
-  | "catalogued";
+type PortalOperationalStatus = "runnable" | "quarantined";
 
 type PortalRunOutcome =
   | "success"
@@ -46,15 +39,13 @@ type PortalSource = {
   connectorDescription: string;
   registeredAdapter: boolean;
   runtimeRunnable: boolean;
-  unfinished: boolean;
   quarantined?: boolean;
   quarantineReasonLabel?: string;
   registrationKind:
     | "direct_api"
     | "adapter"
     | "approved_api"
-    | "vetted_extractor"
-    | "none";
+    | "vetted_extractor";
   operationalStatus: PortalOperationalStatus;
 };
 
@@ -104,57 +95,42 @@ type PortalInventoryResponse = {
       catalogued: number;
       registeredAdapters: number;
       runnable: number;
-      unfinished: number;
       quarantined: number;
     };
     groups: InventoryGroup[];
   };
   health?: PortalHealth;
+  validation?: {
+    published?: {
+      clean: boolean;
+      rawRecords: number;
+      publishedRecords: number;
+      removedRecords: number;
+    };
+  };
 };
 
 function accessLabel(source: PortalSource): string {
-  if (source.accessMode === "api") return "Public API / search";
-  if (source.accessMode === "public_html") return "Public listings";
-  if (source.accessMode === "dynamic_html") return "Interactive portal";
-  if (source.accessMode === "csv") return "Structured public listing";
-  return "Supplier portal";
+  if (source.accessMode === "api") return "Public API";
+  if (source.accessMode === "csv") return "Structured listing";
+  return "Public listing";
 }
 
 function connectorBadgeClass(status: PortalConnectorStatus): string {
   if (status === "direct_api" || status === "direct_adapter") {
     return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
   }
-  if (status === "generic_extraction") {
-    return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
-  }
-  if (status === "stub") {
-    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
-  }
-  return "border-white/10 bg-white/5 text-white/55";
+  return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
 }
 
 function operationalBadgeClass(status: PortalOperationalStatus): string {
-  if (status === "runnable") {
-    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-  }
-  if (status === "unfinished") {
-    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
-  }
-  if (status === "quarantined") {
-    return "border-red-400/25 bg-red-400/10 text-red-200";
-  }
-  return "border-white/10 bg-white/5 text-white/55";
-}
-
-function operationalLabel(source: PortalSource): string {
-  if (source.operationalStatus === "runnable") return "Runnable";
-  if (source.operationalStatus === "unfinished") return "Needs adapter";
-  if (source.operationalStatus === "quarantined") return "Quarantined";
-  return "Catalogued only";
+  return status === "runnable"
+    ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+    : "border-red-400/25 bg-red-400/10 text-red-200";
 }
 
 function healthLabel(status?: PortalHealthStatus): string {
-  if (!status) return "No adapter health";
+  if (!status) return "Awaiting health check";
   if (status.quarantined || status.lastOutcome === "quarantined") {
     return "Quarantined";
   }
@@ -241,16 +217,14 @@ function PortalCard({
           variant="outline"
           className={`text-[9px] font-normal ${operationalBadgeClass(source.operationalStatus)}`}
         >
-          {operationalLabel(source)}
+          {source.operationalStatus === "runnable" ? "Runnable" : "Quarantined"}
         </Badge>
-        {source.runtimeRunnable && (
-          <Badge
-            variant="outline"
-            className={`text-[9px] font-normal ${healthBadgeClass(health)}`}
-          >
-            {healthLabel(health)}
-          </Badge>
-        )}
+        <Badge
+          variant="outline"
+          className={`text-[9px] font-normal ${healthBadgeClass(health)}`}
+        >
+          {healthLabel(health)}
+        </Badge>
       </div>
       <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
         {health?.currentlyFailing && health.lastFailureReason
@@ -265,12 +239,13 @@ export function ProcurementPortalDirectory() {
   const [inventory, setInventory] =
     useState<PortalInventoryResponse["inventory"]>();
   const [health, setHealth] = useState<PortalHealth>();
+  const [validation, setValidation] =
+    useState<PortalInventoryResponse["validation"]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
-  const [activeGroupId, setActiveGroupId] = useState<PortalOperationalStatus>(
-    "runnable",
-  );
+  const [activeGroupId, setActiveGroupId] =
+    useState<PortalOperationalStatus>("runnable");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -282,13 +257,15 @@ export function ProcurementPortalDirectory() {
       cache: "no-store",
     })
       .then(async (response) => {
-        if (!response.ok)
-          throw new Error("Source inventory could not be loaded.");
+        if (!response.ok) {
+          throw new Error("Source catalogue could not be loaded.");
+        }
         return response.json() as Promise<PortalInventoryResponse>;
       })
       .then((data) => {
         setInventory(data.inventory);
         setHealth(data.health);
+        setValidation(data.validation);
         const firstPopulatedGroup = data.inventory?.groups.find(
           (group) => group.sources.length > 0,
         );
@@ -343,29 +320,21 @@ export function ProcurementPortalDirectory() {
           </div>
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-white">
-              Catalogue & Adapter Authority
+              Runnable Procurement Sources
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Inventory metadata is separate from registered runtime collection.
+              Every published source is backed by an active runtime adapter.
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {inventory && (
-            <>
-              <Badge
-                variant="outline"
-                className="border-emerald-400/25 bg-emerald-400/10 text-[10px] font-normal text-emerald-200"
-              >
-                {inventory.summary.runnable.toLocaleString()} runnable
-              </Badge>
-              <Badge
-                variant="outline"
-                className="border-white/10 bg-white/5 text-[10px] font-normal text-white/60"
-              >
-                {inventory.total.toLocaleString()} catalogued
-              </Badge>
-            </>
+            <Badge
+              variant="outline"
+              className="border-emerald-400/25 bg-emerald-400/10 text-[10px] font-normal text-emerald-200"
+            >
+              {inventory.summary.runnable.toLocaleString()} runnable
+            </Badge>
           )}
           {expanded ? (
             <ChevronUp className="h-4 w-4 text-white/50" />
@@ -379,41 +348,44 @@ export function ProcurementPortalDirectory() {
         <div className="border-t border-white/10 px-5 py-5">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading source
-              authority...
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading runnable
+              sources...
             </div>
           ) : error || !inventory ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-muted-foreground">
-              {error ?? "Source inventory is unavailable."}
+              {error ?? "Source catalogue is unavailable."}
             </div>
           ) : (
             <div className="space-y-5">
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3.5">
                 <div className="text-[10px] uppercase tracking-wider text-white/45">
-                  Runtime authority summary
+                  Published catalogue
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  <Badge className="border border-white/10 bg-white/5 text-[10px] text-white/65">
-                    {inventory.summary.catalogued.toLocaleString()} catalogued
+                  <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
+                    {inventory.summary.runnable.toLocaleString()} runnable
                   </Badge>
                   <Badge className="border border-cyan-300/25 bg-cyan-300/10 text-[10px] text-cyan-100">
                     {inventory.summary.registeredAdapters.toLocaleString()} registered adapters
                   </Badge>
-                  <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
-                    {inventory.summary.runnable.toLocaleString()} enabled / runnable
-                  </Badge>
-                  <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
-                    {inventory.summary.unfinished.toLocaleString()} unfinished
-                  </Badge>
                   <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
                     {inventory.summary.quarantined.toLocaleString()} quarantined
                   </Badge>
+                  {validation?.published && (
+                    <Badge
+                      className={
+                        validation.published.clean
+                          ? "border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200"
+                          : "border border-red-400/25 bg-red-400/10 text-[10px] text-red-200"
+                      }
+                    >
+                      {validation.published.clean ? "catalogue clean" : "catalogue validation failed"}
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-                  A URL or catalogue row does not create a connection. Only a
-                  registered adapter, approved official API, or deliberately
-                  vetted extractor can become runnable. Inaccessible and
-                  manual-only records are deleted rather than displayed here.
+                  Unadapted, login-only, blocked, disabled, and manual-only
+                  records are removed instead of being presented as sources.
                 </p>
               </div>
 
@@ -422,23 +394,20 @@ export function ProcurementPortalDirectory() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-white/45">
-                        Runtime adapter health only
+                        Runtime adapter health
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
                           {health.summary.success.toLocaleString()} returned matches
                         </Badge>
                         <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
-                          {health.summary.noResults.toLocaleString()} no matched results
+                          {health.summary.noResults.toLocaleString()} valid empty results
                         </Badge>
                         <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
                           {health.summary.failing.toLocaleString()} failing
                         </Badge>
-                        <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
-                          {health.summary.quarantined.toLocaleString()} quarantined
-                        </Badge>
                         <Badge className="border border-white/10 bg-white/5 text-[10px] text-white/60">
-                          {health.summary.checked.toLocaleString()} adapters checked
+                          {health.summary.checked.toLocaleString()} checked
                         </Badge>
                       </div>
                     </div>
@@ -457,31 +426,29 @@ export function ProcurementPortalDirectory() {
                       </button>
                     )}
                   </div>
-                  <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-                    Catalogue-only and unfinished sources cannot inflate checked,
-                    success, no-result, failure, yield, or quarantine totals.
-                  </p>
                 </div>
               )}
 
               <div className="flex flex-wrap gap-1.5">
-                {inventory.groups.map((group) => {
-                  const selected = group.id === activeGroupId;
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => setActiveGroupId(group.id)}
-                      className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
-                        selected
-                          ? "border-primary/40 bg-primary/15 text-primary"
-                          : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/85"
-                      }`}
-                    >
-                      {group.title} · {group.sources.length.toLocaleString()}
-                    </button>
-                  );
-                })}
+                {inventory.groups
+                  .filter((group) => group.sources.length > 0)
+                  .map((group) => {
+                    const selected = group.id === activeGroupId;
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setActiveGroupId(group.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
+                          selected
+                            ? "border-primary/40 bg-primary/15 text-primary"
+                            : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/85"
+                        }`}
+                      >
+                        {group.title} · {group.sources.length.toLocaleString()}
+                      </button>
+                    );
+                  })}
               </div>
 
               {activeGroup && (
@@ -510,13 +477,6 @@ export function ProcurementPortalDirectory() {
                   </div>
                 </div>
               )}
-
-              <p className="text-[10px] leading-relaxed text-white/40">
-                Catalogue status describes inventory. Runtime status describes
-                actual collection authority. Search discovery may find a page,
-                but it never converts that catalogue entry into a connected
-                adapter.
-              </p>
             </div>
           )}
         </div>
