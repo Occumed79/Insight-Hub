@@ -1,0 +1,86 @@
+name: Catalogue quality and accuracy audit
+
+on:
+  pull_request:
+    paths:
+      - "api-server/src/lib/providers/directRfpPortals*.ts"
+      - "api-server/src/lib/providers/catalogueQualityAudit.ts"
+      - "api-server/src/lib/providers/publicPortalAdapterRegistry.ts"
+      - "api-server/src/lib/providers/__tests__/catalogueQualityAudit.test.ts"
+      - "scripts/src/run-catalogue-quality-audit.ts"
+      - "scripts/package.json"
+      - "package.json"
+      - ".github/workflows/catalogue-quality-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck catalogue audit
+        run: |
+          pnpm run typecheck:libs
+          pnpm --filter @workspace/api-server exec tsc -p tsconfig.json --noEmit
+          pnpm --filter @workspace/scripts run typecheck
+
+      - name: Test audit rules
+        run: >-
+          pnpm --filter @workspace/api-server exec node --import tsx --test
+          src/lib/providers/__tests__/catalogueQualityAudit.test.ts
+
+      - name: Generate full catalogue report
+        env:
+          CATALOGUE_AUDIT_REPORT_DIR: ${{ github.workspace }}/artifacts/catalogue-quality-audit
+          CATALOGUE_AUDIT_ENFORCE: "true"
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          pnpm run catalogue:audit 2>&1 | tee catalogue-quality-audit.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > catalogue-quality-audit.exit
+          exit 0
+
+      - name: Publish catalogue summary
+        if: always()
+        run: |
+          if [ -f artifacts/catalogue-quality-audit/catalogue-quality-audit.md ]; then
+            cat artifacts/catalogue-quality-audit/catalogue-quality-audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload catalogue audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-quality-audit
+          path: |
+            artifacts/catalogue-quality-audit
+            catalogue-quality-audit.log
+            catalogue-quality-audit.exit
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce catalogue quality gate
+        if: always()
+        run: exit "$(cat catalogue-quality-audit.exit 2>/dev/null || echo 1)"
