@@ -327,10 +327,10 @@ function oldestFirst(
 }
 
 /**
- * Selects a bounded, durable rotation instead of running every dedicated adapter
- * at once. Dedicated sources receive most of the batch, while generic sources
- * retain guaranteed capacity. Sources that repeatedly fail or repeatedly return
- * no records are quarantined and removed from the automated rotation.
+ * Selects a bounded, durable rotation from sources that the runtime registry has
+ * already authorized. Catalog flags are intentionally ignored here: callers
+ * must pass only registered adapters, approved official APIs, or deliberately
+ * vetted extractors. Quarantined sources are removed from automation.
  */
 export function selectFairPortalSources(
   sources: readonly PublicPortalSource[],
@@ -339,9 +339,7 @@ export function selectFairPortalSources(
   dedicatedSourceIds: ReadonlySet<string>,
   quarantineThresholds: PublicPortalQuarantineThresholds = {},
 ): PublicPortalSourceSelection {
-  const runnableSources = sources.filter(
-    (source) => source.enabled && source.verificationStatus === "verified",
-  );
+  const runnableSources = [...sources];
   const quarantined = runnableSources.flatMap((source) => {
     const decision = portalQuarantineDecision(
       statuses.get(source.id),

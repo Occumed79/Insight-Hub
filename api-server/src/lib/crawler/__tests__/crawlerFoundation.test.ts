@@ -4,8 +4,10 @@ import test from "node:test";
 import type { PublicPortalSource } from "../../providers/publicPortalProviders/catalog";
 import {
   defaultSpiderConfigForSource,
+  ensureSourceSpiderConfig,
   getSpider,
   initializeCrawlerSpiders,
+  isApprovedPublicPortalSpiderConfig,
   listSpiderKinds,
   registerSpiderConfig,
   resetSpiderRegistryForTests,
@@ -93,31 +95,45 @@ test("portal-family config delegates while preserving source-specific URLs", () 
   assert.deepEqual(resolved.allowedHosts, ["city.example.gov"]);
 });
 
-test("catalog static document and feed sources use shared portal-family templates", () => {
+test("catalog scraper metadata never creates a crawler registration", () => {
   resetSpiderRegistryForTests();
   initializeCrawlerSpiders();
-  const cases: Array<[
-    PublicPortalSource["scraperType"],
-    "static_listing" | "document" | "feed",
-  ]> = [
-    ["static_html", "static_listing"],
-    ["scrapy", "static_listing"],
-    ["pdf_links", "document"],
-    ["rss", "feed"],
+  const scraperTypes: PublicPortalSource["scraperType"][] = [
+    "static_html",
+    "scrapy",
+    "pdf_links",
+    "rss",
+    "public_json",
+    "playwright_public",
   ];
 
-  for (const [scraperType, expectedKind] of cases) {
-    const config = defaultSpiderConfigForSource(source(scraperType));
-    assert.ok(config, `missing generated config for ${scraperType}`);
-    assert.equal(config.kind, "portal_family");
-    registerSpiderConfig(config);
-    const resolved = resolveSpiderConfig(config);
-    assert.equal(resolved.kind, expectedKind);
-    assert.deepEqual(resolved.allowedHosts, ["procurement.example.gov"]);
-    assert.deepEqual(resolved.startUrls, [
-      "https://procurement.example.gov/opportunities",
-    ]);
+  for (const scraperType of scraperTypes) {
+    const portal = source(scraperType);
+    assert.equal(defaultSpiderConfigForSource(portal), undefined);
+    assert.equal(ensureSourceSpiderConfig(portal), undefined);
   }
+});
+
+test("an explicitly approved crawler registration is runtime-authorized", () => {
+  resetSpiderRegistryForTests();
+  initializeCrawlerSpiders();
+  const portal = source("public_json");
+  const approved: JsonEndpointSpiderConfig = {
+    id: `public-portal:${portal.id}`,
+    sourceId: portal.id,
+    kind: "json_endpoint",
+    enabled: true,
+    startUrls: ["https://procurement.example.gov/api/opportunities"],
+    allowedHosts: ["procurement.example.gov"],
+    endpointUrl: "https://procurement.example.gov/api/opportunities",
+    method: "GET",
+    pagination: { mode: "none" },
+    fields: { id: ["id"], title: ["title"] },
+    notes: "Approved from browser discovery candidate test-fixture",
+  };
+  registerSpiderConfig(approved);
+  assert.equal(isApprovedPublicPortalSpiderConfig(approved), true);
+  assert.equal(ensureSourceSpiderConfig(portal)?.id, approved.id);
 });
 
 test("JSON endpoint spider maps common procurement fields", async () => {

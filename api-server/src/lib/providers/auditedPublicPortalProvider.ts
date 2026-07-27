@@ -5,20 +5,6 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
-import { texasEsbdProvider } from "./texasEsbd";
-import { nyScrProvider } from "./nyScr";
-import { bsoPortalProviders } from "./bsoPortal";
-import { bonfireTenantProvider } from "./bonfirePortal";
-import { civicEngageTenantProvider } from "./civicEngageBids";
-import { ionWaveTenantProvider } from "./ionWavePortal";
-import { jaggaerSciQuestTenantProvider } from "./jaggaerSciQuest";
-import { openGovTenantProvider } from "./openGov";
-import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
-import { deepRecoveryProviders } from "./deepRecoveryProviders";
-import {
-  STATEWIDE_PORTAL_CONFIGS,
-  StatewideProcurementProvider,
-} from "./statewideProcurementPortals";
 import { publicPortalProvidersProvider as legacyPublicPortalInventory } from "./publicPortalProviders";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import {
@@ -28,13 +14,22 @@ import {
   selectFairPortalSources,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/portalHealthStore";
-import { runCrawlerForSource } from "../crawler";
+import {
+  hasApprovedPublicPortalSpiderConfig,
+  listApprovedDiscoverySpiderConfigs,
+  registerSpiderConfig,
+  runCrawlerForSource,
+} from "../crawler";
 import { composeAbortSignal } from "./abortSignals";
 import {
   partitionProviderRecordsForQuery,
   type ProviderQueryPartition,
 } from "./providerQueryMatch";
 import { fairMergeOpportunityGroups } from "./fairOpportunityMerge";
+import {
+  getRegisteredPublicPortalAdapter,
+  isRegisteredPublicPortalAdapter,
+} from "./publicPortalAdapterRegistry";
 
 const SOURCE_TIMEOUT_MS = 20_000;
 const ROTATION_BATCH_SIZE = 20;
@@ -42,38 +37,17 @@ const SOURCE_SCAN_LIMIT = 200;
 const RESULT_LIMIT = 100;
 const SOURCE_CONCURRENCY = 4;
 const QUERY_REJECTION_SAMPLE_LIMIT = 2;
-const CRAWLER_SCRAPER_TYPES = new Set([
-  "static_html",
-  "pdf_links",
-  "rss",
-  "public_json",
-]);
 
-const statewideProviders = new Map<string, DataSourceProvider>(
-  STATEWIDE_PORTAL_CONFIGS.map((config) => [
-    config.portalId,
-    new StatewideProcurementProvider(config),
-  ]),
-);
-
-function providerForSource(sourceId: string): DataSourceProvider | undefined {
-  if (sourceId === "tx-esbd") return texasEsbdProvider;
-  if (sourceId === "ny-contract-reporter") return nyScrProvider;
-  if (sourceId === CAL_EPROCURE_SOURCE.id) return calEprocureProvider;
-  return (
-    deepRecoveryProviders[sourceId] ??
-    bsoPortalProviders[sourceId] ??
-    jaggaerSciQuestTenantProvider(sourceId) ??
-    bonfireTenantProvider(sourceId) ??
-    ionWaveTenantProvider(sourceId) ??
-    civicEngageTenantProvider(sourceId) ??
-    openGovTenantProvider(sourceId) ??
-    statewideProviders.get(sourceId)
-  );
+async function hydrateApprovedRuntimeSpiders(): Promise<void> {
+  const approved = await listApprovedDiscoverySpiderConfigs().catch(() => []);
+  for (const config of approved) registerSpiderConfig(config);
 }
 
 function isRunnableSource(source: PublicPortalSource): boolean {
-  return Boolean(providerForSource(source.id)) || CRAWLER_SCRAPER_TYPES.has(source.scraperType);
+  return (
+    isRegisteredPublicPortalAdapter(source.id) ||
+    hasApprovedPublicPortalSpiderConfig(source.id)
+  );
 }
 
 function normalizeSourceRecord(
@@ -97,7 +71,7 @@ function normalizeSourceRecord(
         record.rawData?.sourceConfidence === "medium" ||
         record.rawData?.sourceConfidence === "high"
           ? record.rawData.sourceConfidence
-          : source.scraperType === "existing_parser"
+          : isRegisteredPublicPortalAdapter(source.id)
             ? "high"
             : "medium",
       tags: Array.from(
@@ -153,7 +127,7 @@ async function collectRawSourceRecords(
   options: FetchOptions,
   signal: AbortSignal,
 ): Promise<ProviderFetchResult> {
-  const provider = providerForSource(source.id);
+  const provider = getRegisteredPublicPortalAdapter(source.id);
   if (provider) {
     // Adapter-specific OR-word matchers are intentionally bypassed. The shared
     // query classifier runs after normalization and before any global cap.
@@ -166,12 +140,12 @@ async function collectRawSourceRecords(
     });
   }
 
-  if (!CRAWLER_SCRAPER_TYPES.has(source.scraperType)) {
+  if (!hasApprovedPublicPortalSpiderConfig(source.id)) {
     return {
       records: [],
       total: 0,
       errors: [
-        `${source.id}: no source-specific adapter or approved public-page crawler is registered`,
+        `${source.id}: no registered adapter, approved official API, or deliberately vetted extractor exists`,
       ],
     };
   }
@@ -186,7 +160,7 @@ async function collectRawSourceRecords(
     return {
       records: [],
       total: 0,
-      errors: [`${source.id}: no crawler configuration is available`],
+      errors: [`${source.id}: approved crawler registration is unavailable`],
     };
   }
   return {
@@ -315,13 +289,13 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
   private recordCount = 0;
   private lastError?: string;
 
+  async getRunnableSources(): Promise<PublicPortalSource[]> {
+    await hydrateApprovedRuntimeSpiders();
+    return this.inventory.filter(isRunnableSource);
+  }
+
   async isConfigured(): Promise<boolean> {
-    return this.inventory.some(
-      (source) =>
-        source.enabled &&
-        source.verificationStatus === "verified" &&
-        isRunnableSource(source),
-    );
+    return (await this.getRunnableSources()).length > 0;
   }
 
   getSources(): PublicPortalSource[] {
@@ -333,15 +307,10 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
     const statuses = await loadPublicPortalHealth().catch(
       () => new Map<string, PublicPortalSourceRunStatus>(),
     );
-    const runnable = this.inventory.filter(
-      (source) =>
-        source.enabled &&
-        source.verificationStatus === "verified" &&
-        isRunnableSource(source),
-    );
+    const runnable = await this.getRunnableSources();
     const dedicatedIds = new Set(
       runnable
-        .filter((source) => Boolean(providerForSource(source.id)))
+        .filter((source) => isRegisteredPublicPortalAdapter(source.id))
         .map((source) => source.id),
     );
     const selection = selectFairPortalSources(
@@ -385,11 +354,14 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
   }
 
   async getStatus(): Promise<ProviderStatus> {
+    const runnableIds = new Set(
+      (await this.getRunnableSources()).map((source) => source.id),
+    );
     const statuses = Array.from(
       (await loadPublicPortalHealth().catch(
         () => new Map<string, PublicPortalSourceRunStatus>(),
       )).values(),
-    );
+    ).filter((status) => runnableIds.has(status.sourceId));
     const failures = statuses.filter(
       (status) =>
         status.lastOutcome === "failed" ||
@@ -397,12 +369,12 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
     );
     return {
       name: this.name,
-      configured: await this.isConfigured(),
+      configured: runnableIds.size > 0,
       healthy: failures.length === 0,
       errorMessage:
         this.lastError ??
         (failures.length
-          ? `${failures.length} portal sources are currently failing`
+          ? `${failures.length} registered portal adapters are currently failing`
           : undefined),
       recordCount: statuses.reduce(
         (sum, status) => sum + status.matchedCount,
