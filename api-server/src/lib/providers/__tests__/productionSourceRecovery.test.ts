@@ -17,6 +17,9 @@ const {
   manualOnlyPortalReason,
 } = await import("../manualOnlyPortalPolicy");
 const { portalConnectorCapability } = await import("../portalCapabilities");
+const { getRegisteredPublicPortalAdapter } = await import(
+  "../publicPortalAdapterRegistry"
+);
 const { PUBLIC_PORTAL_SOURCES } = await import("../publicPortalProviders/catalog");
 const {
   isSupersededPublicPortalHealth,
@@ -185,12 +188,17 @@ test("disabled sources can never enter fair rotation", () => {
   const disabled = sourceById.get("ct-ctsource");
   assert.ok(active);
   assert.ok(disabled);
+  assert.ok(getRegisteredPublicPortalAdapter(active.id));
+  assert.equal(getRegisteredPublicPortalAdapter(disabled.id), undefined);
 
+  const runtimeAuthorized = [active, disabled].filter((source) =>
+    Boolean(getRegisteredPublicPortalAdapter(source.id)),
+  );
   const selection = selectFairPortalSources(
-    [active, disabled],
+    runtimeAuthorized,
     new Map(),
     2,
-    new Set([active.id, disabled.id]),
+    new Set(runtimeAuthorized.map((source) => source.id)),
   );
   assert.deepEqual(
     selection.selected.map((source) => source.id),
