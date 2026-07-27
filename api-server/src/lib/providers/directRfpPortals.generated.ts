@@ -45,10 +45,11 @@ import { GENERATED_DIRECT_RFP_PORTALS_044 } from "./directRfpPortals.generated.0
 import { GENERATED_DIRECT_RFP_PORTALS_045 } from "./directRfpPortals.generated.045";
 import { GENERATED_DIRECT_RFP_PORTALS_046 } from "./directRfpPortals.generated.046";
 import { GENERATED_DIRECT_RFP_PORTALS_047 } from "./directRfpPortals.generated.047";
+import { applyGeneratedPortalCatalogueCorrections } from "./directRfpPortalCatalogueCorrections";
 
 import type { DirectRfpPortal } from "./directRfpPortals";
 
-export const GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
+const RAW_GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   ...GENERATED_DIRECT_RFP_PORTALS_001,
   ...GENERATED_DIRECT_RFP_PORTALS_002,
   ...GENERATED_DIRECT_RFP_PORTALS_003,
@@ -97,3 +98,6 @@ export const GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] = [
   ...GENERATED_DIRECT_RFP_PORTALS_046,
   ...GENERATED_DIRECT_RFP_PORTALS_047,
 ];
+
+export const GENERATED_DIRECT_RFP_PORTALS: DirectRfpPortal[] =
+  applyGeneratedPortalCatalogueCorrections(RAW_GENERATED_DIRECT_RFP_PORTALS);
