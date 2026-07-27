@@ -4,6 +4,7 @@ import {
   type EnrichedDirectRfpPortal,
 } from "../directRfpPortalRelevanceCatalog";
 import { isDeletedPortalSourceId } from "../deletedPortalPolicy";
+import { OPENGOV_PORTAL_IDS } from "../openGov";
 import { registerOpenGovCountyExtensions } from "../openGovCountyExtensions";
 import { isPlanetBidsAutomationBlocked } from "../planetBidsAccessPolicy";
 import type { PortalFit } from "../portalRelevance";
@@ -120,6 +121,7 @@ function hasDirectPublicAccessMode(
 }
 
 function isPublishedDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
+  const registeredOpenGovAdapter = OPENGOV_PORTAL_IDS.has(portal.id);
   return (
     portal.country === "US" &&
     portal.level !== "federal" &&
@@ -127,8 +129,9 @@ function isPublishedDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
     !portal.requiresKey &&
     !isDeletedPortalSourceId(portal.id) &&
     !isPlanetBidsAutomationBlocked(portal.id) &&
-    !isAggregatorDomain(portal.domain) &&
-    hasDirectPublicAccessMode(portal.accessMode)
+    (registeredOpenGovAdapter ||
+      (!isAggregatorDomain(portal.domain) &&
+        hasDirectPublicAccessMode(portal.accessMode)))
   );
 }
 
@@ -138,17 +141,18 @@ function sourceLevelFromPortal(
   return portal.level === "district" ? "district" : "state";
 }
 
-function scraperTypeFromAccessMode(
-  accessMode: DirectRfpPortalAccessMode,
+function scraperTypeFromPortal(
+  portal: EnrichedDirectRfpPortal,
 ): PublicPortalScraperType {
-  if (accessMode === "api") return "public_json";
+  if (OPENGOV_PORTAL_IDS.has(portal.id)) return "existing_parser";
+  if (portal.accessMode === "api") return "public_json";
   return "static_html";
 }
 
 /**
- * The public catalogue contains only published, directly reachable records.
- * Disabled, manual-only, blocked, login-only, and unsupported dynamic records
- * are deleted rather than retained with a false connection state.
+ * The public catalogue contains only published, directly reachable records or
+ * sources backed by a registered shared-platform adapter. Disabled,
+ * manual-only, blocked, and login-only records are deleted.
  */
 export function derivePublicPortalSourcesFromDirectCatalog(
   portals: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS,
@@ -168,7 +172,7 @@ export function derivePublicPortalSourcesFromDirectCatalog(
       sourceLevel: sourceLevelFromPortal(portal),
       level: portal.level,
       accessMode: portal.accessMode,
-      scraperType: scraperTypeFromAccessMode(portal.accessMode),
+      scraperType: scraperTypeFromPortal(portal),
       enabled: true,
       verificationStatus: "verified",
       notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
@@ -279,7 +283,10 @@ export function validatePublicPortalCatalog(
     if (validatePublicPortalSource(source).length > 0) {
       invalidUrls.push(source.id);
     }
-    if (isAggregatorDomain(source.domain)) {
+    if (
+      isAggregatorDomain(source.domain) &&
+      !OPENGOV_PORTAL_IDS.has(source.id)
+    ) {
       aggregatorDomainLeakage.push(source.id);
     }
     const fit = source.occumedFit ?? "unclassified";
