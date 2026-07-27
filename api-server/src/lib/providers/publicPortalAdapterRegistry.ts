@@ -18,8 +18,9 @@ import {
   civicEngageTenantProvider,
   CIVICENGAGE_PORTAL_IDS,
 } from "./civicEngageBids";
-import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "./openGov";
+import { OPENGOV_PORTAL_IDS } from "./openGov";
 import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
+import { openGovHtmlTenantProvider } from "./openGovHtml";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import {
@@ -61,21 +62,12 @@ const STATIC_ADAPTER_IDS = new Set<string>([
   ...STATEWIDE_PORTAL_CONFIGS.map((config) => config.portalId),
 ]);
 
-/**
- * Compatibility guard for older callers. Deleted sources are absent from the
- * published catalogue and adapter inventory rather than retained as disabled
- * or manual-only records.
- */
 export function publicPortalRuntimeDisabledReason(
   sourceId: string,
 ): string | undefined {
   return deletedPortalReason(sourceId);
 }
 
-/**
- * The adapter registry is the sole authority for source-specific collection.
- * Deleted sources are rejected before provider resolution.
- */
 export function getRegisteredPublicPortalAdapter(
   sourceId: string,
 ): DataSourceProvider | undefined {
@@ -91,7 +83,7 @@ export function getRegisteredPublicPortalAdapter(
     bonfireTenantProvider(sourceId) ??
     ionWaveTenantProvider(sourceId) ??
     civicEngageTenantProvider(sourceId) ??
-    openGovTenantProvider(sourceId) ??
+    openGovHtmlTenantProvider(sourceId) ??
     statewideProviders.get(sourceId)
   );
 }
