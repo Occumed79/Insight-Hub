@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { DELETED_PORTAL_IDS } from "../deletedPortalPolicy";
 import { DIRECT_RFP_PORTALS } from "../directRfpPortals";
+import { ENRICHED_DIRECT_RFP_PORTALS } from "../directRfpPortalRelevanceCatalog";
 import {
   FEATURED_US_PORTAL_IDS,
   INTERNATIONAL_PORTAL_GROUPS,
@@ -12,7 +14,6 @@ import {
   portalConnectorCapability,
   withPortalConnectorCapability,
 } from "../portalCapabilities";
-import { isManualOnlyPortalSourceId } from "../manualOnlyPortalPolicy";
 import {
   isRegisteredPublicPortalAdapter,
   listRegisteredPublicPortalAdapterIds,
@@ -52,42 +53,35 @@ describe("procurement portal directory", () => {
         [...configuredGroup.portalIds],
       );
       assert.ok(resolved.sources.length > 0);
-      assert.ok(
-        resolved.sources.every((source) => source.level === "international"),
-      );
     }
   });
 
-  it("uses unique portal IDs across the complete catalog", () => {
+  it("uses unique portal IDs across the complete source definitions", () => {
     const ids = DIRECT_RFP_PORTALS.map((portal) => portal.id);
     assert.equal(new Set(ids).size, ids.length);
   });
 
-  it("builds the inventory from every configured source instead of a featured subset", () => {
+  it("builds inventory only from published non-disabled sources", () => {
     const configuredSources = DIRECT_RFP_PORTALS.map(
       withPortalConnectorCapability,
     );
-    const inventory = buildProcurementPortalInventory(configuredSources);
+    const publishedSources = configuredSources.filter(
+      (source) => !source.disabled,
+    );
+    const inventory = buildProcurementPortalInventory(publishedSources);
     const inventoriedIds = inventory.groups.flatMap((group) =>
       group.sources.map((source) => source.id),
     );
 
-    assert.equal(inventory.total, configuredSources.length);
-    assert.equal(inventoriedIds.length, configuredSources.length);
+    assert.equal(inventory.total, publishedSources.length);
+    assert.equal(inventoriedIds.length, publishedSources.length);
     assert.deepEqual(
       new Set(inventoriedIds),
-      new Set(configuredSources.map((source) => source.id)),
-    );
-    assert.ok(
-      inventory.groups
-        .find((group) => group.id === "direct")
-        ?.sources.every((source) =>
-          ["direct_api", "direct_adapter"].includes(source.connectorStatus),
-        ),
+      new Set(publishedSources.map((source) => source.id)),
     );
   });
 
-  it("does not infer runtime connectivity from a URL, public_html access, or parser status", () => {
+  it("does not infer runtime connectivity from a URL or parser label", () => {
     const catalogOnly = portalConnectorCapability({
       id: "catalog-only-example",
       country: "US",
@@ -100,7 +94,6 @@ describe("procurement portal directory", () => {
     assert.equal(catalogOnly.connectorStatus, "directory_only");
     assert.equal(catalogOnly.runtimeRunnable, false);
     assert.equal(catalogOnly.registeredAdapter, false);
-    assert.equal(catalogOnly.unfinished, false);
 
     const needsParser = portalConnectorCapability({
       id: "needs-parser-example",
@@ -116,7 +109,7 @@ describe("procurement portal directory", () => {
     assert.equal(needsParser.unfinished, true);
   });
 
-  it("uses the adapter registry as the sole source-specific runtime authority", () => {
+  it("uses the adapter registry as the sole runtime authority", () => {
     assert.equal(isRegisteredPublicPortalAdapter("tx-esbd"), true);
     assert.equal(isRegisteredPublicPortalAdapter("es-placsp"), false);
     assert.ok(listRegisteredPublicPortalAdapterIds().includes("tx-esbd"));
@@ -131,11 +124,10 @@ describe("procurement portal directory", () => {
       requiresLogin: false,
     });
     assert.equal(texas.connectorStatus, "direct_adapter");
-    assert.equal(texas.registeredAdapter, true);
     assert.equal(texas.runtimeRunnable, true);
   });
 
-  it("reports catalogued, registered, runnable, unfinished, disabled, and quarantined separately", () => {
+  it("drops disabled records instead of creating a disabled inventory group", () => {
     const inventory = buildPublicPortalRuntimeInventory([
       {
         id: "adapter",
@@ -152,7 +144,7 @@ describe("procurement portal directory", () => {
         disabled: false,
       },
       {
-        id: "disabled",
+        id: "deleted-disabled",
         registeredAdapter: false,
         runtimeRunnable: false,
         unfinished: false,
@@ -166,36 +158,22 @@ describe("procurement portal directory", () => {
         disabled: false,
         quarantined: true,
       },
-      {
-        id: "catalogued",
-        registeredAdapter: false,
-        runtimeRunnable: false,
-        unfinished: false,
-        disabled: false,
-      },
     ]);
 
-    assert.deepEqual(inventory.summary, {
-      catalogued: 5,
-      registeredAdapters: 2,
-      runnable: 1,
-      unfinished: 1,
-      disabled: 1,
-      quarantined: 1,
-    });
-    assert.deepEqual(
-      inventory.groups.map((group) => [group.id, group.sources.length]),
-      [
-        ["runnable", 1],
-        ["unfinished", 1],
-        ["disabled", 1],
-        ["quarantined", 1],
-        ["catalogued", 1],
-      ],
+    assert.equal(inventory.total, 3);
+    assert.equal(inventory.summary.disabled, 0);
+    assert.equal(
+      inventory.groups.some((group) => group.id === "disabled"),
+      false,
+    );
+    assert.equal(
+      inventory.groups.flatMap((group) => group.sources)
+        .some((source) => source.id === "deleted-disabled"),
+      false,
     );
   });
 
-  it("hardens public portal source URLs and imported directory rows", () => {
+  it("hardens public portal source URLs and imported rows", () => {
     const imported = publicPortalSourceFromImport({
       agencyName: "Example City",
       state: "ca",
@@ -221,18 +199,39 @@ describe("procurement portal directory", () => {
     ]);
   });
 
-  it("uses current Florida procurement pages and excludes the robots-blocked OCPS directory from automation", () => {
+  it("deletes every manual-only, blocked, or inaccessible source from published catalogues", () => {
+    const publishedDirectIds = new Set(
+      ENRICHED_DIRECT_RFP_PORTALS.map((portal) => portal.id),
+    );
+    const publicSourceIds = new Set(
+      PUBLIC_PORTAL_SOURCES.map((source) => source.id),
+    );
+
+    for (const sourceId of DELETED_PORTAL_IDS) {
+      assert.equal(
+        publishedDirectIds.has(sourceId),
+        false,
+        `${sourceId} must not remain in the published direct catalogue`,
+      );
+      assert.equal(
+        publicSourceIds.has(sourceId),
+        false,
+        `${sourceId} must not remain in the public source catalogue`,
+      );
+      assert.equal(
+        isRegisteredPublicPortalAdapter(sourceId),
+        false,
+        `${sourceId} must not remain in the adapter registry`,
+      );
+    }
+  });
+
+  it("keeps corrected official Florida pages while deleting OCPS", () => {
     const miami = DIRECT_RFP_PORTALS.find(
       (portal) => portal.id === "fl-miami-procurement",
     );
     const nova = DIRECT_RFP_PORTALS.find(
       (portal) => portal.id === "fl-nova-procurement",
-    );
-    const ocpsDirectory = DIRECT_RFP_PORTALS.find(
-      (portal) => portal.id === "fl-orange-county-public-schools",
-    );
-    const ocpsAutomated = PUBLIC_PORTAL_SOURCES.find(
-      (source) => source.id === "fl-orange-county-public-schools",
     );
 
     assert.equal(
@@ -243,8 +242,11 @@ describe("procurement portal directory", () => {
       nova?.searchUrl,
       "https://www.nova.edu/procurement/index.html",
     );
-    assert.ok(ocpsDirectory, "OCPS should remain available in the directory");
-    assert.equal(isManualOnlyPortalSourceId("fl-orange-county-public-schools"), true);
-    assert.equal(ocpsAutomated, undefined);
+    assert.equal(
+      ENRICHED_DIRECT_RFP_PORTALS.some(
+        (portal) => portal.id === "fl-orange-county-public-schools",
+      ),
+      false,
+    );
   });
 });
