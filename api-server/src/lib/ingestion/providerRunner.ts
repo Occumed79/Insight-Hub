@@ -5,6 +5,7 @@ import { serperProvider } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
 import { exaProvider } from "../providers/exa";
 import { langsearchProvider } from "../providers/langsearch";
+import { catalogueStaticOfficialAggregateProvider } from "../providers/catalogueStaticOfficialAdapters";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
@@ -239,29 +240,53 @@ export async function fetchOneProvider(
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
 
   if (provider === "publicPortalProviders") {
-    const [directResult, discoveryRecords] = await Promise.all([
-      source.fetch({
-        keywords: options.keywords,
-        dateRange: options.dateRange,
-        limit: 100,
-        signal: options.signal,
-      }),
-      fetchConfiguredAiDiscovery({
-        keywords: options.keywords,
-        signal: options.signal,
-      }).catch((error) => {
-        console.warn(
-          `[publicPortalProviders:ai-discovery] ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        return [];
-      }),
-    ]);
+    const [directResult, catalogueAdapterResult, discoveryRecords] =
+      await Promise.all([
+        source.fetch({
+          keywords: options.keywords,
+          dateRange: options.dateRange,
+          limit: 100,
+          signal: options.signal,
+        }),
+        catalogueStaticOfficialAggregateProvider
+          .fetch({
+            keywords: options.keywords,
+            dateRange: options.dateRange,
+            limit: 100,
+            signal: options.signal,
+          })
+          .catch((error) => ({
+            records: [],
+            total: 0,
+            errors: [
+              `catalogue-static-adapters: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ],
+          })),
+        fetchConfiguredAiDiscovery({
+          keywords: options.keywords,
+          signal: options.signal,
+        }).catch((error) => {
+          console.warn(
+            `[publicPortalProviders:ai-discovery] ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return [];
+        }),
+      ]);
     return applyProviderGuards(
       provider,
-      mergeDirectAndDiscovery(directResult.records, discoveryRecords, 100),
-      directResult.errors ?? [],
+      mergeDirectAndDiscovery(
+        [...directResult.records, ...catalogueAdapterResult.records],
+        discoveryRecords,
+        100,
+      ),
+      [
+        ...(directResult.errors ?? []),
+        ...(catalogueAdapterResult.errors ?? []),
+      ],
       options.keywords,
     );
   }
