@@ -19,9 +19,9 @@ function isExpectedDirectoryOnlyFailure(error: string): boolean {
 }
 
 /**
- * Registry-facing wrapper. Historical health rows remain persisted for audit,
- * but only source IDs that are still enabled and verified can affect current
- * provider health or record counts.
+ * Registry-facing wrapper. Historical catalog and health rows remain persisted
+ * for audit, but only runtime-authorized source IDs can affect collection,
+ * health, yield, or capability counts.
  *
  * The audited collector performs deterministic source-level filtering first.
  * This wrapper then applies Cloudflare semantic priority and Cerebras-led AI
@@ -56,13 +56,9 @@ class ProductionPublicPortalProvider implements DataSourceProvider {
 
   async getStatus(): Promise<ProviderStatus> {
     const activeIds = new Set(
-      auditedPublicPortalProvider
-        .getSources()
-        .filter(
-          (source) =>
-            source.enabled && source.verificationStatus === "verified",
-        )
-        .map((source) => source.id),
+      (await auditedPublicPortalProvider.getRunnableSources()).map(
+        (source) => source.id,
+      ),
     );
     const statuses = Array.from(
       (await loadPublicPortalHealth().catch(() => new Map())).values(),
@@ -75,10 +71,10 @@ class ProductionPublicPortalProvider implements DataSourceProvider {
     );
     return {
       name: this.name,
-      configured: await this.isConfigured(),
+      configured: activeIds.size > 0,
       healthy: failures.length === 0,
       errorMessage: failures.length
-        ? `${failures.length} active portal source${failures.length === 1 ? " is" : "s are"} currently failing`
+        ? `${failures.length} registered portal adapter${failures.length === 1 ? " is" : "s are"} currently failing`
         : undefined,
       recordCount: statuses.reduce(
         (sum, status) => sum + status.matchedCount,
