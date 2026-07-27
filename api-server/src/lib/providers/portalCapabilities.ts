@@ -42,10 +42,13 @@ export interface PortalConnectorCapability {
   registrationKind: "direct_api" | "adapter" | "none";
 }
 
-function disabledCapability(reason: string): PortalConnectorCapability {
+function disabledCapability(
+  reason: string,
+  connectorLabel = "Manual browser access",
+): PortalConnectorCapability {
   return {
     connectorStatus: "directory_only",
-    connectorLabel: "Disabled / manual access",
+    connectorLabel,
     connectorDescription: reason,
     directCollection: false,
     requiresSerper: false,
@@ -60,16 +63,6 @@ function disabledCapability(reason: string): PortalConnectorCapability {
 export function portalConnectorCapability(
   portal: PortalCapabilityInput,
 ): PortalConnectorCapability {
-  const runtimeDisabled = publicPortalRuntimeDisabledReason(portal.id);
-  if (runtimeDisabled) return disabledCapability(runtimeDisabled);
-
-  const manualOnlyReason = manualOnlyPortalReason(portal.id);
-  if (manualOnlyReason) return disabledCapability(manualOnlyReason);
-
-  if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(portal.id)) {
-    return disabledCapability(PLANETBIDS_AUTOMATION_BLOCK_REASON);
-  }
-
   if (portal.id === "us-sam-gov") {
     return {
       connectorStatus: "direct_api",
@@ -83,6 +76,30 @@ export function portalConnectorCapability(
       disabled: false,
       registrationKind: "direct_api",
     };
+  }
+
+  if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(portal.id)) {
+    return disabledCapability(
+      PLANETBIDS_AUTOMATION_BLOCK_REASON,
+      "Manual browser access",
+    );
+  }
+
+  const manualOnlyReason = manualOnlyPortalReason(portal.id);
+  if (manualOnlyReason) {
+    return disabledCapability(manualOnlyReason, "Manual browser access");
+  }
+
+  const runtimeDisabled = publicPortalRuntimeDisabledReason(portal.id);
+  if (runtimeDisabled) {
+    return disabledCapability(runtimeDisabled, "Manual browser access");
+  }
+
+  if (portal.requiresKey || portal.requiresLogin) {
+    return disabledCapability(
+      "The catalogued source requires credentials or authenticated vendor access and has no approved runtime adapter.",
+      "Manual browser access",
+    );
   }
 
   if (isRegisteredPublicPortalAdapter(portal.id)) {
@@ -99,12 +116,6 @@ export function portalConnectorCapability(
       disabled: false,
       registrationKind: "adapter",
     };
-  }
-
-  if (portal.requiresKey || portal.requiresLogin) {
-    return disabledCapability(
-      "The catalogued source requires credentials or authenticated vendor access and has no approved runtime adapter.",
-    );
   }
 
   const unfinished =
