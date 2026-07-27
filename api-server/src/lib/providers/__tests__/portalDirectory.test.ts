@@ -61,12 +61,9 @@ describe("procurement portal directory", () => {
     assert.equal(new Set(ids).size, ids.length);
   });
 
-  it("builds inventory only from published non-disabled sources", () => {
-    const configuredSources = DIRECT_RFP_PORTALS.map(
+  it("builds inventory only from the published source catalogue", () => {
+    const publishedSources = ENRICHED_DIRECT_RFP_PORTALS.map(
       withPortalConnectorCapability,
-    );
-    const publishedSources = configuredSources.filter(
-      (source) => !source.disabled,
     );
     const inventory = buildProcurementPortalInventory(publishedSources);
     const inventoriedIds = inventory.groups.flatMap((group) =>
@@ -78,6 +75,11 @@ describe("procurement portal directory", () => {
     assert.deepEqual(
       new Set(inventoriedIds),
       new Set(publishedSources.map((source) => source.id)),
+    );
+    assert.ok(
+      publishedSources.every(
+        (source) => !source.disabled && !DELETED_PORTAL_IDS.has(source.id),
+      ),
     );
   });
 
