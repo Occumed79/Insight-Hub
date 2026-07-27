@@ -1,8 +1,4 @@
-export type PortalOperationalStatus =
-  | "runnable"
-  | "unfinished"
-  | "quarantined"
-  | "catalogued";
+export type PortalOperationalStatus = "runnable" | "quarantined";
 
 export interface PortalRuntimeInventoryInput {
   id: string;
@@ -21,10 +17,12 @@ export type PortalRuntimeInventorySource<T extends PortalRuntimeInventoryInput> 
 export function portalOperationalStatus(
   source: PortalRuntimeInventoryInput,
 ): PortalOperationalStatus {
-  if (source.quarantined) return "quarantined";
-  if (source.runtimeRunnable) return "runnable";
-  if (source.unfinished) return "unfinished";
-  return "catalogued";
+  if (!source.runtimeRunnable || !source.registeredAdapter) {
+    throw new Error(
+      `Non-runnable source cannot enter the published runtime inventory: ${source.id}`,
+    );
+  }
+  return source.quarantined ? "quarantined" : "runnable";
 }
 
 const RUNTIME_GROUPS: Array<{
@@ -34,15 +32,9 @@ const RUNTIME_GROUPS: Array<{
 }> = [
   {
     id: "runnable",
-    title: "Enabled / Runnable",
+    title: "Runnable Sources",
     description:
-      "Sources backed by a registered adapter, approved official API, or deliberately vetted extractor.",
-  },
-  {
-    id: "unfinished",
-    title: "Unfinished Sources",
-    description:
-      "Published official opportunity sources that still require an adapter or approved extractor.",
+      "Published sources backed by a registered adapter or approved direct API.",
   },
   {
     id: "quarantined",
@@ -50,40 +42,26 @@ const RUNTIME_GROUPS: Array<{
     description:
       "Runtime-registered sources temporarily removed after validation failures, repeated failures, or repeated empty yield.",
   },
-  {
-    id: "catalogued",
-    title: "Catalogued Only",
-    description:
-      "Published source metadata with no runtime collection authority yet.",
-  },
 ];
 
 export function buildPublicPortalRuntimeInventory<
   T extends PortalRuntimeInventoryInput,
 >(sources: readonly T[]) {
-  // Disabled/manual-only records are deleted from the inventory rather than
-  // represented as a separate operational state.
-  const classified: Array<PortalRuntimeInventorySource<T>> = sources
-    .filter((source) => !source.disabled)
-    .map((source) => ({
+  const classified: Array<PortalRuntimeInventorySource<T>> = sources.map(
+    (source) => ({
       ...source,
       operationalStatus: portalOperationalStatus(source),
-    }));
+    }),
+  );
 
   return {
     total: classified.length,
     summary: {
       catalogued: classified.length,
-      registeredAdapters: classified.filter(
-        (source) => source.registeredAdapter,
-      ).length,
+      registeredAdapters: classified.length,
       runnable: classified.filter(
         (source) => source.operationalStatus === "runnable",
       ).length,
-      unfinished: classified.filter(
-        (source) => source.operationalStatus === "unfinished",
-      ).length,
-      disabled: 0,
       quarantined: classified.filter(
         (source) => source.operationalStatus === "quarantined",
       ).length,
