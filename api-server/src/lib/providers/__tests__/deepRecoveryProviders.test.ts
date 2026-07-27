@@ -6,6 +6,7 @@ import {
   michiganCgiAdvantageProvider,
   parseCgiAdvantageSolicitationRows,
 } from "../cgiAdvantagePublic";
+import { isDeletedPortalSourceId } from "../deletedPortalPolicy";
 import { georgiaGaworkProvider } from "../georgiaGawork";
 import {
   hawaiiHandsProvider,
@@ -15,9 +16,9 @@ import {
   minnesotaOspProvider,
   parseMinnesotaOspHtml,
 } from "../minnesotaOsp";
-import { newHampshireBidsProvider } from "../newHampshireBids";
 import { describeOfficialPortalRequestError } from "../officialPortalHttp";
 import { parseOregonBuysListingHtml } from "../oregonBuys";
+import { getRegisteredPublicPortalAdapter } from "../publicPortalAdapterRegistry";
 import { STATEWIDE_LIVE_TARGETS } from "../runStatewideLiveVerification";
 import {
   parseSouthDakotaPostingBoardJson,
@@ -133,15 +134,21 @@ describe("blocked-state deep recovery providers", () => {
     assert.equal(events[0]!.eventId, 19839);
   });
 
-  it("uses every dedicated recovery provider in the 50-state verifier", () => {
+  it("uses dedicated recovery providers in the 50-state diagnostic verifier", () => {
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "GA")?.provider, georgiaGaworkProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "HI")?.provider, hawaiiHandsProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "KY")?.provider, kentuckyCgiAdvantageProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MI")?.provider, michiganCgiAdvantageProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "MN")?.provider, minnesotaOspProvider);
-    assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "NH")?.provider, newHampshireBidsProvider);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "OR")?.provider, statePlatformAdapterProviders["or-oregonbuys"]);
     assert.equal(STATEWIDE_LIVE_TARGETS.find((target) => target.state === "SD")?.provider, southDakotaPostingBoardProvider);
+
+    assert.ok(
+      STATEWIDE_LIVE_TARGETS.some((target) => target.state === "NH"),
+      "New Hampshire remains covered by the diagnostic 50-state sweep",
+    );
+    assert.equal(isDeletedPortalSourceId("nh-bids"), true);
+    assert.equal(getRegisteredPublicPortalAdapter("nh-bids"), undefined);
   });
 
   it("reports the underlying network cause instead of generic fetch failed", () => {
