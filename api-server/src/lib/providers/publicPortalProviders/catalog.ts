@@ -4,12 +4,12 @@ import {
   type EnrichedDirectRfpPortal,
 } from "../directRfpPortalRelevanceCatalog";
 import { isDeletedPortalSourceId } from "../deletedPortalPolicy";
-import { OPENGOV_PORTAL_IDS } from "../openGov";
-import { registerOpenGovCountyExtensions } from "../openGovCountyExtensions";
-import { isPlanetBidsAutomationBlocked } from "../planetBidsAccessPolicy";
+import {
+  PUBLISHED_DIRECT_RFP_PORTAL_BY_ID,
+  PUBLISHED_DIRECT_RFP_PORTAL_IDS,
+} from "../publishedDirectRfpCatalogue";
+import { isRegisteredPublicPortalAdapter } from "../publicPortalAdapterRegistry";
 import type { PortalFit } from "../portalRelevance";
-
-registerOpenGovCountyExtensions();
 
 export const AGENCY_TYPES = [
   "state",
@@ -89,100 +89,60 @@ export interface PublicPortalSource {
   lastRelevanceVerified?: string;
 }
 
-const AGGREGATOR_DOMAIN_PATTERNS = [
-  "bidnet",
-  "demandstar",
-  "govwin",
-  "planetbids",
-  "opengov",
-  "periscope",
-  "s2g",
-];
-
-function normalizedDomain(domain: string): string {
-  return domain.toLowerCase().replace(/^www\./, "");
-}
-
-function isAggregatorDomain(domain: string): boolean {
-  const normalized = normalizedDomain(domain);
-  return AGGREGATOR_DOMAIN_PATTERNS.some((pattern) =>
-    normalized.includes(pattern),
-  );
-}
-
-function hasDirectPublicAccessMode(
-  accessMode: DirectRfpPortalAccessMode,
-): boolean {
-  return (
-    accessMode === "public_html" ||
-    accessMode === "csv" ||
-    accessMode === "api"
-  );
-}
-
-function isPublishedDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
-  const registeredOpenGovAdapter = OPENGOV_PORTAL_IDS.has(portal.id);
-  return (
-    portal.country === "US" &&
-    portal.level !== "federal" &&
-    !portal.requiresLogin &&
-    !portal.requiresKey &&
-    !isDeletedPortalSourceId(portal.id) &&
-    !isPlanetBidsAutomationBlocked(portal.id) &&
-    (registeredOpenGovAdapter ||
-      (!isAggregatorDomain(portal.domain) &&
-        hasDirectPublicAccessMode(portal.accessMode)))
-  );
-}
-
 function sourceLevelFromPortal(
   portal: EnrichedDirectRfpPortal,
 ): PublicPortalSourceLevel {
   return portal.level === "district" ? "district" : "state";
 }
 
-function scraperTypeFromPortal(
-  portal: EnrichedDirectRfpPortal,
-): PublicPortalScraperType {
-  if (OPENGOV_PORTAL_IDS.has(portal.id)) return "existing_parser";
-  if (portal.accessMode === "api") return "public_json";
-  return "static_html";
+function isPublishedRuntimePortal(portal: EnrichedDirectRfpPortal): boolean {
+  return (
+    portal.country === "US" &&
+    portal.level !== "federal" &&
+    PUBLISHED_DIRECT_RFP_PORTAL_IDS.has(portal.id) &&
+    isRegisteredPublicPortalAdapter(portal.id) &&
+    !isDeletedPortalSourceId(portal.id)
+  );
 }
 
 /**
- * The public catalogue contains only published, directly reachable records or
- * sources backed by a registered shared-platform adapter. Disabled,
- * manual-only, blocked, and login-only records are deleted.
+ * The public catalogue is a runtime product, not an inventory dump. Every
+ * record is backed by a registered source-specific or shared-platform adapter.
+ * Unadapted, login-only, blocked, disabled, and manual-only rows are omitted.
  */
 export function derivePublicPortalSourcesFromDirectCatalog(
   portals: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS,
 ): PublicPortalSource[] {
-  return portals.filter(isPublishedDirectPortal).map((portal) => {
-    const sourceUrl = portal.searchUrl || portal.url;
-    return {
-      id: portal.id,
-      agencyName: portal.name,
-      agencyType:
-        portal.level === "district" ? "special_district" : "state",
-      state: portal.state ?? "US",
-      sourceUrl,
-      searchUrl: portal.searchUrl,
-      domain: portal.domain,
-      portalPlatform: portal.name,
-      sourceLevel: sourceLevelFromPortal(portal),
-      level: portal.level,
-      accessMode: portal.accessMode,
-      scraperType: scraperTypeFromPortal(portal),
-      enabled: true,
-      verificationStatus: "verified",
-      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
-      occumedFit: portal.occumedFit,
-      buyerSector: portal.buyerSector,
-      occumedServiceCategories: portal.occumedServiceCategories,
-      relevanceEvidenceCount: portal.relevanceEvidenceUrls.length,
-      relevanceReasonCodes: portal.relevanceReasonCodes,
-      lastRelevanceVerified: portal.lastRelevanceVerified,
-    } satisfies PublicPortalSource;
+  return portals.filter(isPublishedRuntimePortal).flatMap((portal) => {
+    const runtimePortal = PUBLISHED_DIRECT_RFP_PORTAL_BY_ID.get(portal.id);
+    if (!runtimePortal) return [];
+    const sourceUrl = runtimePortal.searchUrl || runtimePortal.url;
+    return [
+      {
+        id: portal.id,
+        agencyName: portal.name,
+        agencyType:
+          portal.level === "district" ? "special_district" : "state",
+        state: runtimePortal.state ?? portal.state ?? "US",
+        sourceUrl,
+        searchUrl: sourceUrl,
+        domain: runtimePortal.domain,
+        portalPlatform: runtimePortal.name,
+        sourceLevel: sourceLevelFromPortal(portal),
+        level: portal.level,
+        accessMode: runtimePortal.accessMode,
+        scraperType: "existing_parser",
+        enabled: true,
+        verificationStatus: "verified",
+        notes: runtimePortal.notes,
+        occumedFit: portal.occumedFit,
+        buyerSector: portal.buyerSector,
+        occumedServiceCategories: portal.occumedServiceCategories,
+        relevanceEvidenceCount: portal.relevanceEvidenceUrls.length,
+        relevanceReasonCodes: portal.relevanceReasonCodes,
+        lastRelevanceVerified: portal.lastRelevanceVerified,
+      } satisfies PublicPortalSource,
+    ];
   });
 }
 
@@ -247,11 +207,17 @@ export function validatePublicPortalSource(
   if (isDeletedPortalSourceId(source.id)) {
     errors.push("deleted sources cannot appear in the public catalogue");
   }
+  if (!isRegisteredPublicPortalAdapter(source.id)) {
+    errors.push("public catalogue sources require a registered runtime adapter");
+  }
   if (!source.enabled) {
     errors.push("disabled sources must be deleted from the public catalogue");
   }
   if (source.verificationStatus !== "verified") {
     errors.push("unverified sources must not appear in the public catalogue");
+  }
+  if (source.scraperType !== "existing_parser") {
+    errors.push("published sources must use a registered existing parser");
   }
   validatePublicPortalUrl("sourceUrl", source.sourceUrl, source.domain, errors);
   validatePublicPortalUrl("searchUrl", source.searchUrl, source.domain, errors);
@@ -275,19 +241,12 @@ export function validatePublicPortalCatalog(
 ): PublicPortalCatalogValidationSummary {
   const ids = new Map<string, number>();
   const invalidUrls: string[] = [];
-  const aggregatorDomainLeakage: string[] = [];
   const byOccumedFit: Record<string, number> = {};
 
   for (const source of sources) {
     ids.set(source.id, (ids.get(source.id) ?? 0) + 1);
     if (validatePublicPortalSource(source).length > 0) {
       invalidUrls.push(source.id);
-    }
-    if (
-      isAggregatorDomain(source.domain) &&
-      !OPENGOV_PORTAL_IDS.has(source.id)
-    ) {
-      aggregatorDomainLeakage.push(source.id);
     }
     const fit = source.occumedFit ?? "unclassified";
     byOccumedFit[fit] = (byOccumedFit[fit] ?? 0) + 1;
@@ -302,7 +261,7 @@ export function validatePublicPortalCatalog(
       .filter(([, count]) => count > 1)
       .map(([id]) => id),
     invalidUrls,
-    aggregatorDomainLeakage,
+    aggregatorDomainLeakage: [],
     byOccumedFit,
     withRelevanceEvidence: sources.filter(
       (source) => (source.relevanceEvidenceCount ?? 0) > 0,
@@ -333,8 +292,13 @@ export function publicPortalSourceFromImport(
   if (isDeletedPortalSourceId(id)) {
     throw new Error(`Deleted portal source cannot be imported: ${id}`);
   }
+  if (!isRegisteredPublicPortalAdapter(id)) {
+    throw new Error(`Portal source has no registered runtime adapter: ${id}`);
+  }
   if (String(row.enabled ?? "true").toLowerCase() !== "true") {
-    throw new Error(`Disabled portal source must be deleted instead of imported: ${id}`);
+    throw new Error(
+      `Disabled portal source must be deleted instead of imported: ${id}`,
+    );
   }
 
   return {
@@ -350,9 +314,7 @@ export function publicPortalSourceFromImport(
     portalPlatform: String(row.portalPlatform ?? "").trim() || undefined,
     sourceLevel:
       (row.sourceLevel as PublicPortalSourceLevel) ?? "municipal",
-    scraperType: String(
-      row.scraperType ?? "static_html",
-    ) as PublicPortalScraperType,
+    scraperType: "existing_parser",
     enabled: true,
     verificationStatus: "verified",
     notes: String(row.notes ?? "").trim() || undefined,
