@@ -1,9 +1,12 @@
 import { Router } from "express";
 import {
+  isApprovedPublicPortalSpiderConfig,
+  listApprovedDiscoverySpiderConfigs,
   listCrawlFrontier,
   listDiscoveryCandidates,
   listSpiderConfigs,
   listSpiderKinds,
+  registerSpiderConfig,
   type CrawlFrontierState,
   type StoredDiscoveryCandidate,
 } from "../lib/crawler";
@@ -16,16 +19,14 @@ import {
   scanPortalEvidence,
 } from "../lib/providers/portalEvidenceScanner";
 import { getPublicPortalSearchPlanDiagnostics } from "../lib/providers/publicPortalDiscovery";
-import {
-  buildProcurementPortalDirectory,
-  buildProcurementPortalInventory,
-} from "../lib/providers/portalDirectory";
+import { buildProcurementPortalDirectory } from "../lib/providers/portalDirectory";
 import { withPortalConnectorCapability } from "../lib/providers/portalCapabilities";
 import { publicPortalProvidersProvider } from "../lib/providers/publicPortalProviders";
 import {
   portalQuarantineDecision,
   portalQuarantineReasonLabel,
 } from "../lib/providers/publicPortalProviders/portalHealthStore";
+import { buildPublicPortalRuntimeInventory } from "../lib/providers/publicPortalRuntimeInventory";
 
 const router = Router();
 
@@ -41,58 +42,79 @@ router.get("/rfp-sources", async (req, res) => {
       ? req.query.rotationKey
       : undefined;
 
+  const approvedCrawlerConfigs = await listApprovedDiscoverySpiderConfigs().catch(
+    () => [],
+  );
+  for (const config of approvedCrawlerConfigs) registerSpiderConfig(config);
+  const approvedCrawlerBySourceId = new Map(
+    approvedCrawlerConfigs
+      .filter(isApprovedPublicPortalSpiderConfig)
+      .map((config) => [config.sourceId, config]),
+  );
+
+  // Hydrate durable adapter health before runtime classification. Historical
+  // catalog-only rows remain stored for audit but are excluded below.
+  await publicPortalProvidersProvider.getStatus().catch(() => undefined);
+  const allPersistedHealth = publicPortalProvidersProvider.getSourceStatuses();
+  const healthBySourceId = new Map(
+    allPersistedHealth.map((status) => [status.sourceId, status]),
+  );
+
   const sources = ENRICHED_DIRECT_RFP_PORTALS.map(
     withPortalConnectorCapability,
-  );
+  ).map((source) => {
+    const approvedCrawler = approvedCrawlerBySourceId.get(source.id);
+    const crawlerRunnable = Boolean(approvedCrawler) && !source.disabled;
+    const runtimeRunnable = source.runtimeRunnable || crawlerRunnable;
+    const registrationKind = source.registeredAdapter
+      ? source.registrationKind
+      : approvedCrawler?.kind === "json_endpoint"
+        ? "approved_api"
+        : approvedCrawler
+          ? "vetted_extractor"
+          : "none";
+    const quarantine = runtimeRunnable
+      ? portalQuarantineDecision(healthBySourceId.get(source.id))
+      : { quarantined: false as const };
 
-  const totals = sources.reduce(
-    (acc, source) => {
-      acc.total += 1;
-      acc.byTier[source.tier] = (acc.byTier[source.tier] ?? 0) + 1;
-      acc.byLevel[source.level] = (acc.byLevel[source.level] ?? 0) + 1;
-      acc.byAccessMode[source.accessMode] =
-        (acc.byAccessMode[source.accessMode] ?? 0) + 1;
-      acc.byParserStatus[source.parserStatus] =
-        (acc.byParserStatus[source.parserStatus] ?? 0) + 1;
-      acc.byConnectorStatus[source.connectorStatus] =
-        (acc.byConnectorStatus[source.connectorStatus] ?? 0) + 1;
-      acc.byOccumedFit[source.occumedFit] =
-        (acc.byOccumedFit[source.occumedFit] ?? 0) + 1;
-      acc.byBuyerSector[source.buyerSector] =
-        (acc.byBuyerSector[source.buyerSector] ?? 0) + 1;
-      if (source.relevanceEvidenceUrls.length > 0) acc.withEvidence += 1;
-      else acc.withoutEvidence += 1;
-      return acc;
-    },
-    {
-      total: 0,
-      byTier: {} as Record<string, number>,
-      byLevel: {} as Record<string, number>,
-      byAccessMode: {} as Record<string, number>,
-      byParserStatus: {} as Record<string, number>,
-      byConnectorStatus: {} as Record<string, number>,
-      byOccumedFit: {} as Record<string, number>,
-      byBuyerSector: {} as Record<string, number>,
-      withEvidence: 0,
-      withoutEvidence: 0,
-    },
-  );
-
-  const catalogValidation = validateDirectRfpPortalRelevanceCatalog();
-  const runtimePlan = getPublicPortalSearchPlanDiagnostics({
-    includeTier3,
-    fullCoverage,
-    executionBudget,
-    rotationKey,
+    return {
+      ...source,
+      connectorStatus: crawlerRunnable
+        ? ("generic_extraction" as const)
+        : source.connectorStatus,
+      connectorLabel: crawlerRunnable
+        ? approvedCrawler?.kind === "json_endpoint"
+          ? "Approved official API"
+          : "Vetted extractor"
+        : source.connectorLabel,
+      connectorDescription: crawlerRunnable
+        ? approvedCrawler?.kind === "json_endpoint"
+          ? "Collected through an explicitly approved official structured endpoint registered in the crawler registry."
+          : "Collected through a deliberately vetted bounded extractor registered in the crawler registry."
+        : source.connectorDescription,
+      runtimeRunnable,
+      registrationKind,
+      unfinished: runtimeRunnable ? false : source.unfinished,
+      quarantined: quarantine.quarantined,
+      quarantineReason: quarantine.reason,
+      quarantineReasonLabel: quarantine.reason
+        ? portalQuarantineReasonLabel(quarantine.reason)
+        : undefined,
+    };
   });
-  const directory = buildProcurementPortalDirectory(sources);
-  const inventory = buildProcurementPortalInventory(sources);
 
-  // Hydrate the durable per-portal status cache before serializing it. Failure
-  // to read health must never make the source inventory endpoint unavailable.
-  await publicPortalProvidersProvider.getStatus().catch(() => undefined);
-  const portalHealthSources = publicPortalProvidersProvider
-    .getSourceStatuses()
+  const runtimeSourceIds = new Set(
+    sources
+      .filter(
+        (source) =>
+          source.runtimeRunnable &&
+          source.registrationKind !== "direct_api",
+      )
+      .map((source) => source.id),
+  );
+
+  const portalHealthSources = allPersistedHealth
+    .filter((status) => runtimeSourceIds.has(status.sourceId))
     .map((status) => {
       const quarantine = portalQuarantineDecision(status);
       const currentlyFailing =
@@ -126,6 +148,7 @@ router.get("/rfp-sources", async (req, res) => {
           : undefined,
       };
     });
+
   const portalHealthSummary = portalHealthSources.reduce(
     (summary, status) => {
       summary.checked += 1;
@@ -148,12 +171,73 @@ router.get("/rfp-sources", async (req, res) => {
     },
   );
 
+  const totals = sources.reduce(
+    (acc, source) => {
+      acc.total += 1;
+      acc.byTier[source.tier] = (acc.byTier[source.tier] ?? 0) + 1;
+      acc.byLevel[source.level] = (acc.byLevel[source.level] ?? 0) + 1;
+      acc.byAccessMode[source.accessMode] =
+        (acc.byAccessMode[source.accessMode] ?? 0) + 1;
+      acc.byParserStatus[source.parserStatus] =
+        (acc.byParserStatus[source.parserStatus] ?? 0) + 1;
+      acc.byConnectorStatus[source.connectorStatus] =
+        (acc.byConnectorStatus[source.connectorStatus] ?? 0) + 1;
+      acc.byOccumedFit[source.occumedFit] =
+        (acc.byOccumedFit[source.occumedFit] ?? 0) + 1;
+      acc.byBuyerSector[source.buyerSector] =
+        (acc.byBuyerSector[source.buyerSector] ?? 0) + 1;
+      if (source.relevanceEvidenceUrls.length > 0) acc.withEvidence += 1;
+      else acc.withoutEvidence += 1;
+      if (source.registeredAdapter) acc.registeredAdapters += 1;
+      if (source.runtimeRunnable && !source.quarantined) acc.runnable += 1;
+      if (source.unfinished) acc.unfinished += 1;
+      if (source.disabled) acc.disabled += 1;
+      if (source.quarantined) acc.quarantined += 1;
+      return acc;
+    },
+    {
+      total: 0,
+      byTier: {} as Record<string, number>,
+      byLevel: {} as Record<string, number>,
+      byAccessMode: {} as Record<string, number>,
+      byParserStatus: {} as Record<string, number>,
+      byConnectorStatus: {} as Record<string, number>,
+      byOccumedFit: {} as Record<string, number>,
+      byBuyerSector: {} as Record<string, number>,
+      withEvidence: 0,
+      withoutEvidence: 0,
+      registeredAdapters: 0,
+      runnable: 0,
+      unfinished: 0,
+      disabled: 0,
+      quarantined: 0,
+    },
+  );
+
+  const catalogValidation = validateDirectRfpPortalRelevanceCatalog();
+  const runtimePlan = getPublicPortalSearchPlanDiagnostics({
+    includeTier3,
+    fullCoverage,
+    executionBudget,
+    rotationKey,
+  });
+  const directory = buildProcurementPortalDirectory(sources);
+  const inventory = buildPublicPortalRuntimeInventory(sources);
+
   const [crawlFrontier, discoveryCandidates] = await Promise.all([
     listCrawlFrontier().catch(() => [] as CrawlFrontierState[]),
     listDiscoveryCandidates().catch(() => [] as StoredDiscoveryCandidate[]),
   ]);
+  const approvedCrawlerSourceIds = new Set(
+    approvedCrawlerConfigs
+      .filter(isApprovedPublicPortalSpiderConfig)
+      .map((config) => config.sourceId),
+  );
+  const runtimeCrawlFrontier = crawlFrontier.filter((state) =>
+    approvedCrawlerSourceIds.has(state.sourceId),
+  );
   const spiderConfigs = listSpiderConfigs();
-  const crawlerSummary = crawlFrontier.reduce(
+  const crawlerSummary = runtimeCrawlFrontier.reduce(
     (summary, state) => {
       summary.tracked += 1;
       summary.recordsFound += state.recordsFound;
@@ -190,6 +274,7 @@ router.get("/rfp-sources", async (req, res) => {
         sourceId: config.sourceId,
         kind: config.kind,
         enabled: config.enabled,
+        runtimeApproved: isApprovedPublicPortalSpiderConfig(config),
         startUrls: config.startUrls,
         allowedHosts: config.allowedHosts,
         scheduleMinutes: config.scheduleMinutes,
@@ -197,11 +282,17 @@ router.get("/rfp-sources", async (req, res) => {
         notes: config.notes,
       })),
       summary: crawlerSummary,
-      frontier: crawlFrontier,
+      frontier: runtimeCrawlFrontier,
       discoveryCandidates,
     },
     totals: {
       ...totals,
+      cataloguedCount: totals.total,
+      registeredAdapterCount: totals.registeredAdapters,
+      runnableCount: totals.runnable,
+      unfinishedCount: totals.unfinished,
+      disabledCount: totals.disabled,
+      quarantinedCount: totals.quarantined,
       verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,
       likelyCount: totals.byOccumedFit.likely ?? 0,
       broadCount: totals.byOccumedFit.broad ?? 0,
@@ -214,39 +305,38 @@ router.get("/rfp-sources", async (req, res) => {
     runtimePlan,
     rules: {
       includes: [
-        "official federal/state/district/international procurement portals",
+        "official federal/state/district/international procurement portals as catalog metadata",
         "Occu-Med fit classification based on official evidence or buyer propensity",
       ],
       excludes: [
-        "BidNet",
-        "DemandStar",
-        "GovWin",
-        "PlanetBids marketplace pages",
-        "OpenGov network pages",
-        "Periscope/S2G",
-        "generic search providers",
+        "catalog-only execution",
+        "needs-parser execution",
+        "automatic generic extraction inferred from a URL or public_html access mode",
+        "capability inflation from catalog size",
       ],
       ingestionPriority: [
-        "verified_high",
-        "likely",
-        "broad",
-        "insufficient_evidence",
-        "irrelevant",
+        "registered_adapter",
+        "approved_official_api",
+        "deliberately_vetted_extractor",
       ],
       connectorStatusPolicy: {
         direct_api: "Dedicated official structured API",
-        direct_adapter: "Portal-specific official listing adapter",
+        direct_adapter: "Source-specific adapter present in the runtime registry",
         generic_extraction:
-          "Generic one-page link/text extraction without portal-specific pagination",
+          "Explicitly approved official endpoint or deliberately vetted extractor",
         serper_discovery:
-          "Official-domain discovery through Serper; not a direct connector",
-        directory_only: "Manual directory link with no automated collection",
-        stub: "Scaffold only; collection is not implemented",
+          "Global web discovery only; never source-specific connection authority",
+        directory_only: "Catalog metadata and manual link only",
+        stub: "Unfinished source with no runtime collection authority",
       },
       coveragePolicy:
-        "Catalog inclusion proves an official source link only. connectorStatus reports the automation that actually exists; parserStatus remains legacy catalog-planning metadata and must not be presented as completed coverage.",
+        "The catalog is metadata and inventory only. Only the adapter registry, an approved official API registration, or a deliberately vetted extractor can make a source runnable.",
+      nonNegotiableRule:
+        "No registered adapter, approved official API, or deliberately vetted extractor means no ingestion.",
+      healthPolicy:
+        "Health, yield, failure, and crawler summaries include runtime-authorized sources only. Historical catalog-only health rows remain persisted for audit but do not inflate capability or failure counts.",
       crawlerPolicy:
-        "Crawler spiders are bounded to official allowed hosts, preserve durable frontier state, use conditional requests and backoff, and do not bypass authentication, CAPTCHAs, robots rules, or explicit access controls.",
+        "Crawler spiders are bounded to official allowed hosts and execute only after explicit approval; catalog scraperType and URL fields never self-authorize a crawler.",
     },
   });
 });
