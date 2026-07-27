@@ -19,6 +19,7 @@ import {
   CIVICENGAGE_PORTAL_IDS,
 } from "./civicEngageBids";
 import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "./openGov";
+import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import {
@@ -33,6 +34,8 @@ import {
   deletedPortalReason,
   isDeletedPortalSourceId,
 } from "./deletedPortalPolicy";
+
+registerOpenGovCountyExtensions();
 
 const statewideProviders = new Map<string, DataSourceProvider>(
   STATEWIDE_PORTAL_CONFIGS
