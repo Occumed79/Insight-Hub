@@ -8,8 +8,16 @@ import {
   buildProcurementPortalDirectory,
   buildProcurementPortalInventory,
 } from "../portalDirectory";
-import { withPortalConnectorCapability } from "../portalCapabilities";
+import {
+  portalConnectorCapability,
+  withPortalConnectorCapability,
+} from "../portalCapabilities";
 import { isManualOnlyPortalSourceId } from "../manualOnlyPortalPolicy";
+import {
+  isRegisteredPublicPortalAdapter,
+  listRegisteredPublicPortalAdapterIds,
+} from "../publicPortalAdapterRegistry";
+import { buildPublicPortalRuntimeInventory } from "../publicPortalRuntimeInventory";
 import {
   PUBLIC_PORTAL_SOURCES,
   publicPortalSourceFromImport,
@@ -77,12 +85,113 @@ describe("procurement portal directory", () => {
           ["direct_api", "direct_adapter"].includes(source.connectorStatus),
         ),
     );
-    assert.ok(
-      inventory.groups
-        .find((group) => group.id === "discovery")
-        ?.sources.every(
-          (source) => source.connectorStatus === "serper_discovery",
-        ),
+  });
+
+  it("does not infer runtime connectivity from a URL, public_html access, or parser status", () => {
+    const catalogOnly = portalConnectorCapability({
+      id: "catalog-only-example",
+      country: "US",
+      level: "state",
+      accessMode: "public_html",
+      parserStatus: "catalog_only",
+      requiresKey: false,
+      requiresLogin: false,
+    });
+    assert.equal(catalogOnly.connectorStatus, "directory_only");
+    assert.equal(catalogOnly.runtimeRunnable, false);
+    assert.equal(catalogOnly.registeredAdapter, false);
+    assert.equal(catalogOnly.unfinished, false);
+
+    const needsParser = portalConnectorCapability({
+      id: "needs-parser-example",
+      country: "US",
+      level: "state",
+      accessMode: "public_html",
+      parserStatus: "needs_parser",
+      requiresKey: false,
+      requiresLogin: false,
+    });
+    assert.equal(needsParser.connectorStatus, "stub");
+    assert.equal(needsParser.runtimeRunnable, false);
+    assert.equal(needsParser.unfinished, true);
+  });
+
+  it("uses the adapter registry as the sole source-specific runtime authority", () => {
+    assert.equal(isRegisteredPublicPortalAdapter("tx-esbd"), true);
+    assert.equal(isRegisteredPublicPortalAdapter("id-purchasing"), false);
+    assert.ok(listRegisteredPublicPortalAdapterIds().includes("tx-esbd"));
+
+    const texas = portalConnectorCapability({
+      id: "tx-esbd",
+      country: "US",
+      level: "state",
+      accessMode: "csv",
+      parserStatus: "ready_to_parse",
+      requiresKey: false,
+      requiresLogin: false,
+    });
+    assert.equal(texas.connectorStatus, "direct_adapter");
+    assert.equal(texas.registeredAdapter, true);
+    assert.equal(texas.runtimeRunnable, true);
+  });
+
+  it("reports catalogued, registered, runnable, unfinished, disabled, and quarantined separately", () => {
+    const inventory = buildPublicPortalRuntimeInventory([
+      {
+        id: "adapter",
+        registeredAdapter: true,
+        runtimeRunnable: true,
+        unfinished: false,
+        disabled: false,
+      },
+      {
+        id: "unfinished",
+        registeredAdapter: false,
+        runtimeRunnable: false,
+        unfinished: true,
+        disabled: false,
+      },
+      {
+        id: "disabled",
+        registeredAdapter: false,
+        runtimeRunnable: false,
+        unfinished: false,
+        disabled: true,
+      },
+      {
+        id: "quarantined",
+        registeredAdapter: true,
+        runtimeRunnable: true,
+        unfinished: false,
+        disabled: false,
+        quarantined: true,
+      },
+      {
+        id: "catalogued",
+        registeredAdapter: false,
+        runtimeRunnable: false,
+        unfinished: false,
+        disabled: false,
+      },
+    ]);
+
+    assert.deepEqual(inventory.summary, {
+      catalogued: 5,
+      registeredAdapters: 2,
+      runnable: 1,
+      unfinished: 1,
+      disabled: 1,
+      quarantined: 1,
+    });
+    assert.deepEqual(
+      inventory.groups.map((group) => [group.id, group.sources.length]),
+      [
+        ["runnable", 1],
+        ["unfinished", 1],
+        ["disabled", 1],
+        ["quarantined", 1],
+        ["catalogued", 1],
+      ],
     );
   });
 
