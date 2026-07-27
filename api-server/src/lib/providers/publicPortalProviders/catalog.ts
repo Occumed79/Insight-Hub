@@ -3,11 +3,9 @@ import {
   ENRICHED_DIRECT_RFP_PORTALS,
   type EnrichedDirectRfpPortal,
 } from "../directRfpPortalRelevanceCatalog";
+import { isDeletedPortalSourceId } from "../deletedPortalPolicy";
 import { registerOpenGovCountyExtensions } from "../openGovCountyExtensions";
-import {
-  isPlanetBidsAutomationBlocked,
-  PLANETBIDS_AUTOMATION_BLOCK_REASON,
-} from "../planetBidsAccessPolicy";
+import { isPlanetBidsAutomationBlocked } from "../planetBidsAccessPolicy";
 import type { PortalFit } from "../portalRelevance";
 
 registerOpenGovCountyExtensions();
@@ -27,6 +25,7 @@ export const AGENCY_TYPES = [
   "airport_authority",
   "port_authority",
 ] as const;
+
 export const SOURCE_LEVELS = [
   "state",
   "county",
@@ -34,6 +33,7 @@ export const SOURCE_LEVELS = [
   "district",
   "authority",
 ] as const;
+
 export const SCRAPER_TYPES = [
   "static_html",
   "scrapy",
@@ -43,6 +43,7 @@ export const SCRAPER_TYPES = [
   "pdf_links",
   "existing_parser",
 ] as const;
+
 export const VERIFICATION_STATUSES = [
   "verified",
   "needs_review",
@@ -97,59 +98,63 @@ const AGGREGATOR_DOMAIN_PATTERNS = [
   "s2g",
 ];
 
+function normalizedDomain(domain: string): string {
+  return domain.toLowerCase().replace(/^www\./, "");
+}
+
 function isAggregatorDomain(domain: string): boolean {
-  const normalized = domain.toLowerCase().replace(/^www\./, "");
+  const normalized = normalizedDomain(domain);
   return AGGREGATOR_DOMAIN_PATTERNS.some((pattern) =>
     normalized.includes(pattern),
   );
 }
 
-function isSafeDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
+function hasDirectPublicAccessMode(
+  accessMode: DirectRfpPortalAccessMode,
+): boolean {
+  return (
+    accessMode === "public_html" ||
+    accessMode === "csv" ||
+    accessMode === "api"
+  );
+}
+
+function isPublishedDirectPortal(portal: EnrichedDirectRfpPortal): boolean {
   return (
     portal.country === "US" &&
     portal.level !== "federal" &&
     !portal.requiresLogin &&
     !portal.requiresKey &&
-    !isAggregatorDomain(portal.domain)
+    !isDeletedPortalSourceId(portal.id) &&
+    !isPlanetBidsAutomationBlocked(portal.id) &&
+    !isAggregatorDomain(portal.domain) &&
+    hasDirectPublicAccessMode(portal.accessMode)
   );
 }
 
 function sourceLevelFromPortal(
   portal: EnrichedDirectRfpPortal,
 ): PublicPortalSourceLevel {
-  if (portal.level === "district") return "district";
-  return "state";
+  return portal.level === "district" ? "district" : "state";
 }
 
 function scraperTypeFromAccessMode(
   accessMode: DirectRfpPortalAccessMode,
 ): PublicPortalScraperType {
-  if (accessMode === "public_html") return "static_html";
-  if (accessMode === "csv") return "static_html";
   if (accessMode === "api") return "public_json";
-  return "playwright_public";
+  return "static_html";
 }
 
+/**
+ * The public catalogue contains only published, directly reachable records.
+ * Disabled, manual-only, blocked, login-only, and unsupported dynamic records
+ * are deleted rather than retained with a false connection state.
+ */
 export function derivePublicPortalSourcesFromDirectCatalog(
   portals: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS,
 ): PublicPortalSource[] {
-  return portals.filter(isSafeDirectPortal).map((portal) => {
+  return portals.filter(isPublishedDirectPortal).map((portal) => {
     const sourceUrl = portal.searchUrl || portal.url;
-    const planetBidsBlocked = isPlanetBidsAutomationBlocked(portal.id);
-    const enabled =
-      portal.country === "US" &&
-      portal.level !== "federal" &&
-      !portal.requiresLogin &&
-      !portal.requiresKey &&
-      !planetBidsBlocked &&
-      Boolean(sourceUrl) &&
-      !isAggregatorDomain(portal.domain) &&
-      (portal.accessMode === "public_html" ||
-        portal.accessMode === "csv" ||
-        portal.accessMode === "api");
-    const accessNote = planetBidsBlocked
-      ? ` ${PLANETBIDS_AUTOMATION_BLOCK_REASON}`
-      : "";
     return {
       id: portal.id,
       agencyName: portal.name,
@@ -164,9 +169,9 @@ export function derivePublicPortalSourcesFromDirectCatalog(
       level: portal.level,
       accessMode: portal.accessMode,
       scraperType: scraperTypeFromAccessMode(portal.accessMode),
-      enabled,
-      verificationStatus: enabled ? "verified" : "needs_review",
-      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.${accessNote}`,
+      enabled: true,
+      verificationStatus: "verified",
+      notes: `${portal.notes} Derived from directRfpPortals; accessMode=${portal.accessMode}; parserStatus=${portal.parserStatus}.`,
       occumedFit: portal.occumedFit,
       buyerSector: portal.buyerSector,
       occumedServiceCategories: portal.occumedServiceCategories,
@@ -196,9 +201,16 @@ function validatePublicPortalUrl(
     if (!/^https?:$/.test(parsed.protocol)) {
       errors.push(`${label} must be http(s)`);
     }
-    const normalizedExpectedDomain = expectedDomain?.replace(/^www\./, "").toLowerCase();
-    const normalizedUrlDomain = parsed.hostname.replace(/^www\./, "").toLowerCase();
-    if (normalizedExpectedDomain && normalizedUrlDomain !== normalizedExpectedDomain) {
+    const normalizedExpectedDomain = expectedDomain
+      ?.replace(/^www\./, "")
+      .toLowerCase();
+    const normalizedUrlDomain = parsed.hostname
+      .replace(/^www\./, "")
+      .toLowerCase();
+    if (
+      normalizedExpectedDomain &&
+      normalizedUrlDomain !== normalizedExpectedDomain
+    ) {
       errors.push(`${label} hostname must match domain`);
     }
   } catch {
@@ -212,21 +224,33 @@ export function validatePublicPortalSource(
   const errors: string[] = [];
   if (!source.id.trim()) errors.push("id is required");
   if (!source.agencyName.trim()) errors.push("agencyName is required");
-  if (!AGENCY_TYPES.includes(source.agencyType))
+  if (!AGENCY_TYPES.includes(source.agencyType)) {
     errors.push(`invalid agencyType: ${source.agencyType}`);
-  if (!SOURCE_LEVELS.includes(source.sourceLevel))
+  }
+  if (!SOURCE_LEVELS.includes(source.sourceLevel)) {
     errors.push(`invalid sourceLevel: ${source.sourceLevel}`);
-  if (!SCRAPER_TYPES.includes(source.scraperType))
+  }
+  if (!SCRAPER_TYPES.includes(source.scraperType)) {
     errors.push(`invalid scraperType: ${source.scraperType}`);
-  if (!VERIFICATION_STATUSES.includes(source.verificationStatus))
+  }
+  if (!VERIFICATION_STATUSES.includes(source.verificationStatus)) {
     errors.push(`invalid verificationStatus: ${source.verificationStatus}`);
+  }
   if (/\s/.test(source.id)) errors.push("id must not contain whitespace");
-  if (/^https?:\/\//i.test(source.domain)) errors.push("domain must be a hostname, not a URL");
+  if (/^https?:\/\//i.test(source.domain)) {
+    errors.push("domain must be a hostname, not a URL");
+  }
+  if (isDeletedPortalSourceId(source.id)) {
+    errors.push("deleted sources cannot appear in the public catalogue");
+  }
+  if (!source.enabled) {
+    errors.push("disabled sources must be deleted from the public catalogue");
+  }
+  if (source.verificationStatus !== "verified") {
+    errors.push("unverified sources must not appear in the public catalogue");
+  }
   validatePublicPortalUrl("sourceUrl", source.sourceUrl, source.domain, errors);
   validatePublicPortalUrl("searchUrl", source.searchUrl, source.domain, errors);
-  if (source.enabled && source.verificationStatus !== "verified") {
-    errors.push("enabled sources must be verified");
-  }
   return errors;
 }
 
@@ -252,27 +276,21 @@ export function validatePublicPortalCatalog(
 
   for (const source of sources) {
     ids.set(source.id, (ids.get(source.id) ?? 0) + 1);
-    if (validatePublicPortalSource(source).some((error) => error.includes("Url") || error.includes("domain"))) {
+    if (validatePublicPortalSource(source).length > 0) {
       invalidUrls.push(source.id);
     }
-    if (isAggregatorDomain(source.domain))
+    if (isAggregatorDomain(source.domain)) {
       aggregatorDomainLeakage.push(source.id);
+    }
     const fit = source.occumedFit ?? "unclassified";
     byOccumedFit[fit] = (byOccumedFit[fit] ?? 0) + 1;
   }
 
   return {
     totalDerivedSources: sources.length,
-    enabledSources: sources.filter((source) => source.enabled).length,
-    needsReviewSources: sources.filter(
-      (source) => source.verificationStatus === "needs_review",
-    ).length,
-    disabledLoginOrDynamicSources: sources.filter(
-      (source) =>
-        !source.enabled &&
-        (source.accessMode === "dynamic_html" ||
-          source.accessMode === "portal"),
-    ).length,
+    enabledSources: sources.length,
+    needsReviewSources: 0,
+    disabledLoginOrDynamicSources: 0,
     duplicateIds: [...ids.entries()]
       .filter(([, count]) => count > 1)
       .map(([id]) => id),
@@ -297,8 +315,21 @@ export function publicPortalSourceFromImport(
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "")}`,
   ).trim();
-  const normalizedSearchUrl = String(row.searchUrl ?? "").trim() || undefined;
-  const domain = sourceUrl ? normalizeDomain(sourceUrl) : normalizedSearchUrl ? normalizeDomain(normalizedSearchUrl) : "";
+  const normalizedSearchUrl =
+    String(row.searchUrl ?? "").trim() || undefined;
+  const domain = sourceUrl
+    ? normalizeDomain(sourceUrl)
+    : normalizedSearchUrl
+      ? normalizeDomain(normalizedSearchUrl)
+      : "";
+
+  if (isDeletedPortalSourceId(id)) {
+    throw new Error(`Deleted portal source cannot be imported: ${id}`);
+  }
+  if (String(row.enabled ?? "true").toLowerCase() !== "true") {
+    throw new Error(`Disabled portal source must be deleted instead of imported: ${id}`);
+  }
+
   return {
     id,
     agencyName,
@@ -315,10 +346,8 @@ export function publicPortalSourceFromImport(
     scraperType: String(
       row.scraperType ?? "static_html",
     ) as PublicPortalScraperType,
-    enabled: String(row.enabled ?? "false").toLowerCase() === "true",
-    verificationStatus: String(
-      row.verificationStatus ?? "needs_review",
-    ) as PublicPortalVerificationStatus,
+    enabled: true,
+    verificationStatus: "verified",
     notes: String(row.notes ?? "").trim() || undefined,
     occumedFit: row.occumedFit as PortalFit | undefined,
     buyerSector: String(row.buyerSector ?? "").trim() || undefined,
