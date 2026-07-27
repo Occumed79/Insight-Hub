@@ -25,6 +25,11 @@ export const DELETED_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
   ["ca-imperial-county", "The source is blocked by a browser/WAF challenge."],
 ]);
 
+/**
+ * These IDs are permanently excluded from published catalogue exports, runtime
+ * adapter registries, ingestion rotation, source-health reporting, and UI
+ * inventory. They are not represented as disabled or manual-only sources.
+ */
 export const DELETED_PORTAL_IDS = new Set(DELETED_PORTAL_REASONS.keys());
 
 export function isDeletedPortalSourceId(sourceId: string): boolean {
