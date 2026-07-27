@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "api-server/src/lib/providers/**"
+      - "api-server/src/lib/ingestion/providerRunner.ts"
+      - "api-server/src/lib/ingestion/__tests__/providerRunner.test.ts"
       - "api-server/src/routes/rfp-sources.ts"
       - "intel-suite/src/components/portal/ProcurementPortalDirectory.tsx"
       - "scripts/src/run-catalogue-*.ts"
@@ -51,6 +53,7 @@ jobs:
           src/lib/providers/__tests__/catalogueCompletionAudit.test.ts
           src/lib/providers/__tests__/catalogueStaticOfficialAdapters.test.ts
           src/lib/providers/__tests__/portalDirectory.test.ts
+          src/lib/ingestion/__tests__/providerRunner.test.ts
 
       - name: Audit every catalogue record
         env:
