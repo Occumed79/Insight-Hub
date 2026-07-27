@@ -7,6 +7,7 @@ on:
       - "api-server/src/routes/rfp-sources.ts"
       - "intel-suite/src/components/portal/ProcurementPortalDirectory.tsx"
       - "scripts/src/run-catalogue-*.ts"
+      - "scripts/src/diagnose-opengov-listing.ts"
       - "scripts/package.json"
       - "package.json"
       - ".github/workflows/catalogue-completion-verification.yml"
@@ -73,6 +74,20 @@ jobs:
           path: artifacts/catalogue-completion-audit
           if-no-files-found: error
           retention-days: 30
+
+      - name: Capture OpenGov response shape
+        env:
+          OPENGOV_DIAGNOSTIC_DIR: ${{ github.workspace }}/artifacts/opengov-diagnostic
+        run: node --import tsx scripts/src/diagnose-opengov-listing.ts
+
+      - name: Upload OpenGov diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengov-diagnostic
+          path: artifacts/opengov-diagnostic
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verify every published adapter live
         env:
