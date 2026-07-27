@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DIRECT_RFP_PORTALS } from "../directRfpPortals";
-import {
+process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
+process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
+
+const { DIRECT_RFP_PORTALS } = await import("../directRfpPortals");
+const { isDeletedPortalSourceId } = await import("../deletedPortalPolicy");
+const {
   CATALOGUE_STATIC_OFFICIAL_PORTAL_IDS,
   CATALOGUE_STATIC_OFFICIAL_TENANTS,
   catalogueStaticOfficialAggregateProvider,
   catalogueStaticOfficialProviders,
-} from "../catalogueStaticOfficialAdapters";
-import {
+} = await import("../catalogueStaticOfficialAdapters");
+const {
   getRegisteredPublicPortalAdapter,
   listRegisteredPublicPortalAdapterIds,
-} from "../publicPortalAdapterRegistry";
+} = await import("../publicPortalAdapterRegistry");
 
-const EXPECTED_IDS = [
+const DEFINED_IDS = [
   "ca-alameda-county",
   "ca-inyo-county",
   "ca-port-of-los-angeles",
@@ -36,24 +40,29 @@ const EXPECTED_IDS = [
 ] as const;
 
 describe("catalogue static official adapters", () => {
-  it("registers the complete first wave as explicit runtime adapters", () => {
-    assert.equal(CATALOGUE_STATIC_OFFICIAL_TENANTS.length, EXPECTED_IDS.length);
+  it("registers only live-approved static sources", () => {
+    assert.equal(CATALOGUE_STATIC_OFFICIAL_TENANTS.length, DEFINED_IDS.length);
     assert.deepEqual(
       [...CATALOGUE_STATIC_OFFICIAL_PORTAL_IDS].sort(),
-      [...EXPECTED_IDS].sort(),
+      [...DEFINED_IDS].sort(),
     );
 
     const registered = new Set(listRegisteredPublicPortalAdapterIds());
-    for (const sourceId of EXPECTED_IDS) {
+    for (const sourceId of DEFINED_IDS) {
       assert.ok(catalogueStaticOfficialProviders[sourceId], `${sourceId} provider exists`);
-      assert.ok(getRegisteredPublicPortalAdapter(sourceId), `${sourceId} is runnable`);
-      assert.ok(registered.has(sourceId), `${sourceId} is listed by the adapter registry`);
+      if (isDeletedPortalSourceId(sourceId)) {
+        assert.equal(getRegisteredPublicPortalAdapter(sourceId), undefined, sourceId);
+        assert.equal(registered.has(sourceId), false, sourceId);
+      } else {
+        assert.ok(getRegisteredPublicPortalAdapter(sourceId), `${sourceId} is runnable`);
+        assert.ok(registered.has(sourceId), `${sourceId} is listed by the adapter registry`);
+      }
     }
   });
 
-  it("only registers source IDs that exist in the procurement catalogue", () => {
+  it("only defines source IDs that exist in the procurement inventory", () => {
     const catalogueIds = new Set(DIRECT_RFP_PORTALS.map((portal) => portal.id));
-    for (const sourceId of EXPECTED_IDS) {
+    for (const sourceId of DEFINED_IDS) {
       assert.ok(catalogueIds.has(sourceId), `${sourceId} exists in DIRECT_RFP_PORTALS`);
     }
   });
