@@ -39,6 +39,18 @@ export function applyManualOnlyPortalPolicy(
 
 let deletionPolicyRegistered = false;
 
+function shouldDeleteDirectPortal(portal: {
+  id: string;
+  requiresLogin: boolean;
+  requiresKey: boolean;
+}): boolean {
+  return (
+    isDeletedPortalSourceId(portal.id) ||
+    portal.requiresLogin ||
+    (portal.requiresKey && portal.id !== "us-sam-gov")
+  );
+}
+
 /**
  * Remove formerly manual-only/disabled records from the published direct and
  * statewide catalogues. Historical source definitions may remain in generated
@@ -51,14 +63,19 @@ export function registerManualOnlyDirectPortalPolicy(): void {
 
   for (let index = ENRICHED_DIRECT_RFP_PORTALS.length - 1; index >= 0; index -= 1) {
     const portal = ENRICHED_DIRECT_RFP_PORTALS[index];
-    if (portal && isDeletedPortalSourceId(portal.id)) {
+    if (portal && shouldDeleteDirectPortal(portal)) {
       ENRICHED_DIRECT_RFP_PORTALS.splice(index, 1);
     }
   }
 
   for (let index = STATEWIDE_PROCUREMENT_SOURCES.length - 1; index >= 0; index -= 1) {
     const source = STATEWIDE_PROCUREMENT_SOURCES[index];
-    if (source && isDeletedPortalSourceId(source.id)) {
+    if (
+      source &&
+      (isDeletedPortalSourceId(source.id) ||
+        source.enabled === false ||
+        source.verificationStatus !== "verified")
+    ) {
       STATEWIDE_PROCUREMENT_SOURCES.splice(index, 1);
     }
   }
