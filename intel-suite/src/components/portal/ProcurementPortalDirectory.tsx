@@ -12,7 +12,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 
- type PortalConnectorStatus =
+type PortalConnectorStatus =
   | "direct_api"
   | "direct_adapter"
   | "generic_extraction"
@@ -20,11 +20,19 @@ import { Badge } from "@/components/ui/badge";
   | "directory_only"
   | "stub";
 
+type PortalOperationalStatus =
+  | "runnable"
+  | "unfinished"
+  | "disabled"
+  | "quarantined"
+  | "catalogued";
+
 type PortalRunOutcome =
   | "success"
   | "no_results"
   | "failed"
-  | "validation_failed";
+  | "validation_failed"
+  | "quarantined";
 
 type PortalSource = {
   id: string;
@@ -37,6 +45,19 @@ type PortalSource = {
   connectorStatus: PortalConnectorStatus;
   connectorLabel: string;
   connectorDescription: string;
+  registeredAdapter: boolean;
+  runtimeRunnable: boolean;
+  unfinished: boolean;
+  disabled: boolean;
+  quarantined?: boolean;
+  quarantineReasonLabel?: string;
+  registrationKind:
+    | "direct_api"
+    | "adapter"
+    | "approved_api"
+    | "vetted_extractor"
+    | "none";
+  operationalStatus: PortalOperationalStatus;
 };
 
 type PortalHealthStatus = {
@@ -55,6 +76,8 @@ type PortalHealthStatus = {
   consecutiveFailures: number;
   lastOutcome: PortalRunOutcome;
   currentlyFailing: boolean;
+  quarantined?: boolean;
+  quarantineReasonLabel?: string;
 };
 
 type PortalHealth = {
@@ -63,13 +86,14 @@ type PortalHealth = {
     success: number;
     noResults: number;
     failing: number;
+    quarantined: number;
     validationFailed: number;
   };
   sources: PortalHealthStatus[];
 };
 
 type InventoryGroup = {
-  id: string;
+  id: PortalOperationalStatus;
   title: string;
   description: string;
   sources: PortalSource[];
@@ -78,6 +102,14 @@ type InventoryGroup = {
 type PortalInventoryResponse = {
   inventory?: {
     total: number;
+    summary: {
+      catalogued: number;
+      registeredAdapters: number;
+      runnable: number;
+      unfinished: number;
+      disabled: number;
+      quarantined: number;
+    };
     groups: InventoryGroup[];
   };
   health?: PortalHealth;
@@ -96,31 +128,62 @@ function connectorBadgeClass(status: PortalConnectorStatus): string {
     return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
   }
   if (status === "generic_extraction") {
-    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+    return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
   }
-  if (status === "serper_discovery") {
-    return "border-sky-300/25 bg-sky-300/10 text-sky-100";
+  if (status === "stub") {
+    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
   }
   return "border-white/10 bg-white/5 text-white/55";
 }
 
+function operationalBadgeClass(status: PortalOperationalStatus): string {
+  if (status === "runnable") {
+    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  }
+  if (status === "unfinished") {
+    return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+  }
+  if (status === "quarantined") {
+    return "border-red-400/25 bg-red-400/10 text-red-200";
+  }
+  if (status === "disabled") {
+    return "border-orange-300/25 bg-orange-300/10 text-orange-100";
+  }
+  return "border-white/10 bg-white/5 text-white/55";
+}
+
+function operationalLabel(source: PortalSource): string {
+  if (source.operationalStatus === "runnable") return "Runnable";
+  if (source.operationalStatus === "unfinished") return "Needs adapter";
+  if (source.operationalStatus === "quarantined") return "Quarantined";
+  if (source.operationalStatus === "disabled") return "Disabled";
+  return "Catalogued only";
+}
+
 function healthLabel(status?: PortalHealthStatus): string {
-  if (!status) return "Not checked";
+  if (!status) return "No adapter health";
+  if (status.quarantined || status.lastOutcome === "quarantined") {
+    return "Quarantined";
+  }
   if (status.currentlyFailing) {
     return status.lastOutcome === "validation_failed"
       ? "Validation failed"
       : "Failed";
   }
   if (status.lastOutcome === "success") {
-    return `${status.resultCount.toLocaleString()} returned`;
+    return `${status.matchedCount.toLocaleString()} matched`;
   }
-  if (status.lastOutcome === "no_results") return "No results";
+  if (status.lastOutcome === "no_results") return "No matched results";
   return status.lastOutcome.replaceAll("_", " ");
 }
 
 function healthBadgeClass(status?: PortalHealthStatus): string {
   if (!status) return "border-white/10 bg-white/5 text-white/45";
-  if (status.currentlyFailing) {
+  if (
+    status.quarantined ||
+    status.lastOutcome === "quarantined" ||
+    status.currentlyFailing
+  ) {
     return "border-red-400/25 bg-red-400/10 text-red-200";
   }
   if (status.lastOutcome === "success") {
@@ -142,9 +205,11 @@ function PortalCard({
   const href = source.searchUrl || source.url;
   const healthDetail = health?.currentlyFailing
     ? health.lastFailureReason
-    : health
-      ? `Last checked ${new Date(health.lastCheckedAt).toLocaleString()}`
-      : undefined;
+    : health?.quarantineReasonLabel
+      ? health.quarantineReasonLabel
+      : health
+        ? `Last checked ${new Date(health.lastCheckedAt).toLocaleString()}`
+        : undefined;
 
   return (
     <a
@@ -181,15 +246,23 @@ function PortalCard({
         </Badge>
         <Badge
           variant="outline"
-          className={`text-[9px] font-normal ${healthBadgeClass(health)}`}
+          className={`text-[9px] font-normal ${operationalBadgeClass(source.operationalStatus)}`}
         >
-          {healthLabel(health)}
+          {operationalLabel(source)}
         </Badge>
+        {source.runtimeRunnable && (
+          <Badge
+            variant="outline"
+            className={`text-[9px] font-normal ${healthBadgeClass(health)}`}
+          >
+            {healthLabel(health)}
+          </Badge>
+        )}
       </div>
       <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
         {health?.currentlyFailing && health.lastFailureReason
           ? health.lastFailureReason
-          : source.connectorDescription}
+          : source.quarantineReasonLabel ?? source.connectorDescription}
       </p>
     </a>
   );
@@ -202,7 +275,9 @@ export function ProcurementPortalDirectory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
-  const [activeGroupId, setActiveGroupId] = useState("direct");
+  const [activeGroupId, setActiveGroupId] = useState<PortalOperationalStatus>(
+    "runnable",
+  );
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -275,29 +350,29 @@ export function ProcurementPortalDirectory() {
           </div>
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-white">
-              Configured Source & Adapter Inventory
+              Catalogue & Adapter Authority
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Complete configured catalog with durable portal-by-portal health.
+              Inventory metadata is separate from registered runtime collection.
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {health && health.summary.failing > 0 && (
-            <Badge
-              variant="outline"
-              className="border-red-400/25 bg-red-400/10 text-[10px] font-normal text-red-200"
-            >
-              {health.summary.failing.toLocaleString()} failing
-            </Badge>
-          )}
           {inventory && (
-            <Badge
-              variant="outline"
-              className="border-white/10 bg-white/5 text-[10px] font-normal text-white/60"
-            >
-              {inventory.total.toLocaleString()} sources
-            </Badge>
+            <>
+              <Badge
+                variant="outline"
+                className="border-emerald-400/25 bg-emerald-400/10 text-[10px] font-normal text-emerald-200"
+              >
+                {inventory.summary.runnable.toLocaleString()} runnable
+              </Badge>
+              <Badge
+                variant="outline"
+                className="border-white/10 bg-white/5 text-[10px] font-normal text-white/60"
+              >
+                {inventory.total.toLocaleString()} catalogued
+              </Badge>
+            </>
           )}
           {expanded ? (
             <ChevronUp className="h-4 w-4 text-white/50" />
@@ -311,8 +386,8 @@ export function ProcurementPortalDirectory() {
         <div className="border-t border-white/10 px-5 py-5">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading configured
-              sources...
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading source
+              authority...
             </div>
           ) : error || !inventory ? (
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-muted-foreground">
@@ -320,25 +395,59 @@ export function ProcurementPortalDirectory() {
             </div>
           ) : (
             <div className="space-y-5">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3.5">
+                <div className="text-[10px] uppercase tracking-wider text-white/45">
+                  Runtime authority summary
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Badge className="border border-white/10 bg-white/5 text-[10px] text-white/65">
+                    {inventory.summary.catalogued.toLocaleString()} catalogued
+                  </Badge>
+                  <Badge className="border border-cyan-300/25 bg-cyan-300/10 text-[10px] text-cyan-100">
+                    {inventory.summary.registeredAdapters.toLocaleString()} registered adapters
+                  </Badge>
+                  <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
+                    {inventory.summary.runnable.toLocaleString()} enabled / runnable
+                  </Badge>
+                  <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
+                    {inventory.summary.unfinished.toLocaleString()} unfinished
+                  </Badge>
+                  <Badge className="border border-orange-300/25 bg-orange-300/10 text-[10px] text-orange-100">
+                    {inventory.summary.disabled.toLocaleString()} disabled
+                  </Badge>
+                  <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
+                    {inventory.summary.quarantined.toLocaleString()} quarantined
+                  </Badge>
+                </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                  A URL or catalogue row does not create a connection. Only a
+                  registered adapter, approved official API, or deliberately
+                  vetted extractor can become runnable.
+                </p>
+              </div>
+
               {health && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3.5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-white/45">
-                        Latest persisted portal health
+                        Runtime adapter health only
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <Badge className="border border-emerald-400/25 bg-emerald-400/10 text-[10px] text-emerald-200">
-                          {health.summary.success.toLocaleString()} returned results
+                          {health.summary.success.toLocaleString()} returned matches
                         </Badge>
                         <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
-                          {health.summary.noResults.toLocaleString()} no results
+                          {health.summary.noResults.toLocaleString()} no matched results
                         </Badge>
                         <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
                           {health.summary.failing.toLocaleString()} failing
                         </Badge>
+                        <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
+                          {health.summary.quarantined.toLocaleString()} quarantined
+                        </Badge>
                         <Badge className="border border-white/10 bg-white/5 text-[10px] text-white/60">
-                          {health.summary.checked.toLocaleString()} checked
+                          {health.summary.checked.toLocaleString()} adapters checked
                         </Badge>
                       </div>
                     </div>
@@ -353,13 +462,13 @@ export function ProcurementPortalDirectory() {
                         ) : (
                           <ClipboardCopy className="h-3 w-3" />
                         )}
-                        {copied ? "Copied" : "Copy all failures"}
+                        {copied ? "Copied" : "Copy adapter failures"}
                       </button>
                     )}
                   </div>
                   <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-                    Health is stored per portal. A failed adapter no longer makes
-                    the entire public-portal provider appear to have failed.
+                    Catalogue-only and unfinished sources cannot inflate checked,
+                    success, no-result, failure, yield, or quarantine totals.
                   </p>
                 </div>
               )}
@@ -412,11 +521,10 @@ export function ProcurementPortalDirectory() {
               )}
 
               <p className="text-[10px] leading-relaxed text-white/40">
-                “Direct API” and “Dedicated listing adapter” mean
-                source-specific collection. Generic extraction is bounded
-                public-page collection. Search/discovery sources rely on
-                discovery tooling and are not direct adapters. Directory entries
-                are links only.
+                Catalogue status describes inventory. Runtime status describes
+                actual collection authority. Search discovery may find a page,
+                but it never converts that catalogue entry into a connected
+                adapter.
               </p>
             </div>
           )}
