@@ -76,14 +76,14 @@ export function getRegisteredPublicPortalAdapter(
   if (sourceId === "ny-contract-reporter") return nyScrProvider;
   if (sourceId === CAL_EPROCURE_SOURCE.id) return calEprocureProvider;
   return (
-    catalogueStaticOfficialProviders[sourceId] ??
-    deepRecoveryProviders[sourceId] ??
-    bsoPortalProviders[sourceId] ??
+    openGovHtmlTenantProvider(sourceId) ??
     jaggaerSciQuestTenantProvider(sourceId) ??
     bonfireTenantProvider(sourceId) ??
     ionWaveTenantProvider(sourceId) ??
     civicEngageTenantProvider(sourceId) ??
-    openGovHtmlTenantProvider(sourceId) ??
+    bsoPortalProviders[sourceId] ??
+    catalogueStaticOfficialProviders[sourceId] ??
+    deepRecoveryProviders[sourceId] ??
     statewideProviders.get(sourceId)
   );
 }
