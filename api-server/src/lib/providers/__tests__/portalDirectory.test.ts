@@ -163,7 +163,7 @@ describe("procurement portal directory", () => {
     assert.equal(inventory.total, 3);
     assert.equal(inventory.summary.disabled, 0);
     assert.equal(
-      inventory.groups.some((group) => group.id === "disabled"),
+      inventory.groups.some((group) => String(group.id) === "disabled"),
       false,
     );
     assert.equal(
