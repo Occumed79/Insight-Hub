@@ -16,6 +16,7 @@ const { DELETED_PORTAL_IDS } = await import("../deletedPortalPolicy");
 const { getRegisteredPublicPortalAdapter } = await import(
   "../publicPortalAdapterRegistry"
 );
+const { publicPortalProvidersProvider } = await import("../publicPortalProviders");
 const { PUBLIC_PORTAL_SOURCES } = await import("../publicPortalProviders/catalog");
 const { selectFairPortalSources } = await import(
   "../publicPortalProviders/portalHealthStore"
@@ -26,9 +27,6 @@ const { STATEWIDE_PROCUREMENT_SOURCES } = await import(
 
 const sourceById = new Map(
   DEEP_RECOVERY_SOURCES.map((source) => [source.id, source]),
-);
-const statewideSourceById = new Map(
-  STATEWIDE_PROCUREMENT_SOURCES.map((source) => [source.id, source]),
 );
 
 test("production recovery keeps only real runnable source implementations", () => {
@@ -50,31 +48,34 @@ test("production recovery keeps only real runnable source implementations", () =
   }
 });
 
-test("deleted and formerly manual-only sources are absent everywhere", () => {
+test("deleted and formerly manual-only sources are absent from published runtime paths", () => {
   const publicIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
+  const combinedIds = new Set(
+    publicPortalProvidersProvider.getSources().map((source) => source.id),
+  );
 
   for (const id of DELETED_PORTAL_IDS) {
     assert.equal(sourceById.has(id), false, `${id} removed from deep recovery sources`);
     assert.equal(Boolean(deepRecoveryProviders[id]), false, `${id} provider deleted`);
-    assert.equal(statewideSourceById.has(id), false, `${id} removed from statewide inventory`);
     assert.equal(publicIds.has(id), false, `${id} removed from public catalogue`);
+    assert.equal(combinedIds.has(id), false, `${id} removed from combined ingestion`);
     assert.equal(
       getRegisteredPublicPortalAdapter(id),
       undefined,
       `${id} removed from adapter registry`,
     );
   }
+
+  assert.ok(
+    STATEWIDE_PROCUREMENT_SOURCES.some((source) => DELETED_PORTAL_IDS.has(source.id)),
+    "raw 50-state diagnostics may retain deleted source definitions without publishing them",
+  );
 });
 
 test("published recovery sources are enabled and verified", () => {
   assert.ok(DEEP_RECOVERY_SOURCES.length > 0);
   assert.ok(
     DEEP_RECOVERY_SOURCES.every(
-      (source) => source.enabled && source.verificationStatus === "verified",
-    ),
-  );
-  assert.ok(
-    STATEWIDE_PROCUREMENT_SOURCES.every(
       (source) => source.enabled && source.verificationStatus === "verified",
     ),
   );
@@ -120,7 +121,7 @@ test("deleted historical health rows are stripped from serialized health", () =>
           lastOutcome: "failed",
         },
         {
-          sourceId: "ca-solano-county",
+          sourceId: "mn-swift",
           currentlyFailing: false,
           lastOutcome: "success",
         },
@@ -130,7 +131,7 @@ test("deleted historical health rows are stripped from serialized health", () =>
 
   assert.deepEqual(
     result.health.sources.map((status) => status.sourceId),
-    ["ca-solano-county"],
+    ["mn-swift"],
   );
   assert.deepEqual(result.health.summary, {
     checked: 1,
