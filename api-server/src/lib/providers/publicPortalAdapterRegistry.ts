@@ -18,9 +18,6 @@ import {
   civicEngageTenantProvider,
   CIVICENGAGE_PORTAL_IDS,
 } from "./civicEngageBids";
-import { OPENGOV_PORTAL_IDS } from "./openGov";
-import { registerOpenGovCountyExtensions } from "./openGovCountyExtensions";
-import { openGovHtmlTenantProvider } from "./openGovHtml";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import {
@@ -35,8 +32,6 @@ import {
   deletedPortalReason,
   isDeletedPortalSourceId,
 } from "./deletedPortalPolicy";
-
-registerOpenGovCountyExtensions();
 
 const statewideProviders = new Map<string, DataSourceProvider>(
   STATEWIDE_PORTAL_CONFIGS
@@ -58,7 +53,6 @@ const STATIC_ADAPTER_IDS = new Set<string>([
   ...BONFIRE_COLLECTIBLE_PORTAL_IDS,
   ...IONWAVE_COLLECTIBLE_PORTAL_IDS,
   ...CIVICENGAGE_PORTAL_IDS,
-  ...OPENGOV_PORTAL_IDS,
   ...STATEWIDE_PORTAL_CONFIGS.map((config) => config.portalId),
 ]);
 
@@ -76,7 +70,6 @@ export function getRegisteredPublicPortalAdapter(
   if (sourceId === "ny-contract-reporter") return nyScrProvider;
   if (sourceId === CAL_EPROCURE_SOURCE.id) return calEprocureProvider;
   return (
-    openGovHtmlTenantProvider(sourceId) ??
     jaggaerSciQuestTenantProvider(sourceId) ??
     bonfireTenantProvider(sourceId) ??
     ionWaveTenantProvider(sourceId) ??
