@@ -105,22 +105,4 @@ export const GENERATED_DIRECT_RFP_PORTALS_005: DirectRfpPortal[] = [
     parserStatus: "catalog_only",
     notes: "Official University of California procurement services page.",
   },
-  {
-    id: "ca-port-la",
-    name: "Port of Los Angeles Contracts and Bids",
-    jurisdiction: "Port of Los Angeles",
-    state: "CA",
-    country: "US",
-    level: "district",
-    url: "https://www.portoflosangeles.org/business/contracting-opportunities",
-    searchUrl:
-      "https://www.portoflosangeles.org/business/contracting-opportunities",
-    domain: "portoflosangeles.org",
-    accessMode: "public_html",
-    requiresKey: false,
-    requiresLogin: false,
-    tier: 3,
-    parserStatus: "catalog_only",
-    notes: "Official Port of Los Angeles contracting opportunities page.",
-  },
 ];
