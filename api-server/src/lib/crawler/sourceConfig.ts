@@ -11,6 +11,34 @@ import {
 import { getSpiderConfig, registerSpiderConfig } from "./registry";
 import type { SpiderConfig, SpiderRunResult } from "./types";
 
+/**
+ * Deliberately empty until a source-specific fixture/live review proves that a
+ * generic extractor is safe and useful. Adding an ID here is an explicit code
+ * review decision; catalog fields never self-authorize execution.
+ */
+export const VETTED_PUBLIC_PORTAL_EXTRACTOR_IDS = new Set<string>();
+
+const APPROVED_DISCOVERY_NOTE_PREFIX =
+  "Approved from browser discovery candidate";
+
+export function isApprovedPublicPortalSpiderConfig(
+  config: SpiderConfig | undefined,
+): boolean {
+  if (!config?.enabled) return false;
+  return (
+    VETTED_PUBLIC_PORTAL_EXTRACTOR_IDS.has(config.sourceId) ||
+    config.notes?.startsWith(APPROVED_DISCOVERY_NOTE_PREFIX) === true
+  );
+}
+
+export function hasApprovedPublicPortalSpiderConfig(
+  sourceId: string,
+): boolean {
+  return isApprovedPublicPortalSpiderConfig(
+    getSpiderConfig(`public-portal:${sourceId}`),
+  );
+}
+
 function familyName(source: PublicPortalSource, fallback: string): string {
   return source.portalPlatform?.trim() || fallback;
 }
@@ -18,12 +46,14 @@ function familyName(source: PublicPortalSource, fallback: string): string {
 export function defaultSpiderConfigForSource(
   source: PublicPortalSource,
 ): SpiderConfig | undefined {
+  if (!VETTED_PUBLIC_PORTAL_EXTRACTOR_IDS.has(source.id)) return undefined;
+
   const id = `public-portal:${source.id}`;
   const startUrl = source.searchUrl ?? source.sourceUrl;
   const base = {
     id,
     sourceId: source.id,
-    enabled: source.enabled && source.verificationStatus === "verified",
+    enabled: true,
     startUrls: [startUrl],
     allowedHosts: [source.domain],
     scheduleMinutes: 60,
@@ -32,7 +62,7 @@ export function defaultSpiderConfigForSource(
       maxUrls: 100,
       elapsedMs: 30_000,
     },
-    notes: `Generated from public portal catalog scraperType=${source.scraperType}`,
+    notes: `Explicitly vetted public portal extractor; catalog scraperType=${source.scraperType}`,
   };
 
   if (source.scraperType === "static_html" || source.scraperType === "scrapy") {
@@ -129,7 +159,9 @@ export function ensureSourceSpiderConfig(
 ): SpiderConfig | undefined {
   const id = `public-portal:${source.id}`;
   const existing = getSpiderConfig(id);
-  if (existing) return existing;
+  if (existing) return isApprovedPublicPortalSpiderConfig(existing)
+    ? existing
+    : undefined;
   const generated = defaultSpiderConfigForSource(source);
   if (generated) registerSpiderConfig(generated);
   return generated;
