@@ -1,7 +1,6 @@
 export type PortalOperationalStatus =
   | "runnable"
   | "unfinished"
-  | "disabled"
   | "quarantined"
   | "catalogued";
 
@@ -23,7 +22,6 @@ export function portalOperationalStatus(
   source: PortalRuntimeInventoryInput,
 ): PortalOperationalStatus {
   if (source.quarantined) return "quarantined";
-  if (source.disabled) return "disabled";
   if (source.runtimeRunnable) return "runnable";
   if (source.unfinished) return "unfinished";
   return "catalogued";
@@ -44,13 +42,7 @@ const RUNTIME_GROUPS: Array<{
     id: "unfinished",
     title: "Unfinished Sources",
     description:
-      "Catalogued sources that still need an adapter or an explicitly approved extractor.",
-  },
-  {
-    id: "disabled",
-    title: "Disabled Sources",
-    description:
-      "Sources intentionally excluded from automated collection by runtime policy.",
+      "Published official opportunity sources that still require an adapter or approved extractor.",
   },
   {
     id: "quarantined",
@@ -62,19 +54,21 @@ const RUNTIME_GROUPS: Array<{
     id: "catalogued",
     title: "Catalogued Only",
     description:
-      "Inventory metadata and manual links with no runtime collection authority.",
+      "Published source metadata with no runtime collection authority yet.",
   },
 ];
 
 export function buildPublicPortalRuntimeInventory<
   T extends PortalRuntimeInventoryInput,
 >(sources: readonly T[]) {
-  const classified: Array<PortalRuntimeInventorySource<T>> = sources.map(
-    (source) => ({
+  // Disabled/manual-only records are deleted from the inventory rather than
+  // represented as a separate operational state.
+  const classified: Array<PortalRuntimeInventorySource<T>> = sources
+    .filter((source) => !source.disabled)
+    .map((source) => ({
       ...source,
       operationalStatus: portalOperationalStatus(source),
-    }),
-  );
+    }));
 
   return {
     total: classified.length,
@@ -89,9 +83,7 @@ export function buildPublicPortalRuntimeInventory<
       unfinished: classified.filter(
         (source) => source.operationalStatus === "unfinished",
       ).length,
-      disabled: classified.filter(
-        (source) => source.operationalStatus === "disabled",
-      ).length,
+      disabled: 0,
       quarantined: classified.filter(
         (source) => source.operationalStatus === "quarantined",
       ).length,
