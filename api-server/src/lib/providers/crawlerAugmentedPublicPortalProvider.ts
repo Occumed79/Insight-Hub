@@ -1,8 +1,8 @@
 import {
-  defaultSpiderConfigForSource,
   ensureSourceSpiderConfig,
   getSpiderConfig,
   initializeCrawlerSpiders,
+  isApprovedPublicPortalSpiderConfig,
   listApprovedDiscoverySpiderConfigs,
   listCrawlFrontier,
   registerSpiderConfig,
@@ -42,10 +42,6 @@ function positiveIntegerEnv(
   const value = Number(process.env[name]);
   if (!Number.isFinite(value)) return fallback;
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
-}
-
-function browserDiscoveryEnabled(): boolean {
-  return process.env.PUBLIC_PORTAL_BROWSER_DISCOVERY_ENABLED === "true";
 }
 
 async function hydrateApprovedCrawlerConfigs(): Promise<void> {
@@ -98,17 +94,10 @@ function crawlerSources(
     .getSources()
     .filter((source) => {
       const registered = getSpiderConfig(`public-portal:${source.id}`);
-      const approvedJson =
-        registered?.kind === "json_endpoint" &&
-        registered.notes?.startsWith("Approved from browser discovery candidate");
+      if (!isApprovedPublicPortalSpiderConfig(registered)) return false;
       return (
-        source.enabled &&
-        source.verificationStatus === "verified" &&
-        (scraperTypes.has(source.scraperType) || approvedJson) &&
-        (source.scraperType !== "playwright_public" ||
-          browserDiscoveryEnabled() ||
-          approvedJson) &&
-        Boolean(registered ?? defaultSpiderConfigForSource(source))
+        scraperTypes.has(source.scraperType) ||
+        registered?.kind === "json_endpoint"
       );
     });
 }
@@ -298,7 +287,7 @@ class CrawlerAugmentedPublicPortalProvider implements DataSourceProvider {
         [
           base.errorMessage,
           crawlerFailures.length > 0
-            ? `${crawlerFailures.length} crawler source${crawlerFailures.length === 1 ? " is" : "s are"} currently failing`
+            ? `${crawlerFailures.length} approved crawler source${crawlerFailures.length === 1 ? " is" : "s are"} currently failing`
             : undefined,
         ]
           .filter(Boolean)
