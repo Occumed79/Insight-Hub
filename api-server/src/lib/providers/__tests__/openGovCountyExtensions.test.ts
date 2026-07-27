@@ -2,10 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DELETED_PORTAL_IDS } from "../deletedPortalPolicy";
-import {
-  OPENGOV_PORTAL_IDS,
-  OPENGOV_TENANT_BY_PORTAL_ID,
-} from "../openGov";
 import { OPENGOV_COUNTY_EXTENSIONS } from "../openGovCountyExtensions";
 import { PLANETBIDS_WAF_BLOCKED_PORTAL_IDS } from "../planetBidsAccessPolicy";
 import { getRegisteredPublicPortalAdapter } from "../publicPortalAdapterRegistry";
@@ -22,11 +18,13 @@ const EXPECTED_TENANTS = new Map([
 describe("OpenGov county tenant extensions", () => {
   it("retains tenant metadata for audit while deleting failed runtime sources", () => {
     assert.equal(OPENGOV_COUNTY_EXTENSIONS.length, EXPECTED_TENANTS.size);
+    const extensionById = new Map(
+      OPENGOV_COUNTY_EXTENSIONS.map((tenant) => [tenant.portalId, tenant]),
+    );
     const catalogIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
     for (const [portalId, tenantSlug] of EXPECTED_TENANTS) {
-      assert.equal(OPENGOV_PORTAL_IDS.has(portalId), true, portalId);
-      assert.equal(OPENGOV_TENANT_BY_PORTAL_ID.get(portalId)?.tenantSlug, tenantSlug);
+      assert.equal(extensionById.get(portalId)?.tenantSlug, tenantSlug, portalId);
       assert.equal(DELETED_PORTAL_IDS.has(portalId), true, portalId);
       assert.equal(catalogIds.has(portalId), false, portalId);
       assert.equal(getRegisteredPublicPortalAdapter(portalId), undefined, portalId);
