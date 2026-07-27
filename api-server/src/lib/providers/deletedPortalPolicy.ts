@@ -23,6 +23,11 @@ export const DELETED_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
   ["ca-fresno", "The source is blocked by a browser/WAF challenge."],
   ["ca-irvine", "The source is blocked by a browser/WAF challenge."],
   ["ca-imperial-county", "The source is blocked by a browser/WAF challenge."],
+  ["ca-caleprocure", "The official listing returned HTTP 403 during repeated live adapter verification."],
+  ["ca-san-francisco", "The official page returned no parseable active opportunity records during repeated live verification."],
+  ["nh-bids", "The official bid listing returned HTTP 403 during repeated live adapter verification."],
+  ["tn-greene-county", "The official page returned no parseable active opportunity records during repeated live verification."],
+  ["wa-klickitat-county", "The legacy CivicEngage bid URL redirected outside its configured official source during repeated live verification."],
 ]);
 
 /**
