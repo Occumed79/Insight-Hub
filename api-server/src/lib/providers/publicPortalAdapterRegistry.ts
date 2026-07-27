@@ -22,6 +22,10 @@ import { openGovTenantProvider, OPENGOV_PORTAL_IDS } from "./openGov";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import {
+  CATALOGUE_STATIC_OFFICIAL_PORTAL_IDS,
+  catalogueStaticOfficialProviders,
+} from "./catalogueStaticOfficialAdapters";
+import {
   STATEWIDE_PORTAL_CONFIGS,
   StatewideProcurementProvider,
 } from "./statewideProcurementPortals";
@@ -46,6 +50,7 @@ const STATIC_ADAPTER_IDS = new Set<string>([
   CAL_EPROCURE_SOURCE.id,
   ...Object.keys(bsoPortalProviders),
   ...Object.keys(deepRecoveryProviders),
+  ...CATALOGUE_STATIC_OFFICIAL_PORTAL_IDS,
   ...JAGGAER_COLLECTIBLE_PORTAL_IDS,
   ...BONFIRE_COLLECTIBLE_PORTAL_IDS,
   ...IONWAVE_COLLECTIBLE_PORTAL_IDS,
@@ -85,6 +90,7 @@ export function getRegisteredPublicPortalAdapter(
   if (sourceId === "ny-contract-reporter") return nyScrProvider;
   if (sourceId === CAL_EPROCURE_SOURCE.id) return calEprocureProvider;
   return (
+    catalogueStaticOfficialProviders[sourceId] ??
     deepRecoveryProviders[sourceId] ??
     bsoPortalProviders[sourceId] ??
     jaggaerSciQuestTenantProvider(sourceId) ??
