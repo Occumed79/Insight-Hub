@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+
+import { DELETED_PORTAL_IDS } from "../deletedPortalPolicy";
 import {
   OPENGOV_PORTAL_IDS,
   OPENGOV_TENANT_BY_PORTAL_ID,
@@ -8,6 +10,7 @@ import {
 import { OPENGOV_COUNTY_EXTENSIONS } from "../openGovCountyExtensions";
 import { PLANETBIDS_WAF_BLOCKED_PORTAL_IDS } from "../planetBidsAccessPolicy";
 import { portalConnectorCapability } from "../portalCapabilities";
+import { getRegisteredPublicPortalAdapter } from "../publicPortalAdapterRegistry";
 import { PUBLIC_PORTAL_SOURCES } from "../publicPortalProviders/catalog";
 
 const EXPECTED_TENANTS = new Map([
@@ -43,43 +46,22 @@ describe("OpenGov county tenant extensions", () => {
     }
   });
 
-  it("keeps Public Purchase sources manual unless authorized access exists", () => {
+  it("deletes Public Purchase sources without authorized public access", () => {
+    const catalogIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
     for (const portalId of ["wy-state-purchasing", "ca-calaveras-county"]) {
-      const capability = portalConnectorCapability({
-        id: portalId,
-        country: "US",
-        level: "district",
-        accessMode: "portal",
-        requiresLogin: true,
-      });
-      assert.equal(capability.connectorStatus, "directory_only", portalId);
-      assert.equal(capability.directCollection, false, portalId);
-      assert.equal(capability.requiresSerper, false, portalId);
+      assert.equal(DELETED_PORTAL_IDS.has(portalId), true, portalId);
+      assert.equal(catalogIds.has(portalId), false, portalId);
+      assert.equal(getRegisteredPublicPortalAdapter(portalId), undefined, portalId);
     }
   });
 
-  it("removes AWS WAF-blocked PlanetBids buyers from automated collection", () => {
-    const catalogById = new Map(
-      PUBLIC_PORTAL_SOURCES.map((source) => [source.id, source]),
-    );
+  it("deletes AWS WAF-blocked PlanetBids buyers", () => {
+    const catalogIds = new Set(PUBLIC_PORTAL_SOURCES.map((source) => source.id));
 
     for (const portalId of PLANETBIDS_WAF_BLOCKED_PORTAL_IDS) {
-      const source = catalogById.get(portalId);
-      assert.ok(source, `${portalId} missing from public catalog`);
-      assert.equal(source.enabled, false, portalId);
-      assert.equal(source.verificationStatus, "needs_review", portalId);
-      assert.match(source.notes ?? "", /AWS WAF browser challenge/i, portalId);
-
-      const capability = portalConnectorCapability({
-        id: portalId,
-        country: "US",
-        level: "district",
-        accessMode: source.accessMode ?? "public_html",
-      });
-      assert.equal(capability.connectorStatus, "directory_only", portalId);
-      assert.equal(capability.connectorLabel, "Manual browser access", portalId);
-      assert.equal(capability.directCollection, false, portalId);
-      assert.equal(capability.requiresSerper, false, portalId);
+      assert.equal(DELETED_PORTAL_IDS.has(portalId), true, portalId);
+      assert.equal(catalogIds.has(portalId), false, portalId);
+      assert.equal(getRegisteredPublicPortalAdapter(portalId), undefined, portalId);
     }
   });
 });
