@@ -1,4 +1,10 @@
-import type { DataSourceProvider } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  NormalizedOpportunity,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { StaticOfficialRecoveryProvider } from "./productionSourceRecovery";
 
 type StaticOfficialTenant = ConstructorParameters<
@@ -201,3 +207,101 @@ export const catalogueStaticOfficialProviders: Readonly<
     new StaticOfficialRecoveryProvider(tenant),
   ]),
 );
+
+function opportunityKey(record: NormalizedOpportunity): string {
+  if (record.sourceUrl) return `url:${record.sourceUrl.toLowerCase()}`;
+  if (record.solicitationNumber) {
+    return `sol:${record.solicitationNumber.replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
+  }
+  return `id:${record.externalId.toLowerCase()}`;
+}
+
+class CatalogueStaticOfficialAggregateProvider implements DataSourceProvider {
+  readonly name = "publicPortalProviders" as const;
+  private lastAttempt?: Date;
+  private lastSuccess?: Date;
+  private lastError?: string;
+  private recordCount = 0;
+
+  async isConfigured(): Promise<boolean> {
+    return CATALOGUE_STATIC_OFFICIAL_TENANTS.length > 0;
+  }
+
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
+    this.lastAttempt = new Date();
+    const providers = Object.entries(catalogueStaticOfficialProviders);
+    const records: NormalizedOpportunity[] = [];
+    const errors: string[] = [];
+    const concurrency = Math.min(4, Math.max(1, providers.length));
+    let cursor = 0;
+
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (cursor < providers.length && !options.signal?.aborted) {
+          const index = cursor;
+          cursor += 1;
+          const entry = providers[index];
+          if (!entry) return;
+          const [sourceId, provider] = entry;
+          try {
+            const result = await provider.fetch({
+              ...options,
+              limit: Math.min(options.limit ?? 100, 50),
+            });
+            records.push(...result.records);
+            errors.push(...result.errors.map((error) => `${sourceId}: ${error}`));
+          } catch (error) {
+            errors.push(
+              `${sourceId}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      }),
+    );
+
+    const seen = new Set<string>();
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 300);
+    const deduped = records
+      .filter((record) => {
+        const key = opportunityKey(record);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit);
+
+    this.recordCount = deduped.length;
+    if (deduped.length > 0 || errors.length === 0) {
+      this.lastSuccess = new Date();
+      this.lastError = undefined;
+    } else {
+      this.lastError = errors.join("; ");
+    }
+
+    console.info(
+      JSON.stringify({
+        event: "catalogue_static_adapter_wave",
+        adapters: providers.length,
+        returned: deduped.length,
+        failures: errors.length,
+      }),
+    );
+
+    return { records: deduped, total: deduped.length, errors };
+  }
+
+  async getStatus(): Promise<ProviderStatus> {
+    return {
+      name: this.name,
+      configured: await this.isConfigured(),
+      healthy: !this.lastError,
+      errorMessage: this.lastError,
+      lastAttempt: this.lastAttempt,
+      lastSuccess: this.lastSuccess,
+      recordCount: this.recordCount,
+    };
+  }
+}
+
+export const catalogueStaticOfficialAggregateProvider =
+  new CatalogueStaticOfficialAggregateProvider();
