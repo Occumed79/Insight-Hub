@@ -50,6 +50,7 @@ jobs:
           pnpm --filter @workspace/api-server exec node --import tsx --test
           src/lib/providers/__tests__/catalogueCompletionAudit.test.ts
           src/lib/providers/__tests__/catalogueStaticOfficialAdapters.test.ts
+          src/lib/providers/__tests__/openGovHtml.test.ts
           src/lib/providers/__tests__/portalDirectory.test.ts
 
       - name: Audit every catalogue record
