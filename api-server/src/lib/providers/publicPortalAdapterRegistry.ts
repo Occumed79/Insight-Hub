@@ -28,6 +28,11 @@ import {
 import { manualOnlyPortalReason } from "./manualOnlyPortalPolicy";
 import { PLANETBIDS_WAF_BLOCKED_PORTAL_IDS } from "./planetBidsAccessPolicy";
 
+const PUBLIC_PURCHASE_MANUAL_ONLY_IDS = new Set([
+  "wy-state-purchasing",
+  "ca-calaveras-county",
+]);
+
 const statewideProviders = new Map<string, DataSourceProvider>(
   STATEWIDE_PORTAL_CONFIGS.map((config) => [
     config.portalId,
@@ -58,6 +63,9 @@ export function publicPortalRuntimeDisabledReason(
 ): string | undefined {
   const manualOnly = manualOnlyPortalReason(sourceId);
   if (manualOnly) return manualOnly;
+  if (PUBLIC_PURCHASE_MANUAL_ONLY_IDS.has(sourceId)) {
+    return "Authenticated Public Purchase vendor access is required; this source remains manual-only.";
+  }
   if (PLANETBIDS_WAF_BLOCKED_PORTAL_IDS.has(sourceId)) {
     return "Browser/WAF-restricted source retained for manual directory access only.";
   }
