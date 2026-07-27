@@ -5,7 +5,6 @@ import { serperProvider } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
 import { exaProvider } from "../providers/exa";
 import { langsearchProvider } from "../providers/langsearch";
-import { catalogueStaticOfficialAggregateProvider } from "../providers/catalogueStaticOfficialAdapters";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
@@ -54,8 +53,9 @@ export function resolveManualProviders(providers?: string[]): string[] {
   const unsupported = resolved.filter(
     (provider) => !MANUAL_RFP_PROVIDERS.has(provider),
   );
-  if (unsupported.length > 0)
+  if (unsupported.length > 0) {
     throw new Error(`Unsupported RFP provider(s): ${unsupported.join(", ")}`);
+  }
   return resolved;
 }
 
@@ -108,7 +108,9 @@ function applyProviderGuards(
 }
 
 function recordKey(record: NormalizedOpportunity): string {
-  if (record.sourceUrl?.trim()) return `url:${record.sourceUrl.trim().toLowerCase()}`;
+  if (record.sourceUrl?.trim()) {
+    return `url:${record.sourceUrl.trim().toLowerCase()}`;
+  }
   return `id:${record.externalId.toLowerCase()}`;
 }
 
@@ -159,7 +161,10 @@ function mergeDirectAndDiscovery(
 
   if (merged.length < boundedLimit) {
     merged.push(
-      ...uniqueDirect.slice(directTarget, directTarget + boundedLimit - merged.length),
+      ...uniqueDirect.slice(
+        directTarget,
+        directTarget + boundedLimit - merged.length,
+      ),
     );
   }
   if (merged.length < boundedLimit) {
@@ -240,53 +245,32 @@ export async function fetchOneProvider(
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
 
   if (provider === "publicPortalProviders") {
-    const [directResult, catalogueAdapterResult, discoveryRecords] =
-      await Promise.all([
-        source.fetch({
-          keywords: options.keywords,
-          dateRange: options.dateRange,
-          limit: 100,
-          signal: options.signal,
-        }),
-        catalogueStaticOfficialAggregateProvider
-          .fetch({
-            keywords: options.keywords,
-            dateRange: options.dateRange,
-            limit: 100,
-            signal: options.signal,
-          })
-          .catch((error) => ({
-            records: [],
-            total: 0,
-            errors: [
-              `catalogue-static-adapters: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            ],
-          })),
-        fetchConfiguredAiDiscovery({
-          keywords: options.keywords,
-          signal: options.signal,
-        }).catch((error) => {
-          console.warn(
-            `[publicPortalProviders:ai-discovery] ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-          return [];
-        }),
-      ]);
+    // The production public-portal provider already owns every registered
+    // catalogue adapter. Calling the old aggregate wave here would execute the
+    // same sources twice, duplicate network traffic, and duplicate failures.
+    const [directResult, discoveryRecords] = await Promise.all([
+      source.fetch({
+        keywords: options.keywords,
+        dateRange: options.dateRange,
+        limit: 100,
+        signal: options.signal,
+      }),
+      fetchConfiguredAiDiscovery({
+        keywords: options.keywords,
+        signal: options.signal,
+      }).catch((error) => {
+        console.warn(
+          `[publicPortalProviders:ai-discovery] ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return [];
+      }),
+    ]);
     return applyProviderGuards(
       provider,
-      mergeDirectAndDiscovery(
-        [...directResult.records, ...catalogueAdapterResult.records],
-        discoveryRecords,
-        100,
-      ),
-      [
-        ...(directResult.errors ?? []),
-        ...(catalogueAdapterResult.errors ?? []),
-      ],
+      mergeDirectAndDiscovery(directResult.records, discoveryRecords, 100),
+      directResult.errors ?? [],
       options.keywords,
     );
   }
