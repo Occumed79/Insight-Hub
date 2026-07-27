@@ -52,8 +52,6 @@ router.get("/rfp-sources", async (req, res) => {
       .map((config) => [config.sourceId, config]),
   );
 
-  // Hydrate durable adapter health before runtime classification. Historical
-  // catalog-only rows remain stored for audit but are excluded below.
   await publicPortalProvidersProvider.getStatus().catch(() => undefined);
   const allPersistedHealth = publicPortalProvidersProvider.getSourceStatuses();
   const healthBySourceId = new Map(
@@ -64,7 +62,7 @@ router.get("/rfp-sources", async (req, res) => {
     withPortalConnectorCapability,
   ).map((source) => {
     const approvedCrawler = approvedCrawlerBySourceId.get(source.id);
-    const crawlerRunnable = Boolean(approvedCrawler) && !source.disabled;
+    const crawlerRunnable = Boolean(approvedCrawler);
     const runtimeRunnable = source.runtimeRunnable || crawlerRunnable;
     const registrationKind = source.registeredAdapter
       ? source.registrationKind
@@ -191,7 +189,6 @@ router.get("/rfp-sources", async (req, res) => {
       if (source.registeredAdapter) acc.registeredAdapters += 1;
       if (source.runtimeRunnable && !source.quarantined) acc.runnable += 1;
       if (source.unfinished) acc.unfinished += 1;
-      if (source.disabled) acc.disabled += 1;
       if (source.quarantined) acc.quarantined += 1;
       return acc;
     },
@@ -209,7 +206,6 @@ router.get("/rfp-sources", async (req, res) => {
       registeredAdapters: 0,
       runnable: 0,
       unfinished: 0,
-      disabled: 0,
       quarantined: 0,
     },
   );
@@ -259,151 +255,53 @@ router.get("/rfp-sources", async (req, res) => {
     },
   );
 
-  return res.json({
-    sources,
+  const evidenceScanPlan = buildPortalEvidenceScanPlan({
+    includeTier3,
+    executionBudget,
+    rotationKey,
+  });
+
+  res.json({
+    totals,
     directory,
     inventory,
     health: {
       summary: portalHealthSummary,
       sources: portalHealthSources,
     },
+    validation: catalogValidation,
+    runtimePlan,
     crawler: {
       spiderKinds: listSpiderKinds(),
-      configs: spiderConfigs.map((config) => ({
-        id: config.id,
-        sourceId: config.sourceId,
-        kind: config.kind,
-        enabled: config.enabled,
-        runtimeApproved: isApprovedPublicPortalSpiderConfig(config),
-        startUrls: config.startUrls,
-        allowedHosts: config.allowedHosts,
-        scheduleMinutes: config.scheduleMinutes,
-        limits: config.limits,
-        notes: config.notes,
-      })),
-      summary: crawlerSummary,
+      spiderConfigs,
+      approvedConfigs: approvedCrawlerConfigs,
       frontier: runtimeCrawlFrontier,
+      summary: crawlerSummary,
       discoveryCandidates,
     },
-    totals: {
-      ...totals,
-      cataloguedCount: totals.total,
-      registeredAdapterCount: totals.registeredAdapters,
-      runnableCount: totals.runnable,
-      unfinishedCount: totals.unfinished,
-      disabledCount: totals.disabled,
-      quarantinedCount: totals.quarantined,
-      verifiedHighCount: totals.byOccumedFit.verified_high ?? 0,
-      likelyCount: totals.byOccumedFit.likely ?? 0,
-      broadCount: totals.byOccumedFit.broad ?? 0,
-      insufficientEvidenceCount:
-        totals.byOccumedFit.insufficient_evidence ?? 0,
-      irrelevantCount: totals.byOccumedFit.irrelevant ?? 0,
-      unclassifiedCount: totals.byOccumedFit.unclassified ?? 0,
-    },
-    relevanceValidation: catalogValidation,
-    runtimePlan,
-    rules: {
-      includes: [
-        "official federal/state/district/international procurement portals as catalog metadata",
-        "Occu-Med fit classification based on official evidence or buyer propensity",
-      ],
-      excludes: [
-        "catalog-only execution",
-        "needs-parser execution",
-        "automatic generic extraction inferred from a URL or public_html access mode",
-        "capability inflation from catalog size",
-      ],
-      ingestionPriority: [
-        "registered_adapter",
-        "approved_official_api",
-        "deliberately_vetted_extractor",
-      ],
-      connectorStatusPolicy: {
-        direct_api: "Dedicated official structured API",
-        direct_adapter: "Source-specific adapter present in the runtime registry",
-        generic_extraction:
-          "Explicitly approved official endpoint or deliberately vetted extractor",
-        serper_discovery:
-          "Global web discovery only; never source-specific connection authority",
-        directory_only: "Catalog metadata and manual link only",
-        stub: "Unfinished source with no runtime collection authority",
-      },
-      coveragePolicy:
-        "The catalog is metadata and inventory only. Only the adapter registry, an approved official API registration, or a deliberately vetted extractor can make a source runnable.",
-      nonNegotiableRule:
-        "No registered adapter, approved official API, or deliberately vetted extractor means no ingestion.",
-      healthPolicy:
-        "Health, yield, failure, and crawler summaries include runtime-authorized sources only. Historical catalog-only health rows remain persisted for audit but do not inflate capability or failure counts.",
-      crawlerPolicy:
-        "Crawler spiders are bounded to official allowed hosts and execute only after explicit approval; catalog scraperType and URL fields never self-authorize a crawler.",
-    },
-  });
-});
-
-router.get("/rfp-sources/evidence-scan/plan", async (req, res) => {
-  const portalIds =
-    typeof req.query.portalIds === "string"
-      ? req.query.portalIds
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean)
-      : undefined;
-  const includeTier3 = String(req.query.includeTier3 ?? "true") === "true";
-  const includeHistorical =
-    String(req.query.includeHistorical ?? "false") === "true";
-  const historicalYears = Number(req.query.historicalYears ?? 5);
-  const fullCoverage = String(req.query.fullCoverage ?? "false") === "true";
-  const executionBudget = Number(req.query.executionBudget ?? 12);
-  const rotationKey =
-    typeof req.query.rotationKey === "string"
-      ? req.query.rotationKey
-      : undefined;
-
-  const plan = buildPortalEvidenceScanPlan({
-    portalIds,
-    includeTier3,
-    includeHistorical,
-    historicalYears: Number.isFinite(historicalYears) ? historicalYears : 5,
-    fullCoverage,
-    executionBudget: Number.isFinite(executionBudget) ? executionBudget : 12,
-    rotationKey,
-  });
-
-  return res.json({
-    diagnostics: plan.diagnostics,
-    selectedQueries: plan.selectedQueries,
+    evidenceScanPlan,
   });
 });
 
 router.post("/rfp-sources/evidence-scan", async (req, res) => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const portalIds = Array.isArray(body.portalIds)
-    ? body.portalIds.filter(
-        (value): value is string => typeof value === "string",
-      )
-    : undefined;
-  const includeTier3 = body.includeTier3 !== false;
-  const includeHistorical = body.includeHistorical === true;
-  const historicalYears = Number(body.historicalYears ?? 5);
-  const fullCoverage = body.fullCoverage === true;
-  const executionBudget = Number(body.executionBudget ?? 12);
-  const resultsPerQuery = Number(body.resultsPerQuery ?? 5);
-  const rotationKey =
-    typeof body.rotationKey === "string" ? body.rotationKey : undefined;
-
-  const result = await scanPortalEvidence({
-    portalIds,
-    includeTier3,
-    includeHistorical,
-    historicalYears: Number.isFinite(historicalYears) ? historicalYears : 5,
-    fullCoverage,
-    executionBudget: Number.isFinite(executionBudget) ? executionBudget : 12,
-    resultsPerQuery: Number.isFinite(resultsPerQuery) ? resultsPerQuery : 5,
-    rotationKey,
-  });
-
-  return res.status(result.configured ? 200 : 503).json(result);
+  try {
+    const result = await scanPortalEvidence({
+      portalIds: Array.isArray(req.body?.portalIds)
+        ? req.body.portalIds.map(String)
+        : undefined,
+      includeTier3: req.body?.includeTier3 !== false,
+      executionBudget: Number(req.body?.executionBudget ?? 6) || 6,
+      rotationKey:
+        typeof req.body?.rotationKey === "string"
+          ? req.body.rotationKey
+          : undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 export default router;
