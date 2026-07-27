@@ -1,9 +1,6 @@
 import type { DataSourceProvider } from "./types";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
-import {
-  BOUNDED_STATE_RECOVERY_SOURCES,
-  boundedStateRecoveryProviders,
-} from "./boundedStateRecoveryOverrides";
+import { isDeletedPortalSourceId } from "./deletedPortalPolicy";
 import {
   KENTUCKY_CGI_ADVANTAGE_SOURCE,
   MICHIGAN_CGI_ADVANTAGE_SOURCE,
@@ -44,22 +41,29 @@ for (const source of [
   ...STATE_PLATFORM_ADAPTER_SOURCES,
   MINNESOTA_OSP_SOURCE,
   ...PRODUCTION_RECOVERY_SOURCES,
-  ...BOUNDED_STATE_RECOVERY_SOURCES,
-]) sourceById.set(source.id, source);
+]) {
+  if (!isDeletedPortalSourceId(source.id) && source.enabled !== false) {
+    sourceById.set(source.id, source);
+  }
+}
 
 export const DEEP_RECOVERY_SOURCES: PublicPortalSource[] = Array.from(
   sourceById.values(),
 );
 
-export const deepRecoveryProviders: Record<string, DataSourceProvider> = {
-  [GEORGIA_GAWORK_SOURCE.id]: georgiaGaworkProvider,
-  [HAWAII_HANDS_SOURCE.id]: hawaiiHandsProvider,
-  [KENTUCKY_CGI_ADVANTAGE_SOURCE.id]: kentuckyCgiAdvantageProvider,
-  [MICHIGAN_CGI_ADVANTAGE_SOURCE.id]: michiganCgiAdvantageProvider,
-  [NEW_HAMPSHIRE_BIDS_SOURCE.id]: newHampshireBidsProvider,
-  [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id]: southDakotaPostingBoardProvider,
-  ...statePlatformAdapterProviders,
-  [MINNESOTA_OSP_SOURCE.id]: minnesotaOspProvider,
-  ...productionRecoveryProviders,
-  ...boundedStateRecoveryProviders,
-};
+const providerEntries: Array<[string, DataSourceProvider]> = [
+  [GEORGIA_GAWORK_SOURCE.id, georgiaGaworkProvider],
+  [HAWAII_HANDS_SOURCE.id, hawaiiHandsProvider],
+  [KENTUCKY_CGI_ADVANTAGE_SOURCE.id, kentuckyCgiAdvantageProvider],
+  [MICHIGAN_CGI_ADVANTAGE_SOURCE.id, michiganCgiAdvantageProvider],
+  [NEW_HAMPSHIRE_BIDS_SOURCE.id, newHampshireBidsProvider],
+  [SOUTH_DAKOTA_POSTING_BOARD_SOURCE.id, southDakotaPostingBoardProvider],
+  ...Object.entries(statePlatformAdapterProviders),
+  [MINNESOTA_OSP_SOURCE.id, minnesotaOspProvider],
+  ...Object.entries(productionRecoveryProviders),
+];
+
+export const deepRecoveryProviders: Record<string, DataSourceProvider> =
+  Object.fromEntries(
+    providerEntries.filter(([sourceId]) => !isDeletedPortalSourceId(sourceId)),
+  );

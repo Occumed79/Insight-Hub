@@ -1,0 +1,113 @@
+name: Catalogue completion verification
+
+on:
+  pull_request:
+    paths:
+      - "api-server/src/lib/providers/**"
+      - "api-server/src/routes/rfp-sources.ts"
+      - "intel-suite/src/components/portal/ProcurementPortalDirectory.tsx"
+      - "scripts/src/run-catalogue-*.ts"
+      - "scripts/package.json"
+      - "package.json"
+      - ".github/workflows/catalogue-completion-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      RFP_DATABASE_URL: postgresql://test:test@localhost:5432/rfp_core
+      INTEL_DATABASE_URL: postgresql://test:test@localhost:5432/intel
+      AUTH_DATABASE_URL: postgresql://test:test@localhost:5432/auth
+      APP_DATABASE_URL: postgresql://test:test@localhost:5432/app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck workspace
+        run: pnpm run typecheck
+
+      - name: Test completion rules
+        run: >-
+          pnpm --filter @workspace/api-server exec node --import tsx --test
+          src/lib/providers/__tests__/catalogueCompletionAudit.test.ts
+          src/lib/providers/__tests__/catalogueStaticOfficialAdapters.test.ts
+          src/lib/providers/__tests__/portalDirectory.test.ts
+
+      - name: Audit every catalogue record
+        env:
+          CATALOGUE_COMPLETION_REPORT_DIR: ${{ github.workspace }}/artifacts/catalogue-completion-audit
+        run: pnpm run catalogue:completion:audit
+
+      - name: Publish completion summary
+        if: always()
+        run: |
+          if [ -f artifacts/catalogue-completion-audit/catalogue-completion-audit.md ]; then
+            cat artifacts/catalogue-completion-audit/catalogue-completion-audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload completion audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-completion-audit
+          path: artifacts/catalogue-completion-audit
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify every published adapter live
+        env:
+          CATALOGUE_LIVE_REPORT_DIR: ${{ github.workspace }}/artifacts/catalogue-live-adapter-verification
+          CATALOGUE_LIVE_CONCURRENCY: "6"
+          CATALOGUE_LIVE_TIMEOUT_MS: "25000"
+          CATALOGUE_LIVE_ATTEMPTS: "2"
+          CATALOGUE_LIVE_RESULT_LIMIT: "10"
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          pnpm run catalogue:live:verify 2>&1 | tee catalogue-live-adapter-verification.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > catalogue-live-adapter-verification.exit
+          exit 0
+
+      - name: Publish live adapter summary
+        if: always()
+        run: |
+          if [ -f artifacts/catalogue-live-adapter-verification/catalogue-live-adapter-verification.md ]; then
+            cat artifacts/catalogue-live-adapter-verification/catalogue-live-adapter-verification.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload live adapter verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-live-adapter-verification
+          path: |
+            artifacts/catalogue-live-adapter-verification
+            catalogue-live-adapter-verification.log
+            catalogue-live-adapter-verification.exit
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce live adapter results
+        if: always()
+        run: exit "$(cat catalogue-live-adapter-verification.exit 2>/dev/null || echo 1)"

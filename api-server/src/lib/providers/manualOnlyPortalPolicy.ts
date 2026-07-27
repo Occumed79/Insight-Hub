@@ -1,122 +1,82 @@
 import { ENRICHED_DIRECT_RFP_PORTALS } from "./directRfpPortalRelevanceCatalog";
+import {
+  DELETED_PORTAL_IDS,
+  DELETED_PORTAL_REASONS,
+  deletedPortalReason,
+  isDeletedPortalSourceId,
+} from "./deletedPortalPolicy";
 import { STATEWIDE_PROCUREMENT_SOURCES } from "./statewideProcurementConfigs";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 
-export const MANUAL_ONLY_PORTAL_REASONS: ReadonlyMap<string, string> = new Map([
-  [
-    "ri-bids",
-    "Automated recovery pages repeatedly returned no parseable active opportunity rows. Retained as a manual official buyer link.",
-  ],
-  [
-    "wi-vendornet",
-    "Automated recovery pages repeatedly returned no parseable active opportunity rows. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-siskiyou-county",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-sdsu-procurement",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-santa-barbara-county",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-sacramento-city",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-port-of-oakland",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-los-angeles-county",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-humboldt-county",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "ca-bakersfield-purchasing",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "az-tucson-airport-authority",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "az-phoenix",
-    "Repeated automated fetch failures. Retained as a manual official buyer link.",
-  ],
-  [
-    "ct-ctsource",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "al-state-procurement",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "nm-active-procurements",
-    "Repeated automated request timeouts. Retained as a manual official buyer link.",
-  ],
-  [
-    "nc-evp",
-    "The official public route returned a maintenance page instead of parseable active opportunities. Retained as a manual official buyer link.",
-  ],
-  [
-    "fl-orange-county-public-schools",
-    "The official OCPS site explicitly disallows automated crawling through robots.txt. Retained as a manual official buyer link and excluded from automated rotation.",
-  ],
-]);
-
-export const MANUAL_ONLY_PORTAL_IDS = new Set(MANUAL_ONLY_PORTAL_REASONS.keys());
+/**
+ * Compatibility exports for older call sites. These IDs are no longer retained
+ * as manual-only or disabled catalogue records; they are deleted from published
+ * source inventories and runtime provider maps.
+ */
+export const MANUAL_ONLY_PORTAL_REASONS = DELETED_PORTAL_REASONS;
+export const MANUAL_ONLY_PORTAL_IDS = DELETED_PORTAL_IDS;
 
 export function isManualOnlyPortalSourceId(sourceId: string): boolean {
-  return MANUAL_ONLY_PORTAL_IDS.has(sourceId);
+  return isDeletedPortalSourceId(sourceId);
 }
 
 export function manualOnlyPortalReason(sourceId: string): string | undefined {
-  return MANUAL_ONLY_PORTAL_REASONS.get(sourceId);
+  return deletedPortalReason(sourceId);
 }
 
+/**
+ * Legacy single-source helper. Deleted sources are never returned to a
+ * catalogue or provider inventory.
+ */
 export function applyManualOnlyPortalPolicy(
   source: PublicPortalSource,
 ): PublicPortalSource {
-  const reason = manualOnlyPortalReason(source.id);
-  if (!reason) return source;
-  return {
-    ...source,
-    enabled: false,
-    verificationStatus: "needs_review",
-    notes: reason,
-  };
+  if (isDeletedPortalSourceId(source.id)) {
+    throw new Error(`Deleted portal source cannot be retained: ${source.id}`);
+  }
+  return source;
 }
 
-let directCatalogPolicyRegistered = false;
+let deletionPolicyRegistered = false;
 
+function shouldDeleteDirectPortal(portal: {
+  id: string;
+  requiresLogin: boolean;
+  requiresKey: boolean;
+}): boolean {
+  return (
+    isDeletedPortalSourceId(portal.id) ||
+    portal.requiresLogin ||
+    (portal.requiresKey && portal.id !== "us-sam-gov")
+  );
+}
+
+/**
+ * Remove formerly manual-only/disabled records from the published direct and
+ * statewide catalogues. Historical source definitions may remain in generated
+ * source files for migration traceability, but they cannot appear in the
+ * application catalogue, adapter inventory, rotation, or health totals.
+ */
 export function registerManualOnlyDirectPortalPolicy(): void {
-  if (directCatalogPolicyRegistered) return;
-  directCatalogPolicyRegistered = true;
+  if (deletionPolicyRegistered) return;
+  deletionPolicyRegistered = true;
 
-  for (let index = 0; index < ENRICHED_DIRECT_RFP_PORTALS.length; index += 1) {
+  for (let index = ENRICHED_DIRECT_RFP_PORTALS.length - 1; index >= 0; index -= 1) {
     const portal = ENRICHED_DIRECT_RFP_PORTALS[index];
-    if (!portal) continue;
-    const reason = manualOnlyPortalReason(portal.id);
-    if (!reason) continue;
-    ENRICHED_DIRECT_RFP_PORTALS[index] = {
-      ...portal,
-      requiresLogin: true,
-      notes: `${portal.notes} ${reason}`.trim(),
-    };
+    if (portal && shouldDeleteDirectPortal(portal)) {
+      ENRICHED_DIRECT_RFP_PORTALS.splice(index, 1);
+    }
   }
 
-  for (let index = 0; index < STATEWIDE_PROCUREMENT_SOURCES.length; index += 1) {
+  for (let index = STATEWIDE_PROCUREMENT_SOURCES.length - 1; index >= 0; index -= 1) {
     const source = STATEWIDE_PROCUREMENT_SOURCES[index];
-    if (!source || !isManualOnlyPortalSourceId(source.id)) continue;
-    STATEWIDE_PROCUREMENT_SOURCES[index] = applyManualOnlyPortalPolicy(source);
+    if (
+      source &&
+      (isDeletedPortalSourceId(source.id) ||
+        source.enabled === false ||
+        source.verificationStatus !== "verified")
+    ) {
+      STATEWIDE_PROCUREMENT_SOURCES.splice(index, 1);
+    }
   }
 }

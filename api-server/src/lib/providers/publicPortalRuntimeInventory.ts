@@ -1,9 +1,4 @@
-export type PortalOperationalStatus =
-  | "runnable"
-  | "unfinished"
-  | "disabled"
-  | "quarantined"
-  | "catalogued";
+export type PortalOperationalStatus = "runnable" | "quarantined";
 
 export interface PortalRuntimeInventoryInput {
   id: string;
@@ -22,11 +17,12 @@ export type PortalRuntimeInventorySource<T extends PortalRuntimeInventoryInput> 
 export function portalOperationalStatus(
   source: PortalRuntimeInventoryInput,
 ): PortalOperationalStatus {
-  if (source.quarantined) return "quarantined";
-  if (source.disabled) return "disabled";
-  if (source.runtimeRunnable) return "runnable";
-  if (source.unfinished) return "unfinished";
-  return "catalogued";
+  if (!source.runtimeRunnable || !source.registeredAdapter) {
+    throw new Error(
+      `Non-runnable source cannot enter the published runtime inventory: ${source.id}`,
+    );
+  }
+  return source.quarantined ? "quarantined" : "runnable";
 }
 
 const RUNTIME_GROUPS: Array<{
@@ -36,33 +32,15 @@ const RUNTIME_GROUPS: Array<{
 }> = [
   {
     id: "runnable",
-    title: "Enabled / Runnable",
+    title: "Runnable Sources",
     description:
-      "Sources backed by a registered adapter, approved official API, or deliberately vetted extractor.",
-  },
-  {
-    id: "unfinished",
-    title: "Unfinished Sources",
-    description:
-      "Catalogued sources that still need an adapter or an explicitly approved extractor.",
-  },
-  {
-    id: "disabled",
-    title: "Disabled Sources",
-    description:
-      "Sources intentionally excluded from automated collection by runtime policy.",
+      "Published sources backed by a registered adapter or approved direct API.",
   },
   {
     id: "quarantined",
     title: "Quarantined Sources",
     description:
       "Runtime-registered sources temporarily removed after validation failures, repeated failures, or repeated empty yield.",
-  },
-  {
-    id: "catalogued",
-    title: "Catalogued Only",
-    description:
-      "Inventory metadata and manual links with no runtime collection authority.",
   },
 ];
 
@@ -80,17 +58,9 @@ export function buildPublicPortalRuntimeInventory<
     total: classified.length,
     summary: {
       catalogued: classified.length,
-      registeredAdapters: classified.filter(
-        (source) => source.registeredAdapter,
-      ).length,
+      registeredAdapters: classified.length,
       runnable: classified.filter(
         (source) => source.operationalStatus === "runnable",
-      ).length,
-      unfinished: classified.filter(
-        (source) => source.operationalStatus === "unfinished",
-      ).length,
-      disabled: classified.filter(
-        (source) => source.operationalStatus === "disabled",
       ).length,
       quarantined: classified.filter(
         (source) => source.operationalStatus === "quarantined",

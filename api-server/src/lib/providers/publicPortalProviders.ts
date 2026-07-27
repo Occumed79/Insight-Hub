@@ -5,21 +5,13 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
-import { bsoPortalProviders } from "./bsoPortal";
-import {
-  JAGGAER_SCIQUEST_TENANTS,
-  jaggaerSciQuestProviders,
-} from "./jaggaerSciQuest";
-import { BONFIRE_TENANTS, bonfirePortalProviders } from "./bonfirePortal";
-import { IONWAVE_TENANTS, ionWavePortalProviders } from "./ionWavePortal";
-import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
-import {
-  DEEP_RECOVERY_SOURCES,
-  deepRecoveryProviders,
-} from "./deepRecoveryProviders";
+import { JAGGAER_SCIQUEST_TENANTS } from "./jaggaerSciQuest";
+import { BONFIRE_TENANTS } from "./bonfirePortal";
+import { IONWAVE_TENANTS } from "./ionWavePortal";
+import { CAL_EPROCURE_SOURCE } from "./calEprocure";
+import { DEEP_RECOVERY_SOURCES } from "./deepRecoveryProviders";
 import {
   STATEWIDE_PROCUREMENT_SOURCES,
-  statewideProcurementProviders,
 } from "./statewideProcurementPortals";
 import {
   PublicPortalProvidersProvider,
@@ -27,6 +19,7 @@ import {
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/index";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
+import { getRegisteredPublicPortalAdapter } from "./publicPortalAdapterRegistry";
 import { composeAbortSignal } from "./abortSignals";
 import {
   failedPortalStatus,
@@ -129,6 +122,7 @@ const JAGGAER_SOURCES: PublicPortalSource[] = JAGGAER_SCIQUEST_TENANTS.filter(
   verificationStatus: "verified",
   notes: "Dedicated public Jaggaer/SciQuest event-listing adapter.",
 }));
+
 const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({
   id: tenant.portalId,
   agencyName: tenant.buyerName,
@@ -145,6 +139,7 @@ const BONFIRE_SOURCES: PublicPortalSource[] = BONFIRE_TENANTS.map((tenant) => ({
   verificationStatus: "verified",
   notes: "Dedicated public Bonfire/Euna opportunity-listing adapter.",
 }));
+
 const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({
   id: tenant.portalId,
   agencyName: tenant.buyerName,
@@ -161,6 +156,7 @@ const IONWAVE_SOURCES: PublicPortalSource[] = IONWAVE_TENANTS.map((tenant) => ({
   verificationStatus: "verified",
   notes: "Dedicated public IonWave/Euna bid-listing adapter.",
 }));
+
 const CAL_EPROCURE_SOURCES: PublicPortalSource[] = [CAL_EPROCURE_SOURCE];
 const DEEP_RECOVERY_SOURCE_IDS = new Set(
   DEEP_RECOVERY_SOURCES.map((source) => source.id),
@@ -192,41 +188,34 @@ interface DedicatedGroup {
   statuses: Map<string, PublicPortalSourceRunStatus>;
 }
 
-const ALL_DEDICATED_GROUPS: DedicatedGroup[] = [
-  { sources: BSO_SOURCES, providers: bsoPortalProviders, statuses: new Map() },
-  {
-    sources: JAGGAER_SOURCES,
-    providers: jaggaerSciQuestProviders,
+function runtimeAuthorizedGroup(sources: PublicPortalSource[]): DedicatedGroup {
+  const providers: Record<string, DataSourceProvider> = {};
+  const authorizedSources = sources.filter((source) => {
+    const provider = getRegisteredPublicPortalAdapter(source.id);
+    if (!provider) return false;
+    providers[source.id] = provider;
+    return true;
+  });
+  return {
+    sources: authorizedSources,
+    providers,
     statuses: new Map(),
-  },
-  {
-    sources: BONFIRE_SOURCES,
-    providers: bonfirePortalProviders,
-    statuses: new Map(),
-  },
-  {
-    sources: IONWAVE_SOURCES,
-    providers: ionWavePortalProviders,
-    statuses: new Map(),
-  },
-  {
-    sources: CAL_EPROCURE_SOURCES,
-    providers: { [CAL_EPROCURE_SOURCE.id]: calEprocureProvider },
-    statuses: new Map(),
-  },
-  {
-    sources: DEEP_RECOVERY_SOURCES,
-    providers: deepRecoveryProviders,
-    statuses: new Map(),
-  },
-  {
-    sources: STATEWIDE_SHARED_SOURCES,
-    providers: statewideProcurementProviders,
-    statuses: new Map(),
-  },
-];
+  };
+}
 
-// Shared BSO/Jaggaer/Bonfire/IonWave adapters are now registered inside the
+const ALL_DEDICATED_GROUPS: DedicatedGroup[] = [
+  BSO_SOURCES,
+  JAGGAER_SOURCES,
+  BONFIRE_SOURCES,
+  IONWAVE_SOURCES,
+  CAL_EPROCURE_SOURCES,
+  DEEP_RECOVERY_SOURCES,
+  STATEWIDE_SHARED_SOURCES,
+]
+  .map(runtimeAuthorizedGroup)
+  .filter((group) => group.sources.length > 0);
+
+// Shared BSO/Jaggaer/Bonfire/IonWave adapters are registered inside the
 // catalog provider. Do not execute the same portal ID a second time here.
 const dedicatedGroups: DedicatedGroup[] = ALL_DEDICATED_GROUPS.map((group) => ({
   ...group,
