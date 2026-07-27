@@ -23,7 +23,6 @@ type PortalConnectorStatus =
 type PortalOperationalStatus =
   | "runnable"
   | "unfinished"
-  | "disabled"
   | "quarantined"
   | "catalogued";
 
@@ -48,7 +47,6 @@ type PortalSource = {
   registeredAdapter: boolean;
   runtimeRunnable: boolean;
   unfinished: boolean;
-  disabled: boolean;
   quarantined?: boolean;
   quarantineReasonLabel?: string;
   registrationKind:
@@ -107,7 +105,6 @@ type PortalInventoryResponse = {
       registeredAdapters: number;
       runnable: number;
       unfinished: number;
-      disabled: number;
       quarantined: number;
     };
     groups: InventoryGroup[];
@@ -146,9 +143,6 @@ function operationalBadgeClass(status: PortalOperationalStatus): string {
   if (status === "quarantined") {
     return "border-red-400/25 bg-red-400/10 text-red-200";
   }
-  if (status === "disabled") {
-    return "border-orange-300/25 bg-orange-300/10 text-orange-100";
-  }
   return "border-white/10 bg-white/5 text-white/55";
 }
 
@@ -156,7 +150,6 @@ function operationalLabel(source: PortalSource): string {
   if (source.operationalStatus === "runnable") return "Runnable";
   if (source.operationalStatus === "unfinished") return "Needs adapter";
   if (source.operationalStatus === "quarantined") return "Quarantined";
-  if (source.operationalStatus === "disabled") return "Disabled";
   return "Catalogued only";
 }
 
@@ -412,9 +405,6 @@ export function ProcurementPortalDirectory() {
                   <Badge className="border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100">
                     {inventory.summary.unfinished.toLocaleString()} unfinished
                   </Badge>
-                  <Badge className="border border-orange-300/25 bg-orange-300/10 text-[10px] text-orange-100">
-                    {inventory.summary.disabled.toLocaleString()} disabled
-                  </Badge>
                   <Badge className="border border-red-400/25 bg-red-400/10 text-[10px] text-red-200">
                     {inventory.summary.quarantined.toLocaleString()} quarantined
                   </Badge>
@@ -422,7 +412,8 @@ export function ProcurementPortalDirectory() {
                 <p className="mt-2 text-[10px] leading-relaxed text-white/40">
                   A URL or catalogue row does not create a connection. Only a
                   registered adapter, approved official API, or deliberately
-                  vetted extractor can become runnable.
+                  vetted extractor can become runnable. Inaccessible and
+                  manual-only records are deleted rather than displayed here.
                 </p>
               </div>
 
