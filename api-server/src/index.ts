@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import app from "./app";
 import { isTransientDatabaseError } from "./lib/databaseReliability";
 import { logger } from "./lib/logger";
+import { markRuntimeReady, markRuntimeShuttingDown } from "./lib/runtimeHealth";
 import { runStartupMigrations } from "./lib/startup-migrate";
 import { runRfpStartupMigrations } from "./lib/rfp-startup-migrate";
 import {
@@ -25,8 +26,37 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+function boundedIntegerEnv(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
 const MIGRATION_TIMEOUT_MS = 120_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
+const HTTP_REQUEST_TIMEOUT_MS = boundedIntegerEnv(
+  "HTTP_REQUEST_TIMEOUT_MS",
+  120_000,
+  15_000,
+  1_200_000,
+);
+const HTTP_HEADERS_TIMEOUT_MS = boundedIntegerEnv(
+  "HTTP_HEADERS_TIMEOUT_MS",
+  15_000,
+  5_000,
+  60_000,
+);
+const HTTP_KEEP_ALIVE_TIMEOUT_MS = boundedIntegerEnv(
+  "HTTP_KEEP_ALIVE_TIMEOUT_MS",
+  5_000,
+  1_000,
+  30_000,
+);
 let server: Server | undefined;
 let shuttingDown = false;
 
@@ -36,19 +66,31 @@ async function withDeadline<T>(
   timeoutMs: number,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const operationPromise = operation();
+  operationPromise.catch(() => undefined);
   const deadline = new Promise<never>((_resolve, reject) => {
-    // This timer intentionally remains referenced: it must be able to fail a
-    // startup whose migration promise and database sockets never settle.
     timer = setTimeout(
       () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
       timeoutMs,
     );
   });
   try {
-    return await Promise.race([operation(), deadline]);
+    return await Promise.race([operationPromise, deadline]);
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function configureHttpServer(activeServer: Server): void {
+  activeServer.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
+  activeServer.headersTimeout = Math.min(
+    HTTP_HEADERS_TIMEOUT_MS,
+    HTTP_REQUEST_TIMEOUT_MS,
+  );
+  activeServer.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT_MS;
+  activeServer.maxHeadersCount = 100;
+  activeServer.maxRequestsPerSocket = 100;
+  activeServer.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
 }
 
 async function closeHttpServer(): Promise<void> {
@@ -64,10 +106,12 @@ async function closeHttpServer(): Promise<void> {
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  markRuntimeShuttingDown();
   logger.info({ signal }, "Graceful shutdown started");
 
   const forceExit = setTimeout(() => {
     logger.error({ signal }, "Graceful shutdown deadline exceeded");
+    server?.closeAllConnections?.();
     process.exit(exitCode || 1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceExit.unref?.();
@@ -99,10 +143,6 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));
 
-// Final containment for a transient Neon failure that escapes a background
-// task. Known database connectivity failures are logged without killing every
-// API route. Non-database unhandled rejections still trigger graceful shutdown
-// so programming defects are not silently hidden.
 process.on("unhandledRejection", (reason) => {
   if (isTransientDatabaseError(reason)) {
     logger.error(
@@ -122,8 +162,6 @@ process.on("uncaughtException", (error) => {
 });
 
 async function bootstrap(): Promise<void> {
-  // Preserve migration-before-traffic ordering while preventing a stalled Neon
-  // connection from leaving Render in an indefinite startup state.
   await withDeadline(
     "Intel database migrations",
     () => runWithDbContext("intel", () => runStartupMigrations()),
@@ -140,15 +178,22 @@ async function bootstrap(): Promise<void> {
     listener.once("listening", () => resolve(listener));
     listener.once("error", reject);
   });
+  configureHttpServer(server);
+  markRuntimeReady();
 
   logger.info(
-    { port, databases: getDatabaseConfigSummary() },
+    {
+      port,
+      databases: getDatabaseConfigSummary(),
+      http: {
+        requestTimeoutMs: HTTP_REQUEST_TIMEOUT_MS,
+        headersTimeoutMs: HTTP_HEADERS_TIMEOUT_MS,
+        keepAliveTimeoutMs: HTTP_KEEP_ALIVE_TIMEOUT_MS,
+      },
+    },
     "Server listening",
   );
 
-  // Production is intentionally manual-ingestion-only. The crawler scheduler
-  // remains available to explicit administrative callers, but it is never
-  // started automatically during service bootstrap.
   logger.info("Automatic crawler scheduler disabled; ingestion is manual-only");
 }
 
