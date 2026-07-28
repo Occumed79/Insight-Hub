@@ -6,6 +6,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import { StaticOfficialRecoveryProvider } from "./productionSourceRecovery";
+import { runAdapterWithDeadline } from "./adapterExecution";
 
 type StaticOfficialTenant = ConstructorParameters<
   typeof StaticOfficialRecoveryProvider
@@ -216,6 +217,17 @@ function opportunityKey(record: NormalizedOpportunity): string {
   return `id:${record.externalId.toLowerCase()}`;
 }
 
+function positiveIntegerEnv(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
 class CatalogueStaticOfficialAggregateProvider implements DataSourceProvider {
   readonly name = "publicPortalProviders" as const;
   private lastAttempt?: Date;
@@ -232,31 +244,54 @@ class CatalogueStaticOfficialAggregateProvider implements DataSourceProvider {
     const providers = Object.entries(catalogueStaticOfficialProviders);
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
-    const concurrency = Math.min(4, Math.max(1, providers.length));
+    const concurrency = positiveIntegerEnv(
+      "CATALOGUE_STATIC_ADAPTER_CONCURRENCY",
+      4,
+      1,
+      8,
+    );
+    const timeoutMs = positiveIntegerEnv(
+      "CATALOGUE_STATIC_ADAPTER_TIMEOUT_MS",
+      30_000,
+      1_000,
+      120_000,
+    );
     let cursor = 0;
 
     await Promise.all(
-      Array.from({ length: concurrency }, async () => {
-        while (cursor < providers.length && !options.signal?.aborted) {
-          const index = cursor;
-          cursor += 1;
-          const entry = providers[index];
-          if (!entry) return;
-          const [sourceId, provider] = entry;
-          try {
-            const result = await provider.fetch({
-              ...options,
-              limit: Math.min(options.limit ?? 100, 50),
-            });
-            records.push(...result.records);
-            errors.push(...result.errors.map((error) => `${sourceId}: ${error}`));
-          } catch (error) {
-            errors.push(
-              `${sourceId}: ${error instanceof Error ? error.message : String(error)}`,
-            );
+      Array.from(
+        { length: Math.min(concurrency, Math.max(1, providers.length)) },
+        async () => {
+          while (cursor < providers.length && !options.signal?.aborted) {
+            const index = cursor;
+            cursor += 1;
+            const entry = providers[index];
+            if (!entry) return;
+            const [sourceId, provider] = entry;
+            try {
+              const result = await runAdapterWithDeadline(
+                sourceId,
+                provider,
+                {
+                  ...options,
+                  limit: Math.min(options.limit ?? 100, 50),
+                },
+                timeoutMs,
+              );
+              records.push(...result.records);
+              errors.push(
+                ...result.errors.map((error) => `${sourceId}: ${error}`),
+              );
+            } catch (error) {
+              errors.push(
+                error instanceof Error
+                  ? error.message
+                  : `${sourceId}: ${String(error)}`,
+              );
+            }
           }
-        }
-      }),
+        },
+      ),
     );
 
     const seen = new Set<string>();
@@ -284,6 +319,8 @@ class CatalogueStaticOfficialAggregateProvider implements DataSourceProvider {
         adapters: providers.length,
         returned: deduped.length,
         failures: errors.length,
+        timeoutMs,
+        concurrency,
       }),
     );
 
