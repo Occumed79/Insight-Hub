@@ -37,11 +37,12 @@ async function withDeadline<T>(
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
+    // This timer intentionally remains referenced: it must be able to fail a
+    // startup whose migration promise and database sockets never settle.
     timer = setTimeout(
       () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
       timeoutMs,
     );
-    timer.unref?.();
   });
   try {
     return await Promise.race([operation(), deadline]);
