@@ -24,6 +24,61 @@ function safeConnectionSummary(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL
   return { logicalDatabase: envName === "RFP_DATABASE_URL" ? "rfp" : "intel", source: envName };
 }
 
+function boundedIntegerEnv(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
+function createPool(
+  logicalDatabase: LogicalDatabase,
+  envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL",
+): pg.Pool {
+  const pool = new Pool({
+    connectionString: requiredConnectionString(envName),
+    max: boundedIntegerEnv("DATABASE_POOL_MAX", 6, 1, 20),
+    min: 0,
+    idleTimeoutMillis: boundedIntegerEnv(
+      "DATABASE_POOL_IDLE_TIMEOUT_MS",
+      30_000,
+      5_000,
+      300_000,
+    ),
+    connectionTimeoutMillis: boundedIntegerEnv(
+      "DATABASE_CONNECT_TIMEOUT_MS",
+      10_000,
+      2_000,
+      60_000,
+    ),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    allowExitOnIdle: false,
+  });
+
+  // node-postgres emits idle-client errors on the Pool. Without a listener,
+  // transient Neon network failures can terminate the entire Node process.
+  pool.on("error", (error) => {
+    console.error(
+      JSON.stringify({
+        event: "database_pool_error",
+        logicalDatabase,
+        code:
+          typeof (error as Error & { code?: unknown }).code === "string"
+            ? (error as Error & { code: string }).code
+            : undefined,
+        message: error.message,
+      }),
+    );
+  });
+
+  return pool;
+}
+
 export function runWithDbContext<T>(logicalDatabase: LogicalDatabase, callback: () => T): T {
   return dbContext.run(logicalDatabase, callback);
 }
@@ -32,8 +87,8 @@ export function getActiveLogicalDatabase(): LogicalDatabase {
   return dbContext.getStore() ?? "rfp";
 }
 
-export const rfpPool = new Pool({ connectionString: requiredConnectionString("RFP_DATABASE_URL") });
-export const intelPool = new Pool({ connectionString: requiredConnectionString("INTEL_DATABASE_URL") });
+export const rfpPool = createPool("rfp", "RFP_DATABASE_URL");
+export const intelPool = createPool("intel", "INTEL_DATABASE_URL");
 
 export const rfpDb = drizzle(rfpPool, { schema: rfpSchema });
 export const intelDb = drizzle(intelPool, { schema: intelSchema });
