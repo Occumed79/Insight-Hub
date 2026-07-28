@@ -1,5 +1,4 @@
 import app from "./app";
-import { startCrawlerScheduler } from "./lib/crawler/scheduler";
 import { isTransientDatabaseError } from "./lib/databaseReliability";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
@@ -60,9 +59,10 @@ async function bootstrap(): Promise<void> {
     });
   });
 
-  // The scheduler uses the same durable ingestion pipeline and starts only
-  // after migrations and the HTTP listener are healthy.
-  startCrawlerScheduler();
+  // Production is intentionally manual-ingestion-only. The crawler scheduler
+  // remains available to explicit administrative callers, but it is never
+  // started automatically during service bootstrap.
+  logger.info("Automatic crawler scheduler disabled; ingestion is manual-only");
 }
 
 bootstrap().catch((err) => {
