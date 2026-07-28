@@ -50,10 +50,11 @@ export async function runAdapterWithDeadline(
   adapterPromise.catch(() => undefined);
 
   const deadline = new Promise<never>((_resolve, reject) => {
+    // This timer intentionally remains referenced. It is the mechanism that
+    // releases the caller when an adapter returns a never-settling promise.
     deadlineTimer = setTimeout(() => {
       reject(new Error(`${sourceId} timed out after ${boundedTimeout}ms`));
     }, boundedTimeout + 250);
-    deadlineTimer.unref?.();
   });
 
   try {
