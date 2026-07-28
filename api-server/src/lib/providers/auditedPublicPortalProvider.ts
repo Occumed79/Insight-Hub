@@ -15,7 +15,7 @@ import {
   selectFairPortalSources,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/portalHealthStore";
-import { composeAbortSignal } from "./abortSignals";
+import { runAdapterWithDeadline } from "./adapterExecution";
 import {
   partitionProviderRecordsForQuery,
   type ProviderQueryPartition,
@@ -219,7 +219,6 @@ async function saveHealthSafely(
 async function collectRawSourceRecords(
   source: PublicPortalSource,
   options: FetchOptions,
-  signal: AbortSignal,
 ): Promise<ProviderFetchResult> {
   const provider = getRegisteredPublicPortalAdapter(source.id);
   if (!provider) {
@@ -232,14 +231,18 @@ async function collectRawSourceRecords(
 
   // Adapter-specific OR-word matchers are intentionally bypassed. The shared
   // query classifier runs after normalization and before any global cap.
-  return provider.fetch({
-    ...options,
-    keywords: undefined,
-    offset: 0,
-    limit: SOURCE_SCAN_LIMIT,
-    signal,
-    onProgress: undefined,
-  });
+  return runAdapterWithDeadline(
+    source.id,
+    provider,
+    {
+      ...options,
+      keywords: undefined,
+      offset: 0,
+      limit: SOURCE_SCAN_LIMIT,
+      onProgress: undefined,
+    },
+    SOURCE_TIMEOUT_MS,
+  );
 }
 
 async function collectWithRetry(
@@ -252,13 +255,8 @@ async function collectWithRetry(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= SOURCE_RETRY_ATTEMPTS; attempt += 1) {
-    const sourceSignal = composeAbortSignal(SOURCE_TIMEOUT_MS, options.signal);
     try {
-      const result = await collectRawSourceRecords(
-        source,
-        options,
-        sourceSignal.signal,
-      );
+      const result = await collectRawSourceRecords(source, options);
       const reportedTransientFailure =
         result.records.length === 0 &&
         result.errors.length > 0 &&
@@ -290,8 +288,6 @@ async function collectWithRetry(
         errors,
       );
       await wait(RETRY_DELAY_MS * attempt, options.signal);
-    } finally {
-      sourceSignal.cleanup();
     }
   }
 
