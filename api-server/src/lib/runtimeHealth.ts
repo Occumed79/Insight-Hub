@@ -37,10 +37,11 @@ async function probePool(
 ): Promise<DatabaseProbeResult> {
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const query = pool.query({
+  const queryConfig = {
     text: "select 1 as healthy",
     query_timeout: DATABASE_PROBE_TIMEOUT_MS,
-  });
+  };
+  const query = pool.query(queryConfig);
   query.catch(() => undefined);
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(
