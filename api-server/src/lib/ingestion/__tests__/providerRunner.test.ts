@@ -9,18 +9,36 @@ process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 const { providerRegistry } = await import("../../providers");
 const { fetchOneProvider } = await import("../providerRunner");
 
-test("public portal runner executes the registry-backed provider only once", async () => {
+test("public portal runner executes the registry-backed provider once and propagates adapter progress", async () => {
   const originalProvider = providerRegistry.publicPortalProviders;
   const originalFetch = globalThis.fetch;
   let providerFetches = 0;
+  const progress: string[] = [];
 
   providerRegistry.publicPortalProviders = {
     name: "publicPortalProviders",
     async isConfigured() {
       return true;
     },
-    async fetch() {
+    async fetch(options) {
       providerFetches += 1;
+      await options.onProgress?.({
+        provider: "publicPortalProviders",
+        phase: "source_start",
+        sourceId: "example-county",
+        sourceName: "Example County",
+        index: 1,
+        total: 1,
+      });
+      await options.onProgress?.({
+        provider: "publicPortalProviders",
+        phase: "source_complete",
+        sourceId: "example-county",
+        sourceName: "Example County",
+        index: 1,
+        total: 1,
+        recordCount: 1,
+      });
       return {
         records: [
           {
@@ -56,10 +74,17 @@ test("public portal runner executes the registry-backed provider only once", asy
     const result = await fetchOneProvider("publicPortalProviders", {
       keywords: "occupational health",
       dateRange: 365,
+      onProgress: (event) => {
+        progress.push(`${event.phase}:${event.sourceId}`);
+      },
     });
     assert.equal(providerFetches, 1);
     assert.equal(result.records.length, 1);
     assert.deepEqual(result.errors, []);
+    assert.deepEqual(progress, [
+      "source_start:example-county",
+      "source_complete:example-county",
+    ]);
   } finally {
     providerRegistry.publicPortalProviders = originalProvider;
     globalThis.fetch = originalFetch;
