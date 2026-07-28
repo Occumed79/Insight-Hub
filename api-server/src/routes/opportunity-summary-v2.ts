@@ -2,7 +2,7 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { tavilyProvider } from "../lib/providers/tavily";
+import { jinaProvider } from "../lib/providers/jina";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
 import { classifyOpportunityQuality, plainSummaryIneligibilityReason, summaryEvidenceFingerprint, summaryIneligibilityReason } from "../lib/opportunityQuality";
@@ -155,9 +155,8 @@ router.post("/opportunities/:id/summary", async (req, res) => {
 
     if (url) {
       try {
-        if (await tavilyProvider.isConfigured()) {
-          const result = await tavilyProvider.extractContent([url]);
-          extracted = result?.[0]?.rawContent || null;
+        if (await jinaProvider.isConfigured()) {
+          extracted = await jinaProvider.extractUrl(url, 10_000);
         }
       } catch (err) {
         req.log.warn(err, "summary source extraction failed");

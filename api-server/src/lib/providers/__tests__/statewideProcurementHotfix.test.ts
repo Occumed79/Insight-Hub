@@ -7,7 +7,9 @@ import {
 } from "../statewideProcurementPortals";
 
 function config(portalId: string) {
-  const found = STATEWIDE_PORTAL_CONFIGS.find((item) => item.portalId === portalId);
+  const found = STATEWIDE_PORTAL_CONFIGS.find(
+    (item) => item.portalId === portalId,
+  );
   assert.ok(found, `missing config ${portalId}`);
   return found;
 }
@@ -26,12 +28,15 @@ describe("statewide portal hotfixes", () => {
         return new Response("", {
           status: 302,
           headers: {
-            location: "https://webprocure.proactiscloud.com/wp-web-public/#/bidboard",
+            location:
+              "https://webprocure.proactiscloud.com/wp-web-public/#/bidboard",
             "set-cookie": "ctsession=secret; Path=/; Secure; HttpOnly",
           },
         });
       }
-      return new Response("<html><body>Bid board</body></html>", { status: 200 });
+      return new Response("<html><body>Bid board</body></html>", {
+        status: 200,
+      });
     };
     try {
       const session = new PublicPortalSession(CT);
@@ -44,12 +49,16 @@ describe("statewide portal hotfixes", () => {
 
   it("treats a reachable portal with no active opportunities as healthy empty", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response(`
+    globalThis.fetch = async () =>
+      new Response(
+        `
       <table>
         <tr><th>Solicitation Number</th><th>Title</th><th>Status</th></tr>
         <tr><td>PA-CLOSED-1</td><td><a href="/SolicitationDetails.aspx?SID=PA-CLOSED-1">Closed medical services</a></td><td>Closed</td></tr>
       </table>
-    `, { status: 200 });
+    `,
+        { status: 200 },
+      );
     try {
       const provider = new StatewideProcurementProvider(PA);
       const result = await provider.fetch({ limit: 2 });
@@ -58,6 +67,34 @@ describe("statewide portal hotfixes", () => {
       assert.equal(status.healthy, true);
       assert.equal(status.recordCount, 0);
       assert.ok(status.lastSuccess);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("propagates parent cancellation instead of retrying or recording a portal failure", async () => {
+    const originalFetch = globalThis.fetch;
+    const controller = new AbortController();
+    let calls = 0;
+    globalThis.fetch = async (_input, init) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      });
+    };
+
+    try {
+      const execution = new StatewideProcurementProvider(PA).fetch({
+        limit: 1,
+        signal: controller.signal,
+      });
+      await Promise.resolve();
+      controller.abort(new Error("manual cancellation"));
+      await assert.rejects(execution, /manual cancellation/);
+      assert.equal(calls, 1);
     } finally {
       globalThis.fetch = originalFetch;
     }

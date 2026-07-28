@@ -10,6 +10,7 @@ import {
   extractSameOriginPaginationUrls,
   positiveIntegerEnv,
 } from "./officialPortalHttp";
+import { composeAbortSignal } from "./abortSignals";
 import {
   STATEWIDE_PORTAL_CONFIGS,
   STATEWIDE_PROCUREMENT_PORTAL_IDS,
@@ -52,33 +53,84 @@ export {
 
 const DOCUMENT_URL = /\.(?:pdf|docx?|xlsx?|csv|zip|txt|rtf)(?:$|[?#])/i;
 
-export function statewideRetryDelayMs(retryAfter: string | null, attempt: number): number {
+export function statewideRetryDelayMs(
+  retryAfter: string | null,
+  attempt: number,
+): number {
   if (retryAfter?.trim()) {
     const seconds = Number.parseFloat(retryAfter);
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(Math.round(seconds * 1_000), 10_000);
+    if (Number.isFinite(seconds) && seconds >= 0)
+      return Math.min(Math.round(seconds * 1_000), 10_000);
     const absolute = Date.parse(retryAfter);
-    if (Number.isFinite(absolute)) return Math.min(Math.max(absolute - Date.now(), 0), 10_000);
+    if (Number.isFinite(absolute))
+      return Math.min(Math.max(absolute - Date.now(), 0), 10_000);
   }
   return Math.min(400 * 2 ** Math.max(attempt, 0), 10_000);
+}
+
+function portalAbortError(signal: AbortSignal, label: string): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error(`${label} cancelled`);
+}
+
+function throwIfPortalAborted(
+  signal: AbortSignal | undefined,
+  label: string,
+): void {
+  if (signal?.aborted) throw portalAbortError(signal, label);
+}
+
+function waitForPortalRetry(
+  delayMs: number,
+  signal: AbortSignal | undefined,
+  label: string,
+): Promise<void> {
+  throwIfPortalAborted(signal, label);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(
+        signal
+          ? portalAbortError(signal, label)
+          : new Error(`${label} cancelled`),
+      );
+    };
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }
 
 export class PublicPortalSession {
   private readonly cookiesByOrigin = new Map<string, Map<string, string>>();
   private readonly origins: ReadonlySet<string>;
 
-  constructor(private readonly config: StatewidePortalConfig) {
+  constructor(
+    private readonly config: StatewidePortalConfig,
+    private readonly signal?: AbortSignal,
+  ) {
     this.origins = statewideAllowedOrigins(config);
   }
 
   private absorbCookies(origin: string, headers: Headers): void {
     const extended = headers as Headers & { getSetCookie?: () => string[] };
-    const values = extended.getSetCookie?.() ?? (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+    const values =
+      extended.getSetCookie?.() ??
+      (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
     if (!values.length) return;
-    const cookies = this.cookiesByOrigin.get(origin) ?? new Map<string, string>();
+    const cookies =
+      this.cookiesByOrigin.get(origin) ?? new Map<string, string>();
     for (const cookie of values) {
       const pair = cookie.split(";", 1)[0]?.trim();
       const equals = pair?.indexOf("=") ?? -1;
-      if (pair && equals > 0) cookies.set(pair.slice(0, equals), pair.slice(equals + 1));
+      if (pair && equals > 0)
+        cookies.set(pair.slice(0, equals), pair.slice(equals + 1));
     }
     if (cookies.size) this.cookiesByOrigin.set(origin, cookies);
   }
@@ -86,70 +138,123 @@ export class PublicPortalSession {
   private cookieHeader(origin: string): string | undefined {
     const cookies = this.cookiesByOrigin.get(origin);
     return cookies?.size
-      ? Array.from(cookies.entries()).map(([name, value]) => `${name}=${value}`).join("; ")
+      ? Array.from(cookies.entries())
+          .map(([name, value]) => `${name}=${value}`)
+          .join("; ")
       : undefined;
   }
 
-  private async request(url: string, timeoutMs: number): Promise<Response> {
+  private async request(
+    url: string,
+    timeoutMs: number,
+  ): Promise<{ response: Response; cleanup: () => void }> {
+    throwIfPortalAborted(this.signal, this.config.portalId);
     let current = allowedStatewideUrl(this.config, url);
-    if (!current) throw new Error(`${this.config.portalId} rejected a URL outside its configured official origins`);
+    if (!current)
+      throw new Error(
+        `${this.config.portalId} rejected a URL outside its configured official origins`,
+      );
     const seenRedirects = new Set<string>();
     for (let redirects = 0; redirects <= 6; redirects += 1) {
+      throwIfPortalAborted(this.signal, this.config.portalId);
       const canonical = statewideCanonicalUrl(current).toLowerCase();
-      if (seenRedirects.has(canonical)) throw new Error(`${this.config.portalId} entered a redirect loop`);
+      if (seenRedirects.has(canonical))
+        throw new Error(`${this.config.portalId} entered a redirect loop`);
       seenRedirects.add(canonical);
       const currentOrigin = new URL(current).origin;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const requestSignal = composeAbortSignal(timeoutMs, this.signal);
+      let returnedResponse = false;
       try {
         const cookie = this.cookieHeader(currentOrigin);
         const response = await fetch(current, {
-          signal: controller.signal,
+          signal: requestSignal.signal,
           redirect: "manual",
           headers: {
-            accept: "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
-            "user-agent": "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)",
+            accept:
+              "text/html,application/xhtml+xml,application/json,text/csv;q=0.9,*/*;q=0.8",
+            "user-agent":
+              "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)",
             ...(cookie ? { cookie } : {}),
           },
         });
         this.absorbCookies(currentOrigin, response.headers);
-        if (response.status < 300 || response.status >= 400) return response;
+        if (response.status < 300 || response.status >= 400) {
+          returnedResponse = true;
+          return { response, cleanup: requestSignal.cleanup };
+        }
         const location = response.headers.get("location");
-        if (!location) return response;
+        if (!location) {
+          returnedResponse = true;
+          return { response, cleanup: requestSignal.cleanup };
+        }
         const redirectTarget = new URL(location, current).toString();
         const next = allowedStatewideUrl(this.config, redirectTarget, current);
-        if (!next) throw new Error(`${this.config.portalId} redirected outside its configured official origins: ${redirectTarget}`);
+        if (!next)
+          throw new Error(
+            `${this.config.portalId} redirected outside its configured official origins: ${redirectTarget}`,
+          );
         current = next;
       } finally {
-        clearTimeout(timer);
+        if (!returnedResponse) requestSignal.cleanup();
       }
     }
     throw new Error(`${this.config.portalId} exceeded its redirect limit`);
   }
 
-  async fetchText(url: string, timeoutMs: number, maxRetries: number, label: string): Promise<string> {
+  async fetchText(
+    url: string,
+    timeoutMs: number,
+    maxRetries: number,
+    label: string,
+  ): Promise<string> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      throwIfPortalAborted(this.signal, label);
       try {
-        const response = await this.request(url, timeoutMs);
-        const body = await response.text();
+        const request = await this.request(url, timeoutMs);
+        let body: string;
+        try {
+          body = await request.response.text();
+        } finally {
+          request.cleanup();
+        }
+        const response = request.response;
         if (response.ok) return body;
-        const retryable = response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+        const retryable =
+          response.status === 408 ||
+          response.status === 425 ||
+          response.status === 429 ||
+          response.status >= 500;
         const message = `${label} returned HTTP ${response.status}${body ? `: ${statewideHtmlToText(body).slice(0, 160)}` : ""}`;
         lastError = new Error(message);
         if (!retryable || attempt >= maxRetries) break;
-        await new Promise((resolve) => setTimeout(resolve, statewideRetryDelayMs(response.headers.get("retry-after"), attempt)));
+        await waitForPortalRetry(
+          statewideRetryDelayMs(response.headers.get("retry-after"), attempt),
+          this.signal,
+          label,
+        );
       } catch (error) {
+        throwIfPortalAborted(this.signal, label);
         lastError = error;
         if (attempt >= maxRetries) break;
-        await new Promise((resolve) => setTimeout(resolve, statewideRetryDelayMs(null, attempt)));
+        await waitForPortalRetry(
+          statewideRetryDelayMs(null, attempt),
+          this.signal,
+          label,
+        );
       }
     }
-    throw new Error(describeOfficialPortalRequestError(lastError, label, timeoutMs));
+    throw new Error(
+      describeOfficialPortalRequestError(lastError, label, timeoutMs),
+    );
   }
 
   supports(url: string): boolean {
-    try { return this.origins.has(new URL(url).origin); } catch { return false; }
+    try {
+      return this.origins.has(new URL(url).origin);
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -160,13 +265,18 @@ async function mapConcurrent<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(Math.max(concurrency, 1), Math.max(items.length, 1)) }, async () => {
-    while (true) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      results[index] = await worker(items[index] as T);
-    }
-  }));
+  await Promise.all(
+    Array.from(
+      { length: Math.min(Math.max(concurrency, 1), Math.max(items.length, 1)) },
+      async () => {
+        while (true) {
+          const index = cursor++;
+          if (index >= items.length) return;
+          results[index] = await worker(items[index] as T);
+        }
+      },
+    ),
+  );
   return results;
 }
 
@@ -175,12 +285,28 @@ function platformSeedUrls(config: StatewidePortalConfig): string[] {
   try {
     const listing = new URL(config.listingUrl);
     if (config.platformFamily === "bonfire_euna") {
-      seeds.push(new URL("/PublicPortal/getOpenPublicOpportunitiesSectionData", listing.origin).toString());
+      seeds.push(
+        new URL(
+          "/PublicPortal/getOpenPublicOpportunitiesSectionData",
+          listing.origin,
+        ).toString(),
+      );
     }
-    if (config.platformFamily === "cgi_advantage" && /\/Advantage4\/?$/i.test(listing.pathname)) {
-      seeds.push(new URL(listing.pathname.replace(/\/Advantage4\/?$/i, "/AltSelfService"), listing.origin).toString());
+    if (
+      config.platformFamily === "cgi_advantage" &&
+      /\/Advantage4\/?$/i.test(listing.pathname)
+    ) {
+      seeds.push(
+        new URL(
+          listing.pathname.replace(/\/Advantage4\/?$/i, "/AltSelfService"),
+          listing.origin,
+        ).toString(),
+      );
     }
-    if (config.platformFamily === "peoplesoft" && !listing.searchParams.has("PAGE")) {
+    if (
+      config.platformFamily === "peoplesoft" &&
+      !listing.searchParams.has("PAGE")
+    ) {
       listing.searchParams.set("PAGE", "SCP_PUB_BIDLIST_FL");
       seeds.push(listing.toString());
     }
@@ -198,9 +324,17 @@ function platformSeedUrls(config: StatewidePortalConfig): string[] {
   });
 }
 
-function enqueueUnique(queue: string[], seenPages: Set<string>, value: string): void {
+function enqueueUnique(
+  queue: string[],
+  seenPages: Set<string>,
+  value: string,
+): void {
   const key = statewideCanonicalUrl(value).toLowerCase();
-  if (seenPages.has(key) || queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)) return;
+  if (
+    seenPages.has(key) ||
+    queue.some((queued) => statewideCanonicalUrl(queued).toLowerCase() === key)
+  )
+    return;
   queue.push(value);
 }
 
@@ -211,11 +345,16 @@ function boundedPortalBudget(
   minimum: number,
   maximum: number,
 ): number {
-  const configured = Math.min(Math.max(configuredValue ?? defaultValue, minimum), maximum);
+  const configured = Math.min(
+    Math.max(configuredValue ?? defaultValue, minimum),
+    maximum,
+  );
   const raw = process.env[envName]?.trim();
   if (!raw) return configured;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : configured;
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, minimum), maximum)
+    : configured;
 }
 
 export class StatewideProcurementProvider implements DataSourceProvider {
@@ -229,14 +368,17 @@ export class StatewideProcurementProvider implements DataSourceProvider {
 
   async isConfigured(): Promise<boolean> {
     const seeds = platformSeedUrls(this.config);
-    return seeds.length > 0
-      && seeds.every((url) => Boolean(allowedStatewideUrl(this.config, url)))
-      && this.config.state.length === 2
-      && Boolean(this.config.portalId && this.config.buyerName);
+    return (
+      seeds.length > 0 &&
+      seeds.every((url) => Boolean(allowedStatewideUrl(this.config, url))) &&
+      this.config.state.length === 2 &&
+      Boolean(this.config.portalId && this.config.buyerName)
+    );
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     this.lastAttempt = new Date();
+    throwIfPortalAborted(options.signal, this.config.portalId);
     const timeoutMs = boundedPortalBudget(
       "STATEWIDE_PORTAL_REQUEST_TIMEOUT_MS",
       this.config.requestTimeoutMs,
@@ -258,12 +400,25 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       1,
       20,
     );
-    const maxResults = positiveIntegerEnv("STATEWIDE_PORTAL_MAX_RESULTS", 100, 1, 500);
-    const detailConcurrency = positiveIntegerEnv("STATEWIDE_PORTAL_DETAIL_CONCURRENCY", 4, 1, 8);
+    const maxResults = positiveIntegerEnv(
+      "STATEWIDE_PORTAL_MAX_RESULTS",
+      100,
+      1,
+      500,
+    );
+    const detailConcurrency = positiveIntegerEnv(
+      "STATEWIDE_PORTAL_DETAIL_CONCURRENCY",
+      4,
+      1,
+      8,
+    );
     const offset = Math.max(options.offset ?? 0, 0);
-    const requestedLimit = Math.min(Math.max(options.limit ?? maxResults, 1), maxResults);
+    const requestedLimit = Math.min(
+      Math.max(options.limit ?? maxResults, 1),
+      maxResults,
+    );
     const targetCount = Math.min(maxResults, offset + requestedLimit);
-    const session = new PublicPortalSession(this.config);
+    const session = new PublicPortalSession(this.config, options.signal);
     const queue = platformSeedUrls(this.config);
     const seenPages = new Set<string>();
     const seenSignatures = new Set<string>();
@@ -280,12 +435,19 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       return { records: [], total: 0, errors: [reason] };
     }
 
-    while (queue.length && listingPage < maxPages && listings.size < targetCount) {
+    while (
+      queue.length &&
+      listingPage < maxPages &&
+      listings.size < targetCount
+    ) {
+      throwIfPortalAborted(options.signal, this.config.portalId);
       const pageUrl = queue.shift();
       if (!pageUrl) break;
       const safePageUrl = allowedStatewideUrl(this.config, pageUrl);
       if (!safePageUrl) {
-        errors.push(`${this.config.portalId}: rejected listing URL outside configured official origins: ${pageUrl}`);
+        errors.push(
+          `${this.config.portalId}: rejected listing URL outside configured official origins: ${pageUrl}`,
+        );
         continue;
       }
       const pageKey = statewideCanonicalUrl(safePageUrl).toLowerCase();
@@ -293,26 +455,58 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       seenPages.add(pageKey);
       let content: string;
       try {
-        content = await session.fetchText(safePageUrl, timeoutMs, maxRetries, `${this.config.portalId} listing`);
+        content = await session.fetchText(
+          safePageUrl,
+          timeoutMs,
+          maxRetries,
+          `${this.config.portalId} listing`,
+        );
         successfulFetches += 1;
       } catch (error) {
+        throwIfPortalAborted(options.signal, this.config.portalId);
         const reason = error instanceof Error ? error.message : String(error);
-        errors.push(listings.size ? `${this.config.portalId}: partial listing results after ${reason}` : `${this.config.portalId}: ${reason}`);
+        errors.push(
+          listings.size
+            ? `${this.config.portalId}: partial listing results after ${reason}`
+            : `${this.config.portalId}: ${reason}`,
+        );
         continue;
       }
 
-      const browserBlocked = statewideContentLooksLikeChallenge(content) || statewideContentLooksLikeBrowserShell(content);
-      const signature = statewideStableHash(statewideHtmlToText(content) || content.slice(0, 10_000));
+      const browserBlocked =
+        statewideContentLooksLikeChallenge(content) ||
+        statewideContentLooksLikeBrowserShell(content);
+      const signature = statewideStableHash(
+        statewideHtmlToText(content) || content.slice(0, 10_000),
+      );
       if (seenSignatures.has(signature)) continue;
       seenSignatures.add(signature);
       listingPage += 1;
 
       const parsedListings = [
-        ...parseStatewideListingContent(content, this.config, safePageUrl, listingPage),
-        ...parseStatewidePlatformListings(content, this.config, safePageUrl, listingPage),
+        ...parseStatewideListingContent(
+          content,
+          this.config,
+          safePageUrl,
+          listingPage,
+        ),
+        ...parseStatewidePlatformListings(
+          content,
+          this.config,
+          safePageUrl,
+          listingPage,
+        ),
       ];
-      if (browserBlocked || (!parsedListings.length && Boolean(this.config.interactiveAccessReason))) challengeCount += 1;
-      if (!parsedListings.length && statewideContentHasExplicitEmptyEvidence(content)) explicitEmptyCount += 1;
+      if (
+        browserBlocked ||
+        (!parsedListings.length && Boolean(this.config.interactiveAccessReason))
+      )
+        challengeCount += 1;
+      if (
+        !parsedListings.length &&
+        statewideContentHasExplicitEmptyEvidence(content)
+      )
+        explicitEmptyCount += 1;
       for (const listing of parsedListings) {
         const key = listing.nativeId.toLowerCase();
         if (!listings.has(key)) listings.set(key, listing);
@@ -321,28 +515,48 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       if (listingPage >= maxPages || listings.size >= targetCount) continue;
 
       const origin = new URL(safePageUrl).origin;
-      for (const nextUrl of extractSameOriginPaginationUrls(content, safePageUrl, origin, maxPages * 3)) {
+      for (const nextUrl of extractSameOriginPaginationUrls(
+        content,
+        safePageUrl,
+        origin,
+        maxPages * 3,
+      )) {
         const safe = allowedStatewideUrl(this.config, nextUrl, safePageUrl);
         if (safe) enqueueUnique(queue, seenPages, safe);
       }
-      for (const discovered of extractStatewideDiscoveryUrls(content, safePageUrl, this.config, maxPages * 4)) {
+      for (const discovered of extractStatewideDiscoveryUrls(
+        content,
+        safePageUrl,
+        this.config,
+        maxPages * 4,
+      )) {
         enqueueUnique(queue, seenPages, discovered);
       }
     }
 
     if (!listings.size) {
       this.recordCount = 0;
-      if (successfulFetches > 0 && explicitEmptyCount > 0 && challengeCount < successfulFetches) {
+      if (
+        successfulFetches > 0 &&
+        explicitEmptyCount > 0 &&
+        challengeCount < successfulFetches
+      ) {
         this.lastError = undefined;
         this.lastSuccess = new Date();
         return { records: [], total: 0, errors: [] };
       }
       if (challengeCount > 0) {
-        errors.push(`${this.config.portalId}: official public route returned a browser/login challenge and no parseable public records`);
+        errors.push(
+          `${this.config.portalId}: official public route returned a browser/login challenge and no parseable public records`,
+        );
       } else if (successfulFetches > 0) {
-        errors.push(`${this.config.portalId}: official public routes returned content but no parseable active opportunity rows and no explicit empty-state evidence`);
+        errors.push(
+          `${this.config.portalId}: official public routes returned content but no parseable active opportunity rows and no explicit empty-state evidence`,
+        );
       } else if (!errors.length) {
-        errors.push(`${this.config.portalId}: all configured official listing requests failed before content was returned`);
+        errors.push(
+          `${this.config.portalId}: all configured official listing requests failed before content was returned`,
+        );
       }
       this.lastError = errors.join("; ");
       return { records: [], total: 0, errors };
@@ -354,14 +568,26 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       async (listing) => {
         let detail: StatewideDetailRecord | undefined;
         const detailUrl = statewideCanonicalUrl(listing.detailUrl);
-        const isSeed = platformSeedUrls(this.config).some((seed) => statewideCanonicalUrl(seed) === detailUrl);
-        const isDocument = DOCUMENT_URL.test(new URL(detailUrl).pathname + new URL(detailUrl).search);
+        const isSeed = platformSeedUrls(this.config).some(
+          (seed) => statewideCanonicalUrl(seed) === detailUrl,
+        );
+        const isDocument = DOCUMENT_URL.test(
+          new URL(detailUrl).pathname + new URL(detailUrl).search,
+        );
         if (!isSeed && !isDocument && session.supports(detailUrl)) {
           try {
-            const html = await session.fetchText(detailUrl, timeoutMs, maxRetries, `${this.config.portalId} detail ${listing.nativeId}`);
+            const html = await session.fetchText(
+              detailUrl,
+              timeoutMs,
+              maxRetries,
+              `${this.config.portalId} detail ${listing.nativeId}`,
+            );
             detail = parseStatewideDetailHtml(html, this.config, detailUrl);
           } catch (error) {
-            errors.push(`${this.config.portalId}:${listing.nativeId}: detail enrichment failed: ${error instanceof Error ? error.message : String(error)}`);
+            throwIfPortalAborted(options.signal, this.config.portalId);
+            errors.push(
+              `${this.config.portalId}:${listing.nativeId}: detail enrichment failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
           }
         }
         return statewideToOpportunity(this.config, listing, detail);
@@ -380,7 +606,9 @@ export class StatewideProcurementProvider implements DataSourceProvider {
       .slice(offset, offset + requestedLimit);
 
     this.recordCount = records.length;
-    this.lastError = records.length ? undefined : errors.join("; ") || undefined;
+    this.lastError = records.length
+      ? undefined
+      : errors.join("; ") || undefined;
     if (records.length || !errors.length) this.lastSuccess = new Date();
     return { records, total: records.length, errors };
   }
@@ -399,10 +627,18 @@ export class StatewideProcurementProvider implements DataSourceProvider {
   }
 }
 
-export const statewideProcurementProviders: Record<string, StatewideProcurementProvider> = Object.fromEntries(
-  STATEWIDE_PORTAL_CONFIGS.map((config) => [config.portalId, new StatewideProcurementProvider(config)]),
+export const statewideProcurementProviders: Record<
+  string,
+  StatewideProcurementProvider
+> = Object.fromEntries(
+  STATEWIDE_PORTAL_CONFIGS.map((config) => [
+    config.portalId,
+    new StatewideProcurementProvider(config),
+  ]),
 );
 
-export function statewideProcurementProvider(portalId: string): StatewideProcurementProvider | undefined {
+export function statewideProcurementProvider(
+  portalId: string,
+): StatewideProcurementProvider | undefined {
   return statewideProcurementProviders[portalId];
 }

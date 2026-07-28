@@ -161,7 +161,7 @@ export interface Opportunity {
   awardAmount?: number;
   awardee?: string;
   source?: OpportunitySource;
-  /** Originating provider identifier (sam_gov, serper, tavily, tango, bidnet, etc.) */
+  /** Originating provider identifier (sam_gov, serper, exa, tango, bidnet, etc.) */
   providerName?: string;
   /** Computed relevance/fit score (0-100) */
   relevanceScore?: number;
@@ -468,7 +468,7 @@ export type ListOpportunitiesParams = {
   naicsCode?: string;
   agency?: string;
   /**
-   * Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
+   * Filter by provider name (e.g. sam_gov, serper, exa, tango, bidnet)
    */
   source?: string;
   /**
@@ -577,4 +577,3 @@ export type UpdateProvider200 = {
   name?: string;
   status?: ProviderStatus;
 };
-

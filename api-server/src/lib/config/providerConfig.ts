@@ -11,7 +11,6 @@ export type ProviderName =
   | "internationalPublicPortals"
   | "gemini"
   | "serper"
-  | "tavily"
   | "tango"
   | "bidnet"
   | "firecrawl"
@@ -54,7 +53,6 @@ export const RFP_INGESTION_PROVIDER_NAMES = [
   "tango",
   "bidnet",
   "serper",
-  "tavily",
   "exa",
 ] as const satisfies readonly ProviderName[];
 
@@ -137,7 +135,6 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Serper discovery on official international domains", "Canada, United Kingdom, Europe, and multilateral directory coverage", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "partial", "Search-discovery source covering the official international portal directory. Direct CanadaBuys, Contracts Finder, TED, and other portal connectors are not yet implemented."),
   gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
   serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
-  tavily: provider("tavily", "Tavily", "search", "research_analysis", [secretField("tavilyApiKey", "TAVILY_API_KEY")], ["Research API", "RFP discovery", "Market intelligence"], "partial"),
   tango: {
     ...provider("tango", "Tango", "procurement", "direct_source", [secretField("tangoApiKey", "TANGO_API_KEY")], ["Direct procurement API", "Structured opportunity metadata"], "partial", "Direct Tango by MakeGov API integration. Current collection requests the first result page only."),
     optionalFields: [{ key: "baseUrl", label: "API Base URL", type: "url", placeholder: "https://tango.makegov.com/api/", dbKey: "tangoBaseUrl", envKey: "TANGO_BASE_URL" }],

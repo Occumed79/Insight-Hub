@@ -19,7 +19,6 @@ const ALLOWED_RFP_PROVIDER_REQUESTS = new Set([
   "tango",
   "bidnet",
   "serper",
-  "tavily",
   "exa",
 ]);
 

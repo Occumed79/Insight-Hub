@@ -19,7 +19,6 @@ export const PROVIDER_KEYS = [
   "tango",
   "bidnet",
   "serper",
-  "tavily",
   "exa",
   "gemini",
   "texasEsbd",
@@ -61,7 +60,7 @@ export const opportunitiesTable = pgTable(
     awardee: text("awardee"),
     // Source tracking
     source: opportunitySourceEnum("source").notNull().default("manual"),
-    providerName: text("provider_name"), // sam_gov, serper, tavily, tango, bidnet, etc.
+    providerName: text("provider_name"), // sam_gov, serper, exa, tango, bidnet, etc.
     /**
      * Canonical provider identity key — used together with notice_id for
      * provider-scoped duplicate detection.  See PROVIDER_KEYS for valid values.

@@ -133,7 +133,6 @@ const FETCH_PROVIDER_GROUPS: { id: string; label: string; options: FetchProvider
     label: "Optional Web Discovery",
     options: [
       { key: "serper", label: "Serper", desc: "Broad public-web opportunity discovery", stub: false },
-      { key: "tavily", label: "Tavily", desc: "Research-oriented opportunity discovery", stub: false },
       { key: "exa", label: "Exa", desc: "Semantic public-web discovery", stub: false },
     ],
   },
@@ -561,7 +560,6 @@ export default function OpportunitiesDashboard() {
       eunaBonfire: { label: "Euna Supplier Network", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },
       internationalPublicPortals: { label: "International Portals", classes: "bg-violet-500/10 text-violet-300 border-violet-500/20" },
       serper: { label: "Serper", classes: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" },
-      tavily: { label: "Tavily", classes: "bg-pink-500/10 text-pink-300 border-pink-500/20" },
       exa: { label: "Exa", classes: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20" },
       tango: { label: "Tango", classes: "bg-orange-500/10 text-orange-300 border-orange-500/20" },
       bidnet: { label: "BidNet", classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20" },

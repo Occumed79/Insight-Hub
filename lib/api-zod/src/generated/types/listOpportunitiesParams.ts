@@ -15,7 +15,7 @@ export type ListOpportunitiesParams = {
   naicsCode?: string;
   agency?: string;
   /**
-   * Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
+   * Filter by provider name (e.g. sam_gov, serper, exa, tango, bidnet)
    */
   source?: string;
   /**
@@ -33,4 +33,3 @@ export type ListOpportunitiesParams = {
   page?: number;
   limit?: number;
 };
-

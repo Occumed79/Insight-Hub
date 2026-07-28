@@ -21,7 +21,6 @@ const PROVIDER_KEY_MAP: Record<string, ProviderKey> = {
   tango: "tango",
   bidnet: "bidnet",
   serper: "serper",
-  tavily: "tavily",
   exa: "exa",
   gemini: "gemini",
   firecrawl: "manual",
@@ -63,7 +62,6 @@ export function normalizedToDbRecord(
     statePortals: "csv_import",
     gemini: "manual",
     serper: "manual",
-    tavily: "manual",
     tango: "manual",
     bidnet: "manual",
   };

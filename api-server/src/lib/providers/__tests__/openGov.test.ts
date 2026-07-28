@@ -22,8 +22,12 @@ import {
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const TENANT_VOLUSIA = OPENGOV_TENANTS.find((t) => t.portalId === "fl-volusia-county-opengov")!;
-const TENANT_SANTA_CRUZ = OPENGOV_TENANTS.find((t) => t.portalId === "ca-city-of-santa-cruz-opengov")!;
+const TENANT_VOLUSIA = OPENGOV_TENANTS.find(
+  (t) => t.portalId === "fl-volusia-county-opengov",
+)!;
+const TENANT_SANTA_CRUZ = OPENGOV_TENANTS.find(
+  (t) => t.portalId === "ca-city-of-santa-cruz-opengov",
+)!;
 
 /** Minimal valid OpenGov project response */
 function makeProjectResponse(
@@ -33,7 +37,12 @@ function makeProjectResponse(
 ) {
   return {
     data: projects,
-    meta: { total: projects.length, page, per_page: 25, total_pages: totalPages },
+    meta: {
+      total: projects.length,
+      page,
+      per_page: 25,
+      total_pages: totalPages,
+    },
   };
 }
 
@@ -41,7 +50,8 @@ function makeProject(overrides: Record<string, unknown> = {}) {
   return {
     id: 12345,
     title: "Employee Occupational Health Services RFP",
-    description: "Comprehensive occupational health services for county employees.",
+    description:
+      "Comprehensive occupational health services for county employees.",
     status: "open",
     project_type: "RFP",
     solicitation_number: "OCC-2024-001",
@@ -50,8 +60,18 @@ function makeProject(overrides: Record<string, unknown> = {}) {
     location: "Volusia County, FL",
     department: { name: "Purchasing Division" },
     documents: [
-      { id: 1, name: "RFP Document", url: "https://procurement.opengov.com/docs/1/rfp.pdf", public: true },
-      { id: 2, name: "Private Attachment", url: "https://procurement.opengov.com/docs/2/private.pdf", public: false },
+      {
+        id: 1,
+        name: "RFP Document",
+        url: "https://procurement.opengov.com/docs/1/rfp.pdf",
+        public: true,
+      },
+      {
+        id: 2,
+        name: "Private Attachment",
+        url: "https://procurement.opengov.com/docs/2/private.pdf",
+        public: false,
+      },
     ],
     ...overrides,
   };
@@ -66,7 +86,10 @@ describe("OpenGov tenant map", () => {
 
   it("all tenantSlugs are non-empty strings", () => {
     for (const tenant of OPENGOV_TENANTS) {
-      assert.ok(tenant.tenantSlug.length > 0, `empty tenantSlug for ${tenant.portalId}`);
+      assert.ok(
+        tenant.tenantSlug.length > 0,
+        `empty tenantSlug for ${tenant.portalId}`,
+      );
     }
   });
 
@@ -83,7 +106,10 @@ describe("OpenGov tenant map", () => {
   it("OPENGOV_PORTAL_IDS set matches OPENGOV_TENANTS", () => {
     assert.equal(OPENGOV_PORTAL_IDS.size, OPENGOV_TENANTS.length);
     for (const tenant of OPENGOV_TENANTS) {
-      assert.ok(OPENGOV_PORTAL_IDS.has(tenant.portalId), `missing ${tenant.portalId}`);
+      assert.ok(
+        OPENGOV_PORTAL_IDS.has(tenant.portalId),
+        `missing ${tenant.portalId}`,
+      );
     }
   });
 
@@ -103,13 +129,18 @@ describe("OpenGov tenant map", () => {
       "login_required",
     ]);
     for (const tenant of OPENGOV_TENANTS) {
-      assert.ok(VALID.has(tenant.capability), `invalid capability for ${tenant.portalId}: ${tenant.capability}`);
+      assert.ok(
+        VALID.has(tenant.capability),
+        `invalid capability for ${tenant.portalId}: ${tenant.capability}`,
+      );
     }
   });
 
   it("all 18 tenants have dedicated_listing_and_detail capability", () => {
     const collectible = OPENGOV_TENANTS.filter(
-      (t) => t.capability === "dedicated_listing_and_detail" || t.capability === "dedicated_listing",
+      (t) =>
+        t.capability === "dedicated_listing_and_detail" ||
+        t.capability === "dedicated_listing",
     );
     assert.equal(collectible.length, 18);
   });
@@ -165,7 +196,11 @@ describe("OpenGov opportunity identity and provenance", () => {
     try {
       const provider = new OpenGovProvider([TENANT_VOLUSIA]);
       const result = await provider.fetch({ limit: 10 });
-      assert.equal(result.errors.length, 0, `unexpected errors: ${result.errors.join("; ")}`);
+      assert.equal(
+        result.errors.length,
+        0,
+        `unexpected errors: ${result.errors.join("; ")}`,
+      );
       assert.equal(result.records.length, 1);
       assert.equal(result.records[0].externalId, "opengov-volusia-99999");
     } finally {
@@ -186,7 +221,10 @@ describe("OpenGov opportunity identity and provenance", () => {
     try {
       const provider = new OpenGovProvider([TENANT_VOLUSIA]);
       const result = await provider.fetch({ limit: 10 });
-      assert.equal(result.records[0].sourceUrl, "https://procurement.opengov.com/portal/volusia/project/42");
+      assert.equal(
+        result.records[0].sourceUrl,
+        "https://procurement.opengov.com/portal/volusia/project/42",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -215,7 +253,9 @@ describe("OpenGov opportunity identity and provenance", () => {
   });
 
   it("subAgency is set from project department.name", async () => {
-    const mockResponse = makeProjectResponse([makeProject({ department: { name: "Purchasing Division" } })]);
+    const mockResponse = makeProjectResponse([
+      makeProject({ department: { name: "Purchasing Division" } }),
+    ]);
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
@@ -255,7 +295,9 @@ describe("OpenGov opportunity identity and provenance", () => {
   });
 
   it("does not fabricate a postedDate when published_at is absent", async () => {
-    const mockResponse = makeProjectResponse([makeProject({ published_at: null })]);
+    const mockResponse = makeProjectResponse([
+      makeProject({ published_at: null }),
+    ]);
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
@@ -277,7 +319,9 @@ describe("OpenGov opportunity identity and provenance", () => {
   });
 
   it("does not fabricate a responseDeadline when close_at and due_at are absent", async () => {
-    const mockResponse = makeProjectResponse([makeProject({ close_at: null, due_at: null })]);
+    const mockResponse = makeProjectResponse([
+      makeProject({ close_at: null, due_at: null }),
+    ]);
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
@@ -297,7 +341,10 @@ describe("OpenGov opportunity identity and provenance", () => {
   });
 
   it("skips records without a title", async () => {
-    const mockResponse = makeProjectResponse([makeProject({ title: "" }), makeProject({ id: 2, title: "Valid RFP" })]);
+    const mockResponse = makeProjectResponse([
+      makeProject({ title: "" }),
+      makeProject({ id: 2, title: "Valid RFP" }),
+    ]);
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () =>
@@ -332,7 +379,9 @@ describe("OpenGov status normalisation", () => {
 
   for (const [raw, expected] of statusCases) {
     it(`maps status "${raw}" to "${expected}"`, async () => {
-      const mockResponse = makeProjectResponse([makeProject({ status: raw, id: 1 })]);
+      const mockResponse = makeProjectResponse([
+        makeProject({ status: raw, id: 1 }),
+      ]);
 
       const originalFetch = globalThis.fetch;
       globalThis.fetch = async () =>
@@ -355,6 +404,35 @@ describe("OpenGov status normalisation", () => {
 // ─── Pagination and deduplication ─────────────────────────────────────────────
 
 describe("OpenGov pagination and deduplication", () => {
+  it("propagates parent cancellation and stops the active tenant request", async () => {
+    const originalFetch = globalThis.fetch;
+    const controller = new AbortController();
+    let calls = 0;
+    globalThis.fetch = async (_input, init) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      });
+    };
+
+    try {
+      const provider = new OpenGovProvider([TENANT_VOLUSIA]);
+      const execution = provider.fetch({
+        limit: 10,
+        signal: controller.signal,
+      });
+      await Promise.resolve();
+      controller.abort(new Error("manual cancellation"));
+      await assert.rejects(execution, /manual cancellation/);
+      assert.equal(calls, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("stops pagination when API returns empty data", async () => {
     let callCount = 0;
 
@@ -363,10 +441,13 @@ describe("OpenGov pagination and deduplication", () => {
       const url = typeof input === "string" ? input : input.toString();
       callCount += 1;
       if (callCount === 1) {
-        return new Response(JSON.stringify(makeProjectResponse([makeProject({ id: 1 })], 1, 2)), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify(makeProjectResponse([makeProject({ id: 1 })], 1, 2)),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
       }
       // Second page is empty
       return new Response(JSON.stringify(makeProjectResponse([], 2, 2)), {
@@ -406,7 +487,11 @@ describe("OpenGov pagination and deduplication", () => {
       const tenantWithDup: typeof TENANT_VOLUSIA = { ...TENANT_VOLUSIA };
       const provider = new OpenGovProvider([tenantWithDup]);
       const result = await provider.fetch({ limit: 100 });
-      assert.equal(result.records.length, 1, "duplicate within same tenant run should be collapsed");
+      assert.equal(
+        result.records.length,
+        1,
+        "duplicate within same tenant run should be collapsed",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -420,10 +505,13 @@ describe("OpenGov pagination and deduplication", () => {
       callCount += 1;
       const url = typeof input === "string" ? input : input.toString();
       if (url.includes("/volusia/")) {
-        return new Response(JSON.stringify(makeProjectResponse([makeProject({ id: 1 })])), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify(makeProjectResponse([makeProject({ id: 1 })])),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
       }
       // santacruzca fails
       return new Response("Internal Server Error", { status: 500 });
@@ -435,7 +523,10 @@ describe("OpenGov pagination and deduplication", () => {
       const result = await provider.fetch({ limit: 100 });
       // Volusia succeeds → 1 record; Santa Cruz fails → 0 records + error
       assert.equal(result.records.length, 1);
-      assert.ok(result.errors.length >= 1, "expected at least one error from santa cruz failure");
+      assert.ok(
+        result.errors.length >= 1,
+        "expected at least one error from santa cruz failure",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }

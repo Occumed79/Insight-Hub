@@ -7,7 +7,7 @@
  *
  * Contrast with:
  *   - POST /opportunities/fetch — ingestion/crawler path that hits live
- *     external sources (Serper, Tavily, Exa, Firecrawl, Jina, Olostep,
+ *     external sources (Serper, Exa, Firecrawl, Jina, Olostep,
  *     Cloudflare Worker, Gemini, Groq, OpenRouter, etc.)
  *   - unifiedFetch / webIntelligenceFetch — full crawler/scraper pipelines
  *

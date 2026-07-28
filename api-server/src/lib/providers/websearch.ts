@@ -2,7 +2,7 @@
  * WebSearch API Provider
  *
  * Role: General web search API for broad procurement opportunity discovery.
- * Covers sources that Serper/Tavily/Exa may miss.
+ * Covers sources that Serper/Exa may miss.
  *
  * API: https://websearch.io or compatible endpoint
  */

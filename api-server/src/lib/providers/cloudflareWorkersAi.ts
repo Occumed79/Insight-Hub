@@ -35,7 +35,10 @@ export function normalizeCloudflareRerankScore(value: unknown): number {
 }
 
 export class CloudflareWorkersAiClient {
+  private authenticationDisabled = false;
+
   private async credentials(): Promise<CloudflareCredentials | null> {
+    if (this.authenticationDisabled) return null;
     const [accountId, apiToken] = await Promise.all([
       resolveCredential("cloudflareAccountId", "CLOUDFLARE_ACCOUNT_ID"),
       resolveCredential("cloudflareApiToken", "CLOUDFLARE_API_TOKEN"),
@@ -65,6 +68,21 @@ export class CloudflareWorkersAiClient {
     return (await this.credentials()) !== null;
   }
 
+  private disableAfterAuthenticationFailure(status: number): void {
+    if (status === 401) {
+      this.authenticationDisabled = true;
+    }
+  }
+
+  private errorMessage(operation: string, status: number, body: string): string {
+    this.disableAfterAuthenticationFailure(status);
+    const suffix =
+      status === 401
+        ? " Cloudflare Workers AI has been disabled until the service restarts; fallback providers will be used."
+        : "";
+    return `Cloudflare Workers AI ${operation} error ${status}: ${body.slice(0, 240)}${suffix}`;
+  }
+
   /**
    * Generate one vector per input through Workers AI's OpenAI-compatible
    * embeddings endpoint. The output remains isolated to this model's vector
@@ -92,9 +110,7 @@ export class CloudflareWorkersAiClient {
     );
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(
-        `Cloudflare Workers AI embeddings error ${response.status}: ${body.slice(0, 240)}`,
-      );
+      throw new Error(this.errorMessage("embeddings", response.status, body));
     }
     const payload = (await response.json()) as {
       data?: Array<{ index?: number; embedding?: unknown }>;
@@ -136,9 +152,7 @@ export class CloudflareWorkersAiClient {
     );
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(
-        `Cloudflare Workers AI rerank error ${response.status}: ${body.slice(0, 240)}`,
-      );
+      throw new Error(this.errorMessage("rerank", response.status, body));
     }
     const payload = (await response.json()) as {
       result?: {

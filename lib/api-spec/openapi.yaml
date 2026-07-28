@@ -60,7 +60,7 @@ paths:
           name: source
           schema:
             type: string
-            description: Filter by provider name (e.g. sam_gov, serper, tavily, tango, bidnet)
+            description: Filter by provider name (e.g. sam_gov, serper, exa, tango, bidnet)
         - in: query
           name: dateRange
           schema:
@@ -573,7 +573,7 @@ components:
           enum: [sam_gov, csv_import, manual]
         providerName:
           type: string
-          description: Originating provider identifier (sam_gov, serper, tavily, tango, bidnet, etc.)
+          description: Originating provider identifier (sam_gov, serper, exa, tango, bidnet, etc.)
         # Intelligence fields
         relevanceScore:
           type: number
@@ -1096,4 +1096,3 @@ components:
           type: string
         details:
           type: string
-

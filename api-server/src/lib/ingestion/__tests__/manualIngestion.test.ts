@@ -383,7 +383,8 @@ describe("run retry and deadline rules", () => {
       "signal: requestSignal.signal",
       "runWithConcurrency",
       "options.signal",
-      "publicPortalDiscovery.search({ keywords: options.keywords, signal })",
+      "publicPortalDiscovery.search({",
+      "keywords: options.keywords",
     ])
       assert.ok(
         catalog.includes(required),

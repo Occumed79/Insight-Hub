@@ -1,7 +1,7 @@
 /**
  * FireCrawl Provider
  *
- * Role: Deep web scraping — given a URL found by Serper/Tavily, fetches the full
+ * Role: Deep web scraping — given a URL found by Serper/Exa, fetches the full
  * page content as clean markdown so AI providers have rich text to analyze instead
  * of a 2-sentence snippet.
  *

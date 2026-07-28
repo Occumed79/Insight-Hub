@@ -13,7 +13,6 @@ import {
   Globe,
   Sparkles,
   Search,
-  Brain,
   Package,
   ExternalLink,
   Info,
@@ -101,7 +100,6 @@ function ProviderCard({ provider, index }: { provider: any; index: number }) {
       case "gemini ai":
       case "gemini": return <Sparkles className="w-5 h-5 text-purple-400" />;
       case "serper": return <Search className="w-5 h-5 text-emerald-400" />;
-      case "tavily": return <Brain className="w-5 h-5 text-pink-400" />;
       case "tango": return <Package className="w-5 h-5 text-orange-400" />;
       case "bidnet": return <Building className="w-5 h-5 text-indigo-400" />;
       default: return <Plug className="w-5 h-5 text-primary" />;

@@ -50,7 +50,8 @@ import { positiveIntegerEnv } from "./officialPortalHttp";
 
 const OPENGOV_API_ORIGIN = "https://procurement.opengov.com";
 const OPENGOV_PORTAL_ORIGIN = "https://procurement.opengov.com";
-const USER_AGENT = "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)";
+const USER_AGENT =
+  "OccuMed-InsightHub/1.0 public-procurement-reader (+https://www.occumed.com)";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_RETRIES = 2;
@@ -77,7 +78,11 @@ export interface OpenGovTenant {
   /** US state two-letter code */
   state: string;
   /** Connector capability for this tenant */
-  capability: "dedicated_listing_and_detail" | "dedicated_listing" | "directory_only" | "login_required";
+  capability:
+    | "dedicated_listing_and_detail"
+    | "dedicated_listing"
+    | "directory_only"
+    | "login_required";
   /** Human-readable reason for non-collection entries */
   capabilityReason?: string;
 }
@@ -256,8 +261,36 @@ interface OpenGovProjectsResponse {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function openGovAbortError(signal: AbortSignal, label: string): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error(`${label} cancelled`);
+}
+
+function throwIfOpenGovAborted(signal: AbortSignal, label: string): void {
+  if (signal.aborted) throw openGovAbortError(signal, label);
+}
+
+function sleep(
+  milliseconds: number,
+  signal: AbortSignal,
+  label: string,
+): Promise<void> {
+  throwIfOpenGovAborted(signal, label);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(openGovAbortError(signal, label));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
 }
 
 function safeDate(value: string | null | undefined): Date | undefined {
@@ -266,17 +299,26 @@ function safeDate(value: string | null | undefined): Date | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-function canonicalProjectUrl(tenantSlug: string, projectId: number | string): string {
+function canonicalProjectUrl(
+  tenantSlug: string,
+  projectId: number | string,
+): string {
   return `${OPENGOV_PORTAL_ORIGIN}/portal/${tenantSlug}/project/${projectId}`;
 }
 
-function stableOpportunityId(tenantSlug: string, projectId: number | string): string {
+function stableOpportunityId(
+  tenantSlug: string,
+  projectId: number | string,
+): string {
   return `opengov-${tenantSlug}-${projectId}`;
 }
 
 function stableOpportunityIdFromUrl(canonicalUrl: string): string {
   // Fallback ID derived from URL SHA-256 when project ID is unavailable.
-  const hash = createHash("sha256").update(canonicalUrl).digest("hex").slice(0, 24);
+  const hash = createHash("sha256")
+    .update(canonicalUrl)
+    .digest("hex")
+    .slice(0, 24);
   return `opengov-url-${hash}`;
 }
 
@@ -288,10 +330,18 @@ function publicDocumentUrls(project: OpenGovProject): string[] {
     .filter(Boolean);
 }
 
-function normalizeStatus(rawStatus: string | null | undefined): "active" | "archived" {
+function normalizeStatus(
+  rawStatus: string | null | undefined,
+): "active" | "archived" {
   if (!rawStatus) return "active";
   const lower = rawStatus.toLowerCase();
-  if (lower === "closed" || lower === "awarded" || lower === "cancelled" || lower === "archived") return "archived";
+  if (
+    lower === "closed" ||
+    lower === "awarded" ||
+    lower === "cancelled" ||
+    lower === "archived"
+  )
+    return "archived";
   return "active";
 }
 
@@ -301,7 +351,8 @@ function normalizeType(projectType: string | null | undefined): string {
   if (lower.includes("rfp")) return "RFP";
   if (lower.includes("rfq")) return "RFQ";
   if (lower.includes("rfi")) return "RFI";
-  if (lower.includes("bid") || lower.includes("ifb") || lower.includes("itb")) return "Bid";
+  if (lower.includes("bid") || lower.includes("ifb") || lower.includes("itb"))
+    return "Bid";
   return projectType;
 }
 
@@ -396,19 +447,31 @@ async function fetchOpenGovPage(
   maxRetries: number,
   signal: AbortSignal,
 ): Promise<OpenGovProjectsResponse> {
-  const url = new URL(`${OPENGOV_API_ORIGIN}/api/v2/portal/${tenantSlug}/projects`);
+  const label = `OpenGov [${tenantSlug}] page ${page}`;
+  const url = new URL(
+    `${OPENGOV_API_ORIGIN}/api/v2/portal/${tenantSlug}/projects`,
+  );
   url.searchParams.set("page", String(page));
   url.searchParams.set("per_page", String(PAGE_SIZE));
   url.searchParams.set("status", "open");
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    if (signal.aborted) throw new Error(`OpenGov tenant ${tenantSlug} request cancelled`);
+    throwIfOpenGovAborted(signal, label);
 
     const controller = new AbortController();
     // Combine the per-request timeout with the outer cancellation signal.
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const onCancel = () => controller.abort();
+    const timeoutId = setTimeout(
+      () =>
+        controller.abort(
+          new DOMException(
+            `${label} timed out after ${timeoutMs}ms`,
+            "TimeoutError",
+          ),
+        ),
+      timeoutMs,
+    );
+    const onCancel = () => controller.abort(signal.reason);
     signal.addEventListener("abort", onCancel, { once: true });
 
     try {
@@ -420,37 +483,47 @@ async function fetchOpenGovPage(
         },
       });
 
-      clearTimeout(timeoutId);
-      signal.removeEventListener("abort", onCancel);
-
       if (response.ok) {
-        const json = await response.json() as OpenGovProjectsResponse;
+        const json = (await response.json()) as OpenGovProjectsResponse;
         return json;
       }
 
       const retryable = response.status === 429 || response.status >= 500;
-      const bodySnippet = await response.text().then((text) => text.slice(0, 160)).catch(() => "");
+      const bodySnippet = await response
+        .text()
+        .then((text) => text.slice(0, 160))
+        .catch(() => "");
       const message = `OpenGov [${tenantSlug}] page ${page} HTTP ${response.status}${bodySnippet ? `: ${bodySnippet}` : ""}`;
 
-      if (!retryable || attempt >= maxRetries) throw new Error(message);
+      if (!retryable || attempt >= maxRetries) {
+        lastError = new Error(message);
+        break;
+      }
 
-      const retryAfterSec = Number.parseInt(response.headers.get("retry-after") ?? "", 10);
+      const retryAfterSec = Number.parseInt(
+        response.headers.get("retry-after") ?? "",
+        10,
+      );
       const delayMs = Number.isFinite(retryAfterSec)
         ? Math.min(retryAfterSec * 1000, 15_000)
         : 500 * 2 ** attempt;
       lastError = new Error(message);
-      await sleep(delayMs);
+      await sleep(delayMs, signal, label);
     } catch (error) {
-      clearTimeout(timeoutId);
-      signal.removeEventListener("abort", onCancel);
-
-      if (signal.aborted) throw new Error(`OpenGov tenant ${tenantSlug} request cancelled`);
-      const err = error instanceof Error && error.name === "AbortError"
-        ? new Error(`OpenGov [${tenantSlug}] page ${page} timed out after ${timeoutMs}ms`)
-        : error;
+      throwIfOpenGovAborted(signal, label);
+      const err =
+        error instanceof Error &&
+        (error.name === "AbortError" || error.name === "TimeoutError")
+          ? new Error(
+              `OpenGov [${tenantSlug}] page ${page} timed out after ${timeoutMs}ms`,
+            )
+          : error;
       lastError = err;
       if (attempt >= maxRetries) break;
-      await sleep(500 * 2 ** attempt);
+      await sleep(500 * 2 ** attempt, signal, label);
+    } finally {
+      clearTimeout(timeoutId);
+      signal.removeEventListener("abort", onCancel);
     }
   }
 
@@ -480,18 +553,41 @@ async function collectTenant(
   const records: NormalizedOpportunity[] = [];
   const seenIds = new Set<string>();
 
-  for (let page = 1; page <= maxPages && records.length < maxResults; page += 1) {
+  for (
+    let page = 1;
+    page <= maxPages && records.length < maxResults;
+    page += 1
+  ) {
     if (outerSignal.aborted) {
-      return { portalId: tenant.portalId, tenantSlug: tenant.tenantSlug, records, pagesFetched: page - 1, error: "cancelled" };
+      return {
+        portalId: tenant.portalId,
+        tenantSlug: tenant.tenantSlug,
+        records,
+        pagesFetched: page - 1,
+        error: "cancelled",
+      };
     }
 
     let response: OpenGovProjectsResponse;
     try {
-      response = await fetchOpenGovPage(tenant.tenantSlug, page, timeoutMs, maxRetries, outerSignal);
+      response = await fetchOpenGovPage(
+        tenant.tenantSlug,
+        page,
+        timeoutMs,
+        maxRetries,
+        outerSignal,
+      );
     } catch (error) {
+      throwIfOpenGovAborted(outerSignal, `OpenGov tenant ${tenant.tenantSlug}`);
       const reason = error instanceof Error ? error.message : String(error);
       // Preserve any records already collected from earlier pages.
-      return { portalId: tenant.portalId, tenantSlug: tenant.tenantSlug, records, pagesFetched: page - 1, error: reason };
+      return {
+        portalId: tenant.portalId,
+        tenantSlug: tenant.tenantSlug,
+        records,
+        pagesFetched: page - 1,
+        error: reason,
+      };
     }
 
     const projects = response.data ?? [];
@@ -510,12 +606,26 @@ async function collectTenant(
     // Stop pagination when the API returns an empty page or we have
     // reached the last page reported in meta.
     const totalPages = response.meta?.total_pages;
-    if (projects.length === 0 || (totalPages !== undefined && page >= totalPages)) {
-      return { portalId: tenant.portalId, tenantSlug: tenant.tenantSlug, records, pagesFetched: page, total: response.meta?.total };
+    if (
+      projects.length === 0 ||
+      (totalPages !== undefined && page >= totalPages)
+    ) {
+      return {
+        portalId: tenant.portalId,
+        tenantSlug: tenant.tenantSlug,
+        records,
+        pagesFetched: page,
+        total: response.meta?.total,
+      };
     }
   }
 
-  return { portalId: tenant.portalId, tenantSlug: tenant.tenantSlug, records, pagesFetched: maxPages };
+  return {
+    portalId: tenant.portalId,
+    tenantSlug: tenant.tenantSlug,
+    records,
+    pagesFetched: maxPages,
+  };
 }
 
 // ─── Concurrency pool ─────────────────────────────────────────────────────────
@@ -524,12 +634,14 @@ async function runWithConcurrency<T>(
   items: readonly T[],
   concurrency: number,
   worker: (item: T) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
   let cursor = 0;
   const slots = Math.min(Math.max(concurrency, 1), items.length || 1);
   await Promise.all(
     Array.from({ length: slots }, async () => {
       while (true) {
+        if (signal?.aborted) return;
         const index = cursor;
         cursor += 1;
         if (index >= items.length) return;
@@ -558,48 +670,83 @@ export class OpenGovProvider implements DataSourceProvider {
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const maxPages = positiveIntegerEnv("OPENGOV_MAX_PAGES", DEFAULT_MAX_PAGES, 1, 20);
-    const maxResultsPerTenant = positiveIntegerEnv("OPENGOV_MAX_RESULTS_PER_TENANT", DEFAULT_MAX_RESULTS_PER_TENANT, 1, 500);
-    const concurrency = positiveIntegerEnv("OPENGOV_CONCURRENCY", DEFAULT_CONCURRENCY, 1, 10);
-    const timeoutMs = positiveIntegerEnv("OPENGOV_REQUEST_TIMEOUT_MS", DEFAULT_REQUEST_TIMEOUT_MS, 3_000, 60_000);
-    const maxRetries = positiveIntegerEnv("OPENGOV_MAX_RETRIES", DEFAULT_MAX_RETRIES, 0, 5);
+    const outerSignal = options.signal ?? new AbortController().signal;
+    throwIfOpenGovAborted(outerSignal, "OpenGov adapter");
+    const maxPages = positiveIntegerEnv(
+      "OPENGOV_MAX_PAGES",
+      DEFAULT_MAX_PAGES,
+      1,
+      20,
+    );
+    const maxResultsPerTenant = positiveIntegerEnv(
+      "OPENGOV_MAX_RESULTS_PER_TENANT",
+      DEFAULT_MAX_RESULTS_PER_TENANT,
+      1,
+      500,
+    );
+    const concurrency = positiveIntegerEnv(
+      "OPENGOV_CONCURRENCY",
+      DEFAULT_CONCURRENCY,
+      1,
+      10,
+    );
+    const timeoutMs = positiveIntegerEnv(
+      "OPENGOV_REQUEST_TIMEOUT_MS",
+      DEFAULT_REQUEST_TIMEOUT_MS,
+      3_000,
+      60_000,
+    );
+    const maxRetries = positiveIntegerEnv(
+      "OPENGOV_MAX_RETRIES",
+      DEFAULT_MAX_RETRIES,
+      0,
+      5,
+    );
 
-    const overallLimit = Math.max(options.limit ?? (this.tenants.length * maxResultsPerTenant), 1);
-
-    // Each tenant gets its own AbortController so one slow tenant does not
-    // starve others. The outer controller is used only for explicit cancellation.
-    const outerController = new AbortController();
+    const overallLimit = Math.max(
+      options.limit ?? this.tenants.length * maxResultsPerTenant,
+      1,
+    );
 
     const allRecords: NormalizedOpportunity[] = [];
     const allErrors: string[] = [];
     const seenGlobalIds = new Set<string>();
 
     const collectibleTenants = this.tenants.filter(
-      (tenant) => tenant.capability === "dedicated_listing_and_detail" || tenant.capability === "dedicated_listing",
+      (tenant) =>
+        tenant.capability === "dedicated_listing_and_detail" ||
+        tenant.capability === "dedicated_listing",
     );
 
-    await runWithConcurrency(collectibleTenants, concurrency, async (tenant) => {
-      const result = await collectTenant(
-        tenant,
-        maxPages,
-        maxResultsPerTenant,
-        timeoutMs,
-        maxRetries,
-        outerController.signal,
-      );
+    await runWithConcurrency(
+      collectibleTenants,
+      concurrency,
+      async (tenant) => {
+        const result = await collectTenant(
+          tenant,
+          maxPages,
+          maxResultsPerTenant,
+          timeoutMs,
+          maxRetries,
+          outerSignal,
+        );
 
-      if (result.error) {
-        allErrors.push(`${tenant.portalId}: ${result.error}`);
-      }
+        if (result.error) {
+          allErrors.push(`${tenant.portalId}: ${result.error}`);
+        }
 
-      // Cross-tenant deduplication (same project appearing on two tenants).
-      for (const record of result.records) {
-        if (seenGlobalIds.has(record.externalId)) continue;
-        seenGlobalIds.add(record.externalId);
-        allRecords.push(record);
-        if (allRecords.length >= overallLimit) return;
-      }
-    });
+        // Cross-tenant deduplication (same project appearing on two tenants).
+        for (const record of result.records) {
+          if (seenGlobalIds.has(record.externalId)) continue;
+          seenGlobalIds.add(record.externalId);
+          allRecords.push(record);
+          if (allRecords.length >= overallLimit) return;
+        }
+      },
+      outerSignal,
+    );
+
+    throwIfOpenGovAborted(outerSignal, "OpenGov adapter");
 
     const records = allRecords.slice(0, overallLimit);
     return { records, total: records.length, errors: allErrors };
@@ -621,7 +768,9 @@ export const openGovProvider = new OpenGovProvider();
 // When the publicPortalProviders runner calls SOURCE_ADAPTERS[portalId].fetch(),
 // it expects a single-tenant provider. This factory creates one per portal ID.
 
-export function openGovTenantProvider(portalId: string): DataSourceProvider | undefined {
+export function openGovTenantProvider(
+  portalId: string,
+): DataSourceProvider | undefined {
   const tenant = OPENGOV_TENANT_BY_PORTAL_ID.get(portalId);
   if (!tenant) return undefined;
   return new OpenGovProvider([tenant]);

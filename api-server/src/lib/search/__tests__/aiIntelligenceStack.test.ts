@@ -5,7 +5,10 @@ import {
   shouldCrossCheckExtraction,
   type AiExtraction,
 } from "../aiExtract";
-import { normalizeCloudflareRerankScore } from "../../providers/cloudflareWorkersAi";
+import {
+  CloudflareWorkersAiClient,
+  normalizeCloudflareRerankScore,
+} from "../../providers/cloudflareWorkersAi";
 import {
   applySourceFairness,
   cosineSimilarity,
@@ -62,6 +65,49 @@ describe("coordinated AI search intelligence stack", () => {
     assert.ok(normalizeCloudflareRerankScore(5) > 0.99);
     assert.ok(normalizeCloudflareRerankScore(-5) < 0.01);
     assert.equal(normalizeCloudflareRerankScore("not-a-number"), 0);
+  });
+
+  it("stops Cloudflare calls after a 401 and leaves fallbacks available", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    const originalApiToken = process.env.CLOUDFLARE_API_TOKEN;
+    let calls = 0;
+
+    process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
+    process.env.CLOUDFLARE_API_TOKEN = "invalid-token";
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          errors: [{ code: 10000, message: "Authentication error" }],
+        }),
+        { status: 401 },
+      );
+    };
+
+    try {
+      const client = new CloudflareWorkersAiClient();
+      await assert.rejects(
+        client.rerank("occupational health", ["open RFP"]),
+        /disabled until the service restarts/,
+      );
+      assert.equal(await client.isConfigured(), false);
+      assert.equal(await client.embed(["second call"]), null);
+      assert.equal(calls, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalAccountId === undefined) {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+      } else {
+        process.env.CLOUDFLARE_ACCOUNT_ID = originalAccountId;
+      }
+      if (originalApiToken === undefined) {
+        delete process.env.CLOUDFLARE_API_TOKEN;
+      } else {
+        process.env.CLOUDFLARE_API_TOKEN = originalApiToken;
+      }
+    }
   });
 
   it("computes semantic similarity and removes near-identical duplicate notices", () => {
