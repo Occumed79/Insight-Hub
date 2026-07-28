@@ -3,10 +3,12 @@ name: Crawler Foundation
 on:
   pull_request:
     paths:
+      - "api-server/src/index.ts"
+      - "api-server/src/app.ts"
       - "api-server/src/lib/crawler/**"
-      - "api-server/src/lib/providers/crawlerAugmentedPublicPortalProvider.ts"
-      - "api-server/src/lib/providers/index.ts"
+      - "api-server/src/lib/providers/**"
       - "api-server/src/lib/ingestion/**"
+      - "lib/db/src/**"
       - "api-server/package.json"
       - "api-server/src/routes/rfp-sources.ts"
       - ".github/workflows/crawler-foundation.yml"
@@ -63,6 +65,9 @@ jobs:
 
       - name: Test crawler foundation
         run: pnpm --filter @workspace/api-server exec node --import tsx --test "src/lib/crawler/__tests__/*.test.ts"
+
+      - name: Test adapter execution hardening
+        run: pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/providers/__tests__/adapterExecution.test.ts
 
       - name: Test existing ingestion pipeline
         shell: bash
