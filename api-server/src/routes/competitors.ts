@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import { intelDb as db } from "@workspace/db";
 import { competitorsTable } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
-import { tavilyProvider } from "../lib/providers/tavily";
+import { exaProvider } from "../lib/providers/exa";
 import { resolveCredential } from "../lib/config/providerConfig";
 
 const router = Router();
@@ -140,7 +140,7 @@ router.post("/competitors/:id/research", async (req, res) => {
     const sourceUrls: string[] = [];
 
     // ── All external calls run in parallel ────────────────────────────────────
-    const [serperOutcome, tavilyOutcome, serperNewsOutcome, fecOutcome, serperKeyOutcome] =
+    const [serperOutcome, exaOutcome, serperNewsOutcome, fecOutcome, serperKeyOutcome] =
       await Promise.allSettled([
 
         // 1. Serper — contract activity & web search
@@ -153,13 +153,13 @@ router.post("/competitors/:id/research", async (req, res) => {
           return serperProvider.searchMultiple(queries, 8);
         })(),
 
-        // 2. Tavily — deep research
+        // 2. Exa — semantic research
         (async () => {
           const queries = [
             `${competitor.name} occupational health company profile services contracts`,
             `${competitor.name} government contracts awarded healthcare 2026`,
           ];
-          return tavilyProvider.researchMultiple(queries, 5);
+          return exaProvider.searchMultiple(queries, 5);
         })(),
 
         // 3. Serper news mode — credible health/government outlets
@@ -244,12 +244,19 @@ router.post("/competitors/:id/research", async (req, res) => {
       errors.push(`Serper: ${(serperOutcome.reason as Error).message}`);
     }
 
-    let tavilyResults: { title: string; url: string; content: string }[] = [];
-    if (tavilyOutcome.status === "fulfilled") {
-      tavilyResults = tavilyOutcome.value;
-      tavilyResults.forEach((r) => r.url && sourceUrls.push(r.url));
+    let exaResults: { title: string; url: string; content: string }[] = [];
+    if (exaOutcome.status === "fulfilled") {
+      exaResults = exaOutcome.value.map((result) => ({
+        title: result.title ?? "",
+        url: result.url ?? "",
+        content:
+          (result.highlights ?? []).join(" ") ||
+          result.text ||
+          "",
+      }));
+      exaResults.forEach((r) => r.url && sourceUrls.push(r.url));
     } else {
-      errors.push(`Tavily: ${(tavilyOutcome.reason as Error).message}`);
+      errors.push(`Exa: ${(exaOutcome.reason as Error).message}`);
     }
 
     let newsArticles: { headline: string; source: string; date: string; url: string }[] = [];
@@ -273,7 +280,7 @@ router.post("/competitors/:id/research", async (req, res) => {
     const contractWins: { title: string; agency: string; value: string; date: string; url: string }[] = [];
     const allResults = [
       ...serperResults.map((r) => ({ title: r.title, content: r.snippet, url: r.link })),
-      ...tavilyResults.map((r) => ({ title: r.title, content: r.content, url: r.url })),
+      ...exaResults,
     ];
 
     for (const r of allResults) {
@@ -362,7 +369,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
       competitor: updated[0],
       stats: {
         serperResults: serperResults.length,
-        tavilyResults: tavilyResults.length,
+        exaResults: exaResults.length,
         contractWinsFound: contractWins.length,
         newsArticlesFound: newsArticles.length,
         fecFilingsFound: fecFilings.length,

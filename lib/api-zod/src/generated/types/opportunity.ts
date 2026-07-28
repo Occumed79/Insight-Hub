@@ -45,7 +45,7 @@ export interface Opportunity {
   awardAmount?: number;
   awardee?: string;
   source?: OpportunitySource;
-  /** Originating provider identifier (sam_gov, serper, tavily, tango, bidnet, etc.) */
+  /** Originating provider identifier (sam_gov, serper, exa, tango, bidnet, etc.) */
   providerName?: string;
   /** Computed relevance/fit score (0-100) */
   relevanceScore?: number;
@@ -63,4 +63,3 @@ export interface Opportunity {
   createdAt?: Date;
   updatedAt?: Date;
 }
-

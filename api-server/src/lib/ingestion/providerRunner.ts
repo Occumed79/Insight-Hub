@@ -5,7 +5,6 @@ import type {
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { serperProvider } from "../providers/serper";
-import { tavilyProvider } from "../providers/tavily";
 import { exaProvider } from "../providers/exa";
 import { langsearchProvider } from "../providers/langsearch";
 import { webIntelligenceFetch } from "../search/webIntelligence";
@@ -31,12 +30,11 @@ export const MANUAL_RFP_PROVIDERS = new Set([
   "tango",
   "bidnet",
   "serper",
-  "tavily",
   "exa",
   "langsearch",
 ]);
 
-const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "tavily", "exa", "langsearch"]);
+const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
 const DIRECT_RESULT_SHARE = 0.7;
 
 export interface ProviderRunResult {
@@ -193,18 +191,16 @@ function mergeDirectAndDiscovery(
 async function fetchConfiguredAiDiscovery(
   options: ProviderRunnerOptions,
 ): Promise<NormalizedOpportunity[]> {
-  const [useSerper, useTavily, useExa, useLangsearch] = await Promise.all([
+  const [useSerper, useExa, useLangsearch] = await Promise.all([
     serperProvider.isConfigured().catch(() => false),
-    tavilyProvider.isConfigured().catch(() => false),
     exaProvider.isConfigured().catch(() => false),
     langsearchProvider.isConfigured().catch(() => false),
   ]);
-  if (!useSerper && !useTavily && !useExa && !useLangsearch) return [];
+  if (!useSerper && !useExa && !useLangsearch) return [];
 
   const result = await webIntelligenceFetch({
     keywords: options.keywords,
     useSerper,
-    useTavily,
     useExa,
     useLangsearch,
     signal: options.signal,
@@ -217,7 +213,6 @@ async function fetchConfiguredAiDiscovery(
       event: "public_portal_ai_discovery",
       query: options.keywords,
       serper: useSerper,
-      tavily: useTavily,
       exa: useExa,
       langsearch: useLangsearch,
       candidates: result.stats.totalCandidates,
@@ -237,7 +232,6 @@ export async function fetchOneProvider(
     const result = await webIntelligenceFetch({
       keywords: options.keywords,
       useSerper: provider === "serper",
-      useTavily: provider === "tavily",
       useExa: provider === "exa",
       useLangsearch: provider === "langsearch",
       signal: options.signal,

@@ -3,7 +3,7 @@ import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, ilike, and, or, sql, isNull, asc, gt } from "drizzle-orm";
 import { importFromCsv } from "../lib/csv-service";
-import { tavilyProvider } from "../lib/providers/tavily";
+import { jinaProvider } from "../lib/providers/jina";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
@@ -801,13 +801,11 @@ router.post("/opportunities/:id/summary", async (req, res) => {
 
     if (sourceUrl) {
       try {
-        const isTavilyAvailable = await tavilyProvider.isConfigured();
-        if (isTavilyAvailable) {
-          const extracted = await tavilyProvider.extractContent([sourceUrl]);
-          if (extracted.length > 0) extractedContent = extracted[0].rawContent;
+        if (await jinaProvider.isConfigured()) {
+          extractedContent = await jinaProvider.extractUrl(sourceUrl, 10_000);
         }
       } catch (err) {
-        req.log.warn(err, "Tavily extract failed for summary");
+        req.log.warn(err, "Jina extract failed for summary");
       }
     }
 
@@ -883,25 +881,25 @@ router.post("/opportunities/enrich", async (req, res) => {
     }
 
     const needsEnrich = records.filter((r) => r.samUrl && (!r.responseDeadline || !r.estimatedValue));
-    const isTavilyAvailable = await tavilyProvider.isConfigured();
-    if (!isTavilyAvailable) {
-      stats.errors.push("Tavily not configured — date/value enrichment skipped");
+    const isJinaAvailable = await jinaProvider.isConfigured();
+    if (!isJinaAvailable) {
+      stats.errors.push("Jina not configured — date/value enrichment skipped");
     } else {
       for (let i = 0; i < needsEnrich.length; i += BATCH_SIZE) {
         const batch = needsEnrich.slice(i, i + BATCH_SIZE);
         const urls = batch.map((r) => r.samUrl!);
-        let extracted: { url: string; rawContent: string }[] = [];
+        let extracted = new Map<string, string>();
         try {
-          extracted = await tavilyProvider.extractContent(urls);
+          extracted = await jinaProvider.extractUrls(urls, 3, 10_000);
         } catch (err: any) {
-          stats.errors.push(`Tavily batch ${Math.floor(i / BATCH_SIZE) + 1}: ${err.message}`);
+          stats.errors.push(`Jina batch ${Math.floor(i / BATCH_SIZE) + 1}: ${err.message}`);
           continue;
         }
 
-        for (const result of extracted) {
-          const rec = batch.find((r) => r.samUrl === result.url);
+        for (const [url, rawContent] of extracted) {
+          const rec = batch.find((r) => r.samUrl === url);
           if (!rec) continue;
-          const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(result.rawContent.slice(0, 4000), rec.title);
+          const { deadline, estimatedValue, agencyHint } = extractMetadataFromText(rawContent.slice(0, 4000), rec.title);
           const updates: Record<string, unknown> = { updatedAt: new Date() };
           if (!rec.responseDeadline && deadline) {
             updates.responseDeadline = deadline;

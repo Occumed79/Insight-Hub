@@ -27,9 +27,6 @@ export const env = {
   // Serper (Google Search API)
   SERPER_API_KEY: process.env.SERPER_API_KEY,
 
-  // Tavily Research API
-  TAVILY_API_KEY: process.env.TAVILY_API_KEY,
-
   // Vector search / storage backends
   PINECONE_API_KEY: process.env.PINECONE_API_KEY,
   PINECONE_INDEX_HOST: process.env.PINECONE_INDEX_HOST,

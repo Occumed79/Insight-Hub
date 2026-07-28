@@ -16,7 +16,6 @@ export * from "./disabledEunaDiscoveryProvider";
 export * from "./internationalPublicPortals";
 export * from "./gemini";
 export * from "./serper";
-export * from "./tavily";
 export * from "./tango";
 export * from "./bidnet";
 export * from "./firecrawl";
@@ -48,7 +47,6 @@ import { disabledEunaDiscoveryProvider } from "./disabledEunaDiscoveryProvider";
 import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
 import { serperProvider } from "./serper";
-import { tavilyProvider } from "./tavily";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
 import { firecrawlProvider } from "./firecrawl";
@@ -92,7 +90,6 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   federalRegister: federalRegisterProvider,
   gemini: geminiProvider,
   serper: serperProvider,
-  tavily: tavilyProvider,
   tango: tangoProvider,
   bidnet: bidnetProvider,
   firecrawl: firecrawlProvider,

@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import { intelDb as db } from "@workspace/db";
 import { prospectsTable } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
-import { tavilyProvider } from "../lib/providers/tavily";
+import { exaProvider } from "../lib/providers/exa";
 import { resolveCredential } from "../lib/config/providerConfig";
 
 const router = Router();
@@ -146,25 +146,33 @@ router.post("/prospects/:id/research", async (req, res) => {
       errors.push(`Serper: ${e.message}`);
     }
 
-    // ── 2. Tavily — deep company profile ──────────────────────────────────────
-    const tavilyQueries = [
+    // ── 2. Exa — semantic company profile research ─────────────────────────────
+    const exaQueries = [
       `${prospect.name} occupational health employee workforce medical services`,
       `${prospect.name} defense contractor health safety programs benefits`,
     ];
 
-    let tavilyResults: { title: string; url: string; content: string }[] = [];
+    let exaResults: { title: string; url: string; content: string }[] = [];
     try {
-      tavilyResults = await tavilyProvider.researchMultiple(tavilyQueries, 5);
-      tavilyResults.forEach((r) => r.url && sourceUrls.push(r.url));
+      const results = await exaProvider.searchMultiple(exaQueries, 5);
+      exaResults = results.map((result) => ({
+        title: result.title ?? "",
+        url: result.url ?? "",
+        content:
+          (result.highlights ?? []).join(" ") ||
+          result.text ||
+          "",
+      }));
+      exaResults.forEach((r) => r.url && sourceUrls.push(r.url));
     } catch (e: any) {
-      errors.push(`Tavily: ${e.message}`);
+      errors.push(`Exa: ${e.message}`);
     }
 
     // ── 3. Extract opportunity signals ────────────────────────────────────────
     const opportunitySignals: { title: string; type: string; date: string; url: string }[] = [];
     const allResults = [
       ...serperResults.map((r) => ({ title: r.title, content: r.snippet, url: r.link })),
-      ...tavilyResults.map((r) => ({ title: r.title, content: r.content, url: r.url })),
+      ...exaResults,
     ];
 
     for (const r of allResults) {
@@ -250,7 +258,7 @@ Respond with ONLY the intelligence summary paragraph, no headers or labels.`;
       prospect: updated[0],
       stats: {
         serperResults: serperResults.length,
-        tavilyResults: tavilyResults.length,
+        exaResults: exaResults.length,
         signalsFound: opportunitySignals.length,
         sourcesIndexed: sourceUrls.length,
       },

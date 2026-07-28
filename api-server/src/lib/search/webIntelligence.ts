@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { geminiProvider } from "../providers/gemini";
 import { serperProvider } from "../providers/serper";
 import type { SerperSearchResult } from "../providers/serper";
-import { tavilyProvider } from "../providers/tavily";
 import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
@@ -36,11 +35,9 @@ const FIRECRAWL_MAX_URLS = 10;
 const SERPER_RESULTS_PER_QUERY = 30;
 const SERPER_DEEP_PAGES = 2;
 const EXA_RESULTS_PER_QUERY = 20;
-const TAVILY_RESULTS_PER_QUERY = 10;
 
 type SearchCandidateProvider =
   | "serper"
-  | "tavily"
   | "exa"
   | "you"
   | "langsearch"
@@ -64,13 +61,6 @@ const EXA_QUERIES = [
   `provider network clinic occupational health employee health government procurement ${CURRENT_YEAR}`,
 ];
 
-const TAVILY_QUERIES = [
-  `occupational health services government RFP solicitation open ${CURRENT_YEAR}`,
-  `pre-employment drug testing government contract opportunity active ${CURRENT_YEAR}`,
-  `defense contractor deployment medical screening occupational health subcontract opportunity ${CURRENT_YEAR}`,
-  `provider network occupational health pre-employment physical government RFP ${CURRENT_YEAR}`,
-];
-
 // Domain blocklist, procurement/service signals, and the RFP pre-filter now live
 // in ./relevance (single source of truth shared with the read-time list filter).
 
@@ -79,7 +69,6 @@ export interface WebIntelligenceResult {
   stats: {
     serperResults: number;
     exaResults: number;
-    tavilyResults: number;
     youResults: number;
     langsearchResults: number;
     websearchResults: number;
@@ -212,7 +201,6 @@ function addCandidate(
 export async function webIntelligenceFetch(options: {
   keywords?: string;
   useSerper?: boolean;
-  useTavily?: boolean;
   useGemini?: boolean;
   useExa?: boolean;
   useFirecrawl?: boolean;
@@ -227,7 +215,6 @@ export async function webIntelligenceFetch(options: {
   const stats = {
     serperResults: 0,
     exaResults: 0,
-    tavilyResults: 0,
     youResults: 0,
     langsearchResults: 0,
     websearchResults: 0,
@@ -247,7 +234,6 @@ export async function webIntelligenceFetch(options: {
   };
 
   const useSerper = options.useSerper === true;
-  const useTavily = options.useTavily === true;
   const useGemini = options.useGemini === true;
   const useExa = options.useExa === true;
   const useFirecrawl = options.useFirecrawl === true;
@@ -263,7 +249,6 @@ export async function webIntelligenceFetch(options: {
   };
   let serperQueries: SerperQuery[] = [...OCCUMED_WEB_QUERIES];
   let exaQueries = [...EXA_QUERIES];
-  let tavilyQueries = [...TAVILY_QUERIES];
 
   if (options.keywords?.trim()) {
     const kw = options.keywords.trim();
@@ -277,10 +262,6 @@ export async function webIntelligenceFetch(options: {
     exaQueries = [
       `active open government procurement opportunity for ${kw} occupational health medical screening drug testing services ${CURRENT_YEAR}`,
       ...exaQueries,
-    ];
-    tavilyQueries = [
-      `${kw} occupational health drug testing medical screening government RFP solicitation open ${CURRENT_YEAR}`,
-      ...tavilyQueries,
     ];
   }
 
@@ -342,7 +323,6 @@ export async function webIntelligenceFetch(options: {
   const [
     serperRaw,
     exaRaw,
-    tavilyRaw,
     youRaw,
     langsearchRaw,
     websearchRaw,
@@ -387,14 +367,6 @@ export async function webIntelligenceFetch(options: {
             : [],
         )
       : Promise.resolve([]),
-    useTavily
-      ? tavilyProvider
-          .researchMultiple(tavilyQueries, TAVILY_RESULTS_PER_QUERY, { signal: options.signal })
-          .catch((err: any) => {
-            errors.push(`Tavily: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
     useYou
       ? youProvider
           .fetch({ keywords: options.keywords })
@@ -426,7 +398,6 @@ export async function webIntelligenceFetch(options: {
 
   stats.serperResults = serperRaw.length;
   stats.exaResults = exaRaw.length;
-  stats.tavilyResults = tavilyRaw.length;
   stats.youResults = youRaw.length;
   stats.langsearchResults = langsearchRaw.length;
   stats.websearchResults = websearchRaw.length;
@@ -441,12 +412,6 @@ export async function webIntelligenceFetch(options: {
       "Serper: 0 results across all queries (API key may be invalid or quota exhausted — no HTTP error was thrown)",
     );
   }
-  if (useTavily && tavilyRaw.length === 0) {
-    errors.push(
-      "Tavily: 0 results across all queries (API key may be invalid or quota exhausted — check server logs)",
-    );
-  }
-
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
 
@@ -468,15 +433,6 @@ export async function webIntelligenceFetch(options: {
       dateRaw: r.publishedDate,
     });
   }
-  for (const r of tavilyRaw)
-    addCandidate(candidates, seen, {
-      title: r.title,
-      url: r.url,
-      content: r.content,
-      sourceProvider: "tavily",
-      dateRaw: r.publishedDate,
-    });
-
   for (const r of youRaw as any[])
     addCandidate(candidates, seen, {
       title: r.title ?? "",
