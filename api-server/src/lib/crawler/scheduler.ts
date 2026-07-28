@@ -27,8 +27,13 @@ function boundedNumberEnv(
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
 }
 
+/**
+ * Insight Hub is manual-ingestion-first. Background crawling is disabled unless
+ * production explicitly opts in, preventing a startup sweep from competing
+ * with a user-triggered Fetch Intelligence run.
+ */
 export function isCrawlerSchedulerEnabled(): boolean {
-  return process.env.PUBLIC_PORTAL_CRAWLER_SCHEDULER_ENABLED !== "false";
+  return process.env.PUBLIC_PORTAL_CRAWLER_SCHEDULER_ENABLED === "true";
 }
 
 export function crawlerSchedulerIntervalMs(): number {
