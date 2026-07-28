@@ -3,9 +3,10 @@ import type {
   FetchOptions,
   NormalizedOpportunity,
   ProviderFetchResult,
+  ProviderProgressEvent,
   ProviderStatus,
 } from "./types";
-import { publicPortalProvidersProvider as legacyPublicPortalInventory } from "./publicPortalProviders";
+import { publicPortalProvidersProvider as publishedPortalInventory } from "./publicPortalProviders";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import {
   failedPortalStatus,
@@ -14,12 +15,6 @@ import {
   selectFairPortalSources,
   type PublicPortalSourceRunStatus,
 } from "./publicPortalProviders/portalHealthStore";
-import {
-  hasApprovedPublicPortalSpiderConfig,
-  listApprovedDiscoverySpiderConfigs,
-  registerSpiderConfig,
-  runCrawlerForSource,
-} from "../crawler";
 import { composeAbortSignal } from "./abortSignals";
 import {
   partitionProviderRecordsForQuery,
@@ -35,19 +30,88 @@ const SOURCE_TIMEOUT_MS = 20_000;
 const ROTATION_BATCH_SIZE = 20;
 const SOURCE_SCAN_LIMIT = 200;
 const RESULT_LIMIT = 100;
-const SOURCE_CONCURRENCY = 4;
+const SOURCE_RETRY_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 750;
 const QUERY_REJECTION_SAMPLE_LIMIT = 2;
 
-async function hydrateApprovedRuntimeSpiders(): Promise<void> {
-  const approved = await listApprovedDiscoverySpiderConfigs().catch(() => []);
-  for (const config of approved) registerSpiderConfig(config);
+const TRANSIENT_ADAPTER_CODES = new Set([
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+const TRANSIENT_ADAPTER_MESSAGE =
+  /timed out|timeout|temporarily unavailable|connection (?:reset|closed|terminated)|network is unreachable|fetch failed|socket hang up|HTTP (?:408|425|429|5\d\d)\b|rate.?limit/i;
+
+interface ErrorLike {
+  code?: unknown;
+  message?: unknown;
+  cause?: unknown;
+  errors?: unknown;
+}
+
+export function isTransientPortalAdapterError(
+  value: unknown,
+  seen = new Set<unknown>(),
+): boolean {
+  if (!value || seen.has(value)) return false;
+  seen.add(value);
+  if (typeof value === "string") return TRANSIENT_ADAPTER_MESSAGE.test(value);
+  if (typeof value !== "object") return false;
+
+  const error = value as ErrorLike;
+  if (
+    typeof error.code === "string" &&
+    TRANSIENT_ADAPTER_CODES.has(error.code.toUpperCase())
+  ) {
+    return true;
+  }
+  if (
+    typeof error.message === "string" &&
+    TRANSIENT_ADAPTER_MESSAGE.test(error.message)
+  ) {
+    return true;
+  }
+  if (isTransientPortalAdapterError(error.cause, seen)) return true;
+  return (
+    Array.isArray(error.errors) &&
+    error.errors.some((nested) => isTransientPortalAdapterError(nested, seen))
+  );
+}
+
+function wait(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(
+      signal.reason instanceof Error ? signal.reason : new Error("Adapter run cancelled"),
+    );
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new Error("Adapter run cancelled"),
+      );
+    };
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function isRunnableSource(source: PublicPortalSource): boolean {
-  return (
-    isRegisteredPublicPortalAdapter(source.id) ||
-    hasApprovedPublicPortalSpiderConfig(source.id)
-  );
+  return isRegisteredPublicPortalAdapter(source.id);
 }
 
 function normalizeSourceRecord(
@@ -71,9 +135,7 @@ function normalizeSourceRecord(
         record.rawData?.sourceConfidence === "medium" ||
         record.rawData?.sourceConfidence === "high"
           ? record.rawData.sourceConfidence
-          : isRegisteredPublicPortalAdapter(source.id)
-            ? "high"
-            : "medium",
+          : "high",
       tags: Array.from(
         new Set([
           ...tags,
@@ -122,73 +184,176 @@ interface SourceCollection {
   errors: string[];
 }
 
+async function emitProgress(
+  options: FetchOptions,
+  event: ProviderProgressEvent,
+  errors: string[],
+): Promise<void> {
+  if (!options.onProgress) return;
+  try {
+    await options.onProgress(event);
+  } catch (error) {
+    errors.push(
+      `${event.sourceId ?? event.provider}: progress persistence failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+async function saveHealthSafely(
+  status: PublicPortalSourceRunStatus,
+  errors: string[],
+): Promise<void> {
+  try {
+    await savePublicPortalHealth(status);
+  } catch (error) {
+    errors.push(
+      `${status.sourceId}: portal health persistence failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 async function collectRawSourceRecords(
   source: PublicPortalSource,
   options: FetchOptions,
   signal: AbortSignal,
 ): Promise<ProviderFetchResult> {
   const provider = getRegisteredPublicPortalAdapter(source.id);
-  if (provider) {
-    // Adapter-specific OR-word matchers are intentionally bypassed. The shared
-    // query classifier runs after normalization and before any global cap.
-    return provider.fetch({
-      ...options,
-      keywords: undefined,
-      offset: 0,
-      limit: SOURCE_SCAN_LIMIT,
-      signal,
-    });
-  }
-
-  if (!hasApprovedPublicPortalSpiderConfig(source.id)) {
+  if (!provider) {
     return {
       records: [],
       total: 0,
-      errors: [
-        `${source.id}: no registered adapter, approved official API, or deliberately vetted extractor exists`,
-      ],
+      errors: [`${source.id}: registered adapter is unavailable at runtime`],
     };
   }
 
-  // This is invoked only by the explicit Fetch Intelligence action. force=true
-  // prevents persisted crawler cadence from silently skipping a manual run.
-  const result = await runCrawlerForSource(source, {
-    force: true,
+  // Adapter-specific OR-word matchers are intentionally bypassed. The shared
+  // query classifier runs after normalization and before any global cap.
+  return provider.fetch({
+    ...options,
+    keywords: undefined,
+    offset: 0,
+    limit: SOURCE_SCAN_LIMIT,
     signal,
+    onProgress: undefined,
   });
-  if (!result) {
-    return {
-      records: [],
-      total: 0,
-      errors: [`${source.id}: approved crawler registration is unavailable`],
-    };
+}
+
+async function collectWithRetry(
+  source: PublicPortalSource,
+  options: FetchOptions,
+  index: number,
+  total: number,
+  errors: string[],
+): Promise<ProviderFetchResult> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= SOURCE_RETRY_ATTEMPTS; attempt += 1) {
+    const sourceSignal = composeAbortSignal(SOURCE_TIMEOUT_MS, options.signal);
+    try {
+      const result = await collectRawSourceRecords(
+        source,
+        options,
+        sourceSignal.signal,
+      );
+      const reportedTransientFailure =
+        result.records.length === 0 &&
+        result.errors.length > 0 &&
+        result.errors.every((error) => isTransientPortalAdapterError(error));
+      if (reportedTransientFailure) {
+        throw new Error(result.errors.join("; "));
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (options.signal?.aborted) throw error;
+      const canRetry =
+        attempt < SOURCE_RETRY_ATTEMPTS &&
+        isTransientPortalAdapterError(error);
+      if (!canRetry) throw error;
+
+      await emitProgress(
+        options,
+        {
+          provider: "publicPortalProviders",
+          phase: "source_retry",
+          sourceId: source.id,
+          sourceName: source.agencyName,
+          index,
+          total,
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        errors,
+      );
+      await wait(RETRY_DELAY_MS * attempt, options.signal);
+    } finally {
+      sourceSignal.cleanup();
+    }
   }
-  return {
-    records: result.records,
-    total: result.records.length,
-    errors: result.diagnostics.errors.map((error) => `${source.id}: ${error}`),
-  };
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`${source.id}: adapter attempts exhausted`);
 }
 
 async function collectSource(
   source: PublicPortalSource,
   prior: PublicPortalSourceRunStatus | undefined,
   options: FetchOptions,
+  index: number,
+  total: number,
 ): Promise<SourceCollection> {
   const checkedAt = new Date();
-  const sourceSignal = composeAbortSignal(SOURCE_TIMEOUT_MS, options.signal);
+  const errors: string[] = [];
+  await emitProgress(
+    options,
+    {
+      provider: "publicPortalProviders",
+      phase: "source_start",
+      sourceId: source.id,
+      sourceName: source.agencyName,
+      index,
+      total,
+      attempt: 1,
+    },
+    errors,
+  );
+
   let rawResult: ProviderFetchResult;
   try {
-    rawResult = await collectRawSourceRecords(
+    rawResult = await collectWithRetry(
       source,
       options,
-      sourceSignal.signal,
+      index,
+      total,
+      errors,
     );
   } catch (error) {
+    if (options.signal?.aborted) throw error;
     const reason = error instanceof Error ? error.message : String(error);
-    const status = failedPortalStatus(source, prior, new Date(), reason);
-    await savePublicPortalHealth(status);
-    sourceSignal.cleanup();
+    await saveHealthSafely(
+      failedPortalStatus(source, prior, new Date(), reason),
+      errors,
+    );
+    errors.unshift(`${source.id}: ${reason}`);
+    await emitProgress(
+      options,
+      {
+        provider: "publicPortalProviders",
+        phase: "source_failed",
+        sourceId: source.id,
+        sourceName: source.agencyName,
+        index,
+        total,
+        error: reason,
+        recordCount: 0,
+      },
+      errors,
+    );
     return {
       source,
       partition: {
@@ -199,10 +364,8 @@ async function collectSource(
         rejectedCount: 0,
       },
       records: [],
-      errors: [`${source.id}: ${reason}`],
+      errors,
     };
-  } finally {
-    sourceSignal.cleanup();
   }
 
   const normalized = rawResult.records.map((record) =>
@@ -213,7 +376,7 @@ async function collectSource(
     options.keywords,
     QUERY_REJECTION_SAMPLE_LIMIT,
   );
-  const errors = [...rawResult.errors];
+  errors.push(...rawResult.errors);
   const failedWithoutAnyRows =
     partition.rawCount === 0 && rawResult.errors.length > 0;
   const status = failedWithoutAnyRows
@@ -230,15 +393,22 @@ async function collectSource(
         partition.rawCount,
         partition.matchedCount,
       );
-  try {
-    await savePublicPortalHealth(status);
-  } catch (error) {
-    errors.push(
-      `${source.id}: portal health persistence failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
+  await saveHealthSafely(status, errors);
+
+  await emitProgress(
+    options,
+    {
+      provider: "publicPortalProviders",
+      phase: failedWithoutAnyRows ? "source_failed" : "source_complete",
+      sourceId: source.id,
+      sourceName: source.agencyName,
+      index,
+      total,
+      recordCount: partition.rawCount,
+      error: failedWithoutAnyRows ? rawResult.errors.join("; ") : undefined,
+    },
+    errors,
+  );
 
   return {
     source,
@@ -248,35 +418,10 @@ async function collectSource(
   };
 }
 
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T) => Promise<R>,
-  signal?: AbortSignal,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  await Promise.all(
-    Array.from(
-      { length: Math.min(Math.max(1, concurrency), Math.max(1, items.length)) },
-      async () => {
-        while (!signal?.aborted) {
-          const index = cursor++;
-          if (index >= items.length) return;
-          const item = items[index];
-          if (item === undefined) return;
-          results[index] = await worker(item);
-        }
-      },
-    ),
-  );
-  return results.filter((result): result is R => result !== undefined);
-}
-
 function uniqueInventory(): PublicPortalSource[] {
   const byId = new Map<string, PublicPortalSource>();
-  for (const source of legacyPublicPortalInventory.getSources()) {
-    byId.set(source.id, source);
+  for (const source of publishedPortalInventory.getSources()) {
+    if (isRegisteredPublicPortalAdapter(source.id)) byId.set(source.id, source);
   }
   return Array.from(byId.values());
 }
@@ -290,7 +435,6 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
   private lastError?: string;
 
   async getRunnableSources(): Promise<PublicPortalSource[]> {
-    await hydrateApprovedRuntimeSpiders();
     return this.inventory.filter(isRunnableSource);
   }
 
@@ -308,11 +452,7 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
       () => new Map<string, PublicPortalSourceRunStatus>(),
     );
     const runnable = await this.getRunnableSources();
-    const dedicatedIds = new Set(
-      runnable
-        .filter((source) => isRegisteredPublicPortalAdapter(source.id))
-        .map((source) => source.id),
-    );
+    const dedicatedIds = new Set(runnable.map((source) => source.id));
     const selection = selectFairPortalSources(
       runnable,
       statuses,
@@ -320,12 +460,27 @@ export class AuditedPublicPortalProvider implements DataSourceProvider {
       dedicatedIds,
     );
 
-    const collections = await mapWithConcurrency(
-      selection.selected,
-      SOURCE_CONCURRENCY,
-      (source) => collectSource(source, statuses.get(source.id), options),
-      options.signal,
-    );
+    // Deliberately sequential. One adapter owns the network and progress slot at
+    // a time, so a timeout or malformed source cannot obscure every other source.
+    const collections: SourceCollection[] = [];
+    for (let offset = 0; offset < selection.selected.length; offset += 1) {
+      if (options.signal?.aborted) {
+        const reason = options.signal.reason;
+        throw reason instanceof Error ? reason : new Error("Portal run cancelled");
+      }
+      const source = selection.selected[offset];
+      if (!source) continue;
+      collections.push(
+        await collectSource(
+          source,
+          statuses.get(source.id),
+          options,
+          offset + 1,
+          selection.selected.length,
+        ),
+      );
+    }
+
     const requestedLimit = Math.min(
       RESULT_LIMIT,
       Math.max(1, options.limit ?? RESULT_LIMIT),
