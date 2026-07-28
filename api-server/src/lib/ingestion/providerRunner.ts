@@ -1,5 +1,8 @@
 import { providerRegistry } from "../providers";
-import type { NormalizedOpportunity } from "../providers/types";
+import type {
+  NormalizedOpportunity,
+  ProviderProgressEvent,
+} from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { serperProvider } from "../providers/serper";
 import { tavilyProvider } from "../providers/tavily";
@@ -40,6 +43,13 @@ export interface ProviderRunResult {
   records: NormalizedOpportunity[];
   errors: string[];
   expiredSkipped?: number;
+}
+
+export interface ProviderRunnerOptions {
+  keywords?: string;
+  dateRange?: number;
+  signal?: AbortSignal;
+  onProgress?: (event: ProviderProgressEvent) => void | Promise<void>;
 }
 
 export function resolveManualProviders(providers?: string[]): string[] {
@@ -180,10 +190,23 @@ function mergeDirectAndDiscovery(
   return merged.slice(0, boundedLimit);
 }
 
-async function fetchConfiguredAiDiscovery(options: {
-  keywords?: string;
-  signal?: AbortSignal;
-}): Promise<NormalizedOpportunity[]> {
+async function emitProgress(
+  callback: ProviderRunnerOptions["onProgress"],
+  event: ProviderProgressEvent,
+): Promise<void> {
+  if (!callback) return;
+  try {
+    await callback(event);
+  } catch (error) {
+    console.warn(
+      `[${event.provider}:progress] ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+async function fetchConfiguredAiDiscovery(options: ProviderRunnerOptions): Promise<NormalizedOpportunity[]> {
   const [useSerper, useTavily, useExa, useLangsearch] = await Promise.all([
     serperProvider.isConfigured().catch(() => false),
     tavilyProvider.isConfigured().catch(() => false),
@@ -191,6 +214,13 @@ async function fetchConfiguredAiDiscovery(options: {
     langsearchProvider.isConfigured().catch(() => false),
   ]);
   if (!useSerper && !useTavily && !useExa && !useLangsearch) return [];
+
+  await emitProgress(options.onProgress, {
+    provider: "publicPortalProviders",
+    phase: "discovery_start",
+    sourceId: "ai-web-discovery",
+    sourceName: "AI web discovery",
+  });
 
   const result = await webIntelligenceFetch({
     keywords: options.keywords,
@@ -217,12 +247,20 @@ async function fetchConfiguredAiDiscovery(options: {
       aiScorers: result.stats.aiScorers,
     }),
   );
+
+  await emitProgress(options.onProgress, {
+    provider: "publicPortalProviders",
+    phase: "discovery_complete",
+    sourceId: "ai-web-discovery",
+    sourceName: "AI web discovery",
+    recordCount: result.opportunities.length,
+  });
   return result.opportunities;
 }
 
 export async function fetchOneProvider(
   provider: string,
-  options: { keywords?: string; dateRange?: number; signal?: AbortSignal },
+  options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   if (WEB_DISCOVERY_PROVIDERS.has(provider)) {
     const result = await webIntelligenceFetch({
@@ -245,20 +283,17 @@ export async function fetchOneProvider(
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
 
   if (provider === "publicPortalProviders") {
-    // The production public-portal provider already owns every registered
-    // catalogue adapter. Calling the old aggregate wave here would execute the
-    // same sources twice, duplicate network traffic, and duplicate failures.
+    // Adapters execute one at a time inside the audited provider. The web/AI
+    // discovery lane executes once for the whole run, never once per adapter.
     const [directResult, discoveryRecords] = await Promise.all([
       source.fetch({
         keywords: options.keywords,
         dateRange: options.dateRange,
         limit: 100,
         signal: options.signal,
+        onProgress: options.onProgress,
       }),
-      fetchConfiguredAiDiscovery({
-        keywords: options.keywords,
-        signal: options.signal,
-      }).catch((error) => {
+      fetchConfiguredAiDiscovery(options).catch((error) => {
         console.warn(
           `[publicPortalProviders:ai-discovery] ${
             error instanceof Error ? error.message : String(error)
@@ -280,6 +315,7 @@ export async function fetchOneProvider(
     dateRange: options.dateRange,
     limit: 100,
     signal: options.signal,
+    onProgress: options.onProgress,
   });
   return applyProviderGuards(
     provider,
