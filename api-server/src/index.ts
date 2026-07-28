@@ -1,5 +1,6 @@
 import app from "./app";
 import { startCrawlerScheduler } from "./lib/crawler/scheduler";
+import { isTransientDatabaseError } from "./lib/databaseReliability";
 import { logger } from "./lib/logger";
 import { runStartupMigrations } from "./lib/startup-migrate";
 import { runRfpStartupMigrations } from "./lib/rfp-startup-migrate";
@@ -18,6 +19,24 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Final containment for a transient Neon failure that escapes a background
+// task. Known database connectivity failures are logged without killing every
+// API route. Non-database unhandled rejections still terminate the process so
+// programming defects are not silently hidden.
+process.on("unhandledRejection", (reason) => {
+  if (isTransientDatabaseError(reason)) {
+    logger.error(
+      { reason },
+      "Transient database rejection escaped a background task; service kept alive",
+    );
+    return;
+  }
+
+  logger.fatal({ reason }, "Unhandled promise rejection — exiting");
+  process.exitCode = 1;
+  setImmediate(() => process.exit(1));
+});
 
 async function bootstrap(): Promise<void> {
   // Run both migration paths sequentially, each scoped to its own database
