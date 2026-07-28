@@ -190,23 +190,9 @@ function mergeDirectAndDiscovery(
   return merged.slice(0, boundedLimit);
 }
 
-async function emitProgress(
-  callback: ProviderRunnerOptions["onProgress"],
-  event: ProviderProgressEvent,
-): Promise<void> {
-  if (!callback) return;
-  try {
-    await callback(event);
-  } catch (error) {
-    console.warn(
-      `[${event.provider}:progress] ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
-}
-
-async function fetchConfiguredAiDiscovery(options: ProviderRunnerOptions): Promise<NormalizedOpportunity[]> {
+async function fetchConfiguredAiDiscovery(
+  options: ProviderRunnerOptions,
+): Promise<NormalizedOpportunity[]> {
   const [useSerper, useTavily, useExa, useLangsearch] = await Promise.all([
     serperProvider.isConfigured().catch(() => false),
     tavilyProvider.isConfigured().catch(() => false),
@@ -214,13 +200,6 @@ async function fetchConfiguredAiDiscovery(options: ProviderRunnerOptions): Promi
     langsearchProvider.isConfigured().catch(() => false),
   ]);
   if (!useSerper && !useTavily && !useExa && !useLangsearch) return [];
-
-  await emitProgress(options.onProgress, {
-    provider: "publicPortalProviders",
-    phase: "discovery_start",
-    sourceId: "ai-web-discovery",
-    sourceName: "AI web discovery",
-  });
 
   const result = await webIntelligenceFetch({
     keywords: options.keywords,
@@ -247,14 +226,6 @@ async function fetchConfiguredAiDiscovery(options: ProviderRunnerOptions): Promi
       aiScorers: result.stats.aiScorers,
     }),
   );
-
-  await emitProgress(options.onProgress, {
-    provider: "publicPortalProviders",
-    phase: "discovery_complete",
-    sourceId: "ai-web-discovery",
-    sourceName: "AI web discovery",
-    recordCount: result.opportunities.length,
-  });
   return result.opportunities;
 }
 
@@ -285,6 +256,8 @@ export async function fetchOneProvider(
   if (provider === "publicPortalProviders") {
     // Adapters execute one at a time inside the audited provider. The web/AI
     // discovery lane executes once for the whole run, never once per adapter.
+    // AI work is logged separately so it cannot overwrite the active adapter's
+    // persisted progress message while both lanes run in parallel.
     const [directResult, discoveryRecords] = await Promise.all([
       source.fetch({
         keywords: options.keywords,
