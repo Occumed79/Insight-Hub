@@ -38,6 +38,30 @@ export interface ProviderFetchResult {
   errors: string[];
 }
 
+export type ProviderProgressPhase =
+  | "source_start"
+  | "source_retry"
+  | "source_complete"
+  | "source_failed"
+  | "discovery_start"
+  | "discovery_complete";
+
+/**
+ * Optional progress emitted by multi-source providers. Progress persistence is
+ * best-effort and must never be allowed to fail the underlying collection.
+ */
+export interface ProviderProgressEvent {
+  provider: ProviderName;
+  phase: ProviderProgressPhase;
+  sourceId?: string;
+  sourceName?: string;
+  index?: number;
+  total?: number;
+  attempt?: number;
+  recordCount?: number;
+  error?: string;
+}
+
 /**
  * Status of a provider (for display in Settings).
  */
@@ -60,6 +84,7 @@ export interface FetchOptions {
   limit?: number;
   offset?: number;
   signal?: AbortSignal;
+  onProgress?: (event: ProviderProgressEvent) => void | Promise<void>;
 }
 
 /**
