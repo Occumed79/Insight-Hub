@@ -198,7 +198,9 @@ async function fetchRelevantNews(query: string, max: number, page: number): Prom
 router.get("/relevant-news", async (req, res) => {
   const userSearch = sanitizedSearch(req.query.search);
   const query = userSearch ? `(${BASE_QUERY}) AND "${userSearch.replace(/"/g, "")}"` : BASE_QUERY;
-  const max = boundedInteger(req.query.max, 40, 1, 100);
+  const planSafeMax = boundedInteger(process.env.GNEWS_MAX_ARTICLES, 10, 1, 100);
+  const requestedMax = boundedInteger(req.query.max, planSafeMax, 1, 100);
+  const max = Math.min(requestedMax, planSafeMax);
   const page = boundedInteger(req.query.page, 1, 1, 100);
   const cacheKey = `${query}|${max}|${page}`;
 
