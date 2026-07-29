@@ -2,6 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { installStableFetch } from "@/lib/stable-fetch";
 
 import Home from "@/pages/home";
 import OpportunitiesDashboard from "@/pages/portal/opportunities";
@@ -15,10 +16,16 @@ import { PortalLayout } from "@/components/portal-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import NotFound from "@/pages/not-found";
 
+installStableFetch();
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: 2,
+      retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 4_000),
+      staleTime: 30_000,
+      gcTime: 30 * 60 * 1000,
+      placeholderData: (previousData) => previousData,
       refetchOnWindowFocus: false,
     },
   },
