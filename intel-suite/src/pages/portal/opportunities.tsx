@@ -19,7 +19,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ProcurementPortalDirectory } from "@/components/portal/ProcurementPortalDirectory";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -117,23 +116,21 @@ type FetchProviderOption = {
 
 const FETCH_PROVIDER_GROUPS: { id: string; label: string; options: FetchProviderOption[] }[] = [
   {
-    id: "opportunity_sources",
-    label: "Opportunity Sources",
+    id: "ai_intelligence",
+    label: "AI Intelligence",
     options: [
-      { key: "sam_gov", label: "SAM.gov", desc: "U.S. federal solicitations", stub: false },
-      { key: "publicPortalProviders", label: "U.S. Public Portals", desc: "Official state and local portal coverage", stub: false },
-      { key: "eunaBonfire", label: "Euna Supplier Network", desc: "Separate public Bonfire/Euna discovery", stub: false },
-      { key: "internationalPublicPortals", label: "International Public Portals", desc: "Canada, United Kingdom, Europe, and multilateral portals", stub: false },
-      { key: "tango", label: "Tango", desc: "Direct procurement opportunities", stub: false },
-      { key: "bidnet", label: "BidNet", desc: "Inactive until the direct API credentials are added", stub: true },
-    ],
-  },
-  {
-    id: "web_discovery",
-    label: "Optional Web Discovery",
-    options: [
-      { key: "serper", label: "Serper", desc: "Broad public-web opportunity discovery", stub: false },
-      { key: "exa", label: "Exa", desc: "Semantic public-web discovery", stub: false },
+      {
+        key: "aiDiscovery",
+        label: "AI Opportunity Discovery",
+        desc: "Gemini-guided discovery using configured Serper, Exa, and LangSearch services",
+        stub: false,
+      },
+      {
+        key: "sam_gov",
+        label: "SAM.gov Official API",
+        desc: "Official federal solicitations added alongside AI discovery",
+        stub: false,
+      },
     ],
   },
 ];
@@ -189,7 +186,7 @@ export default function OpportunitiesDashboard() {
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
-  const [fetchProviders, setFetchProviders] = useState<string[]>(["sam_gov", "publicPortalProviders", "eunaBonfire", "internationalPublicPortals"]);
+  const [fetchProviders, setFetchProviders] = useState<string[]>(["aiDiscovery", "sam_gov"]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [gradingIds, setGradingIds] = useState<Set<string>>(new Set());
 
@@ -612,8 +609,6 @@ export default function OpportunitiesDashboard() {
         </div>
       </div>
 
-      <ProcurementPortalDirectory />
-
       <div className="flex items-center gap-3 px-4 py-2 glass-panel rounded-full overflow-x-auto no-scrollbar">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold whitespace-nowrap">Source Filters:</span>
         <div className="flex items-center gap-2">
@@ -623,7 +618,7 @@ export default function OpportunitiesDashboard() {
           >
             All
           </button>
-          {providersData?.providers.filter((p) => p.ingestionEligible).map((p) => {
+          {providersData?.providers.filter((p) => p.ingestionEligible && !["publicPortalProviders", "eunaBonfire", "internationalPublicPortals", "tango", "bidnet"].includes(p.name)).map((p) => {
             const isStub = p.ingestionMode === "stub";
             const dotClass = isStub ? "bg-amber-500/40 border border-amber-500/40" : p.status?.configured ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" : "bg-white/20";
             const providerKey = p.name === "sam_gov" ? "samGov" : p.name;
@@ -940,7 +935,7 @@ export default function OpportunitiesDashboard() {
           <form onSubmit={handleFetchSubmit}>
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Fetch Intelligence</DialogTitle>
-              <DialogDescription className="text-muted-foreground">{showRunProgress ? "Manual ingestion progress is persisted while you navigate or refresh." : "Choose official opportunity sources and, when needed, optional web-discovery services."}</DialogDescription>
+              <DialogDescription className="text-muted-foreground">{showRunProgress ? "Manual ingestion progress is persisted while you navigate or refresh." : "Run the AI-led opportunity discovery system. It searches broadly, validates relevance, and optionally adds official SAM.gov notices. Portal scraping is disabled."}</DialogDescription>
             </DialogHeader>
             {showRunProgress && currentRun ? (
               <div className="grid gap-5 py-6">
@@ -956,7 +951,7 @@ export default function OpportunitiesDashboard() {
                     <div className="text-right"><div className="text-xs text-muted-foreground">Providers</div><div className="text-lg font-semibold">{currentRun.providersCompleted}/{currentRun.providersTotal}</div></div>
                   </div>
                   <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${opportunityRunProgress(currentRun.providersCompleted, currentRun.providersTotal)}%` }} /></div>
-                  {currentRun.currentProvider && <p className="mt-3 text-xs text-white/70">Running: <span className="font-medium text-white">{currentRun.currentProvider}</span></p>}
+                  {currentRun.currentProvider && <p className="mt-3 text-xs text-white/70">Running: <span className="font-medium text-white">{currentRun.currentProvider === "aiDiscovery" ? "AI Opportunity Discovery" : currentRun.currentProvider === "samGov" ? "SAM.gov Official API" : currentRun.currentProvider}</span></p>}
                   {currentRun.statusMessage && <p className="mt-2 text-xs text-white/60">{currentRun.statusMessage}</p>}
                   <p className="mt-2 text-xs text-white/60">Heartbeat: {currentRun.heartbeatAt ? `${Math.max(0, Math.round((Date.now() - new Date(currentRun.heartbeatAt).getTime()) / 1000))}s ago` : "not reported"}{currentRun.startedAt ? ` · Elapsed ${Math.max(0, Math.round((Date.now() - new Date(currentRun.startedAt).getTime()) / 1000))}s` : ""}</p>
                   {isOpportunityRunActive(currentRun.status) && isOpportunityRunStale(currentRun.heartbeatAt) && <p className="mt-2 text-xs text-amber-300">Heartbeat is stale; the backend should recover this run before another start.</p>}
