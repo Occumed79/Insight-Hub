@@ -1,6 +1,17 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, FileText, Landmark, Map, Network, TrendingUp, ExternalLink } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarRange,
+  ExternalLink,
+  FileText,
+  Network,
+  Newspaper,
+  RefreshCcw,
+  Search,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
 import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
 import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
@@ -10,6 +21,7 @@ type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
 type PortalLinks = Record<PortalLinkKey, string>;
 
 const SOURCE_VAULT_FALLBACK_URL = "https://source-vault.onrender.com";
+const ULTRA_SEARCH_URL = "https://ultra-search-browser.onrender.com";
 
 function normalizeExternalPortalUrl(rawUrl: string | undefined) {
   const trimmed = rawUrl?.trim();
@@ -152,21 +164,22 @@ export default function Home() {
               delay: 0.1,
             },
             {
-              href: "/portal/entities",
+              href: ULTRA_SEARCH_URL,
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
-              alt: "Entity Intelligence",
-              icon: <Users className="w-5 h-5 text-primary-foreground" />,
-              title: "Entity Intelligence",
-              desc: "Track entity profiles, needs, patterns, priorities, decision-makers, prospect records, and strategic insights.",
+              alt: "Search Bar",
+              icon: <Search className="w-5 h-5 text-primary-foreground" />,
+              title: "Search Bar",
+              desc: "Open the Ultra Search Browser for fast multi-engine research, source discovery, and targeted web searches.",
               delay: 0.2,
+              external: true,
             },
             {
-              href: "/portal/competitors",
+              href: "/portal/forecasts",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
-              alt: "Competitor Intelligence",
-              icon: <Target className="w-5 h-5 text-primary-foreground" />,
-              title: "Competitor Intelligence",
-              desc: "Monitor competitors, capabilities, contract activity, positioning, and market threats.",
+              alt: "Forecasts",
+              icon: <CalendarRange className="w-5 h-5 text-primary-foreground" />,
+              title: "Forecasts",
+              desc: "See federal procurement forecasts before solicitations are posted, including expected timing, values, set-asides, and contacts.",
               delay: 0.3,
             },
             {
@@ -180,21 +193,21 @@ export default function Home() {
               external: true,
             },
             {
-              href: "/portal/federal-agencies",
+              href: "/portal/recompete-watch",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/e2e3572a9_5ad3d8f9-d805-4fc2-8cb7-a8614edc9c0fcopy.png",
-              alt: "Federal Agencies",
-              icon: <Landmark className="w-5 h-5 text-primary-foreground" />,
-              title: "Federal Agencies",
-              desc: "Monitor federal agency health programs, contract vehicles, and procurement activity across DoD, VA, and civilian agencies.",
+              alt: "Recompete Watch",
+              icon: <RefreshCcw className="w-5 h-5 text-primary-foreground" />,
+              title: "Recompete Watch",
+              desc: "Track forecasted recompetes, incumbents, contract values, expiration dates, and likely displacement opportunities.",
               delay: 0.5,
             },
             {
-              href: "/portal/state-agencies",
+              href: "/portal/relevant-news",
               imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/02588225c_783f5460-1289-4bbd-a0ac-a9316906a45e.png",
-              alt: "State Agencies",
-              icon: <Map className="w-5 h-5 text-primary-foreground" />,
-              title: "State Agencies",
-              desc: "Track state-level health program procurement, workers' compensation contracts, and occupational health RFPs across all 50 states.",
+              alt: "Relevant News",
+              icon: <Newspaper className="w-5 h-5 text-primary-foreground" />,
+              title: "Relevant News",
+              desc: "Follow current federal contractor awards, acquisitions, procurement activity, solicitations, and recompete developments.",
               delay: 0.6,
             },
           ].map((card) => {
