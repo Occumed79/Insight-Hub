@@ -8,7 +8,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 30;
 const BASE_QUERY =
-  '("federal contractor" OR "government contractor" OR "defense contractor" OR "federal contract") AND (award OR acquisition OR procurement OR recompete OR solicitation)';
+  '("federal contractor" OR "government contractor" OR "defense contractor") AND (award OR procurement OR acquisition OR recompete OR solicitation)';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -64,7 +64,7 @@ function sanitizedSearch(value: unknown): string | null {
     .replace(/[()]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return normalized ? normalized.slice(0, 45) : null;
+  return normalized ? normalized.slice(0, 40) : null;
 }
 
 function relevanceScore(article: JsonRecord): number {
@@ -211,7 +211,7 @@ router.get("/relevant-news", async (req, res) => {
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = fetchRelevantNews(query.slice(0, 200), max, page);
+      request = fetchRelevantNews(query, max, page);
       inFlight.set(cacheKey, request);
     }
 
