@@ -19,6 +19,7 @@ import relevantNewsRouter from "./relevant-news";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
+import opportunityVectorSyncBoundary from "../middleware/opportunity-vector-sync-boundary";
 import { lazyRouter } from "./lazy-router";
 
 const router: IRouter = Router();
@@ -50,6 +51,7 @@ router.use(
   ),
 );
 router.use(opportunitySafetyBoundaryRouter);
+router.use(opportunityVectorSyncBoundary);
 router.use(
   lazyRouter(
     (req) => req.path === "/opportunities" || req.path.startsWith("/opportunities/"),
