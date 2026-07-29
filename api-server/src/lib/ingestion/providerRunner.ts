@@ -1,13 +1,8 @@
-import { providerRegistry } from "../providers";
 import type {
   NormalizedOpportunity,
   ProviderProgressEvent,
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
-import { serperProvider } from "../providers/serper";
-import { exaProvider } from "../providers/exa";
-import { langsearchProvider } from "../providers/langsearch";
-import { webIntelligenceFetch } from "../search/webIntelligence";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
@@ -73,9 +68,6 @@ function applyProviderGuards(
   errors: string[],
   keywords?: string,
 ): ProviderRunResult {
-  // The audited public-portal provider partitions each portal before source-fair
-  // merging and then applies the Cloudflare/Cerebras adjudication layer. Other
-  // top-level providers receive the shared query guard here.
   const admitted =
     provider === "publicPortalProviders"
       ? records
@@ -122,11 +114,6 @@ function recordKey(record: NormalizedOpportunity): string {
   return `id:${record.externalId.toLowerCase()}`;
 }
 
-/**
- * Preserve direct-portal authority for duplicate URLs while reserving meaningful
- * capacity for AI discovery. Direct records receive 70% of the bounded result
- * set when both pools are populated; either pool can consume unused capacity.
- */
 function mergeDirectAndDiscovery(
   direct: NormalizedOpportunity[],
   discovery: NormalizedOpportunity[],
@@ -148,8 +135,6 @@ function mergeDirectAndDiscovery(
   const discoveryKeys = new Set<string>();
   for (const record of discovery) {
     const key = recordKey(record);
-    // Any collision resolves to the authoritative direct-portal version, even
-    // when that direct record falls outside the initial reserved slice.
     if (directKeys.has(key) || discoveryKeys.has(key)) continue;
     discoveryKeys.add(key);
     uniqueDiscovery.push(record);
@@ -188,17 +173,33 @@ function mergeDirectAndDiscovery(
   return merged.slice(0, boundedLimit);
 }
 
+async function loadDiscoveryRuntime() {
+  const [serper, exa, langsearch, intelligence] = await Promise.all([
+    import("../providers/serper"),
+    import("../providers/exa"),
+    import("../providers/langsearch"),
+    import("../search/webIntelligence"),
+  ]);
+  return {
+    serperProvider: serper.serperProvider,
+    exaProvider: exa.exaProvider,
+    langsearchProvider: langsearch.langsearchProvider,
+    webIntelligenceFetch: intelligence.webIntelligenceFetch,
+  };
+}
+
 async function fetchConfiguredAiDiscovery(
   options: ProviderRunnerOptions,
 ): Promise<NormalizedOpportunity[]> {
+  const runtime = await loadDiscoveryRuntime();
   const [useSerper, useExa, useLangsearch] = await Promise.all([
-    serperProvider.isConfigured().catch(() => false),
-    exaProvider.isConfigured().catch(() => false),
-    langsearchProvider.isConfigured().catch(() => false),
+    runtime.serperProvider.isConfigured().catch(() => false),
+    runtime.exaProvider.isConfigured().catch(() => false),
+    runtime.langsearchProvider.isConfigured().catch(() => false),
   ]);
   if (!useSerper && !useExa && !useLangsearch) return [];
 
-  const result = await webIntelligenceFetch({
+  const result = await runtime.webIntelligenceFetch({
     keywords: options.keywords,
     useSerper,
     useExa,
@@ -229,6 +230,7 @@ export async function fetchOneProvider(
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   if (WEB_DISCOVERY_PROVIDERS.has(provider)) {
+    const { webIntelligenceFetch } = await loadDiscoveryRuntime();
     const result = await webIntelligenceFetch({
       keywords: options.keywords,
       useSerper: provider === "serper",
@@ -244,14 +246,14 @@ export async function fetchOneProvider(
     );
   }
 
+  // Loading the registry is deliberately deferred until ingestion actually
+  // starts. Importing it during API bootstrap instantiates every portal adapter,
+  // browser connector, and AI integration in the 512 MB web process.
+  const { providerRegistry } = await import("../providers");
   const source = providerRegistry[provider as keyof typeof providerRegistry];
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
 
   if (provider === "publicPortalProviders") {
-    // Adapters execute one at a time inside the audited provider. The web/AI
-    // discovery lane executes once for the whole run, never once per adapter.
-    // AI work is logged separately so it cannot overwrite the active adapter's
-    // persisted progress message while both lanes run in parallel.
     const [directResult, discoveryRecords] = await Promise.all([
       source.fetch({
         keywords: options.keywords,

@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: starter
     buildCommand: pnpm install && pnpm run build:prod
-    startCommand: pnpm run start:prod
+    startCommand: node --max-old-space-size=224 --max-semi-space-size=8 ./api-server/dist/index.mjs
     envVars:
       - key: NODE_ENV
         value: production
@@ -13,12 +13,20 @@ services:
         value: "3000"
       - key: BASE_PATH
         value: /
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: UV_THREADPOOL_SIZE
+        value: "2"
       - key: RFP_DATABASE_URL
         sync: false
       - key: INTEL_DATABASE_URL
         sync: false
       - key: DATABASE_POOL_MAX
-        value: "3"
+        value: "1"
+      - key: DATABASE_POOL_IDLE_TIMEOUT_MS
+        value: "10000"
+      - key: DATABASE_CONNECT_TIMEOUT_MS
+        value: "8000"
       - key: PUBLIC_PORTAL_CONCURRENCY
         value: "1"
       - key: PUBLIC_PORTAL_SOURCE_TIMEOUT_MS
@@ -28,7 +36,9 @@ services:
       - key: PUBLIC_PORTAL_MAX_PAGES
         value: "3"
       - key: PUBLIC_PORTAL_ROTATION_BATCH_SIZE
-        value: "6"
+        value: "3"
+      - key: WEB_INTELLIGENCE_AI_CANDIDATE_LIMIT
+        value: "60"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: USAJOBS_API_KEY

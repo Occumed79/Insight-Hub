@@ -25,7 +25,7 @@ const queryClient = new QueryClient({
       retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 4_000),
       staleTime: 30_000,
       gcTime: 30 * 60 * 1000,
-      placeholderData: (previousData) => previousData,
+      placeholderData: (previousData: unknown) => previousData,
       refetchOnWindowFocus: false,
     },
   },
