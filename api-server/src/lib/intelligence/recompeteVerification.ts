@@ -132,6 +132,8 @@ async function fetchWithTimeout(url: string | URL, init: RequestInit): Promise<R
 }
 
 async function queryUsaSpending(input: RecompeteVerificationInput): Promise<RecompeteEvidence[]> {
+  if (!input.incumbentName?.trim()) return [];
+
   const start = new Date();
   start.setFullYear(start.getFullYear() - 10);
   const end = new Date();
@@ -139,9 +141,8 @@ async function queryUsaSpending(input: RecompeteVerificationInput): Promise<Reco
   const filters: JsonRecord = {
     award_type_codes: ["A", "B", "C", "D"],
     time_period: [{ start_date: dateString(start), end_date: dateString(end), date_type: "date_signed" }],
+    recipient_search_text: [input.incumbentName.trim()],
   };
-  if (input.incumbentName?.trim()) filters.recipient_search_text = [input.incumbentName.trim()];
-  else filters.keywords = [input.title.slice(0, 160)];
   if (input.naics && /^\d{6}$/.test(input.naics)) filters.naics_codes = [input.naics];
 
   const response = await fetchWithTimeout(USA_SPENDING_URL, {
@@ -245,6 +246,10 @@ async function querySamContractAwards(input: RecompeteVerificationInput): Promis
   });
 }
 
+function highestMatchScore(evidence: RecompeteEvidence[]): number {
+  return evidence.reduce((highest, item) => Math.max(highest, item.matchScore), 0);
+}
+
 export async function verifyRecompete(input: RecompeteVerificationInput): Promise<RecompeteVerificationResult> {
   const key = cacheKey(input);
   const cached = cache.get(key);
@@ -262,8 +267,8 @@ export async function verifyRecompete(input: RecompeteVerificationInput): Promis
     .sort((left, right) => right.matchScore - left.matchScore)
     .slice(0, 8);
 
-  const bestSam = samEvidence[0]?.matchScore ?? 0;
-  const bestUsa = usaEvidence[0]?.matchScore ?? 0;
+  const bestSam = highestMatchScore(samEvidence);
+  const bestUsa = highestMatchScore(usaEvidence);
   let confidence: RecompeteVerificationResult["confidence"] = "unverified";
   let confidenceScore = Math.max(bestSam, bestUsa);
   if (bestSam >= 75 && bestUsa >= 65) {
