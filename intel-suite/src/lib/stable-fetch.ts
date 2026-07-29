@@ -1,4 +1,4 @@
-const INSTALL_KEY = Symbol.for("insight-hub.stable-api-fetch");
+const INSTALL_KEY = "__insightHubStableApiFetchInstalled__" as const;
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [250, 750];
