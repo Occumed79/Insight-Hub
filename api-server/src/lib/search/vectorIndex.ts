@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import type { NormalizedOpportunity } from "../providers/types";
 import { qdrantProvider } from "../providers/qdrant";
 import { pineconeProvider } from "../providers/pinecone";
-import { embedTexts } from "./embeddings";
+import { embedTexts, type EmbeddingProviderName } from "./embeddings";
 
 export interface VectorIndexStats {
   attempted: number;
@@ -11,6 +11,20 @@ export interface VectorIndexStats {
   vectorStore: "qdrant" | "pinecone" | null;
   errors: string[];
 }
+
+export interface VectorIndexDocument {
+  id: string;
+  text: string;
+  payload: Record<string, unknown>;
+}
+
+export interface VectorIndexOptions {
+  qdrantCollection?: string;
+  pineconeNamespace?: string;
+  batchSize?: number;
+}
+
+const DEFAULT_BATCH_SIZE = 24;
 
 export function opportunityVectorText(opp: NormalizedOpportunity): string {
   return [
@@ -24,60 +38,119 @@ export function opportunityVectorText(opp: NormalizedOpportunity): string {
     opp.placeOfPerformance,
     opp.description,
     opp.solicitationNumber,
-  ].filter(Boolean).join("\n").slice(0, 4000);
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4_000);
+}
+
+function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      compact[key] = value;
+      continue;
+    }
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      compact[key] = value;
+      continue;
+    }
+    compact[key] = JSON.stringify(value).slice(0, 2_000);
+  }
+  return compact;
+}
+
+export async function indexVectorDocuments(
+  documents: VectorIndexDocument[],
+  options: VectorIndexOptions = {},
+): Promise<VectorIndexStats> {
+  const stats: VectorIndexStats = {
+    attempted: documents.length,
+    indexed: 0,
+    provider: null,
+    vectorStore: null,
+    errors: [],
+  };
+  if (documents.length === 0) return stats;
+
+  const batchSize = Math.max(1, Math.min(50, Math.floor(options.batchSize ?? DEFAULT_BATCH_SIZE)));
+  let preferredProvider: EmbeddingProviderName | undefined;
+  let selectedStore: "qdrant" | "pinecone" | null = null;
+
+  for (let start = 0; start < documents.length; start += batchSize) {
+    const batch = documents.slice(start, start + batchSize);
+    const embeddingResult = await embedTexts(
+      batch.map((document) => document.text.slice(0, 16_000)),
+      "document",
+      preferredProvider,
+    );
+    if (!embeddingResult || embeddingResult.vectors.length !== batch.length) {
+      stats.errors.push(`Embedding batch ${Math.floor(start / batchSize) + 1} failed`);
+      continue;
+    }
+
+    preferredProvider = embeddingResult.provider;
+    stats.provider ??= embeddingResult.provider;
+    if (embeddingResult.errors?.length) stats.errors.push(...embeddingResult.errors);
+
+    const points = batch.map((document, index) => ({
+      id: stableUuid(document.id),
+      vector: embeddingResult.vectors[index] ?? [],
+      payload: compactPayload(document.payload),
+    })).filter((point) => point.vector.length > 0);
+    if (points.length === 0) {
+      stats.errors.push(`Embedding batch ${Math.floor(start / batchSize) + 1} returned no usable vectors`);
+      continue;
+    }
+
+    let indexed = false;
+    if ((selectedStore === null || selectedStore === "qdrant") && (await qdrantProvider.isConfigured())) {
+      const ok = await qdrantProvider.upsert(points, options.qdrantCollection);
+      if (ok) {
+        selectedStore = "qdrant";
+        indexed = true;
+      } else {
+        stats.errors.push(`Qdrant upsert failed for batch ${Math.floor(start / batchSize) + 1}`);
+      }
+    }
+
+    if (!indexed && (selectedStore === null || selectedStore === "pinecone") && (await pineconeProvider.isConfigured())) {
+      const ok = await pineconeProvider.upsert(points, options.pineconeNamespace);
+      if (ok) {
+        selectedStore = "pinecone";
+        indexed = true;
+      } else {
+        stats.errors.push(`Pinecone upsert failed for batch ${Math.floor(start / batchSize) + 1}`);
+      }
+    }
+
+    if (indexed) stats.indexed += points.length;
+  }
+
+  stats.vectorStore = selectedStore;
+  if (!selectedStore) stats.errors.push("No working vector store was available; indexing was skipped");
+  return stats;
 }
 
 export async function indexOpportunities(opportunities: NormalizedOpportunity[]): Promise<VectorIndexStats> {
-  const stats: VectorIndexStats = { attempted: opportunities.length, indexed: 0, provider: null, vectorStore: null, errors: [] };
-  if (opportunities.length === 0) return stats;
-
-  const embeddingResult = await embedTexts(opportunities.map(opportunityVectorText), "document");
-  if (!embeddingResult) {
-    stats.errors.push("No embedding provider available — vector index skipped. All 3 providers (Jina/Voyage/HuggingFace) failed — check Render server logs for [Jina embed] / [Voyage embed] / [HuggingFace embed] HTTP error details.");
-    return stats;
-  }
-  if (embeddingResult.errors?.length) {
-    stats.errors.push(...embeddingResult.errors);
-  }
-
-  stats.provider = embeddingResult.provider;
-  const points = opportunities.map((opp, index) => ({
-    id: stableUuid(opp.externalId || `${opp.source}:${opp.title}:${opp.agency}`),
-    vector: embeddingResult.vectors[index],
-    payload: {
-      externalId: opp.externalId,
-      title: opp.title,
-      agency: opp.agency,
-      source: opp.source,
-      sourceUrl: opp.sourceUrl,
-      solicitationNumber: opp.solicitationNumber,
-      naicsCode: opp.naicsCode,
-      status: opp.status,
-    },
-  }));
-
-  if (await qdrantProvider.isConfigured()) {
-    const ok = await qdrantProvider.upsert(points);
-    if (ok) {
-      stats.indexed = points.length;
-      stats.vectorStore = "qdrant";
-      return stats;
-    }
-    stats.errors.push("Qdrant upsert failed");
-  }
-
-  if (await pineconeProvider.isConfigured()) {
-    const ok = await pineconeProvider.upsert(points);
-    if (ok) {
-      stats.indexed = points.length;
-      stats.vectorStore = "pinecone";
-      return stats;
-    }
-    stats.errors.push("Pinecone upsert failed");
-  }
-
-  if (!stats.vectorStore) stats.errors.push("No vector store configured — vector index skipped");
-  return stats;
+  return indexVectorDocuments(
+    opportunities.map((opp) => ({
+      id: opp.externalId || `${opp.source}:${opp.title}:${opp.agency}`,
+      text: opportunityVectorText(opp),
+      payload: {
+        documentType: "opportunity",
+        externalId: opp.externalId,
+        title: opp.title,
+        agency: opp.agency,
+        source: opp.source,
+        sourceUrl: opp.sourceUrl,
+        solicitationNumber: opp.solicitationNumber,
+        naicsCode: opp.naicsCode,
+        status: opp.status,
+      },
+    })),
+  );
 }
 
 function stableUuid(value: string): string {
