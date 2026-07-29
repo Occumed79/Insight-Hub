@@ -28,6 +28,8 @@ type NewsArticle = {
 type NewsResponse = {
   articles: NewsArticle[];
   totalArticles: number;
+  upstreamArticles: number;
+  filteredOut: number;
   query: string;
   source: "gnews";
   fetchedAt: string;
@@ -78,7 +80,14 @@ export default function RelevantNewsPage() {
     setSearch(draftSearch.trim());
   };
 
+  const clearSearch = () => {
+    setDraftSearch("");
+    setSearch("");
+  };
+
   const articles = query.data?.articles ?? [];
+  const upstreamArticles = query.data?.upstreamArticles ?? 0;
+  const filteredOut = query.data?.filteredOut ?? 0;
 
   return (
     <div className="space-y-7">
@@ -86,7 +95,7 @@ export default function RelevantNewsPage() {
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Federal Contractor Intelligence</p>
         <h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">Relevant News</h1>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-white/50 md:text-lg">
-          Current reporting focused on federal contractors, contract awards, acquisitions, procurements, solicitations, and upcoming recompetes.
+          Current reporting focused on federal contracts, contract awards, acquisitions, procurements, solicitations, and upcoming recompetes.
         </p>
       </section>
 
@@ -109,9 +118,14 @@ export default function RelevantNewsPage() {
       </form>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-sm text-white/45">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-white/45">
           {query.isFetching ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Newspaper className="h-4 w-4 text-primary/70" />}
-          <span>{query.isFetching ? "Refreshing GNews…" : `${articles.length.toLocaleString("en-US")} highly relevant articles`}</span>
+          <span>
+            {query.isFetching
+              ? "Refreshing GNews…"
+              : `${articles.length.toLocaleString("en-US")} shown · ${upstreamArticles.toLocaleString("en-US")} returned by GNews`}
+          </span>
+          {filteredOut > 0 && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">{filteredOut} filtered</span>}
           {query.data?.cached && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">cached</span>}
         </div>
         <button
@@ -135,7 +149,17 @@ export default function RelevantNewsPage() {
 
       {!query.isLoading && !query.isError && articles.length === 0 && (
         <div className="glass-card rounded-2xl border border-white/10 p-10 text-center text-white/45">
-          No highly relevant federal contractor articles were returned. Clear the additional search term and refresh.
+          <p className="font-medium text-white/70">
+            {upstreamArticles > 0
+              ? `GNews returned ${upstreamArticles} article${upstreamArticles === 1 ? "" : "s"}, but none met the federal-contract relevance threshold.`
+              : "GNews returned no articles for this search."}
+          </p>
+          <p className="mt-2 text-sm">The feed now uses a broader federal-contract query and does not restrict results by publisher country.</p>
+          {search && (
+            <button type="button" onClick={clearSearch} className="mt-4 rounded-full border border-primary/25 bg-primary/10 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/20">
+              Clear additional search term
+            </button>
+          )}
         </div>
       )}
 
@@ -155,9 +179,7 @@ export default function RelevantNewsPage() {
               <h2 className="mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h2>
               {article.description && <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-white/45">{article.description}</p>}
               <div className="mt-5 flex items-center justify-between gap-3">
-                <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-primary/80">
-                  relevance {article.relevanceScore}
-                </span>
+                <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-primary/80">relevance {article.relevanceScore}</span>
                 <a
                   href={article.url}
                   target="_blank"
