@@ -18,6 +18,10 @@ export interface DynamicEndpointAuditOptions {
   signal?: AbortSignal;
 }
 
+type CloudflareBrowserCredentials = Awaited<
+  ReturnType<typeof resolveCloudflareBrowserCredentials>
+>;
+
 function abortError(signal?: AbortSignal): Error {
   const reason = signal?.reason;
   if (reason instanceof Error) return reason;
@@ -31,8 +35,8 @@ function errorMessage(error: unknown): string {
 async function connectBrowser(
   playwright: typeof import("playwright"),
   timeoutMs: number,
+  cloudflare: CloudflareBrowserCredentials,
 ) {
-  const cloudflare = await resolveCloudflareBrowserCredentials();
   if (cloudflare) {
     const endpoint = cloudflareBrowserCdpEndpoint(
       cloudflare.accountId,
@@ -53,12 +57,6 @@ async function connectBrowser(
     }
   }
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "Dynamic browser discovery is unavailable because Cloudflare Browser Run credentials are not configured. Local Chromium is disabled in production to protect the Render memory limit.",
-    );
-  }
-
   const browser = await playwright.chromium.launch({ headless: true });
   return { browser, backend: "local-playwright" as const };
 }
@@ -68,11 +66,25 @@ export async function auditPublicDynamicEndpoints(
   options: DynamicEndpointAuditOptions = {},
 ): Promise<DynamicEndpointFingerprint[]> {
   if (options.signal?.aborted) throw abortError(options.signal);
+
+  const cloudflare = await resolveCloudflareBrowserCredentials();
+  if (!cloudflare && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Dynamic browser discovery is unavailable because Cloudflare Browser Run credentials are not configured. Local Chromium is disabled in production to protect the Render memory limit.",
+    );
+  }
+
+  // Do not load the Playwright runtime at all on production instances that
+  // cannot use the remote Cloudflare browser backend.
   const playwright = await import("playwright");
   if (options.signal?.aborted) throw abortError(options.signal);
 
   const timeoutMs = Math.max(5_000, options.timeoutMs ?? 15_000);
-  const { browser, backend } = await connectBrowser(playwright, timeoutMs);
+  const { browser, backend } = await connectBrowser(
+    playwright,
+    timeoutMs,
+    cloudflare,
+  );
   const fingerprints: DynamicEndpointFingerprint[] = [];
   const pageHost = new URL(pageUrl).hostname.replace(/^www\./, "");
   const allowedHosts = new Set([
