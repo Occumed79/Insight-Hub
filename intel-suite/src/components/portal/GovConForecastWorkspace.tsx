@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  BadgeCheck,
   Building2,
   CalendarDays,
   CircleAlert,
@@ -12,9 +13,18 @@ import {
   RotateCcw,
   Search,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 
 export type GovConWorkspaceMode = "forecast" | "recompete";
+
+type Relevance = {
+  score: number;
+  classification: "strong" | "possible" | "low";
+  semanticSimilarity: number | null;
+  provider: "gemini" | "deterministic";
+  reasons: string[];
+};
 
 type ForecastRecord = {
   id: string;
@@ -50,6 +60,7 @@ type ForecastRecord = {
   };
   sourceUrl: string | null;
   lastUpdatedDate: string | null;
+  relevance: Relevance;
 };
 
 type ForecastResponse = {
@@ -60,7 +71,40 @@ type ForecastResponse = {
     total: number;
     hasNext: boolean;
   };
+  sourcePageRecords: number;
+  suppressedCount: number;
+  lowRelevanceCount: number;
+  semanticProvider: "gemini" | "deterministic";
   fetchedAt: string;
+  cached?: boolean;
+  error?: string;
+};
+
+type VerificationEvidence = {
+  source: "USAspending" | "SAM Contract Awards";
+  awardId: string | null;
+  recipientName: string | null;
+  agency: string | null;
+  description: string | null;
+  amount: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  naics: string | null;
+  sourceUrl: string | null;
+  matchScore: number;
+};
+
+type VerificationResponse = {
+  confidence: "verified" | "high" | "medium" | "unverified";
+  confidenceScore: number;
+  summary: string;
+  evidence: VerificationEvidence[];
+  sourcesChecked: Array<{
+    source: "USAspending" | "SAM Contract Awards";
+    status: "matched" | "no_match" | "unavailable";
+    detail?: string;
+  }>;
+  verifiedAt: string;
   cached?: boolean;
   error?: string;
 };
@@ -82,37 +126,6 @@ const INDUSTRY_OPTIONS = [
   { value: "624", label: "Social assistance (NAICS 624)" },
   { value: "561", label: "Business support services (NAICS 561)" },
   { value: "", label: "All industries" },
-];
-
-const OCCUMED_FIT_TERMS = [
-  "occupational health",
-  "employee health",
-  "medical support",
-  "medical services",
-  "medical staffing",
-  "health services",
-  "workforce care",
-  "medical exam",
-  "physical exam",
-  "pre-employment",
-  "post-employment",
-  "fitness for duty",
-  "fitness testing",
-  "drug testing",
-  "drug collection",
-  "audiogram",
-  "audiology",
-  "hearing test",
-  "spirometry",
-  "respirator",
-  "dental",
-  "behavioral health",
-  "emergency medical",
-  "ems support",
-  "clinical support",
-  "clinic",
-  "laboratory",
-  "diagnostic",
 ];
 
 function displayDate(value: string | null): string | null {
@@ -151,16 +164,8 @@ function plainText(value: string | null): string | null {
   return stripped || null;
 }
 
-function isOccumedFit(record: ForecastRecord): boolean {
-  const text = [record.title, record.description, record.agency, record.subAgency]
-    .map((value) => plainText(value) ?? "")
-    .join(" ")
-    .toLowerCase();
-  return OCCUMED_FIT_TERMS.some((term) => text.includes(term));
-}
-
 function hiddenStorageKey(mode: GovConWorkspaceMode): string {
-  return `insight-hub:hidden-govcon:${mode}:v1`;
+  return `insight-hub:hidden-govcon:${mode}:v2`;
 }
 
 function loadHiddenIds(mode: GovConWorkspaceMode): Set<string> {
@@ -178,32 +183,95 @@ function saveHiddenIds(mode: GovConWorkspaceMode, ids: Set<string>): void {
   try {
     window.localStorage.setItem(hiddenStorageKey(mode), JSON.stringify(Array.from(ids)));
   } catch {
-    // Hiding still works for the current page even when browser storage is unavailable.
+    // Current-session hiding still works when storage is unavailable.
   }
 }
 
-async function fetchForecasts(mode: GovConWorkspaceMode, filters: Filters): Promise<ForecastResponse> {
+function apiBase(): string {
+  return import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+}
+
+async function fetchForecasts(mode: GovConWorkspaceMode, filters: Filters, fitOnly: boolean): Promise<ForecastResponse> {
   const params = new URLSearchParams({
     limit: String(PAGE_SIZE),
     offset: String(filters.offset),
     sortBy: "est_award_fy",
     sortOrder: "asc",
+    fitOnly: String(fitOnly),
   });
 
   if (filters.naics) params.set("naics", filters.naics);
-  if (filters.keywords) params.set("keywords", filters.keywords);
+  if (filters.keywords) {
+    params.set("keywords", filters.keywords);
+    params.set("focus", filters.keywords);
+  }
   if (filters.agency) params.set("agency", filters.agency);
   if (mode === "recompete") params.set("recompete", "true");
 
-  const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-  const response = await fetch(`${baseUrl}/api/govcon/forecasts?${params.toString()}`);
+  const response = await fetch(`${apiBase()}/api/govcon/forecasts?${params.toString()}`);
   const payload = (await response.json().catch(() => ({}))) as ForecastResponse;
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Unable to load GovCon forecast data");
-  }
-
+  if (!response.ok) throw new Error(payload.error || "Unable to load GovCon forecast data");
   return payload;
+}
+
+async function saveFeedback(mode: GovConWorkspaceMode, record: ForecastRecord): Promise<void> {
+  const response = await fetch(`${apiBase()}/api/govcon/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "not_relevant",
+      mode,
+      recordId: record.id,
+      title: record.title,
+      agency: record.agency,
+    }),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error || "Feedback could not be saved");
+  }
+}
+
+async function restoreFeedback(mode: GovConWorkspaceMode): Promise<void> {
+  const response = await fetch(`${apiBase()}/api/govcon/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "restore_all", mode }),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error || "Hidden records could not be restored");
+  }
+}
+
+async function verifyOfficialAward(record: ForecastRecord): Promise<VerificationResponse> {
+  const response = await fetch(`${apiBase()}/api/govcon/recompete-verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: record.id,
+      title: record.title,
+      agency: record.agency,
+      naics: record.naics,
+      incumbentName: record.incumbentName ?? record.incumbentAward?.recipientName,
+    }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as VerificationResponse;
+  if (!response.ok) throw new Error(payload.error || "Official award verification failed");
+  return payload;
+}
+
+function relevanceClass(relevance: Relevance): string {
+  if (relevance.classification === "strong") return "border-emerald-300/25 bg-emerald-300/10 text-emerald-100";
+  if (relevance.classification === "possible") return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+  return "border-white/10 bg-white/5 text-white/50";
+}
+
+function verificationClass(confidence: VerificationResponse["confidence"]): string {
+  if (confidence === "verified") return "border-emerald-300/25 bg-emerald-300/10 text-emerald-100";
+  if (confidence === "high") return "border-cyan-300/25 bg-cyan-300/10 text-cyan-100";
+  if (confidence === "medium") return "border-amber-300/25 bg-amber-300/10 text-amber-100";
+  return "border-red-300/20 bg-red-300/10 text-red-100/80";
 }
 
 function ForecastCard({
@@ -213,14 +281,29 @@ function ForecastCard({
 }: {
   record: ForecastRecord;
   mode: GovConWorkspaceMode;
-  onHide: (id: string) => void;
+  onHide: (record: ForecastRecord) => void;
 }) {
+  const [verification, setVerification] = useState<VerificationResponse | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const description = plainText(record.description);
   const solicitationDate = displayDate(record.estimatedSolicitationDate);
   const expirationDate = displayDate(record.incumbentAward?.expires ?? null);
   const currentValue = displayMoney(record.incumbentAward?.currentValue ?? null);
   const timing = solicitationDate || record.estimatedAwardQuarter || (record.estimatedAwardFiscalYear ? `FY ${record.estimatedAwardFiscalYear}` : "—");
   const value = record.valueRangeText || displayMoney(record.valueHigh) || displayMoney(record.valueLow) || "—";
+
+  const runVerification = async () => {
+    setVerifying(true);
+    setVerificationError(null);
+    try {
+      setVerification(await verifyOfficialAward(record));
+    } catch (error) {
+      setVerificationError(error instanceof Error ? error.message : "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   return (
     <article className="glass-card flex h-full flex-col rounded-2xl border border-white/10 p-4 transition-colors hover:border-primary/35">
@@ -230,6 +313,10 @@ function ForecastCard({
             <span>{record.source?.toUpperCase() || "GOVCON"}</span>
             {record.status && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">{record.status}</span>}
             {record.isRecompete && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 text-amber-100/80">Recompete</span>}
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${relevanceClass(record.relevance)}`}>
+              {record.relevance.provider === "gemini" && <Sparkles className="h-3 w-3" />}
+              {record.relevance.score}% fit
+            </span>
           </div>
           <h2 className="line-clamp-2 text-lg font-semibold leading-snug text-white">{record.title}</h2>
           <div className="mt-2 flex items-start gap-2 text-xs text-white/55">
@@ -252,7 +339,7 @@ function ForecastCard({
           )}
           <button
             type="button"
-            onClick={() => onHide(record.id)}
+            onClick={() => onHide(record)}
             title="Hide as not relevant"
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 text-[10px] text-white/55 transition-colors hover:border-red-300/25 hover:bg-red-300/10 hover:text-red-100"
           >
@@ -263,6 +350,10 @@ function ForecastCard({
       </div>
 
       {description && <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-white/45">{description}</p>}
+
+      {record.relevance.reasons.length > 0 && (
+        <p className="mt-2 line-clamp-1 text-[10px] text-primary/55">{record.relevance.reasons.join(" · ")}</p>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
@@ -285,13 +376,49 @@ function ForecastCard({
 
       {mode === "recompete" && (
         <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-3">
-          <div className="flex items-center gap-2 text-xs font-medium text-amber-100/85">
-            <ShieldCheck className="h-3.5 w-3.5" /> Incumbent position
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-amber-100/85">
+              <ShieldCheck className="h-3.5 w-3.5" /> Incumbent position
+            </div>
+            <button
+              type="button"
+              onClick={() => void runVerification()}
+              disabled={verifying}
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-200/10 px-2.5 py-1.5 text-[10px] text-amber-100/80 transition-colors hover:bg-amber-200/15 disabled:opacity-50"
+            >
+              {verifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
+              {verification ? "Recheck official awards" : "Verify official awards"}
+            </button>
           </div>
           <div className="mt-1.5 space-y-0.5 text-xs text-white/55">
             <p className="line-clamp-1">{record.incumbentName || record.incumbentAward?.recipientName || "Incumbent not published"}</p>
             {(currentValue || expirationDate) && <p>{currentValue ? `Current value: ${currentValue}` : ""}{currentValue && expirationDate ? " · " : ""}{expirationDate ? `Expires: ${expirationDate}` : ""}</p>}
           </div>
+
+          {verification && (
+            <div className="mt-3 border-t border-amber-200/10 pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-wider ${verificationClass(verification.confidence)}`}>
+                  {verification.confidence} · {verification.confidenceScore}%
+                </span>
+                {verification.cached && <span className="text-[10px] text-white/35">cached verification</span>}
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-white/55">{verification.summary}</p>
+              {verification.evidence.slice(0, 2).map((evidence, index) => (
+                <div key={`${evidence.source}:${evidence.awardId ?? index}`} className="mt-2 rounded-lg border border-white/8 bg-black/15 p-2.5 text-[11px] text-white/55">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-white/70">{evidence.source}</span>
+                    <span>{evidence.matchScore}% match</span>
+                  </div>
+                  <p className="mt-1 line-clamp-1">{evidence.recipientName || "Recipient unavailable"}{evidence.awardId ? ` · ${evidence.awardId}` : ""}</p>
+                  <p className="mt-1">{displayMoney(evidence.amount) || "Value unavailable"}{evidence.endDate ? ` · Ends ${displayDate(evidence.endDate)}` : ""}</p>
+                  {evidence.sourceUrl && <a href={evidence.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-primary/75 hover:text-primary">Official record <ExternalLink className="h-3 w-3" /></a>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {verificationError && <p className="mt-2 text-xs text-red-200/75">{verificationError}</p>}
         </div>
       )}
     </article>
@@ -306,15 +433,16 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
   const [filters, setFilters] = useState<Filters>({ keywords: "", agency: "", naics: DEFAULT_NAICS, offset: 0 });
   const [fitOnly, setFitOnly] = useState(true);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => loadHiddenIds(mode));
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const queryKey = useMemo(
-    () => ["govcon-forecasts", mode, filters.keywords, filters.agency, filters.naics, filters.offset],
-    [mode, filters],
+    () => ["govcon-forecasts", mode, filters.keywords, filters.agency, filters.naics, filters.offset, fitOnly],
+    [mode, filters, fitOnly],
   );
 
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchForecasts(mode, filters),
+    queryFn: () => fetchForecasts(mode, filters, fitOnly),
     staleTime: 8 * 60 * 1000,
   });
 
@@ -328,26 +456,32 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
     });
   };
 
-  const hideRecord = (id: string) => {
+  const hideRecord = (record: ForecastRecord) => {
+    setFeedbackError(null);
     setHiddenIds((current) => {
       const next = new Set(current);
-      next.add(id);
+      next.add(record.id);
       saveHiddenIds(mode, next);
       return next;
     });
+    void saveFeedback(mode, record)
+      .then(() => query.refetch())
+      .catch((error) => setFeedbackError(error instanceof Error ? error.message : "Feedback could not be saved"));
   };
 
   const restoreHidden = () => {
     const next = new Set<string>();
     saveHiddenIds(mode, next);
     setHiddenIds(next);
+    setFeedbackError(null);
+    void restoreFeedback(mode)
+      .then(() => query.refetch())
+      .catch((error) => setFeedbackError(error instanceof Error ? error.message : "Hidden records could not be restored"));
   };
 
   const records = query.data?.records ?? [];
-  const sourceVisibleRecords = records.filter((record) => !hiddenIds.has(record.id));
-  const fitFilteredCount = sourceVisibleRecords.filter((record) => !isOccumedFit(record)).length;
-  const visibleRecords = fitOnly ? sourceVisibleRecords.filter(isOccumedFit) : sourceVisibleRecords;
-  const hiddenOnPage = records.filter((record) => hiddenIds.has(record.id)).length;
+  const visibleRecords = records.filter((record) => !hiddenIds.has(record.id));
+  const hiddenOnPage = records.length - visibleRecords.length;
   const total = query.data?.pagination.total ?? 0;
   const currentStart = total === 0 ? 0 : filters.offset + 1;
   const currentEnd = Math.min(filters.offset + PAGE_SIZE, total);
@@ -359,8 +493,8 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
         <h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">{isRecompete ? "Recompete Watch" : "Forecasts"}</h1>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-white/50 md:text-lg">
           {isRecompete
-            ? "Track forecasted requirements that identify an incumbent, current contract position, expiration timing, and likely displacement opportunities."
-            : "See agency procurement forecasts before solicitations are posted, including expected award timing, values, set-asides, and published points of contact."}
+            ? "Track forecasted requirements, verify incumbent positions against official federal award records, and identify likely displacement opportunities."
+            : "See agency procurement forecasts before solicitations are posted, ranked against Occu-Med’s actual service profile."}
         </p>
       </section>
 
@@ -405,6 +539,7 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
         <div className="flex flex-wrap items-center gap-3 text-sm text-white/45">
           {query.isFetching ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <CalendarDays className="h-4 w-4 text-primary/70" />}
           <span>{query.isFetching ? "Refreshing GovCon data…" : `${visibleRecords.length.toLocaleString("en-US")} shown from ${total.toLocaleString("en-US")} source matches`}</span>
+          {query.data?.semanticProvider === "gemini" && <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-wider text-primary/80"><Sparkles className="h-3 w-3" /> Gemini ranked</span>}
           {query.data?.cached && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">cached</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -424,10 +559,15 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
       </div>
 
       <div className="flex flex-wrap gap-2 text-[11px] text-white/40">
-        <span>The default industry focus is Health & medical services (NAICS 621), not an unexplained free-form code.</span>
-        {fitOnly && fitFilteredCount > 0 && <span>· {fitFilteredCount} off-topic result{fitFilteredCount === 1 ? "" : "s"} filtered on this page</span>}
-        {hiddenOnPage > 0 && <span>· {hiddenOnPage} manually hidden on this page</span>}
+        <span>{query.data?.sourcePageRecords ?? records.length} records evaluated on this source page</span>
+        {fitOnly && (query.data?.lowRelevanceCount ?? 0) > 0 && <span>· {query.data?.lowRelevanceCount} low-fit result{query.data?.lowRelevanceCount === 1 ? "" : "s"} suppressed by server ranking</span>}
+        {(query.data?.suppressedCount ?? 0) > 0 && <span>· {query.data?.suppressedCount} previously marked not relevant</span>}
+        {hiddenOnPage > 0 && <span>· {hiddenOnPage} being hidden while feedback saves</span>}
       </div>
+
+      {feedbackError && (
+        <div className="rounded-xl border border-red-300/20 bg-red-300/10 p-3 text-xs text-red-100/75">{feedbackError}</div>
+      )}
 
       {query.isError && (
         <div className="flex items-start gap-3 rounded-2xl border border-red-300/20 bg-red-300/10 p-4 text-sm text-red-100/80">
@@ -440,7 +580,7 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
       )}
 
       {!query.isLoading && !query.isError && records.length === 0 && (
-        <div className="glass-card rounded-2xl border border-white/10 p-10 text-center text-white/45">No matching {isRecompete ? "recompetes" : "forecasts"}. Choose All industries or broaden the search terms.</div>
+        <div className="glass-card rounded-2xl border border-white/10 p-10 text-center text-white/45">No matching {isRecompete ? "recompetes" : "forecasts"}. Choose All industries, turn off Occu-Med fit only, or broaden the search terms.</div>
       )}
 
       {!query.isLoading && !query.isError && records.length > 0 && visibleRecords.length === 0 && (
