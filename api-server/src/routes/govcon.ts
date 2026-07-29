@@ -1,24 +1,45 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
+import {
+  isGovConRecordSuppressed,
+  loadGovConSuppressions,
+  restoreGovConFeedback,
+  saveGovConNotRelevant,
+  type GovConFeedbackMode,
+} from "../lib/intelligence/govconFeedback";
+import {
+  rankGovConRecords,
+  type GovConRelevance,
+} from "../lib/intelligence/govconIntelligence";
+import { verifyRecompete } from "../lib/intelligence/recompeteVerification";
+import { indexVectorDocuments } from "../lib/search/vectorIndex";
 
 const router: IRouter = Router();
 
 const GOVCON_BASE_URL = "https://govconapi.com/api/v1";
 const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 40;
+const RELEVANCE_THRESHOLD = 44;
 
 type JsonRecord = Record<string, unknown>;
+type NormalizedForecast = ReturnType<typeof normalizeForecast>;
+type RankedForecast = NormalizedForecast & { relevance: GovConRelevance };
 
 type ForecastPayload = {
-  records: ReturnType<typeof normalizeForecast>[];
+  records: RankedForecast[];
   pagination: {
     limit: number;
     offset: number;
     total: number;
     hasNext: boolean;
   };
+  sourcePageRecords: number;
+  suppressedCount: number;
+  lowRelevanceCount: number;
   filtersApplied: JsonRecord;
+  semanticProvider: "gemini" | "deterministic";
   source: "govconapi";
   fetchedAt: string;
 };
@@ -30,6 +51,7 @@ type CacheEntry = {
 
 const responseCache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<ForecastPayload>>();
+const indexedAt = new Map<string, number>();
 
 function stringQuery(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -126,6 +148,9 @@ function pruneCache(): void {
   for (const [key, entry] of responseCache) {
     if (entry.expiresAt <= now) responseCache.delete(key);
   }
+  for (const [key, timestamp] of indexedAt) {
+    if (timestamp + INDEX_TTL_MS <= now) indexedAt.delete(key);
+  }
   while (responseCache.size > MAX_CACHE_ENTRIES) {
     const oldestKey = responseCache.keys().next().value as string | undefined;
     if (!oldestKey) break;
@@ -133,7 +158,54 @@ function pruneCache(): void {
   }
 }
 
-async function fetchForecasts(searchParams: URLSearchParams): Promise<ForecastPayload> {
+function scheduleVectorIndex(cacheKey: string, mode: GovConFeedbackMode, records: RankedForecast[]): void {
+  if (records.length === 0 || indexedAt.has(cacheKey)) return;
+  indexedAt.set(cacheKey, Date.now());
+  queueMicrotask(() => {
+    void indexVectorDocuments(
+      records.slice(0, 50).map((record) => ({
+        id: `govcon:${mode}:${record.id}`,
+        text: [
+          record.title,
+          record.agency,
+          record.subAgency,
+          record.description,
+          record.naics,
+          record.setAside,
+          record.incumbentName,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        payload: {
+          documentType: mode === "recompete" ? "recompete" : "forecast",
+          recordId: record.id,
+          title: record.title,
+          agency: record.agency,
+          naics: record.naics,
+          source: record.source ?? "govconapi",
+          sourceUrl: record.sourceUrl,
+          relevanceScore: record.relevance.score,
+          incumbentName: record.incumbentName,
+        },
+      })),
+      { batchSize: 20 },
+    )
+      .then((stats) => {
+        logger.info({ mode, ...stats }, "GovCon intelligence vector indexing completed");
+      })
+      .catch((error) => {
+        indexedAt.delete(cacheKey);
+        logger.warn({ err: error, mode }, "GovCon intelligence vector indexing failed");
+      });
+  });
+}
+
+async function fetchForecasts(
+  searchParams: URLSearchParams,
+  mode: GovConFeedbackMode,
+  fitOnly: boolean,
+  focus?: string,
+): Promise<ForecastPayload> {
   const apiKey = process.env.GOVCON_API_KEY?.trim();
   if (!apiKey) {
     throw Object.assign(new Error("GOVCON_API_KEY is not configured"), { statusCode: 503 });
@@ -166,16 +238,31 @@ async function fetchForecasts(searchParams: URLSearchParams): Promise<ForecastPa
     const upstream = asRecord(await response.json());
     const data = Array.isArray(upstream.data) ? upstream.data : [];
     const pagination = asRecord(upstream.pagination);
+    const normalized = data.map(normalizeForecast);
+    const suppressions = await loadGovConSuppressions(mode).catch((error) => {
+      logger.warn({ err: error, mode }, "GovCon feedback could not be loaded; continuing without persistent suppression");
+      return { recordIds: new Set<string>(), fingerprints: new Set<string>() };
+    });
+    const unsuppressed = normalized.filter((record) => !isGovConRecordSuppressed(suppressions, record));
+    const ranked = await rankGovConRecords(unsuppressed, mode, focus);
+    const lowRelevanceCount = ranked.filter((record) => record.relevance.score < RELEVANCE_THRESHOLD).length;
+    const records = fitOnly
+      ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
+      : ranked;
 
     return {
-      records: data.map(normalizeForecast),
+      records,
       pagination: {
         limit: asNumber(pagination.limit) ?? boundedInteger(searchParams.get("limit"), 50, 1, 100),
         offset: asNumber(pagination.offset) ?? boundedInteger(searchParams.get("offset"), 0, 0, 100_000),
         total: asNumber(pagination.total) ?? data.length,
         hasNext: asBoolean(pagination.has_next),
       },
+      sourcePageRecords: normalized.length,
+      suppressedCount: normalized.length - unsuppressed.length,
+      lowRelevanceCount,
       filtersApplied: asRecord(upstream.filters_applied),
+      semanticProvider: records.some((record) => record.relevance.provider === "gemini") ? "gemini" : "deterministic",
       source: "govconapi",
       fetchedAt: new Date().toISOString(),
     };
@@ -188,6 +275,9 @@ router.get("/govcon/forecasts", async (req, res) => {
   const params = new URLSearchParams();
   const limit = boundedInteger(req.query.limit, 50, 1, 100);
   const offset = boundedInteger(req.query.offset, 0, 0, 100_000);
+  const mode: GovConFeedbackMode = req.query.recompete === "true" ? "recompete" : "forecast";
+  const fitOnly = req.query.fitOnly !== "false";
+  const focus = stringQuery(req.query.focus ?? req.query.keywords, 200);
 
   params.set("limit", String(limit));
   params.set("offset", String(offset));
@@ -209,24 +299,26 @@ router.get("/govcon/forecasts", async (req, res) => {
     if (parsed) params.set(key, parsed);
   }
 
-  if (req.query.recompete === "true") params.set("is_recompete", "true");
+  if (mode === "recompete") params.set("is_recompete", "true");
 
-  const cacheKey = params.toString();
+  const cacheKey = `${mode}|fit:${fitOnly}|focus:${focus ?? ""}|${params.toString()}`;
   pruneCache();
   const cached = responseCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    scheduleVectorIndex(cacheKey, mode, cached.payload.records);
     return res.json({ ...cached.payload, cached: true });
   }
 
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = fetchForecasts(params);
+      request = fetchForecasts(params, mode, fitOnly, focus);
       inFlight.set(cacheKey, request);
     }
 
     const payload = await request;
     responseCache.set(cacheKey, { payload, expiresAt: Date.now() + CACHE_TTL_MS });
+    scheduleVectorIndex(cacheKey, mode, payload.records);
     return res.json({ ...payload, cached: false });
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number }).statusCode) || 502;
@@ -235,6 +327,54 @@ router.get("/govcon/forecasts", async (req, res) => {
     return res.status(statusCode).json({ error: message });
   } finally {
     inFlight.delete(cacheKey);
+  }
+});
+
+router.post("/govcon/feedback", async (req, res) => {
+  const mode: GovConFeedbackMode = req.body?.mode === "recompete" ? "recompete" : "forecast";
+  const action = req.body?.action === "restore_all" ? "restore_all" : "not_relevant";
+  try {
+    if (action === "restore_all") {
+      const restored = await restoreGovConFeedback(mode);
+      responseCache.clear();
+      return res.json({ ok: true, restored });
+    }
+
+    const recordId = stringQuery(req.body?.recordId, 500);
+    const title = stringQuery(req.body?.title, 500);
+    const agency = stringQuery(req.body?.agency, 300);
+    if (!recordId || !title || !agency) {
+      return res.status(400).json({ error: "recordId, title, and agency are required" });
+    }
+    await saveGovConNotRelevant({ mode, recordId, title, agency });
+    responseCache.clear();
+    return res.json({ ok: true });
+  } catch (error) {
+    logger.error({ err: error, mode, action }, "GovCon feedback persistence failed");
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Feedback could not be saved" });
+  }
+});
+
+router.post("/govcon/recompete-verify", async (req, res) => {
+  const id = stringQuery(req.body?.id, 500);
+  const title = stringQuery(req.body?.title, 500);
+  const agency = stringQuery(req.body?.agency, 300);
+  if (!id || !title || !agency) {
+    return res.status(400).json({ error: "id, title, and agency are required" });
+  }
+
+  try {
+    const result = await verifyRecompete({
+      id,
+      title,
+      agency,
+      naics: stringQuery(req.body?.naics, 6) ?? null,
+      incumbentName: stringQuery(req.body?.incumbentName, 300) ?? null,
+    });
+    return res.json(result);
+  } catch (error) {
+    logger.error({ err: error, id }, "Recompete verification failed");
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Official award verification failed" });
   }
 });
 
