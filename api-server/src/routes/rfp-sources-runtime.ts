@@ -3,8 +3,8 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-const LOAD_TIMEOUT_MS = 8_000;
-const DB_TIMEOUT_MS = 3_500;
+const MODULE_TIMEOUT_MS = 6_000;
+const OPTIONAL_TIMEOUT_MS = 2_500;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 type JsonRecord = Record<string, unknown>;
@@ -34,13 +34,9 @@ function withDeadline<T>(promise: Promise<T>, milliseconds: number, label: strin
 }
 
 async function buildRuntimeInventory(): Promise<JsonRecord> {
-  const [
-    relevanceModule,
-    capabilityModule,
-    publishedModule,
-    inventoryModule,
-    healthModule,
-  ] = await withDeadline(
+  const warnings: string[] = [];
+
+  const runtimeModulesPromise = withDeadline(
     Promise.all([
       import("../lib/providers/directRfpPortalRelevanceCatalog"),
       import("../lib/providers/portalCapabilities"),
@@ -48,40 +44,51 @@ async function buildRuntimeInventory(): Promise<JsonRecord> {
       import("../lib/providers/publicPortalRuntimeInventory"),
       import("../lib/providers/publicPortalProviders/portalHealthStore"),
     ]),
-    LOAD_TIMEOUT_MS,
+    MODULE_TIMEOUT_MS,
     "Runtime source modules",
   );
 
-  const warnings: string[] = [];
-
-  const healthBySourceId = await withDeadline(
-    healthModule.loadPublicPortalHealth(),
-    DB_TIMEOUT_MS,
-    "Persisted source health",
-  ).catch((error) => {
-    warnings.push(error instanceof Error ? error.message : "Persisted source health was unavailable");
-    return new Map<string, any>();
-  });
-
-  const crawlerModule = await withDeadline(
+  const crawlerModulePromise = withDeadline(
     import("../lib/crawler"),
-    DB_TIMEOUT_MS,
+    OPTIONAL_TIMEOUT_MS,
     "Crawler registry",
   ).catch((error) => {
     warnings.push(error instanceof Error ? error.message : "Crawler registry was unavailable");
     return null;
   });
 
-  const approvedCrawlerConfigs = crawlerModule
-    ? await withDeadline(
-        crawlerModule.listApprovedDiscoverySpiderConfigs(),
-        DB_TIMEOUT_MS,
-        "Approved crawler configs",
-      ).catch((error) => {
-        warnings.push(error instanceof Error ? error.message : "Approved crawler configs were unavailable");
-        return [];
-      })
-    : [];
+  const [runtimeModules, crawlerModule] = await Promise.all([
+    runtimeModulesPromise,
+    crawlerModulePromise,
+  ]);
+  const [
+    relevanceModule,
+    capabilityModule,
+    publishedModule,
+    inventoryModule,
+    healthModule,
+  ] = runtimeModules;
+
+  const [healthBySourceId, approvedCrawlerConfigs] = await Promise.all([
+    withDeadline(
+      healthModule.loadPublicPortalHealth(),
+      OPTIONAL_TIMEOUT_MS,
+      "Persisted source health",
+    ).catch((error) => {
+      warnings.push(error instanceof Error ? error.message : "Persisted source health was unavailable");
+      return new Map<string, any>();
+    }),
+    crawlerModule
+      ? withDeadline(
+          crawlerModule.listApprovedDiscoverySpiderConfigs(),
+          OPTIONAL_TIMEOUT_MS,
+          "Approved crawler configs",
+        ).catch((error) => {
+          warnings.push(error instanceof Error ? error.message : "Approved crawler configs were unavailable");
+          return [];
+        })
+      : Promise.resolve([]),
+  ]);
 
   if (crawlerModule) {
     for (const config of approvedCrawlerConfigs) crawlerModule.registerSpiderConfig(config);
