@@ -16,6 +16,7 @@ import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
+import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
 import { lazyRouter } from "./lazy-router";
@@ -64,6 +65,7 @@ router.use(
   ),
 );
 router.use(manualOnlyPortalHealthBoundaryRouter);
+router.use(rfpSourcesRuntimeRouter);
 router.use(
   lazyRouter(
     (req) => req.path.startsWith("/rfp-sources/crawler"),

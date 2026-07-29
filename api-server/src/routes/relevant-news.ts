@@ -7,8 +7,14 @@ const GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search";
 const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 30;
+
+// Keep the upstream query broad enough to return useful reporting, then apply
+// Occu-Med-specific relevance scoring locally. GNews treats publisher country as
+// the source location, not the subject of the article, so no country filter is used.
 const BASE_QUERY =
-  '("federal contractor" OR "government contractor" OR "defense contractor") AND (award OR procurement OR acquisition OR recompete OR solicitation)';
+  '("federal contract" OR "government contract" OR "defense contract" OR "contract award" OR "federal procurement" OR "government acquisition" OR recompete OR "GSA contract")';
+const FALLBACK_QUERY =
+  '("contract award" OR "federal contract" OR "government procurement" OR recompete)';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -31,6 +37,8 @@ type NewsArticle = {
 type NewsPayload = {
   articles: NewsArticle[];
   totalArticles: number;
+  upstreamArticles: number;
+  filteredOut: number;
   query: string;
   source: "gnews";
   fetchedAt: string;
@@ -62,9 +70,10 @@ function sanitizedSearch(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value
     .replace(/[()]/g, " ")
+    .replace(/["']/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return normalized ? normalized.slice(0, 40) : null;
+  return normalized ? normalized.slice(0, 45) : null;
 }
 
 function relevanceScore(article: JsonRecord): number {
@@ -79,18 +88,23 @@ function relevanceScore(article: JsonRecord): number {
     ["government contractor", 10],
     ["defense contractor", 9],
     ["federal contract", 8],
-    ["contract award", 7],
-    ["recompete", 7],
-    ["procurement", 5],
+    ["government contract", 8],
+    ["contract award", 8],
+    ["recompete", 8],
+    ["federal procurement", 7],
+    ["government procurement", 7],
+    ["federal acquisition", 6],
+    ["government acquisition", 6],
     ["solicitation", 5],
-    ["acquisition", 4],
     ["department of defense", 4],
+    ["homeland security", 4],
+    ["general services administration", 4],
+    ["veterans affairs", 4],
     ["dod", 3],
-    ["gsa", 3],
     ["dhs", 3],
+    ["gsa", 3],
     ["hhs", 3],
-    ["veterans affairs", 3],
-    ["va contract", 3],
+    ["contracting", 2],
     ["award", 2],
     ["contractor", 2],
   ];
@@ -134,70 +148,85 @@ function pruneCache(): void {
   }
 }
 
-async function fetchRelevantNews(query: string, max: number, page: number): Promise<NewsPayload> {
-  const apiKey = process.env.GNEWS_API_KEY?.trim();
-  if (!apiKey) {
-    throw Object.assign(new Error("GNEWS_API_KEY is not configured"), { statusCode: 503 });
-  }
-
+async function requestGNews(query: string, max: number, page: number, apiKey: string): Promise<JsonRecord> {
   const upstreamUrl = new URL(GNEWS_SEARCH_URL);
-  upstreamUrl.searchParams.set("q", query);
+  upstreamUrl.searchParams.set("q", query.slice(0, 200));
   upstreamUrl.searchParams.set("lang", "en");
-  upstreamUrl.searchParams.set("country", "us");
   upstreamUrl.searchParams.set("max", String(max));
   upstreamUrl.searchParams.set("page", String(page));
   upstreamUrl.searchParams.set("sortby", "publishedAt");
   upstreamUrl.searchParams.set("in", "title,description");
-  upstreamUrl.searchParams.set("nullable", "description,image");
-  upstreamUrl.searchParams.set("apikey", apiKey);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(upstreamUrl, {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Api-Key": apiKey,
+      },
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const details = (await response.text().catch(() => "")).slice(0, 300);
-      const statusCode = response.status === 429 ? 429 : 502;
+      const statusCode = response.status === 429 ? 429 : response.status === 401 ? 401 : 502;
       throw Object.assign(
         new Error(`GNews API returned ${response.status}${details ? `: ${details}` : ""}`),
         { statusCode },
       );
     }
 
-    const upstream = asRecord(await response.json());
-    const normalized = (Array.isArray(upstream.articles) ? upstream.articles : [])
-      .map(normalizeArticle)
-      .filter((article): article is NewsArticle => article !== null)
-      .filter((article) => article.relevanceScore >= 4)
-      .sort((left, right) => {
-        const dateDifference = Date.parse(right.publishedAt ?? "") - Date.parse(left.publishedAt ?? "");
-        if (Number.isFinite(dateDifference) && dateDifference !== 0) return dateDifference;
-        return right.relevanceScore - left.relevanceScore;
-      });
-
-    return {
-      articles: normalized,
-      totalArticles:
-        typeof upstream.totalArticles === "number" && Number.isFinite(upstream.totalArticles)
-          ? upstream.totalArticles
-          : normalized.length,
-      query,
-      source: "gnews",
-      fetchedAt: new Date().toISOString(),
-    };
+    return asRecord(await response.json());
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function fetchRelevantNews(query: string, max: number, page: number, allowFallback: boolean): Promise<NewsPayload> {
+  const apiKey = process.env.GNEWS_API_KEY?.trim();
+  if (!apiKey) {
+    throw Object.assign(new Error("GNEWS_API_KEY is not configured"), { statusCode: 503 });
+  }
+
+  let effectiveQuery = query;
+  let upstream = await requestGNews(effectiveQuery, max, page, apiKey);
+  let rawArticles = Array.isArray(upstream.articles) ? upstream.articles : [];
+
+  if (allowFallback && rawArticles.length === 0) {
+    effectiveQuery = FALLBACK_QUERY;
+    upstream = await requestGNews(effectiveQuery, max, page, apiKey);
+    rawArticles = Array.isArray(upstream.articles) ? upstream.articles : [];
+  }
+
+  const normalized = rawArticles
+    .map(normalizeArticle)
+    .filter((article): article is NewsArticle => article !== null)
+    .filter((article) => article.relevanceScore >= 2)
+    .sort((left, right) => {
+      const dateDifference = Date.parse(right.publishedAt ?? "") - Date.parse(left.publishedAt ?? "");
+      if (Number.isFinite(dateDifference) && dateDifference !== 0) return dateDifference;
+      return right.relevanceScore - left.relevanceScore;
+    });
+
+  return {
+    articles: normalized,
+    totalArticles:
+      typeof upstream.totalArticles === "number" && Number.isFinite(upstream.totalArticles)
+        ? upstream.totalArticles
+        : rawArticles.length,
+    upstreamArticles: rawArticles.length,
+    filteredOut: Math.max(0, rawArticles.length - normalized.length),
+    query: effectiveQuery,
+    source: "gnews",
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 router.get("/relevant-news", async (req, res) => {
   const userSearch = sanitizedSearch(req.query.search);
-  const query = userSearch ? `(${BASE_QUERY}) AND "${userSearch.replace(/"/g, "")}"` : BASE_QUERY;
+  const query = userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY;
   const planSafeMax = boundedInteger(process.env.GNEWS_MAX_ARTICLES, 10, 1, 100);
   const requestedMax = boundedInteger(req.query.max, planSafeMax, 1, 100);
   const max = Math.min(requestedMax, planSafeMax);
@@ -213,7 +242,7 @@ router.get("/relevant-news", async (req, res) => {
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = fetchRelevantNews(query, max, page);
+      request = fetchRelevantNews(query, max, page, !userSearch && page === 1);
       inFlight.set(cacheKey, request);
     }
 
