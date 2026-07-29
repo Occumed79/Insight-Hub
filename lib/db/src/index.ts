@@ -41,27 +41,25 @@ function createPool(
 ): pg.Pool {
   const pool = new Pool({
     connectionString: requiredConnectionString(envName),
-    max: boundedIntegerEnv("DATABASE_POOL_MAX", 6, 1, 20),
+    max: boundedIntegerEnv("DATABASE_POOL_MAX", 3, 1, 8),
     min: 0,
     idleTimeoutMillis: boundedIntegerEnv(
       "DATABASE_POOL_IDLE_TIMEOUT_MS",
-      30_000,
+      20_000,
       5_000,
-      300_000,
+      120_000,
     ),
     connectionTimeoutMillis: boundedIntegerEnv(
       "DATABASE_CONNECT_TIMEOUT_MS",
-      10_000,
+      8_000,
       2_000,
-      60_000,
+      30_000,
     ),
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: false,
   });
 
-  // node-postgres emits idle-client errors on the Pool. Without a listener,
-  // transient Neon network failures can terminate the entire Node process.
   pool.on("error", (error) => {
     console.error(
       JSON.stringify({
@@ -101,8 +99,6 @@ const dynamicDb = new Proxy({}, {
   },
 });
 
-// Existing imports of `db` use request-scoped logical routing.
-// RFP paths default to rfpDb; configured non-RFP API paths use intelDb.
 export const db = dynamicDb as typeof rfpDb & typeof intelDb;
 export const pool = rfpPool;
 
