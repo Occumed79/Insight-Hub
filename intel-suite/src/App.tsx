@@ -11,6 +11,9 @@ import CompetitorsPage from "@/pages/portal/competitors";
 import ProspectDetailPage from "@/pages/portal/prospect-detail";
 import FederalAgenciesPage from "@/pages/portal/federal-agencies";
 import StateAgenciesPage from "@/pages/portal/state-agencies";
+import ForecastsPage from "@/pages/portal/forecasts";
+import RecompeteWatchPage from "@/pages/portal/recompete-watch";
+import RelevantNewsPage from "@/pages/portal/relevant-news";
 import SettingsPage from "@/pages/portal/settings";
 import { PortalLayout } from "@/components/portal-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -44,6 +47,9 @@ function PortalRouter() {
     <PortalLayout>
       <Switch>
         <Route path="/portal/opportunities" component={OpportunitiesDashboard} />
+        <Route path="/portal/forecasts" component={ForecastsPage} />
+        <Route path="/portal/recompete-watch" component={RecompeteWatchPage} />
+        <Route path="/portal/relevant-news" component={RelevantNewsPage} />
         <Route path="/portal/entities" component={EntityProspectsRoute} />
         <Route path="/portal/clients" component={EntityClientsRoute} />
         <Route path="/portal/competitors" component={CompetitorsPage} />
