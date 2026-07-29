@@ -1,44 +1,46 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, Search, Users, Target, FileText, Landmark, Map, Network, TrendingUp, ExternalLink } from "lucide-react";
-import outreachGalaxyButton from "@/assets/portal-buttons/outreach-galaxy.png";
-import relationshipPlanetButton from "@/assets/portal-buttons/relationship-planet.png";
-import hiringCompassButton from "@/assets/portal-buttons/hiring-compass.png";
+import {
+  ArrowRight,
+  CalendarRange,
+  RefreshCcw,
+  Search,
+  Settings,
+} from "lucide-react";
 import occuMedLogoSrc from "@/assets/occu-med-logo.png";
 
-type PortalLinkKey = "outreach" | "relationship" | "hiringTrends";
-type PortalLinks = Record<PortalLinkKey, string>;
-
-const SOURCE_VAULT_FALLBACK_URL = "https://source-vault.onrender.com";
-
-function normalizeExternalPortalUrl(rawUrl: string | undefined) {
-  const trimmed = rawUrl?.trim();
-  if (!trimmed) return SOURCE_VAULT_FALLBACK_URL;
-
-  // Guard against stale Render/Vite settings that accidentally point this card back
-  // into Insight Hub's legacy prospect/client routes instead of the file portal.
-  if (trimmed.startsWith("/") || trimmed.includes("/portal/prospects") || trimmed.includes("/portal/clients")) {
-    return SOURCE_VAULT_FALLBACK_URL;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    if (url.pathname.startsWith("/portal/prospects") || url.pathname.startsWith("/portal/clients")) {
-      return SOURCE_VAULT_FALLBACK_URL;
-    }
-    return url.toString();
-  } catch {
-    return SOURCE_VAULT_FALLBACK_URL;
-  }
-}
-
-const SOURCE_VAULT_URL = normalizeExternalPortalUrl(import.meta.env.VITE_FILE_SHARING_PORTAL_URL);
-
-const SHARED_PORTAL_LINKS: PortalLinks = {
-  outreach: import.meta.env.VITE_OUTREACH_PORTAL_URL ?? "",
-  relationship: import.meta.env.VITE_RELATIONSHIP_PORTAL_URL ?? "",
-  hiringTrends: import.meta.env.VITE_HIRING_TRENDS_PORTAL_URL ?? "",
-};
+const procurementPortals = [
+  {
+    href: "/portal/opportunities",
+    imgUrl:
+      "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
+    alt: "Procurement Intelligence",
+    icon: <Search className="h-5 w-5 text-primary-foreground" />,
+    title: "Procurement Intelligence",
+    desc: "Discover, verify, track, and manage active contracting opportunities from official procurement sources and configured RFP networks.",
+    delay: 0.1,
+  },
+  {
+    href: "/portal/forecast",
+    imgUrl:
+      "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
+    alt: "Procurement Forecast",
+    icon: <CalendarRange className="h-5 w-5 text-primary-foreground" />,
+    title: "Procurement Forecast",
+    desc: "Track planned acquisitions, expected release windows, pre-solicitation notices, and agency buying signals before opportunities are posted.",
+    delay: 0.2,
+  },
+  {
+    href: "/portal/recompete-watch",
+    imgUrl:
+      "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
+    alt: "Recompete Watch",
+    icon: <RefreshCcw className="h-5 w-5 text-primary-foreground" />,
+    title: "Recompete Watch",
+    desc: "Monitor expiring contracts, incumbent positions, option periods, and likely recompetes so Occu-Med can prepare before the next solicitation opens.",
+    delay: 0.3,
+  },
+];
 
 function OccuMedHeroLogo() {
   return (
@@ -53,42 +55,8 @@ function OccuMedHeroLogo() {
 }
 
 export default function Home() {
-  const extraCards = [
-    {
-      key: "outreach",
-      imgUrl: outreachGalaxyButton,
-      alt: "Outreach Intelligence",
-      icon: <Network className="w-5 h-5 text-primary-foreground" />,
-      title: "Outreach Intelligence",
-      desc: "Look up employee contacts, org charts, and decision-makers across client and prospect organizations to power targeted outreach.",
-      delay: 0.7,
-      link: SHARED_PORTAL_LINKS.outreach,
-    },
-    {
-      key: "relationship",
-      imgUrl: relationshipPlanetButton,
-      alt: "Relationship Intelligence",
-      icon: <Users className="w-5 h-5 text-primary-foreground" />,
-      title: "Relationship Intelligence",
-      desc: "Unified view of clients and prospects — relationship status, tiers, branches, contacts, and opportunity signals in one place.",
-      delay: 0.8,
-      link: SHARED_PORTAL_LINKS.relationship,
-    },
-    {
-      key: "hiringTrends",
-      imgUrl: hiringCompassButton,
-      alt: "Hiring Trend Intelligence",
-      icon: <TrendingUp className="w-5 h-5 text-primary-foreground" />,
-      title: "Hiring Trend Intelligence",
-      desc: "Track hiring velocity, open roles, and workforce expansion signals across client and prospect organizations to identify needs early.",
-      delay: 0.9,
-      link: SHARED_PORTAL_LINKS.hiringTrends,
-    },
-  ];
-
   return (
-    <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
-      {/* Animated glowing orbs background */}
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background p-4">
       <style>{`
         @keyframes home-orb1 {
           0%   { transform: translate(0px, 0px) scale(1); }
@@ -115,201 +83,153 @@ export default function Home() {
           50%       { opacity: 1; transform: scale(1.22); }
         }
       `}</style>
+
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0 bg-background" />
-        <div style={{position:"absolute",top:"-12%",left:"-8%",width:"650px",height:"650px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(56,182,255,0.80) 0%, rgba(56,182,255,0.40) 35%, transparent 70%)",filter:"blur(36px)",animation:"home-orb1 18s ease-in-out infinite",willChange:"transform"}} />
-        <div style={{position:"absolute",bottom:"-10%",right:"-6%",width:"750px",height:"750px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,140,255,0.82) 0%, rgba(80,200,255,0.42) 35%, transparent 70%)",filter:"blur(40px)",animation:"home-orb2 22s ease-in-out infinite",animationDelay:"-11s",willChange:"transform"}} />
-        <div style={{position:"absolute",top:"28%",right:"12%",width:"480px",height:"480px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(0,200,220,0.68) 0%, rgba(56,182,255,0.32) 40%, transparent 70%)",filter:"blur(32px)",animation:"home-orb3 14s ease-in-out infinite",animationDelay:"-6s",willChange:"transform"}} />
-        <div style={{position:"absolute",top:"5%",right:"8%",width:"320px",height:"320px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(100,220,255,0.90) 0%, rgba(56,182,255,0.45) 40%, transparent 70%)",filter:"blur(22px)",animation:"home-pulse 9s ease-in-out infinite",animationDelay:"-3s",willChange:"transform, opacity"}} />
-        <div style={{position:"absolute",bottom:"12%",left:"6%",width:"400px",height:"400px",borderRadius:"50%",background:"radial-gradient(circle at center, rgba(30,100,255,0.72) 0%, rgba(56,182,255,0.34) 40%, transparent 70%)",filter:"blur(26px)",animation:"home-pulse 13s ease-in-out infinite",animationDelay:"-8s",willChange:"transform, opacity"}} />
+        <div
+          style={{
+            position: "absolute",
+            top: "-12%",
+            left: "-8%",
+            width: "650px",
+            height: "650px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at center, rgba(56,182,255,0.80) 0%, rgba(56,182,255,0.40) 35%, transparent 70%)",
+            filter: "blur(36px)",
+            animation: "home-orb1 18s ease-in-out infinite",
+            willChange: "transform",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "-10%",
+            right: "-6%",
+            width: "750px",
+            height: "750px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at center, rgba(30,140,255,0.82) 0%, rgba(80,200,255,0.42) 35%, transparent 70%)",
+            filter: "blur(40px)",
+            animation: "home-orb2 22s ease-in-out infinite",
+            animationDelay: "-11s",
+            willChange: "transform",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "28%",
+            right: "12%",
+            width: "480px",
+            height: "480px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at center, rgba(0,200,220,0.68) 0%, rgba(56,182,255,0.32) 40%, transparent 70%)",
+            filter: "blur(32px)",
+            animation: "home-orb3 14s ease-in-out infinite",
+            animationDelay: "-6s",
+            willChange: "transform",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "5%",
+            right: "8%",
+            width: "320px",
+            height: "320px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at center, rgba(100,220,255,0.90) 0%, rgba(56,182,255,0.45) 40%, transparent 70%)",
+            filter: "blur(22px)",
+            animation: "home-pulse 9s ease-in-out infinite",
+            animationDelay: "-3s",
+            willChange: "transform, opacity",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "12%",
+            left: "6%",
+            width: "400px",
+            height: "400px",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(circle at center, rgba(30,100,255,0.72) 0%, rgba(56,182,255,0.34) 40%, transparent 70%)",
+            filter: "blur(26px)",
+            animation: "home-pulse 13s ease-in-out infinite",
+            animationDelay: "-8s",
+            willChange: "transform, opacity",
+          }}
+        />
       </div>
 
-      <div className="relative z-10 w-full max-w-6xl mx-auto flex flex-col items-center">
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: "easeOut" }}
-          className="text-center mb-16"
+          className="mb-14 text-center"
         >
           <OccuMedHeroLogo />
-          <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 tracking-tight">
+          <h1 className="mb-6 text-5xl font-bold tracking-tight text-white md:text-7xl">
             Insight <span className="text-gradient">Hub</span>
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto font-light leading-relaxed">
-            The strategic intelligence command center for Occu-Med — surfacing contracting opportunities, tracking entity relationships, and mapping the competitive landscape.
+          <p className="mx-auto max-w-3xl text-lg font-light leading-relaxed text-muted-foreground md:text-xl">
+            Occu-Med&apos;s procurement intelligence workspace for active opportunities, acquisition forecasts, and upcoming contract recompetes.
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-          {[
-            {
-              href: "/portal/opportunities",
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/0217324d6_e6551bb4-354c-4267-bcc8-3a654f7d911a.png",
-              alt: "Opportunity Intelligence",
-              icon: <Search className="w-5 h-5 text-primary-foreground" />,
-              title: "Opportunity Intelligence",
-              desc: "Discover, track, and analyze contracting opportunities from SAM.gov, web intelligence sources, and configured procurement networks.",
-              delay: 0.1,
-            },
-            {
-              href: "/portal/entities",
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/3c37bc98d_ebb08cf5-f915-465a-9abe-6a5fd91d249b.png",
-              alt: "Entity Intelligence",
-              icon: <Users className="w-5 h-5 text-primary-foreground" />,
-              title: "Entity Intelligence",
-              desc: "Track entity profiles, needs, patterns, priorities, decision-makers, prospect records, and strategic insights.",
-              delay: 0.2,
-            },
-            {
-              href: "/portal/competitors",
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/4c56e7c63_725370ea-8900-4051-a09b-baf05e5d806b.png",
-              alt: "Competitor Intelligence",
-              icon: <Target className="w-5 h-5 text-primary-foreground" />,
-              title: "Competitor Intelligence",
-              desc: "Monitor competitors, capabilities, contract activity, positioning, and market threats.",
-              delay: 0.3,
-            },
-            {
-              href: SOURCE_VAULT_URL,
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/cd3786710_2af8b45c-7f6e-4598-a2bd-564566d4892f.png",
-              alt: "File Sharing",
-              icon: <FileText className="w-5 h-5 text-primary-foreground" />,
-              title: "File Sharing",
-              desc: "Access shared files, forms, packets, supporting documents, and organized reference materials.",
-              delay: 0.4,
-              external: true,
-            },
-            {
-              href: "/portal/federal-agencies",
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/e2e3572a9_5ad3d8f9-d805-4fc2-8cb7-a8614edc9c0fcopy.png",
-              alt: "Federal Agencies",
-              icon: <Landmark className="w-5 h-5 text-primary-foreground" />,
-              title: "Federal Agencies",
-              desc: "Monitor federal agency health programs, contract vehicles, and procurement activity across DoD, VA, and civilian agencies.",
-              delay: 0.5,
-            },
-            {
-              href: "/portal/state-agencies",
-              imgUrl: "https://media.base44.com/images/public/69dcaa5f2cdb34ef76b60740/02588225c_783f5460-1289-4bbd-a0ac-a9316906a45e.png",
-              alt: "State Agencies",
-              icon: <Map className="w-5 h-5 text-primary-foreground" />,
-              title: "State Agencies",
-              desc: "Track state-level health program procurement, workers' compensation contracts, and occupational health RFPs across all 50 states.",
-              delay: 0.6,
-            },
-          ].map((card) => {
-            const cardBody = (
-              <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
-                  <img
-                    src={card.imgUrl}
-                    alt={card.alt}
-                    className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
-                  <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
-                    {card.icon}
-                  </div>
-                </div>
-                <div className="px-5 pb-6">
-                  <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
-                    {card.title}
-                    {card.external ? (
-                      <ExternalLink className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-                    ) : (
-                      <ArrowRight className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-                    )}
-                  </h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    {card.desc}
-                  </p>
-                </div>
-              </div>
-            );
-
-            return (
-              <motion.div
-                key={card.href}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: card.delay }}
-              >
-                {card.external ? (
-                  <a href={card.href} target="_blank" rel="noopener noreferrer" className="block h-full">
-                    {cardBody}
-                  </a>
-                ) : (
-                  <Link href={card.href} className="block h-full">
-                    {cardBody}
-                  </Link>
-                )}
-              </motion.div>
-            );
-          })}
-
-          {/* 3 external portal cards sourced only from Render/Vite environment variables */}
-          {extraCards.map((card) => (
+        <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
+          {procurementPortals.map((card) => (
             <motion.div
-              key={card.key}
+              key={card.href}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: card.delay }}
             >
-              {card.link ? (
-                <a href={card.link} target="_blank" rel="noopener noreferrer" className="block h-full">
-                  <div className="h-full glass-card rounded-3xl p-1 group cursor-pointer relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
-                      <img
-                        src={card.imgUrl}
-                        alt={card.alt}
-                        className="w-full h-auto object-contain transform group-hover:scale-105 transition-transform duration-700"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
-                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
-                        {card.icon}
-                      </div>
-                    </div>
-                    <div className="px-5 pb-6">
-                      <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
-                        {card.title}
-                        <ExternalLink className="w-5 h-5 text-primary opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-                      </h3>
-                      <p className="text-muted-foreground text-sm leading-relaxed">
-                        {card.desc}
-                      </p>
-                    </div>
+              <Link href={card.href} className="block h-full">
+                <div className="glass-card group relative h-full cursor-pointer overflow-hidden rounded-3xl p-1">
+                  <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+                  <div className="relative mb-4 overflow-hidden rounded-2xl border border-white/10">
+                    <img
+                      src={card.imgUrl}
+                      alt={card.alt}
+                      className="h-auto w-full object-contain transition-transform duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/40 to-transparent" />
+                    <div className="glass-panel absolute left-4 top-4 rounded-full p-2">{card.icon}</div>
                   </div>
-                </a>
-              ) : (
-                <div className="block h-full opacity-60 cursor-not-allowed">
-                  <div className="h-full glass-card rounded-3xl p-1 relative overflow-hidden">
-                    <div className="relative rounded-2xl overflow-hidden mb-4 border border-white/10">
-                      <img
-                        src={card.imgUrl}
-                        alt={card.alt}
-                        className="w-full h-auto object-contain"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[hsl(207,72%,10%)]/50 to-transparent" />
-                      <div className="absolute top-4 left-4 glass-panel rounded-full p-2">
-                        {card.icon}
-                      </div>
-                    </div>
-                    <div className="px-5 pb-6">
-                      <h3 className="text-xl font-display font-semibold text-white mb-2 flex items-center justify-between">
-                        {card.title}
-                      </h3>
-                      <p className="text-muted-foreground text-sm leading-relaxed">
-                        Configure the linked Render URL in environment variables to enable this portal shortcut.
-                      </p>
-                    </div>
+                  <div className="px-5 pb-6">
+                    <h2 className="mb-2 flex items-center justify-between text-xl font-semibold text-white">
+                      {card.title}
+                      <ArrowRight className="h-5 w-5 -translate-x-4 text-primary opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
+                    </h2>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{card.desc}</p>
                   </div>
                 </div>
-              )}
+              </Link>
             </motion.div>
           ))}
         </div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="mt-8"
+        >
+          <Link
+            href="/portal/settings"
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white/65 backdrop-blur-md transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-white"
+          >
+            <Settings className="h-4 w-4" />
+            Procurement Sources, Adapters, Integrations &amp; Ingestion Health
+          </Link>
+        </motion.div>
       </div>
     </div>
   );
