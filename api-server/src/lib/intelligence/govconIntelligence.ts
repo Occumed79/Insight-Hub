@@ -183,21 +183,24 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
   }
 
   return records
-    .map((record, index) => {
+    .map((record, index): T & { relevance: GovConRelevance } => {
+      const base = deterministic[index] ?? { score: 0, reasons: [] };
       const semanticSimilarity = similarities?.[index] ?? null;
       const semanticPoints = semanticSimilarity === null ? 0 : semanticSimilarity * 30;
-      const score = Math.round(Math.max(0, Math.min(100, deterministic[index].score + semanticPoints)));
-      const reasons = [...deterministic[index].reasons];
+      const score = Math.round(Math.max(0, Math.min(100, base.score + semanticPoints)));
+      const reasons = [...base.reasons];
       if (semanticSimilarity !== null) {
         reasons.unshift(`Gemini semantic match ${Math.round(semanticSimilarity * 100)}%`);
       }
+      const provider: GovConRelevance["provider"] =
+        semanticSimilarity === null ? "deterministic" : "gemini";
       return {
         ...record,
         relevance: {
           score,
           classification: classify(score),
           semanticSimilarity,
-          provider: semanticSimilarity === null ? "deterministic" : "gemini",
+          provider,
           reasons: Array.from(new Set(reasons)).slice(0, 6),
         },
       };
