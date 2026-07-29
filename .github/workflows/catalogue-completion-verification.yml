@@ -47,6 +47,9 @@ jobs:
       - name: Typecheck workspace
         run: pnpm run typecheck
 
+      - name: Build production applications
+        run: pnpm run build:prod
+
       - name: Test completion rules
         run: >-
           pnpm --filter @workspace/api-server exec node --import tsx --test
