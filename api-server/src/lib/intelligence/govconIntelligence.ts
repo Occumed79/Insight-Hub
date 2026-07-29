@@ -156,26 +156,26 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
   if (process.env.GEMINI_API_KEY?.trim()) {
     try {
       const documentResult = await embedTexts(records.map(normalizedText), "document", "gemini");
-      const profileText = [
-        OCCUMED_SEMANTIC_PROFILE,
-        mode === "recompete"
-          ? "Prioritize expiring or incumbent federal contracts that Occu-Med could credibly compete for."
-          : "Prioritize future procurements that Occu-Med could credibly perform.",
-        focus?.trim() ? `Current user focus: ${focus.trim()}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      const queryResult = await embedTexts([profileText], "query", "gemini");
-      const queryVector = queryResult?.vectors[0];
       if (
         documentResult?.provider === "gemini" &&
-        queryResult?.provider === "gemini" &&
-        queryVector &&
         documentResult.vectors.length === records.length
       ) {
-        similarities = documentResult.vectors.map((vector) =>
-          Math.max(0, Math.min(1, cosine(queryVector, vector))),
-        );
+        const profileText = [
+          OCCUMED_SEMANTIC_PROFILE,
+          mode === "recompete"
+            ? "Prioritize expiring or incumbent federal contracts that Occu-Med could credibly compete for."
+            : "Prioritize future procurements that Occu-Med could credibly perform.",
+          focus?.trim() ? `Current user focus: ${focus.trim()}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const queryResult = await embedTexts([profileText], "query", "gemini");
+        const queryVector = queryResult?.vectors[0];
+        if (queryResult?.provider === "gemini" && queryVector) {
+          similarities = documentResult.vectors.map((vector) =>
+            Math.max(0, Math.min(1, cosine(queryVector, vector))),
+          );
+        }
       }
     } catch {
       similarities = null;
