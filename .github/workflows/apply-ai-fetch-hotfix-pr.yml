@@ -18,7 +18,7 @@ jobs:
           ref: agent/restore-ai-fetch-now
           fetch-depth: 0
       - name: Apply restoration
-        run: python3 scripts/restore-ai-fetch.py
+        run: python3 scripts/restore-ai-fetch-v2.py
       - name: Validate
         run: |
           corepack enable
