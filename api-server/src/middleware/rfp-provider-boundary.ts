@@ -5,6 +5,12 @@ const router = Router();
 const ALLOWED_RFP_PROVIDER_REQUESTS = new Set([
   "samGov",
   "sam_gov",
+  "aiDiscovery",
+  "ai_discovery",
+  "webIntelligence",
+  // Legacy selections are still accepted at the request boundary and are
+  // collapsed into aiDiscovery by providerRunner. They no longer execute the
+  // retired scraper providers.
   "publicPortalProviders",
   "public_portal_providers",
   "publicPortals",
@@ -16,16 +22,12 @@ const ALLOWED_RFP_PROVIDER_REQUESTS = new Set([
   "internationalPublicPortals",
   "international_public_portals",
   "internationalOpportunities",
-  "tango",
-  "bidnet",
-  "serper",
-  "exa",
 ]);
 
 /**
- * Keep the manual RFP fetch endpoint limited to actual opportunity sources and
- * explicitly supported discovery engines. AI processors, vector stores,
- * intelligence-only feeds, and infrastructure utilities do not belong here.
+ * Keep the manual RFP fetch endpoint limited to the restored AI discovery path
+ * and the official SAM.gov API. Legacy scraper names are accepted only so old
+ * browser requests and persisted retries can be redirected into aiDiscovery.
  */
 router.post("/opportunities/fetch", (req, res, next) => {
   const providers = req.body?.providers;

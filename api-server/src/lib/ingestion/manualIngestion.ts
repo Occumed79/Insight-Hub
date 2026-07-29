@@ -99,6 +99,12 @@ export type ProviderFetcher = (
   },
 ) => Promise<ProviderRunResult>;
 
+function providerDisplayName(provider: string): string {
+  if (provider === "aiDiscovery") return "AI Opportunity Discovery";
+  if (provider === "samGov") return "SAM.gov Official API";
+  return provider;
+}
+
 function conciseError(value: unknown): string {
   const message = value instanceof Error ? value.message : String(value);
   return (
@@ -846,7 +852,7 @@ async function runProviderWithDeadline(
   runSignal.addEventListener("abort", abortFromRun, { once: true });
   const deadlineMs = providerDeadlineMs(provider);
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  let progressMessage = `Still waiting for ${provider}`;
+  let progressMessage = `Still waiting for ${providerDisplayName(provider)}`;
   let progressProvider: string | null = provider;
   const deadline = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {
@@ -952,7 +958,7 @@ async function executePersistedRun(
             currentProvider: source.provider,
             heartbeatAt: startedAt,
             updatedAt: startedAt,
-            statusMessage: `Running ${source.provider}`,
+            statusMessage: `Running ${providerDisplayName(source.provider)}`,
           })
           .where(eq(opportunityIngestionRunsTable.id, runId));
       });
@@ -1048,7 +1054,7 @@ async function executePersistedRun(
             errors: runErrors,
             heartbeatAt: completedAt,
             updatedAt: completedAt,
-            statusMessage: `${source.provider} ${sourceStatus}`,
+            statusMessage: `${providerDisplayName(source.provider)} ${sourceStatus}`,
           })
           .where(eq(opportunityIngestionRunsTable.id, runId));
       });
