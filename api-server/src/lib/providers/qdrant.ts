@@ -40,7 +40,7 @@ export class QdrantProvider implements DataSourceProvider {
     try {
       const response = await fetch(`${config.url}/collections`, {
         headers: { "api-key": config.apiKey },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(10_000),
       });
       return { name: this.name, configured: true, healthy: response.ok };
     } catch (error) {
@@ -56,18 +56,32 @@ export class QdrantProvider implements DataSourceProvider {
   async ensureCollection(vectorSize: number, collectionName = DEFAULT_COLLECTION): Promise<boolean> {
     const config = await this.getConfig();
     if (!config) return false;
+    const collectionUrl = `${config.url}/collections/${encodeURIComponent(collectionName)}`;
 
     try {
-      const response = await fetch(`${config.url}/collections/${encodeURIComponent(collectionName)}`, {
+      const existing = await fetch(collectionUrl, {
+        headers: { "api-key": config.apiKey },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (existing.ok) {
+        const payload = (await existing.json().catch(() => ({}))) as {
+          result?: { config?: { params?: { vectors?: { size?: number } } } };
+        };
+        const existingSize = payload.result?.config?.params?.vectors?.size;
+        return existingSize === undefined || existingSize === vectorSize;
+      }
+      if (existing.status !== 404) return false;
+
+      const created = await fetch(collectionUrl, {
         method: "PUT",
         headers: {
           "api-key": config.apiKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ vectors: { size: vectorSize, distance: "Cosine" } }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(15_000),
       });
-      return response.ok;
+      return created.ok || created.status === 409;
     } catch {
       return false;
     }
@@ -88,7 +102,7 @@ export class QdrantProvider implements DataSourceProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ points }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(20_000),
       });
       return response.ok;
     } catch {
@@ -108,7 +122,7 @@ export class QdrantProvider implements DataSourceProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ vector, limit, with_payload: true }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) return null;
       const json = (await response.json()) as { result?: { id?: string | number; score?: number; payload?: Record<string, unknown> }[] };
