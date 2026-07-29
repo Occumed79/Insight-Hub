@@ -9,6 +9,7 @@ import { rm } from "node:fs/promises";
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+const isProduction = process.env.NODE_ENV === "production";
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -18,15 +19,15 @@ async function buildAll() {
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
     platform: "node",
     bundle: true,
+    splitting: true,
+    treeShaking: true,
+    minify: isProduction,
     format: "esm",
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
-    // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
-    // Examples of unbundleable packages:
-    // - uses native modules and loads them dynamically (e.g. sharp)
-    // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
+    // Some packages below may not be imported or installed, but are listed in case they are added later.
     external: [
       "*.node",
       "sharp",
@@ -101,12 +102,15 @@ async function buildAll() {
       "puppeteer-core",
       "electron",
     ],
-    sourcemap: "linked",
+    // Production does not ship or retain the large linked source map. On the
+    // 512 MB Render instance, source-map parsing after repeated errors can hold
+    // a material amount of RSS outside the capped old-space heap.
+    sourcemap: isProduction ? false : "linked",
     plugins: [
-      // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      // pino relies on workers when transports are enabled. Production uses raw
+      // JSON logging, while development keeps the pretty-print transport.
+      esbuildPluginPino({ transports: isProduction ? [] : ["pino-pretty"] }),
     ],
-    // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
