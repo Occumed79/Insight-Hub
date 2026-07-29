@@ -99,7 +99,6 @@ function applyProviderGuards(
   };
 }
 
-
 async function loadDiscoveryRuntime() {
   const [serper, exa, langsearch, intelligence] = await Promise.all([
     import("../providers/serper"),
@@ -117,14 +116,21 @@ async function loadDiscoveryRuntime() {
 
 async function fetchConfiguredAiDiscovery(
   options: ProviderRunnerOptions,
-): Promise<NormalizedOpportunity[]> {
+): Promise<ProviderRunResult> {
   const runtime = await loadDiscoveryRuntime();
   const [useSerper, useExa, useLangsearch] = await Promise.all([
     runtime.serperProvider.isConfigured().catch(() => false),
     runtime.exaProvider.isConfigured().catch(() => false),
     runtime.langsearchProvider.isConfigured().catch(() => false),
   ]);
-  if (!useSerper && !useExa && !useLangsearch) return [];
+  if (!useSerper && !useExa && !useLangsearch) {
+    return {
+      records: [],
+      errors: [
+        "AI Opportunity Discovery could not run because none of Serper, Exa, or LangSearch is configured.",
+      ],
+    };
+  }
 
   const result = await runtime.webIntelligenceFetch({
     keywords: options.keywords,
@@ -147,9 +153,13 @@ async function fetchConfiguredAiDiscovery(
       preFiltered: result.stats.preFiltered,
       accepted: result.opportunities.length,
       aiScorers: result.stats.aiScorers,
+      errors: result.errors.length,
     }),
   );
-  return result.opportunities;
+  return {
+    records: result.opportunities,
+    errors: result.errors,
+  };
 }
 
 export async function fetchOneProvider(
@@ -157,8 +167,13 @@ export async function fetchOneProvider(
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   if (provider === "aiDiscovery") {
-    const records = await fetchConfiguredAiDiscovery(options);
-    return applyProviderGuards(provider, records, [], options.keywords);
+    const result = await fetchConfiguredAiDiscovery(options);
+    return applyProviderGuards(
+      provider,
+      result.records,
+      result.errors,
+      options.keywords,
+    );
   }
 
   if (WEB_DISCOVERY_PROVIDERS.has(provider)) {
