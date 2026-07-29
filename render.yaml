@@ -17,8 +17,10 @@ services:
         sync: false
       - key: INTEL_DATABASE_URL
         sync: false
+      - key: DATABASE_POOL_MAX
+        value: "3"
       - key: PUBLIC_PORTAL_CONCURRENCY
-        value: "4"
+        value: "1"
       - key: PUBLIC_PORTAL_SOURCE_TIMEOUT_MS
         value: "25000"
       - key: PUBLIC_PORTAL_RUN_TIMEOUT_MS
@@ -26,7 +28,7 @@ services:
       - key: PUBLIC_PORTAL_MAX_PAGES
         value: "3"
       - key: PUBLIC_PORTAL_ROTATION_BATCH_SIZE
-        value: "10"
+        value: "6"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: USAJOBS_API_KEY

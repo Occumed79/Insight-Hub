@@ -6,10 +6,7 @@ import type {
 import { composeAbortSignal } from "./abortSignals";
 
 const DEFAULT_ADAPTER_TIMEOUT_MS = 20_000;
-const inFlightAdapterExecutions = new Map<
-  string,
-  Promise<ProviderFetchResult>
->();
+const inFlightAdapterExecutions = new Set<string>();
 
 function normalizedReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -52,6 +49,7 @@ export async function runAdapterWithDeadline(
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
 
+  inFlightAdapterExecutions.add(sourceId);
   const adapterPromise = Promise.resolve().then(() =>
     provider.fetch({
       ...options,
@@ -59,12 +57,9 @@ export async function runAdapterWithDeadline(
       onProgress: undefined,
     }),
   );
-  inFlightAdapterExecutions.set(sourceId, adapterPromise);
   void adapterPromise
     .finally(() => {
-      if (inFlightAdapterExecutions.get(sourceId) === adapterPromise) {
-        inFlightAdapterExecutions.delete(sourceId);
-      }
+      inFlightAdapterExecutions.delete(sourceId);
     })
     .catch(() => undefined);
   // A timed-out adapter may settle after the aggregate has already moved on.
