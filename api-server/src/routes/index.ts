@@ -14,6 +14,8 @@ import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
+import govconRouter from "./govcon";
+import relevantNewsRouter from "./relevant-news";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
 import { lazyRouter } from "./lazy-router";
@@ -74,6 +76,8 @@ router.use(
     () => import("./rfp-sources"),
   ),
 );
+router.use(govconRouter);
+router.use(relevantNewsRouter);
 router.use(competitorsRouter);
 router.use(prospectsRouter);
 router.use(prospectLocationsRouter);
