@@ -7,10 +7,19 @@ import * as intelSchema from "./schema/intel";
 const { Pool } = pg;
 
 type LogicalDatabase = "rfp" | "intel";
+type ConnectionEnvName = "RFP_DATABASE_URL" | "INTEL_DATABASE_URL";
+
+type DatabaseRoleProbe = {
+  hasOpportunities: boolean;
+  hasCompetitors: boolean;
+  hasProspects: boolean;
+  hasClients: boolean;
+  hasFederalIntel: boolean;
+};
 
 const dbContext = new AsyncLocalStorage<LogicalDatabase>();
 
-function requiredConnectionString(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL"): string {
+function requiredConnectionString(envName: ConnectionEnvName): string {
   const value = process.env[envName];
 
   if (!value) {
@@ -20,8 +29,26 @@ function requiredConnectionString(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_
   return value;
 }
 
-function safeConnectionSummary(envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL") {
-  return { logicalDatabase: envName === "RFP_DATABASE_URL" ? "rfp" : "intel", source: envName };
+function safeConnectionSummary(envName: ConnectionEnvName) {
+  const logicalDatabase = envName === "RFP_DATABASE_URL" ? "rfp" : "intel";
+  const raw = requiredConnectionString(envName);
+
+  try {
+    const url = new URL(raw);
+    return {
+      logicalDatabase,
+      source: envName,
+      host: url.hostname,
+      database: url.pathname.replace(/^\//, "") || "neondb",
+    };
+  } catch {
+    return { logicalDatabase, source: envName, host: "invalid-url", database: "unknown" };
+  }
+}
+
+function connectionTarget(envName: ConnectionEnvName): string {
+  const url = new URL(requiredConnectionString(envName));
+  return `${url.hostname}${url.pathname}`;
 }
 
 function boundedIntegerEnv(
@@ -37,7 +64,7 @@ function boundedIntegerEnv(
 
 function createPool(
   logicalDatabase: LogicalDatabase,
-  envName: "RFP_DATABASE_URL" | "INTEL_DATABASE_URL",
+  envName: ConnectionEnvName,
 ): pg.Pool {
   const pool = new Pool({
     connectionString: requiredConnectionString(envName),
@@ -77,6 +104,32 @@ function createPool(
   return pool;
 }
 
+async function probeDatabaseRole(pool: pg.Pool): Promise<DatabaseRoleProbe> {
+  const result = await pool.query<{
+    opportunities: string | null;
+    competitors: string | null;
+    prospects: string | null;
+    clients: string | null;
+    federal_intel_items: string | null;
+  }>(`
+    SELECT
+      to_regclass('public.opportunities')::text AS opportunities,
+      to_regclass('public.competitors')::text AS competitors,
+      to_regclass('public.prospects')::text AS prospects,
+      to_regclass('public.clients')::text AS clients,
+      to_regclass('public.federal_intel_items')::text AS federal_intel_items
+  `);
+  const row = result.rows[0];
+
+  return {
+    hasOpportunities: Boolean(row?.opportunities),
+    hasCompetitors: Boolean(row?.competitors),
+    hasProspects: Boolean(row?.prospects),
+    hasClients: Boolean(row?.clients),
+    hasFederalIntel: Boolean(row?.federal_intel_items),
+  };
+}
+
 export function runWithDbContext<T>(logicalDatabase: LogicalDatabase, callback: () => T): T {
   return dbContext.run(logicalDatabase, callback);
 }
@@ -106,6 +159,39 @@ export function getDatabaseConfigSummary() {
   return {
     rfp: safeConnectionSummary("RFP_DATABASE_URL"),
     intel: safeConnectionSummary("INTEL_DATABASE_URL"),
+  };
+}
+
+export async function verifyDatabaseRouting() {
+  if (connectionTarget("RFP_DATABASE_URL") === connectionTarget("INTEL_DATABASE_URL")) {
+    throw new Error("RFP_DATABASE_URL and INTEL_DATABASE_URL resolve to the same database target.");
+  }
+
+  const [rfp, intel] = await Promise.all([
+    probeDatabaseRole(rfpPool),
+    probeDatabaseRole(intelPool),
+  ]);
+
+  if (!rfp.hasOpportunities) {
+    throw new Error("RFP_DATABASE_URL does not contain the required public.opportunities table.");
+  }
+
+  const missingIntelTables = [
+    !intel.hasCompetitors ? "competitors" : null,
+    !intel.hasProspects ? "prospects" : null,
+    !intel.hasClients ? "clients" : null,
+    !intel.hasFederalIntel ? "federal_intel_items" : null,
+  ].filter((name): name is string => Boolean(name));
+
+  if (missingIntelTables.length > 0) {
+    throw new Error(
+      `INTEL_DATABASE_URL is missing required Intel tables: ${missingIntelTables.join(", ")}.`,
+    );
+  }
+
+  return {
+    config: getDatabaseConfigSummary(),
+    roles: { rfp, intel },
   };
 }
 

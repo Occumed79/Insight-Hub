@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import databaseStatusRouter from "./database-status";
 import opportunitySummaryRouter from "./opportunity-summary-v2";
 import ingestionDiagnosticsRouter from "./ingestion-diagnostics";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
@@ -24,7 +25,15 @@ import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-port
 
 const router: IRouter = Router();
 
+router.use((_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 router.use(healthRouter);
+router.use(databaseStatusRouter);
 router.use(opportunitySummaryRouter);
 router.use(rfpProviderBoundaryRouter);
 router.use(ingestionDiagnosticsRouter);
