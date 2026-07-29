@@ -45,18 +45,20 @@ export function opportunityVectorText(opp: NormalizedOpportunity): string {
 }
 
 function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(payload).flatMap(([key, value]) => {
-      if (value === undefined || value === null) return [];
-      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return [[key, value]];
-      }
-      if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-        return [[key, value]];
-      }
-      return [[key, JSON.stringify(value).slice(0, 2_000)]];
-    }),
-  );
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      compact[key] = value;
+      continue;
+    }
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      compact[key] = value;
+      continue;
+    }
+    compact[key] = JSON.stringify(value).slice(0, 2_000);
+  }
+  return compact;
 }
 
 export async function indexVectorDocuments(
@@ -94,9 +96,13 @@ export async function indexVectorDocuments(
 
     const points = batch.map((document, index) => ({
       id: stableUuid(document.id),
-      vector: embeddingResult.vectors[index],
+      vector: embeddingResult.vectors[index] ?? [],
       payload: compactPayload(document.payload),
-    }));
+    })).filter((point) => point.vector.length > 0);
+    if (points.length === 0) {
+      stats.errors.push(`Embedding batch ${Math.floor(start / batchSize) + 1} returned no usable vectors`);
+      continue;
+    }
 
     let indexed = false;
     if ((selectedStore === null || selectedStore === "qdrant") && (await qdrantProvider.isConfigured())) {
