@@ -53,6 +53,12 @@ async function connectBrowser(
     }
   }
 
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Dynamic browser discovery is unavailable because Cloudflare Browser Run credentials are not configured. Local Chromium is disabled in production to protect the Render memory limit.",
+    );
+  }
+
   const browser = await playwright.chromium.launch({ headless: true });
   return { browser, backend: "local-playwright" as const };
 }
