@@ -10,6 +10,7 @@ import {
   intelPool,
   rfpPool,
   runWithDbContext,
+  verifyDatabaseRouting,
 } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
@@ -37,6 +38,7 @@ function boundedIntegerEnv(
   return Math.min(maximum, Math.max(minimum, Math.floor(value)));
 }
 
+const DATABASE_VALIDATION_TIMEOUT_MS = 30_000;
 const MIGRATION_TIMEOUT_MS = 120_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 const HTTP_REQUEST_TIMEOUT_MS = boundedIntegerEnv(
@@ -162,6 +164,13 @@ process.on("uncaughtException", (error) => {
 });
 
 async function bootstrap(): Promise<void> {
+  const routing = await withDeadline(
+    "Database routing validation",
+    () => verifyDatabaseRouting(),
+    DATABASE_VALIDATION_TIMEOUT_MS,
+  );
+  logger.info(routing, "Database routing verified");
+
   await withDeadline(
     "Intel database migrations",
     () => runWithDbContext("intel", () => runStartupMigrations()),
