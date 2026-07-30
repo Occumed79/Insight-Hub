@@ -4,6 +4,7 @@ import type {
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -235,33 +236,43 @@ export async function fetchOneProvider(
   }
 
   if (provider === "tango") {
-    const { tangoProvider } = await import("../providers/tango");
-    const result = await tangoProvider.fetch({
-      keywords: options.keywords,
-      dateRange: options.dateRange,
-      limit: 100,
-      signal: options.signal,
-    });
-    return applyProviderGuards(
-      provider,
-      result.records,
-      result.errors ?? [],
-      options.keywords,
+    const [{ tangoProvider }, { samGovProvider }] = await Promise.all([
+      import("../providers/tango"),
+      import("../providers/samGov"),
+    ]);
+    const federal = await runLimitedProviderPool(
+      "opportunity-structured-federal",
+      [
+        {
+          name: "tango",
+          isConfigured: () => tangoProvider.isConfigured(),
+          run: () =>
+            tangoProvider.fetch({
+              keywords: options.keywords,
+              dateRange: options.dateRange,
+              limit: 100,
+              signal: options.signal,
+            }),
+        },
+        {
+          name: "samGov",
+          isConfigured: () => samGovProvider.isConfigured(),
+          run: () =>
+            samGovProvider.fetch({
+              keywords: options.keywords,
+              dateRange: options.dateRange,
+              limit: 100,
+              signal: options.signal,
+            }),
+        },
+      ],
+      (result) => result.records.length > 0,
+      { rotate: false },
     );
-  }
-
-  if (provider === "samGov") {
-    const { samGovProvider } = await import("../providers/samGov");
-    const result = await samGovProvider.fetch({
-      keywords: options.keywords,
-      dateRange: options.dateRange,
-      limit: 100,
-      signal: options.signal,
-    });
     return applyProviderGuards(
       provider,
-      result.records,
-      result.errors ?? [],
+      federal.value?.records ?? [],
+      [...federal.errors, ...(federal.value?.errors ?? [])],
       options.keywords,
     );
   }
