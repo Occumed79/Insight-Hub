@@ -4,12 +4,13 @@ import type {
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
-import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
   ["tango_api", "tango"],
   ["tangoApi", "tango"],
+  ["govcon_api", "govcon"],
+  ["govconApi", "govcon"],
   ["ai_discovery", "aiDiscovery"],
   ["webIntelligence", "aiDiscovery"],
   ["publicPortalProviders", "aiDiscovery"],
@@ -25,7 +26,17 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["internationalOpportunities", "aiDiscovery"],
 ]);
 
-export const MANUAL_RFP_PROVIDERS = new Set(["tango", "samGov", "aiDiscovery"]);
+export const FEDERAL_MANUAL_PROVIDERS = [
+  "govcon",
+  "samGov",
+  "tango",
+] as const;
+const FEDERAL_MANUAL_PROVIDER_SET = new Set<string>(FEDERAL_MANUAL_PROVIDERS);
+
+export const MANUAL_RFP_PROVIDERS = new Set([
+  ...FEDERAL_MANUAL_PROVIDERS,
+  "aiDiscovery",
+]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
 
@@ -56,7 +67,16 @@ export function resolveManualProviders(providers?: string[]): string[] {
   if (unsupported.length > 0) {
     throw new Error(`Unsupported RFP provider(s): ${unsupported.join(", ")}`);
   }
-  return resolved;
+
+  const includesFederalSource = resolved.some((provider) =>
+    FEDERAL_MANUAL_PROVIDER_SET.has(provider),
+  );
+  if (!includesFederalSource) return resolved;
+
+  return [
+    ...FEDERAL_MANUAL_PROVIDERS,
+    ...resolved.filter((provider) => !FEDERAL_MANUAL_PROVIDER_SET.has(provider)),
+  ];
 }
 
 function applyProviderGuards(
@@ -235,44 +255,50 @@ export async function fetchOneProvider(
     );
   }
 
-  if (provider === "tango") {
-    const [{ tangoProvider }, { samGovProvider }] = await Promise.all([
-      import("../providers/tango"),
-      import("../providers/samGov"),
-    ]);
-    const federal = await runLimitedProviderPool(
-      "opportunity-structured-federal",
-      [
-        {
-          name: "tango",
-          isConfigured: () => tangoProvider.isConfigured(),
-          run: () =>
-            tangoProvider.fetch({
-              keywords: options.keywords,
-              dateRange: options.dateRange,
-              limit: 100,
-              signal: options.signal,
-            }),
-        },
-        {
-          name: "samGov",
-          isConfigured: () => samGovProvider.isConfigured(),
-          run: () =>
-            samGovProvider.fetch({
-              keywords: options.keywords,
-              dateRange: options.dateRange,
-              limit: 100,
-              signal: options.signal,
-            }),
-        },
-      ],
-      (result) => result.records.length > 0,
-      { rotate: false },
-    );
+  if (provider === "govcon") {
+    const { govConOpportunityProvider } = await import("../providers/govcon");
+    const result = await govConOpportunityProvider.fetch({
+      keywords: options.keywords,
+      dateRange: options.dateRange,
+      limit: 100,
+      signal: options.signal,
+    });
     return applyProviderGuards(
       provider,
-      federal.value?.records ?? [],
-      [...federal.errors, ...(federal.value?.errors ?? [])],
+      result.records,
+      result.errors ?? [],
+      options.keywords,
+    );
+  }
+
+  if (provider === "samGov") {
+    const { samGovProvider } = await import("../providers/samGov");
+    const result = await samGovProvider.fetch({
+      keywords: options.keywords,
+      dateRange: options.dateRange,
+      limit: 100,
+      signal: options.signal,
+    });
+    return applyProviderGuards(
+      provider,
+      result.records,
+      result.errors ?? [],
+      options.keywords,
+    );
+  }
+
+  if (provider === "tango") {
+    const { tangoProvider } = await import("../providers/tango");
+    const result = await tangoProvider.fetch({
+      keywords: options.keywords,
+      dateRange: options.dateRange,
+      limit: 100,
+      signal: options.signal,
+    });
+    return applyProviderGuards(
+      provider,
+      result.records,
+      result.errors ?? [],
       options.keywords,
     );
   }
