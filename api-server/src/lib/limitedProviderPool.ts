@@ -17,11 +17,23 @@ interface CooldownEntry {
   reason: string;
 }
 
+interface PoolWindow {
+  startedAt: number;
+  lastUsedAt: number;
+}
+
+interface PoolRuntimePolicy {
+  budgetMs?: number;
+  attemptTimeoutMs?: number;
+}
+
 const cooldowns = new Map<string, CooldownEntry>();
 const cursors = new Map<string, number>();
+const poolWindows = new Map<string, PoolWindow>();
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
+const POOL_WINDOW_IDLE_RESET_MS = 30_000;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -62,11 +74,63 @@ function rotated<T>(items: T[], start: number): T[] {
   return [...items.slice(offset), ...items.slice(0, offset)];
 }
 
+function runtimePolicy(poolId: string): PoolRuntimePolicy {
+  if (poolId === "opportunity-web-discovery") {
+    return { budgetMs: 30_000, attemptTimeoutMs: 7_000 };
+  }
+  if (poolId === "opportunity-page-enrichment") {
+    return { budgetMs: 15_000, attemptTimeoutMs: 6_000 };
+  }
+  if (poolId === "opportunity-structured-federal") {
+    return { budgetMs: 70_000, attemptTimeoutMs: 35_000 };
+  }
+  return {};
+}
+
+function currentPoolWindow(poolId: string, now: number): PoolWindow {
+  const existing = poolWindows.get(poolId);
+  if (!existing || now - existing.lastUsedAt > POOL_WINDOW_IDLE_RESET_MS) {
+    const created = { startedAt: now, lastUsedAt: now };
+    poolWindows.set(poolId, created);
+    return created;
+  }
+  existing.lastUsedAt = now;
+  return existing;
+}
+
+async function withAttemptTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+  label: string,
+): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    timer.unref?.();
+  });
+
+  promise.catch(() => undefined);
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Runs limited-capacity providers sequentially. Each successful call advances
  * the pool cursor so the next request begins with a different provider. Quota,
  * rate-limit, authentication, timeout, and upstream failures put only the
  * failing provider into an in-memory cooldown.
+ *
+ * Opportunity discovery and enrichment pools also have bounded runtime windows
+ * so a manual Fetch Intelligence run returns partial useful results instead of
+ * consuming the ingestion controller's full 90-second provider deadline.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -76,6 +140,10 @@ export async function runLimitedProviderPool<T>(
 ): Promise<LimitedProviderPoolResult<T>> {
   const configured: LimitedProviderAttempt<T>[] = [];
   const errors: string[] = [];
+  const policy = runtimePolicy(poolId);
+  const window = policy.budgetMs
+    ? currentPoolWindow(poolId, Date.now())
+    : undefined;
 
   for (const attempt of attempts) {
     try {
@@ -103,9 +171,28 @@ export async function runLimitedProviderPool<T>(
     }
     if (cooldown) cooldowns.delete(key);
 
+    let effectiveTimeoutMs = policy.attemptTimeoutMs;
+    if (window && policy.budgetMs) {
+      window.lastUsedAt = Date.now();
+      const remaining = policy.budgetMs - (Date.now() - window.startedAt);
+      if (remaining <= 0) {
+        errors.push(
+          `${poolId} reached its ${policy.budgetMs}ms runtime budget; returning partial results`,
+        );
+        break;
+      }
+      effectiveTimeoutMs = effectiveTimeoutMs
+        ? Math.min(effectiveTimeoutMs, remaining)
+        : remaining;
+    }
+
     attempted.push(attempt.name);
     try {
-      const value = await attempt.run();
+      const value = await withAttemptTimeout(
+        attempt.run(),
+        effectiveTimeoutMs,
+        `${attempt.name} provider`,
+      );
       if (!isUseful(value)) {
         errors.push(`${attempt.name} returned no usable result`);
         continue;
@@ -151,6 +238,7 @@ export async function runLimitedProviderPool<T>(
 export function clearLimitedProviderPoolState(): void {
   cooldowns.clear();
   cursors.clear();
+  poolWindows.clear();
 }
 
 export function limitedProviderPoolSnapshot(): Array<{
