@@ -9,7 +9,10 @@ export interface LimitedProviderPoolResult<T> {
   provider: string | null;
   attempted: string[];
   skippedCooldown: string[];
+  /** Terminal errors only: populated when the pool produced no usable value. */
   errors: string[];
+  /** Diagnostics from providers that failed before a later fallback succeeded. */
+  recoveredErrors: string[];
 }
 
 interface CooldownEntry {
@@ -125,15 +128,29 @@ async function withAttemptTimeout<T>(
   }
 }
 
+function logRecoveredErrors(
+  poolId: string,
+  provider: string,
+  attempted: string[],
+  recoveredErrors: string[],
+): void {
+  if (recoveredErrors.length === 0) return;
+  console.warn(
+    JSON.stringify({
+      event: "limited_provider_pool_recovered",
+      poolId,
+      successfulProvider: provider,
+      attempted,
+      recoveredErrors,
+    }),
+  );
+}
+
 /**
- * Runs limited-capacity providers sequentially. Each successful call advances
- * the pool cursor so the next request begins with a different provider. Quota,
- * rate-limit, authentication, timeout, and upstream failures put only the
- * failing provider into an in-memory cooldown.
- *
- * Opportunity discovery, enrichment, and AI extraction pools also have bounded
- * runtime windows so a manual Fetch Intelligence run returns partial useful
- * results instead of consuming the ingestion controller's full deadline.
+ * Runs limited-capacity providers sequentially. Each success advances the pool
+ * cursor so the next request begins with a different provider. Provider errors
+ * enter cooldown, but a recovered fallback failure is diagnostic—not a failed
+ * Fetch Intelligence run. Only an exhausted pool returns terminal errors.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -146,7 +163,7 @@ export async function runLimitedProviderPool<T>(
   } = {},
 ): Promise<LimitedProviderPoolResult<T>> {
   const configured: LimitedProviderAttempt<T>[] = [];
-  const errors: string[] = [];
+  const encounteredErrors: string[] = [];
   const defaults = runtimePolicy(poolId);
   const policy: PoolRuntimePolicy = {
     budgetMs: options.budgetMs ?? defaults.budgetMs,
@@ -160,7 +177,7 @@ export async function runLimitedProviderPool<T>(
     try {
       if (await attempt.isConfigured()) configured.push(attempt);
     } catch (error) {
-      errors.push(
+      encounteredErrors.push(
         `${attempt.name} configuration check failed: ${errorText(error)}`,
       );
     }
@@ -187,7 +204,7 @@ export async function runLimitedProviderPool<T>(
       window.lastUsedAt = Date.now();
       const remaining = policy.budgetMs - (Date.now() - window.startedAt);
       if (remaining <= 0) {
-        errors.push(
+        encounteredErrors.push(
           `${poolId} reached its ${policy.budgetMs}ms runtime budget; returning partial results`,
         );
         break;
@@ -205,9 +222,10 @@ export async function runLimitedProviderPool<T>(
         `${attempt.name} provider`,
       );
       if (!isUseful(value)) {
-        errors.push(`${attempt.name} returned no usable result`);
+        encounteredErrors.push(`${attempt.name} returned no usable result`);
         continue;
       }
+
       const configuredIndex = configured.findIndex(
         (candidate) => candidate.name === attempt.name,
       );
@@ -217,12 +235,20 @@ export async function runLimitedProviderPool<T>(
           configured.length > 0 ? (configuredIndex + 1) % configured.length : 0,
         );
       }
+
+      logRecoveredErrors(
+        poolId,
+        attempt.name,
+        attempted,
+        encounteredErrors,
+      );
       return {
         value,
         provider: attempt.name,
         attempted,
         skippedCooldown,
-        errors,
+        errors: [],
+        recoveredErrors: [...encounteredErrors],
       };
     } catch (error) {
       const message = errorText(error);
@@ -230,7 +256,7 @@ export async function runLimitedProviderPool<T>(
         until: Date.now() + cooldownMs(error),
         reason: message,
       });
-      errors.push(`${attempt.name}: ${message}`);
+      encounteredErrors.push(`${attempt.name}: ${message}`);
     }
   }
 
@@ -242,7 +268,8 @@ export async function runLimitedProviderPool<T>(
     provider: null,
     attempted,
     skippedCooldown,
-    errors,
+    errors: encounteredErrors,
+    recoveredErrors: [],
   };
 }
 
