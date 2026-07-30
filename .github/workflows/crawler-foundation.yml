@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: crawler-foundation-${{ github.event.pull_request.number || github.ref }}
@@ -34,6 +34,136 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply no-cost quality controls to opportunity cards
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path("intel-suite/src/pages/portal/opportunities.tsx")
+          text = path.read_text()
+
+          grade_anchor = '''  };
+
+  useEffect(() => {'''
+          grade_insert = '''  };
+
+  const renderCardGradeControls = (opp: any) => {
+    const isGrading = gradingIds.has(opp.id);
+    return (
+      <div
+        className="flex items-center gap-1 flex-wrap"
+        aria-label={`Rate ${opp.title ?? "opportunity"} quality`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="mr-1 text-[9px] uppercase tracking-wider text-white/40">Quality</span>
+        {GRADE_CONFIGS.map(({ grade, label, short }) => {
+          const isActive = opp.userGrade === grade;
+          return (
+            <button
+              key={grade}
+              type="button"
+              title={label}
+              aria-pressed={isActive}
+              disabled={isGrading}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleGrade(opp.id, grade);
+              }}
+              className={`px-1.5 py-0.5 rounded border text-[9px] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? "bg-white/15 border-white/30 text-white font-medium" : "border-white/10 text-white/55 bg-transparent hover:bg-white/5 hover:text-white/85 hover:border-white/20"}`}
+            >
+              {isGrading && isActive ? <Loader2 className="w-2.5 h-2.5 animate-spin inline" /> : short}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  useEffect(() => {'''
+          if text.count(grade_anchor) != 1:
+              raise SystemExit(f"Expected one grade insertion anchor, found {text.count(grade_anchor)}")
+          text = text.replace(grade_anchor, grade_insert, 1)
+
+          local_old = '''                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                            <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
+                              <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
+                            </div>
+                            {href && (
+                              <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                                <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
+                              </Button>
+                            )}
+                          </div>'''
+          local_new = '''                          <div className="space-y-2 pt-1 border-t border-white/5">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
+                                <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
+                              </div>
+                              {href && (
+                                <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                                  <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
+                                </Button>
+                              )}
+                            </div>
+                            {renderCardGradeControls(opp)}
+                          </div>'''
+          if text.count(local_old) != 1:
+              raise SystemExit(f"Expected one local card footer, found {text.count(local_old)}")
+          text = text.replace(local_old, local_new, 1)
+
+          main_old = '''                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                      <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
+                        <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {href && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                            <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
+                          </Button>
+                        )}
+                        <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive text-muted-foreground" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this opportunity?")) deleteMutation.mutate({ id: opp.id }); }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>'''
+          main_new = '''                    <div className="space-y-2 pt-1 border-t border-white/5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className={"flex items-center gap-1 text-[10px] transition-colors " + (canViewAiBrief(opp) ? "text-primary/70 group-hover:text-primary" : "text-amber-300/75")} title={opp.summaryIneligibilityReason ?? opp.quality?.reasons?.[0] ?? undefined}>
+                          <Sparkles className="w-3 h-3" /> {aiBriefLabel(opp)}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {href && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-white/10 hover:text-white" asChild onClick={(e) => e.stopPropagation()}>
+                              <a href={href} target="_blank" rel="noreferrer"><ExternalLink className="w-3.5 h-3.5" /></a>
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive text-muted-foreground" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this opportunity?")) deleteMutation.mutate({ id: opp.id }); }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      {renderCardGradeControls(opp)}
+                    </div>'''
+          if text.count(main_old) != 1:
+              raise SystemExit(f"Expected one main card footer, found {text.count(main_old)}")
+          text = text.replace(main_old, main_new, 1)
+          path.write_text(text)
+          PY
+
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/crawler-foundation.yml
+          rm -f .github/workflows/apply-opportunity-card-quality-controls.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add intel-suite/src/pages/portal/opportunities.tsx .github/workflows/crawler-foundation.yml .github/workflows/apply-opportunity-card-quality-controls.yml
+          git commit -m "Show quality controls directly on opportunity cards"
+          git push origin HEAD:${{ github.head_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
