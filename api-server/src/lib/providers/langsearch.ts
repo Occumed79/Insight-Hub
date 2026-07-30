@@ -72,7 +72,6 @@ export class LangsearchProvider implements DataSourceProvider {
   readonly name = "langsearch" as const;
 
   private readonly cooldownUntil = new Map<LangsearchKeySlot, number>();
-  private keyCursor = 0;
 
   private async getApiKeys(): Promise<ResolvedLangsearchKey[]> {
     const resolved = await Promise.all(
@@ -123,17 +122,23 @@ export class LangsearchProvider implements DataSourceProvider {
     }
 
     const now = Date.now();
-    const available = keys.filter(
+    const candidates = keys.filter(
       ({ slot }) => (this.cooldownUntil.get(slot) ?? 0) <= now,
     );
-    const eligible = available.length > 0 ? available : keys;
-    const offset = eligible.length > 0 ? this.keyCursor % eligible.length : 0;
-    const candidates = [
-      ...eligible.slice(offset),
-      ...eligible.slice(0, offset),
-    ];
+    if (candidates.length === 0) {
+      return {
+        pages: [],
+        errors: [
+          "All configured LangSearch keys are cooling down after quota or upstream failures.",
+        ],
+      };
+    }
+
     const errors: string[] = [];
 
+    // Keys remain in primary -> secondary -> tertiary order. A successful key is
+    // reused until it reaches quota or fails; the next key is a true fallback,
+    // not a round-robin target that burns all three allowances together.
     for (const { value: apiKey, slot } of candidates) {
       const requestSignal = composeAbortSignal(
         LANGSEARCH_REQUEST_TIMEOUT_MS,
@@ -192,9 +197,6 @@ export class LangsearchProvider implements DataSourceProvider {
         }
 
         const pages = data.data?.webPages?.value ?? data.webPages?.value ?? [];
-        const successfulIndex = keys.findIndex((key) => key.slot === slot);
-        this.keyCursor =
-          keys.length > 0 ? (successfulIndex + 1) % keys.length : 0;
         if (errors.length > 0) {
           console.warn(
             JSON.stringify({
