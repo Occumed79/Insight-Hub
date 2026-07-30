@@ -1,11 +1,7 @@
 /**
  * Tango Provider (Procurement Intelligence)
  *
- * Uses the Tango by MakeGov REST API:
- *   Base URL: https://tango.makegov.com/api/  (override via TANGO_BASE_URL)
- *   Auth:     X-API-KEY header
- *   Endpoint: GET /opportunities/
- *   Docs:     https://docs.makegov.com/api-reference/opportunities/
+ * Uses Tango by MakeGov's opportunity API with bounded pagination.
  */
 
 import type {
@@ -84,7 +80,7 @@ function retryDelayMs(response: Response, attempt: number): number {
   if (retryAfter) {
     const seconds = Number(retryAfter);
     if (Number.isFinite(seconds)) {
-      return Math.min(10_000, Math.max(250, seconds * 1000));
+      return Math.min(10_000, Math.max(250, seconds * 1_000));
     }
     const retryAt = new Date(retryAfter).getTime();
     if (Number.isFinite(retryAt)) {
@@ -125,19 +121,17 @@ export class TangoProvider implements DataSourceProvider {
   ): NormalizedOpportunity {
     const placeParts: string[] = [];
     const place = opportunity.place_of_performance;
-    if (place) {
-      if (place.city) placeParts.push(place.city);
-      if (place.state) placeParts.push(place.state);
-      if (
-        place.country &&
-        place.country !== "United States" &&
-        place.country !== "USA"
-      ) {
-        placeParts.push(place.country);
-      }
+    if (place?.city) placeParts.push(place.city);
+    if (place?.state) placeParts.push(place.state);
+    if (
+      place?.country &&
+      place.country !== "United States" &&
+      place.country !== "USA"
+    ) {
+      placeParts.push(place.country);
     }
-    const postedDate = parsedDate(opportunity.first_notice_date);
 
+    const postedDate = parsedDate(opportunity.first_notice_date);
     return {
       externalId: opportunity.opportunity_id,
       title: opportunity.title || "Untitled Opportunity",
@@ -197,7 +191,7 @@ export class TangoProvider implements DataSourceProvider {
         const response = await fetch(url, {
           headers: {
             "X-API-KEY": apiKey,
-            accept: "application/json",
+            Accept: "application/json",
           },
           signal: controller.signal,
         });
@@ -219,9 +213,8 @@ export class TangoProvider implements DataSourceProvider {
           await wait(retryDelayMs(response, attempt));
           continue;
         }
-
         throw new Error(
-          `Tango API error ${response.status}: ${responseText.slice(0, 200)}`,
+          `Tango API error ${response.status}: ${responseText.slice(0, 300)}`,
         );
       } catch (error) {
         const timedOut = controller.signal.aborted;
@@ -306,7 +299,7 @@ export class TangoProvider implements DataSourceProvider {
     );
     endpoint.searchParams.set(
       "shape",
-      "opportunity_id,title,active,first_notice_date,last_notice_date,response_deadline,naics_code,psc_code,office(*),place_of_performance(*),sam_url,set_aside,solicitation_number,description,meta(notice_type(code,type))",
+      "opportunity_id,title,active,first_notice_date,last_notice_date,response_deadline,naics_code,psc_code,office(*),place_of_performance(*),sam_url,set_aside,solicitation_number,description,meta(*)",
     );
     endpoint.searchParams.set("limit", String(pageSize));
     endpoint.searchParams.set("page", "1");
@@ -364,11 +357,10 @@ export class TangoProvider implements DataSourceProvider {
         if (records.length >= recordLimit) break;
       }
 
-      if (!page.next || records.length >= recordLimit) {
-        currentUrl = null;
-      } else {
-        currentUrl = new URL(page.next, currentUrl);
-      }
+      currentUrl =
+        page.next && records.length < recordLimit
+          ? new URL(page.next, currentUrl)
+          : null;
     }
 
     if (currentUrl && pageNumber >= maxPages) {
