@@ -81,6 +81,9 @@ function runtimePolicy(poolId: string): PoolRuntimePolicy {
   if (poolId === "opportunity-page-enrichment") {
     return { budgetMs: 15_000, attemptTimeoutMs: 6_000 };
   }
+  if (poolId === "opportunity-ai-extraction") {
+    return { budgetMs: 25_000, attemptTimeoutMs: 8_000 };
+  }
   if (poolId === "opportunity-structured-federal") {
     return { budgetMs: 70_000, attemptTimeoutMs: 35_000 };
   }
@@ -128,9 +131,9 @@ async function withAttemptTimeout<T>(
  * rate-limit, authentication, timeout, and upstream failures put only the
  * failing provider into an in-memory cooldown.
  *
- * Opportunity discovery and enrichment pools also have bounded runtime windows
- * so a manual Fetch Intelligence run returns partial useful results instead of
- * consuming the ingestion controller's full 90-second provider deadline.
+ * Opportunity discovery, enrichment, and AI extraction pools also have bounded
+ * runtime windows so a manual Fetch Intelligence run returns partial useful
+ * results instead of consuming the ingestion controller's full deadline.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
