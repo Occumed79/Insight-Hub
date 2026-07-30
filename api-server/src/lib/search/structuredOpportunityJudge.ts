@@ -66,9 +66,9 @@ export const STRUCTURED_JUDGE_PROVIDER_ORDER = JUDGE_PROVIDERS.map(
 const PANEL_SIZE = 3;
 const MIN_PANEL_SIZE = 2;
 const CHUNK_SIZE = 10;
-const MIN_APPROVAL_SCORE = 72;
-const MIN_INDIVIDUAL_YES_SCORE = 62;
-const DEFAULT_CANDIDATE_LIMIT = 30;
+const MIN_APPROVAL_SCORE = 76;
+const MIN_INDIVIDUAL_YES_SCORE = 68;
+const DEFAULT_CANDIDATE_LIMIT = 10;
 const PROVIDER_TIMEOUT_MS = 28_000;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
@@ -167,7 +167,7 @@ function configuredCandidateLimit(): number {
     10,
   );
   if (!Number.isFinite(parsed)) return DEFAULT_CANDIDATE_LIMIT;
-  return Math.max(10, Math.min(60, parsed));
+  return Math.max(5, Math.min(30, parsed));
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -219,7 +219,7 @@ Today: ${new Date().toISOString().slice(0, 10)}.
 
 A YES verdict requires all of the following:
 1. The record is a real procurement notice that is currently open for responses.
-2. The primary purchased scope—not incidental boilerplate—requires occupational health, employee medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluations or fit testing, vaccinations, deployment medical screening, fitness-for-duty evaluations, or management of a provider network delivering those services.
+2. The PRIMARY PURCHASED SCOPE—not incidental boilerplate—requires occupational health, employee medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluations or fit testing, vaccinations, deployment medical screening, fitness-for-duty evaluations, or management of a provider network delivering those services.
 3. Occu-Med could realistically bid as the prime or a meaningful subcontractor.
 
 Reject records where medical, health, workforce, safety, testing, or regulatory words appear only in clauses, background text, agency descriptions, or generic boilerplate. Reject construction, corrosion repair, painting, snow removal, parking garages, chillers, toilets, surveillance cameras, IT, laboratory equipment purchases, EEG systems, DNA extraction systems, weapons, facilities maintenance, and unrelated clinical treatment even when the notice contains incidental health or safety language.
@@ -333,8 +333,9 @@ export function aggregateJudgePanelVotes(
 }
 
 function existingTags(record: NormalizedOpportunity): string[] {
-  return Array.isArray(record.rawData?.tags)
-    ? record.rawData.tags.filter(
+  const tags = record.rawData?.tags;
+  return Array.isArray(tags)
+    ? tags.filter(
         (tag): tag is string => typeof tag === "string" && tag.trim().length > 0,
       )
     : [];
@@ -358,6 +359,48 @@ function approvedRecord(
       ),
     },
   };
+}
+
+async function collectInitialPanelVotes(
+  providers: JudgeProvider[],
+  providerName: string,
+  group: NormalizedOpportunity[],
+  signal: AbortSignal | undefined,
+  errors: string[],
+  usedJudges: Set<string>,
+  groupJudgeNames: Set<string>,
+): Promise<Array<Map<number, StructuredJudgeVote>>> {
+  const votes: Array<Map<number, StructuredJudgeVote>> = [];
+  const firstWave = providers.slice(0, MIN_PANEL_SIZE);
+  const firstResults = await Promise.allSettled(
+    firstWave.map((provider) => runJudge(provider, providerName, group, signal)),
+  );
+
+  firstResults.forEach((result, index) => {
+    const provider = firstWave[index];
+    if (!provider) return;
+    if (result.status === "fulfilled") {
+      votes.push(result.value);
+      usedJudges.add(provider.name);
+      groupJudgeNames.add(provider.name);
+      return;
+    }
+    errors.push(`${provider.name} judge: ${conciseError(result.reason)}`);
+  });
+
+  for (const provider of providers.slice(MIN_PANEL_SIZE)) {
+    if (votes.length >= MIN_PANEL_SIZE) break;
+    try {
+      const result = await runJudge(provider, providerName, group, signal);
+      votes.push(result);
+      usedJudges.add(provider.name);
+      groupJudgeNames.add(provider.name);
+    } catch (error) {
+      errors.push(`${provider.name} judge: ${conciseError(error)}`);
+    }
+  }
+
+  return votes;
 }
 
 export async function judgeStructuredOpportunities(
@@ -406,44 +449,37 @@ export async function judgeStructuredOpportunities(
     if (options.signal?.aborted) break;
 
     const cached = group.map((record) => getCached(record));
-    const pendingIndexes = cached
-      .map((decision, index) => (decision ? -1 : index))
-      .filter((index) => index >= 0);
-
+    const requiresPanel = cached.some((decision) => !decision);
     const providerVotes: Array<Map<number, StructuredJudgeVote>> = [];
-    const available = [...configured];
+    const groupJudgeNames = new Set<string>();
 
-    if (pendingIndexes.length > 0) {
-      for (const provider of available) {
-        if (providerVotes.length >= MIN_PANEL_SIZE) break;
-        try {
-          const votes = await runJudge(
-            provider,
-            options.providerName,
-            group,
-            options.signal,
-          );
-          providerVotes.push(votes);
-          usedJudges.add(provider.name);
-        } catch (error) {
-          errors.push(`${provider.name} judge: ${conciseError(error)}`);
-        }
-      }
+    if (requiresPanel) {
+      providerVotes.push(
+        ...(await collectInitialPanelVotes(
+          configured,
+          options.providerName,
+          group,
+          options.signal,
+          errors,
+          usedJudges,
+          groupJudgeNames,
+        )),
+      );
 
       const disagreement = group.some((_record, index) => {
         const votes = providerVotes
           .map((map) => map.get(index))
           .filter((vote): vote is StructuredJudgeVote => Boolean(vote));
         return (
-          votes.length >= 2 &&
+          votes.length >= MIN_PANEL_SIZE &&
           votes.some((vote) => vote.isOpportunity) &&
           votes.some((vote) => !vote.isOpportunity)
         );
       });
 
       if (disagreement && providerVotes.length >= MIN_PANEL_SIZE) {
-        for (const provider of available) {
-          if (usedJudges.has(provider.name)) continue;
+        for (const provider of configured) {
+          if (groupJudgeNames.has(provider.name)) continue;
           try {
             const votes = await runJudge(
               provider,
@@ -453,9 +489,12 @@ export async function judgeStructuredOpportunities(
             );
             providerVotes.push(votes);
             usedJudges.add(provider.name);
+            groupJudgeNames.add(provider.name);
             break;
           } catch (error) {
-            errors.push(`${provider.name} tie-break judge: ${conciseError(error)}`);
+            errors.push(
+              `${provider.name} tie-break judge: ${conciseError(error)}`,
+            );
           }
         }
       }
@@ -469,7 +508,7 @@ export async function judgeStructuredOpportunities(
           .filter((vote): vote is StructuredJudgeVote => Boolean(vote))
           .slice(0, PANEL_SIZE);
         decision = aggregateJudgePanelVotes(votes);
-        setCached(record, decision);
+        if (decision.panelSize >= MIN_PANEL_SIZE) setCached(record, decision);
       }
 
       if (decision.panelSize < MIN_PANEL_SIZE) {
