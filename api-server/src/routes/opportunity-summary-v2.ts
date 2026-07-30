@@ -169,35 +169,45 @@ router.post("/opportunities/:id/summary", async (req, res) => {
     const reasonCode = !hasAuthoritativeContent && !hasStructuredDirectEvidence
       ? (summaryIneligibilityReason(quality, false) ?? "authoritative_content_unavailable")
       : summaryIneligibilityReason(quality, true);
+    const base = {
+      ...baseBrief(opp, extracted),
+      classification: quality.classification,
+      solicitationType: opp.type ?? null,
+      evidenceSource: quality.sourceType,
+      sourceAuthority: quality.sourceAuthority,
+      eligible: !reasonCode,
+    };
     if (reasonCode) {
-      return res.status(422).json({
+      return res.json({
+        ...base,
         eligible: false,
+        preliminary: true,
         classification: quality.classification,
         reasonCode,
-        reason: plainSummaryIneligibilityReason(reasonCode),
+        verificationReason: plainSummaryIneligibilityReason(reasonCode),
         quality,
       });
     }
     const evidenceFingerprint = summaryEvidenceFingerprint(quality, cleanText(extracted, 6000));
     const cached = getCachedSummary(opp.id);
     if (cached?.evidenceFingerprint === evidenceFingerprint) return res.json({ ...cached, cached: true });
-    const base = { ...baseBrief(opp, extracted), classification: quality.classification, solicitationType: opp.type ?? null, evidenceSource: quality.sourceType, sourceAuthority: quality.sourceAuthority, eligible: true, evidenceFingerprint };
-    const prompt = promptFor({ ...opp, quality }, base, extracted);
+    const verifiedBase = { ...base, eligible: true, evidenceFingerprint };
+    const prompt = promptFor({ ...opp, quality }, verifiedBase, extracted);
 
     try {
-      if (await groqProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "groq"), base, "groq-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
+      if (await groqProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "groq"), verifiedBase, "groq-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "groq summary failed");
     }
 
     try {
-      if (await openrouterProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "openrouter"), base, "openrouter-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
+      if (await openrouterProvider.isConfigured()) { const merged = mergeSummaryWithVerifiedFacts(await complete(prompt, "openrouter"), verifiedBase, "openrouter-v2"); cacheSummary(opp.id, merged); return res.json(merged); }
     } catch (err) {
       req.log.warn(err, "openrouter summary failed");
     }
 
-    cacheSummary(opp.id, base);
-    return res.json(base);
+    cacheSummary(opp.id, verifiedBase);
+    return res.json(verifiedBase);
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to generate summary" });

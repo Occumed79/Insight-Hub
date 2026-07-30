@@ -7,6 +7,8 @@ import { filterExpiredOpportunities } from "./opportunityExpiration";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
+  ["tango_api", "tango"],
+  ["tangoApi", "tango"],
   ["ai_discovery", "aiDiscovery"],
   ["webIntelligence", "aiDiscovery"],
   ["publicPortalProviders", "aiDiscovery"],
@@ -23,6 +25,7 @@ export const PROVIDER_ALIASES = new Map<string, string>([
 ]);
 
 export const MANUAL_RFP_PROVIDERS = new Set([
+  "tango",
   "samGov",
   "aiDiscovery",
 ]);
@@ -45,7 +48,7 @@ export interface ProviderRunnerOptions {
 export function resolveManualProviders(providers?: string[]): string[] {
   const resolved = Array.from(
     new Set(
-      (providers?.length ? providers : ["samGov", "aiDiscovery"]).map(
+      (providers?.length ? providers : ["tango", "aiDiscovery"]).map(
         (provider) => PROVIDER_ALIASES.get(provider) ?? provider,
       ),
     ),
@@ -100,16 +103,18 @@ function applyProviderGuards(
 }
 
 async function loadDiscoveryRuntime() {
-  const [serper, exa, langsearch, intelligence] = await Promise.all([
+  const [serper, exa, langsearch, firecrawl, intelligence] = await Promise.all([
     import("../providers/serper"),
     import("../providers/exa"),
     import("../providers/langsearch"),
+    import("../providers/firecrawl"),
     import("../search/webIntelligence"),
   ]);
   return {
     serperProvider: serper.serperProvider,
     exaProvider: exa.exaProvider,
     langsearchProvider: langsearch.langsearchProvider,
+    firecrawlProvider: firecrawl.firecrawlProvider,
     webIntelligenceFetch: intelligence.webIntelligenceFetch,
   };
 }
@@ -118,10 +123,11 @@ async function fetchConfiguredAiDiscovery(
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   const runtime = await loadDiscoveryRuntime();
-  const [useSerper, useExa, useLangsearch] = await Promise.all([
+  const [useSerper, useExa, useLangsearch, useFirecrawl] = await Promise.all([
     runtime.serperProvider.isConfigured().catch(() => false),
     runtime.exaProvider.isConfigured().catch(() => false),
     runtime.langsearchProvider.isConfigured().catch(() => false),
+    runtime.firecrawlProvider.isConfigured().catch(() => false),
   ]);
   if (!useSerper && !useExa && !useLangsearch) {
     return {
@@ -137,6 +143,7 @@ async function fetchConfiguredAiDiscovery(
     useSerper,
     useExa,
     useLangsearch,
+    useFirecrawl,
     signal: options.signal,
   });
   for (const error of result.errors) {

@@ -39,6 +39,7 @@ export interface OpportunityEvidenceProfile {
 export const ADAPTER_EVIDENCE_CLASS: Record<string, OpportunityEvidenceType> = {
   samGov: "direct-structured",
   sam_gov: "direct-structured",
+  tango: "direct-structured",
   texasEsbd: "direct-structured",
   nyScr: "direct-structured",
   eunaBonfire: "direct-structured",

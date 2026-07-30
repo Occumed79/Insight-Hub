@@ -9,9 +9,9 @@ describe("Opportunities rendered quality views", () => {
     let selected: OpportunityQualityViewMode = "actionable";
     const element = QualityViewTabs({ value: selected, onChange: (value) => { selected = value; } });
     const html = renderToStaticMarkup(element);
-    assert.match(html, /Open &amp; Verified/);
-    assert.match(html, /Needs Verification/);
-    assert.match(html, /Closed\/Archived/);
+    assert.match(html, /Bid-ready &amp; Verified/);
+    assert.match(html, /Early Leads \/ Verify/);
+    assert.match(html, /Closed \/ Non-biddable/);
     const buttons = React.Children.toArray((element.props as any).children) as any[];
     buttons[1].props.onClick();
     assert.equal(selected, "needs-verification");
@@ -23,14 +23,18 @@ describe("Opportunities rendered quality views", () => {
     assert.equal(qualityViewStatusFilter("all", "archived"), "archived");
   });
 
-  it("blocks discovery briefs but allows authoritative source verification", () => {
+  it("opens full briefs for verified evidence and preliminary briefs for discoveries", () => {
     assert.deepEqual(
       opportunityBriefAction({ quality: { classification: "discovery-only", sourceType: "search-discovery", summaryEligible: false } }),
-      { enabled: false, label: "Verify before AI brief" },
+      { enabled: true, label: "Open preliminary brief" },
     );
     assert.deepEqual(
       opportunityBriefAction({ quality: { classification: "verified-open", sourceType: "verified-solicitation-page", summaryEligible: false } }),
-      { enabled: true, label: "Verify source & build brief" },
+      { enabled: true, label: "Open preliminary brief" },
+    );
+    assert.deepEqual(
+      opportunityBriefAction({ quality: { classification: "verified-open", sourceType: "official-direct", summaryEligible: true } }),
+      { enabled: true, label: "Open RFP brief" },
     );
   });
 });

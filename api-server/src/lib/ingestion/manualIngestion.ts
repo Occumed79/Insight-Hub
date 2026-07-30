@@ -101,6 +101,7 @@ export type ProviderFetcher = (
 
 function providerDisplayName(provider: string): string {
   if (provider === "aiDiscovery") return "AI Opportunity Discovery";
+  if (provider === "tango") return "Tango Federal Opportunities";
   if (provider === "samGov") return "SAM.gov Official API";
   return provider;
 }

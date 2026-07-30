@@ -21,12 +21,10 @@ import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
-import { buildOccuMedSearchQueries } from "./occumedProcurementOntology";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 const NOW = new Date();
-
 const FIRECRAWL_MAX_URLS = 10;
 
 // Result-quantity controls (PR B). Serper/Exa bill per call (not per result for
@@ -47,10 +45,32 @@ const OCCUMED_WEB_QUERIES: {
   query: string;
   type?: "search" | "news";
   tbs?: string;
-}[] = buildOccuMedSearchQueries(CURRENT_YEAR).map((query) => ({
-  query,
-  type: "search",
-}));
+}[] = [
+  {
+    query: `("occupational health services" OR "employee health services") (RFP OR RFQ OR solicitation) (state OR city OR county OR "school district" OR university) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("medical surveillance" OR "pre-employment physicals") (RFP OR bid OR solicitation) (state OR local OR municipal OR university) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("drug and alcohol testing" OR "DOT physical") (RFP OR RFQ OR "request for proposal") (city OR county OR transit OR utility) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("respirator fit testing" OR audiometric OR spirometry) (RFP OR solicitation OR bid) (government OR university OR hospital) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("request for proposal" OR RFP) ("occupational health" OR "employee medical services") (supplier OR vendor OR subcontractor) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("occupational medical services" OR "medical screening services") (RFP OR RFQ OR "supplier opportunity") (defense OR aerospace OR logistics OR manufacturing) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("drug testing services" OR "fitness for duty") (RFP OR "vendor opportunity" OR procurement) (transportation OR utility OR construction OR industrial) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("clinic network" OR "nationwide occupational health") (RFP OR "request for proposal" OR subcontract) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+].map((entry) => ({ ...entry, type: "search" as const }));
 
 const EXA_QUERIES = [
   `active government RFP for occupational health services ${CURRENT_YEAR}`,
@@ -59,6 +79,8 @@ const EXA_QUERIES = [
   `LOGCAP V2X Amentum KBR subcontractor occupational health deployment medical screening ${CURRENT_YEAR}`,
   `defense contractor deployment medical clearance pre-employment physical RFP ${CURRENT_YEAR}`,
   `provider network clinic occupational health employee health government procurement ${CURRENT_YEAR}`,
+  `private company RFP occupational health medical surveillance supplier ${CURRENT_YEAR}`,
+  `utility transportation manufacturing RFP employee medical testing drug testing ${CURRENT_YEAR}`,
 ];
 
 // Domain blocklist, procurement/service signals, and the RFP pre-filter now live
@@ -525,7 +547,6 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  // ── Olostep enrichment fallback (residential proxy scraping) ────────────
   const olostepConfigured = await olostepProvider.isConfigured();
   if (olostepConfigured) {
     const stillShort = enrichedCandidates
@@ -562,7 +583,6 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  // ── Cloudflare Worker enrichment fallback ──────────────────────────────
   const cfConfigured = await cloudflareWorkerProvider.isConfigured();
   if (cfConfigured) {
     const stillShort = enrichedCandidates
