@@ -136,11 +136,19 @@ export async function runLimitedProviderPool<T>(
   poolId: string,
   attempts: LimitedProviderAttempt<T>[],
   isUseful: (value: T) => boolean = () => true,
-  options: { rotate?: boolean } = {},
+  options: {
+    rotate?: boolean;
+    budgetMs?: number;
+    attemptTimeoutMs?: number;
+  } = {},
 ): Promise<LimitedProviderPoolResult<T>> {
   const configured: LimitedProviderAttempt<T>[] = [];
   const errors: string[] = [];
-  const policy = runtimePolicy(poolId);
+  const defaults = runtimePolicy(poolId);
+  const policy: PoolRuntimePolicy = {
+    budgetMs: options.budgetMs ?? defaults.budgetMs,
+    attemptTimeoutMs: options.attemptTimeoutMs ?? defaults.attemptTimeoutMs,
+  };
   const window = policy.budgetMs
     ? currentPoolWindow(poolId, Date.now())
     : undefined;
