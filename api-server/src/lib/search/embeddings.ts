@@ -3,6 +3,7 @@ import { geminiEmbeddingProvider } from "../providers/geminiEmbeddings";
 import { jinaProvider } from "../providers/jina";
 import { voyageProvider } from "../providers/voyage";
 import { huggingFaceProvider } from "../providers/huggingFace";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export type EmbeddingInputType = "query" | "document";
 export type EmbeddingProviderName =
@@ -82,25 +83,29 @@ export async function embedTexts(
 ): Promise<EmbeddingResult | null> {
   if (texts.length === 0) return null;
   const normalized = texts.map((text) => text.slice(0, 16_000));
-  const errors: string[] = [];
   const order: EmbeddingProviderName[] = preferredProvider
     ? [preferredProvider]
     : ["cloudflare", "gemini", "jina", "voyage", "huggingFace"];
-
-  for (const provider of order) {
-    try {
-      const vectors = await tryProvider(provider, normalized, inputType);
-      if (validVectors(vectors, texts.length)) {
-        return { provider, vectors, errors };
-      }
-      errors.push(`${provider}: unavailable or returned invalid vectors`);
-    } catch (error) {
-      errors.push(
-        `${provider}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  const result = await runLimitedProviderPool(
+    preferredProvider
+      ? `opportunity-embeddings-pinned-${preferredProvider}`
+      : "opportunity-embeddings",
+    order.map((provider) => ({
+      name: provider,
+      isConfigured: async () => true,
+      run: () => tryProvider(provider, normalized, inputType),
+    })),
+    (vectors) => validVectors(vectors, texts.length),
+  );
+  if (result.value && result.provider) {
+    return {
+      provider: result.provider as EmbeddingProviderName,
+      vectors: result.value,
+      errors: result.errors,
+    };
   }
-
-  console.warn(`[embedTexts] All embedding providers failed: ${errors.join("; ")}`);
+  console.warn(
+    `[embedTexts] All embedding providers failed: ${result.errors.join("; ")}`,
+  );
   return null;
 }

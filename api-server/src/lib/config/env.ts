@@ -6,10 +6,14 @@
 export const env = {
   // SAM.gov
   SAM_GOV_API_KEY: process.env.SAM_GOV_API_KEY,
-  SAM_GOV_BASE_URL: process.env.SAM_GOV_BASE_URL || "https://api.sam.gov/opportunities/v2/search",
+  SAM_GOV_BASE_URL:
+    process.env.SAM_GOV_BASE_URL ||
+    "https://api.sam.gov/opportunities/v2/search",
 
   // Federal Register
-  FEDERAL_REGISTER_API_BASE: process.env.FEDERAL_REGISTER_API_BASE || "https://www.federalregister.gov/api/v1",
+  FEDERAL_REGISTER_API_BASE:
+    process.env.FEDERAL_REGISTER_API_BASE ||
+    "https://www.federalregister.gov/api/v1",
 
   // Gemini AI
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
@@ -26,6 +30,14 @@ export const env = {
 
   // Serper (Google Search API)
   SERPER_API_KEY: process.env.SERPER_API_KEY,
+  PARALLEL_API_KEY: process.env.PARALLEL_API_KEY,
+  LINKUP_API_KEY: process.env.LINKUP_API_KEY,
+  YOU_API_KEY: process.env.YOU_API_KEY,
+  LANGSEARCH_API_KEY: process.env.LANGSEARCH_API_KEY,
+  LANGSEARCH_API_KEY_2: process.env.LANGSEARCH_API_KEY_2,
+  LANGSEARCH_API_KEY_3: process.env.LANGSEARCH_API_KEY_3,
+  SOCRATA_API_KEY: process.env.SOCRATA_API_KEY,
+  SOCRATA_API_SECRET: process.env.SOCRATA_API_SECRET,
 
   // Vector search / storage backends
   PINECONE_API_KEY: process.env.PINECONE_API_KEY,
@@ -40,11 +52,15 @@ export const env = {
   MONGO_DB_API: process.env.MONGO_DB_API,
 
   // Procurement source feature flags
-  STATE_PROCUREMENT_SOURCES_ENABLED: process.env.STATE_PROCUREMENT_SOURCES_ENABLED,
-  COUNTY_PROCUREMENT_SOURCES_ENABLED: process.env.COUNTY_PROCUREMENT_SOURCES_ENABLED,
+  STATE_PROCUREMENT_SOURCES_ENABLED:
+    process.env.STATE_PROCUREMENT_SOURCES_ENABLED,
+  COUNTY_PROCUREMENT_SOURCES_ENABLED:
+    process.env.COUNTY_PROCUREMENT_SOURCES_ENABLED,
   UNIVERSITY_BID_SOURCES_ENABLED: process.env.UNIVERSITY_BID_SOURCES_ENABLED,
-  CITY_PROCUREMENT_SOURCES_ENABLED: process.env.CITY_PROCUREMENT_SOURCES_ENABLED,
-  MUNICIPAL_PROCUREMENT_SOURCES_ENABLED: process.env.MUNICIPAL_PROCUREMENT_SOURCES_ENABLED,
+  CITY_PROCUREMENT_SOURCES_ENABLED:
+    process.env.CITY_PROCUREMENT_SOURCES_ENABLED,
+  MUNICIPAL_PROCUREMENT_SOURCES_ENABLED:
+    process.env.MUNICIPAL_PROCUREMENT_SOURCES_ENABLED,
   LOCAL_GOV_BID_SOURCES_ENABLED: process.env.LOCAL_GOV_BID_SOURCES_ENABLED,
 
   // Search / ranking feature flags
@@ -77,5 +93,10 @@ export const procurementSourceFlags = {
 } as const;
 
 export function isAnyLocalProcurementSourceEnabled(): boolean {
-  return procurementSourceFlags.county || procurementSourceFlags.city || procurementSourceFlags.municipal || procurementSourceFlags.localGov;
+  return (
+    procurementSourceFlags.county ||
+    procurementSourceFlags.city ||
+    procurementSourceFlags.municipal ||
+    procurementSourceFlags.localGov
+  );
 }

@@ -1,7 +1,6 @@
 import { createHash } from "crypto";
 import { geminiProvider } from "../providers/gemini";
 import { serperProvider } from "../providers/serper";
-import type { SerperSearchResult } from "../providers/serper";
 import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { extractMetadataFromText } from "./heuristicExtract";
@@ -15,25 +14,26 @@ import {
 } from "./relevance";
 import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
+import { parallelProvider } from "../providers/parallel";
+import { linkupProvider } from "../providers/linkup";
+import { socrataProvider } from "../providers/socrata";
 import { websearchProvider } from "../providers/websearch";
 import { olostepProvider } from "../providers/olostep";
 import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
-import { buildOccuMedSearchQueries } from "./occumedProcurementOntology";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 const NOW = new Date();
-
 const FIRECRAWL_MAX_URLS = 10;
 
 // Result-quantity controls (PR B). Serper/Exa bill per call (not per result for
 // Serper), so raising `num` is the cheapest way to deepen each query; page 2 is
 // pulled only for the highest-value keyword-driven Serper queries.
 const SERPER_RESULTS_PER_QUERY = 30;
-const SERPER_DEEP_PAGES = 2;
 const EXA_RESULTS_PER_QUERY = 20;
 
 type SearchCandidateProvider =
@@ -41,16 +41,41 @@ type SearchCandidateProvider =
   | "exa"
   | "you"
   | "langsearch"
+  | "parallel"
+  | "linkup"
+  | "socrata"
   | "websearch";
 
 const OCCUMED_WEB_QUERIES: {
   query: string;
   type?: "search" | "news";
   tbs?: string;
-}[] = buildOccuMedSearchQueries(CURRENT_YEAR).map((query) => ({
-  query,
-  type: "search",
-}));
+}[] = [
+  {
+    query: `("occupational health services" OR "employee health services") (RFP OR RFQ OR solicitation) (state OR city OR county OR "school district" OR university) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("medical surveillance" OR "pre-employment physicals") (RFP OR bid OR solicitation) (state OR local OR municipal OR university) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("drug and alcohol testing" OR "DOT physical") (RFP OR RFQ OR "request for proposal") (city OR county OR transit OR utility) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("respirator fit testing" OR audiometric OR spirometry) (RFP OR solicitation OR bid) (government OR university OR hospital) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("request for proposal" OR RFP) ("occupational health" OR "employee medical services") (supplier OR vendor OR subcontractor) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("occupational medical services" OR "medical screening services") (RFP OR RFQ OR "supplier opportunity") (defense OR aerospace OR logistics OR manufacturing) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("drug testing services" OR "fitness for duty") (RFP OR "vendor opportunity" OR procurement) (transportation OR utility OR construction OR industrial) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+  {
+    query: `("clinic network" OR "nationwide occupational health") (RFP OR "request for proposal" OR subcontract) ${CURRENT_YEAR} -awarded -jobs`,
+  },
+].map((entry) => ({ ...entry, type: "search" as const }));
 
 const EXA_QUERIES = [
   `active government RFP for occupational health services ${CURRENT_YEAR}`,
@@ -59,6 +84,8 @@ const EXA_QUERIES = [
   `LOGCAP V2X Amentum KBR subcontractor occupational health deployment medical screening ${CURRENT_YEAR}`,
   `defense contractor deployment medical clearance pre-employment physical RFP ${CURRENT_YEAR}`,
   `provider network clinic occupational health employee health government procurement ${CURRENT_YEAR}`,
+  `private company RFP occupational health medical surveillance supplier ${CURRENT_YEAR}`,
+  `utility transportation manufacturing RFP employee medical testing drug testing ${CURRENT_YEAR}`,
 ];
 
 // Domain blocklist, procurement/service signals, and the RFP pre-filter now live
@@ -71,6 +98,9 @@ export interface WebIntelligenceResult {
     exaResults: number;
     youResults: number;
     langsearchResults: number;
+    parallelResults: number;
+    linkupResults: number;
+    socrataResults: number;
     websearchResults: number;
     totalCandidates: number;
     preFiltered: number;
@@ -206,6 +236,9 @@ export async function webIntelligenceFetch(options: {
   useFirecrawl?: boolean;
   useYou?: boolean;
   useLangsearch?: boolean;
+  useParallel?: boolean;
+  useLinkup?: boolean;
+  useSocrata?: boolean;
   useWebsearch?: boolean;
   useGroqFetch?: boolean;
   useOpenrouterFetch?: boolean;
@@ -217,6 +250,9 @@ export async function webIntelligenceFetch(options: {
     exaResults: 0,
     youResults: 0,
     langsearchResults: 0,
+    parallelResults: 0,
+    linkupResults: 0,
+    socrataResults: 0,
     websearchResults: 0,
     totalCandidates: 0,
     preFiltered: 0,
@@ -239,6 +275,9 @@ export async function webIntelligenceFetch(options: {
   const useFirecrawl = options.useFirecrawl === true;
   const useYou = options.useYou === true;
   const useLangsearch = options.useLangsearch === true;
+  const useParallel = options.useParallel === true;
+  const useLinkup = options.useLinkup === true;
+  const useSocrata = options.useSocrata === true;
   const useWebsearch = options.useWebsearch === true;
 
   type SerperQuery = {
@@ -317,277 +356,268 @@ export async function webIntelligenceFetch(options: {
     }
   }
 
-  // Track per-query Serper failures so they appear in the response instead of vanishing.
-  let serperQueryFailures = 0;
-  let serperLastError = "";
-  const [
-    serperRaw,
-    exaRaw,
-    youRaw,
-    langsearchRaw,
-    websearchRaw,
-  ] = await Promise.all([
-    useSerper
-      ? Promise.allSettled(
-          serperQueries.flatMap((q) => {
-            const pages = q.deep ? SERPER_DEEP_PAGES : 1;
-            return Array.from({ length: pages }, (_, i) =>
-              serperProvider
-                .search(q.query, SERPER_RESULTS_PER_QUERY, {
-                  type: q.type,
-                  tbs: q.tbs,
-                  page: i + 1,
-                  signal: options.signal,
-                })
-                .catch((err: any) => {
-                  serperQueryFailures++;
-                  serperLastError = err.message ?? String(err);
-                  return [] as SerperSearchResult[];
-                }),
-            );
-          }),
-        )
-          .then((results) =>
-            results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])),
-          )
-          .catch((err: any) => {
-            errors.push(`Serper: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
-    useExa
-      ? exaProvider.isConfigured().then((configured) =>
-          configured
-            ? exaProvider
-                .searchMultiple(exaQueries, EXA_RESULTS_PER_QUERY, { signal: options.signal })
-                .catch((err: any) => {
-                  errors.push(`Exa: ${err.message}`);
-                  return [];
-                })
-            : [],
-        )
-      : Promise.resolve([]),
-    useYou
-      ? youProvider
-          .fetch({ keywords: options.keywords })
-          .then((r) => r.records)
-          .catch((err: any) => {
-            errors.push(`You.com: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
-    useLangsearch
-      ? langsearchProvider
-          .fetch({ keywords: options.keywords })
-          .then((r) => r.records)
-          .catch((err: any) => {
-            errors.push(`Langsearch: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
-    useWebsearch
-      ? websearchProvider
-          .fetch({ keywords: options.keywords })
-          .then((r) => r.records)
-          .catch((err: any) => {
-            errors.push(`WebSearch: ${err.message}`);
-            return [];
-          })
-      : Promise.resolve([]),
-  ]);
-
-  stats.serperResults = serperRaw.length;
-  stats.exaResults = exaRaw.length;
-  stats.youResults = youRaw.length;
-  stats.langsearchResults = langsearchRaw.length;
-  stats.websearchResults = websearchRaw.length;
-
-  // Surface per-query Serper failures (they were previously silently swallowed).
-  if (serperQueryFailures > 0) {
-    errors.push(
-      `Serper: ${serperQueryFailures} query(ies) failed — ${serperLastError}`,
-    );
-  } else if (useSerper && serperRaw.length === 0) {
-    errors.push(
-      "Serper: 0 results across all queries (API key may be invalid or quota exhausted — no HTTP error was thrown)",
-    );
-  }
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
+  const discoveryQueries = Array.from(
+    new Set([...serperQueries.map((entry) => entry.query), ...exaQueries]),
+  ).slice(0, 10);
 
-  for (const r of serperRaw)
-    addCandidate(candidates, seen, {
-      title: r.title,
-      url: r.link,
-      content: r.snippet,
-      sourceProvider: "serper",
-      dateRaw: r.date,
-    });
-  for (const r of exaRaw) {
-    const url = r.url ?? "";
-    addCandidate(candidates, seen, {
-      title: r.title ?? "",
-      url,
-      content: (r.highlights ?? []).join(" ") || r.text?.slice(0, 1000) || "",
-      sourceProvider: "exa",
-      dateRaw: r.publishedDate,
-    });
+  for (const query of discoveryQueries) {
+    const attempts: Array<{
+      name: SearchCandidateProvider;
+      isConfigured: () => Promise<boolean>;
+      run: () => Promise<Candidate[]>;
+    }> = [];
+
+    if (useSerper) {
+      attempts.push({
+        name: "serper",
+        isConfigured: () => serperProvider.isConfigured(),
+        run: async () =>
+          (
+            await serperProvider.search(query, SERPER_RESULTS_PER_QUERY, {
+              signal: options.signal,
+            })
+          ).map((result) => ({
+            title: result.title,
+            url: result.link,
+            content: result.snippet,
+            sourceProvider: "serper" as const,
+            dateRaw: result.date,
+          })),
+      });
+    }
+    if (useExa) {
+      attempts.push({
+        name: "exa",
+        isConfigured: () => exaProvider.isConfigured(),
+        run: async () =>
+          (
+            await exaProvider.search(query, {
+              numResults: EXA_RESULTS_PER_QUERY,
+              signal: options.signal,
+            })
+          ).map((result) => ({
+            title: result.title ?? "",
+            url: result.url ?? "",
+            content:
+              (result.highlights ?? []).join(" ") ||
+              result.text?.slice(0, 1000) ||
+              "",
+            sourceProvider: "exa" as const,
+            dateRaw: result.publishedDate,
+          })),
+      });
+    }
+    if (useParallel) {
+      attempts.push({
+        name: "parallel",
+        isConfigured: () => parallelProvider.isConfigured(),
+        run: async () =>
+          (await parallelProvider.search(query, options.signal)).map(
+            (result) => ({
+              title: result.title,
+              url: result.url,
+              content: result.excerpts.join(" "),
+              sourceProvider: "parallel" as const,
+              dateRaw: result.publishDate,
+            }),
+          ),
+      });
+    }
+    if (useLinkup) {
+      attempts.push({
+        name: "linkup",
+        isConfigured: () => linkupProvider.isConfigured(),
+        run: async () =>
+          (await linkupProvider.search(query, options.signal)).map(
+            (result) => ({
+              title: result.name,
+              url: result.url,
+              content: result.content,
+              sourceProvider: "linkup" as const,
+            }),
+          ),
+      });
+    }
+    if (useYou) {
+      attempts.push({
+        name: "you",
+        isConfigured: () => youProvider.isConfigured(),
+        run: async () =>
+          (await youProvider.search(query, options.signal)).map((result) => ({
+            ...result,
+            sourceProvider: "you" as const,
+          })),
+      });
+    }
+    if (useLangsearch) {
+      attempts.push({
+        name: "langsearch",
+        isConfigured: () => langsearchProvider.isConfigured(),
+        run: async () =>
+          (
+            await langsearchProvider.search(query, {
+              dateRange: options.keywords ? 365 : 30,
+              signal: options.signal,
+            })
+          ).map((result) => ({
+            title: result.title,
+            url: result.url,
+            content: result.content,
+            sourceProvider: "langsearch" as const,
+            dateRaw: result.dateRaw,
+          })),
+      });
+    }
+    if (useSocrata) {
+      attempts.push({
+        name: "socrata",
+        isConfigured: () => socrataProvider.isConfigured(),
+        run: async () =>
+          (
+            await socrataProvider.search(
+              options.keywords?.trim() ||
+                "procurement bids solicitations occupational health",
+              options.signal,
+            )
+          ).map((result) => ({
+            title: result.title,
+            url: result.url,
+            content: result.description,
+            sourceProvider: "socrata" as const,
+            dateRaw: result.updatedAt,
+          })),
+      });
+    }
+    if (useWebsearch) {
+      attempts.push({
+        name: "websearch",
+        isConfigured: () => websearchProvider.isConfigured(),
+        run: async () => {
+          const result = await websearchProvider.fetch({
+            keywords: query,
+            signal: options.signal,
+          });
+          if (result.records.length === 0 && result.errors.length > 0) {
+            throw new Error(result.errors.join("; "));
+          }
+          return (result.records as any[]).map((record) => ({
+            title: record.title ?? "",
+            url: record.url ?? record.sourceUrl ?? "",
+            content: record.description ?? record.snippet ?? "",
+            sourceProvider: "websearch" as const,
+          }));
+        },
+      });
+    }
+
+    const result = await runLimitedProviderPool(
+      "opportunity-web-discovery",
+      attempts,
+      (value) => value.length > 0,
+    );
+    errors.push(...result.errors);
+    if (!result.value || !result.provider) continue;
+    switch (result.provider) {
+      case "serper":
+        stats.serperResults += result.value.length;
+        break;
+      case "exa":
+        stats.exaResults += result.value.length;
+        break;
+      case "parallel":
+        stats.parallelResults += result.value.length;
+        break;
+      case "linkup":
+        stats.linkupResults += result.value.length;
+        break;
+      case "you":
+        stats.youResults += result.value.length;
+        break;
+      case "langsearch":
+        stats.langsearchResults += result.value.length;
+        break;
+      case "socrata":
+        stats.socrataResults += result.value.length;
+        break;
+      case "websearch":
+        stats.websearchResults += result.value.length;
+        break;
+    }
+    for (const candidate of result.value) {
+      addCandidate(candidates, seen, candidate);
+    }
   }
-  for (const r of youRaw as any[])
-    addCandidate(candidates, seen, {
-      title: r.title ?? "",
-      url: r.url ?? r.sourceUrl ?? "",
-      content: r.description ?? r.snippet ?? r.description ?? "",
-      sourceProvider: "you",
-    });
-  for (const r of langsearchRaw as any[])
-    addCandidate(candidates, seen, {
-      title: r.title ?? "",
-      url: r.url ?? r.sourceUrl ?? "",
-      content: r.description ?? r.snippet ?? r.content ?? "",
-      sourceProvider: "langsearch",
-    });
-  for (const r of websearchRaw as any[])
-    addCandidate(candidates, seen, {
-      title: r.title ?? "",
-      url: r.url ?? r.sourceUrl ?? "",
-      content: r.description ?? r.snippet ?? r.content ?? "",
-      sourceProvider: "websearch",
-    });
 
   stats.totalCandidates = candidates.length;
   const filtered = candidates.filter(isRfpCandidate);
   stats.preFiltered = filtered.length;
   stats.rejected = candidates.length - filtered.length;
 
-  if (filtered.length === 0)
-    return { opportunities: [], stats, errors };
+  if (filtered.length === 0) return { opportunities: [], stats, errors };
 
   const enrichedCandidates = [...filtered];
+  const toEnrich = enrichedCandidates
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate.content.length < 800)
+    .slice(0, FIRECRAWL_MAX_URLS);
 
-  if (useFirecrawl) {
-    const fcConfigured = await firecrawlProvider.isConfigured();
-    if (fcConfigured) {
-      const toEnrich = filtered
-        .filter((c) => c.content.length < 800)
-        .slice(0, FIRECRAWL_MAX_URLS);
-      if (toEnrich.length > 0) {
-        try {
-          const scraped = await firecrawlProvider.scrapeMany(
-            toEnrich.map((c) => c.url),
-          );
-          for (const result of scraped) {
-            const idx = enrichedCandidates.findIndex(
-              (c) => c.url === result.url,
-            );
-            if (idx >= 0 && result.markdown) {
-              enrichedCandidates[idx] = {
-                ...enrichedCandidates[idx],
-                content: result.markdown.slice(0, 4000),
-                firecrawlEnriched: true,
-              };
-              stats.firecrawlEnriched++;
-            }
-          }
-        } catch (err: any) {
-          errors.push(`FireCrawl enrichment: ${err.message}`);
-        }
-      }
-    }
-  }
-
-  const jinaConfigured = await jinaProvider.isConfigured();
-  if (jinaConfigured) {
-    const stillShort = enrichedCandidates.filter(
-      (c) => !c.firecrawlEnriched && c.content.length < 600,
+  for (const { candidate, index } of toEnrich) {
+    const enrichmentAttempts = [
+      ...(useFirecrawl
+        ? [
+            {
+              name: "firecrawl",
+              isConfigured: () => firecrawlProvider.isConfigured(),
+              run: async () =>
+                (await firecrawlProvider.scrape(candidate.url))?.markdown ??
+                null,
+            },
+          ]
+        : []),
+      {
+        name: "jina",
+        isConfigured: () => jinaProvider.isConfigured(),
+        run: () => jinaProvider.extractUrl(candidate.url, 5_000),
+      },
+      {
+        name: "olostep",
+        isConfigured: () => olostepProvider.isConfigured(),
+        run: () => olostepProvider.getText(candidate.url),
+      },
+      {
+        name: "cloudflare-worker",
+        isConfigured: () => cloudflareWorkerProvider.isConfigured(),
+        run: () => cloudflareWorkerProvider.extractUrl(candidate.url),
+      },
+    ];
+    const enriched = await runLimitedProviderPool(
+      "opportunity-page-enrichment",
+      enrichmentAttempts,
+      (value) => typeof value === "string" && value.length > 200,
     );
-    if (stillShort.length > 0) {
-      try {
-        const jinaResults = await jinaProvider.extractUrls(
-          stillShort.map((c) => c.url),
-          4,
-          5000,
-        );
-        for (const [url, text] of jinaResults) {
-          const idx = enrichedCandidates.findIndex((c) => c.url === url);
-          if (idx >= 0 && text.length > 200) {
-            enrichedCandidates[idx] = {
-              ...enrichedCandidates[idx],
-              content: text,
-              jinaEnriched: true,
-            };
-            stats.jinaEnriched++;
-          }
-        }
-      } catch (err: any) {
-        errors.push(`Jina enrichment: ${err.message}`);
-      }
-    }
-  }
-
-  // ── Olostep enrichment fallback (residential proxy scraping) ────────────
-  const olostepConfigured = await olostepProvider.isConfigured();
-  if (olostepConfigured) {
-    const stillShort = enrichedCandidates
-      .filter(
-        (c) =>
-          !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600,
-      )
-      .slice(0, 8);
-    if (stillShort.length > 0) {
-      try {
-        const scraped = await olostepProvider.scrapeMany(
-          stillShort.map((c) => c.url),
-        );
-        for (const result of scraped) {
-          const idx = enrichedCandidates.findIndex((c) => c.url === result.url);
-          if (
-            idx >= 0 &&
-            (result.markdown_content ?? result.text_content ?? "").length > 200
-          ) {
-            enrichedCandidates[idx] = {
-              ...enrichedCandidates[idx],
-              content: (
-                result.markdown_content ??
-                result.text_content ??
-                ""
-              ).slice(0, 4000),
-            };
-            stats.olostepEnriched++;
-          }
-        }
-      } catch (err: any) {
-        errors.push(`Olostep enrichment: ${err.message}`);
-      }
-    }
-  }
-
-  // ── Cloudflare Worker enrichment fallback ──────────────────────────────
-  const cfConfigured = await cloudflareWorkerProvider.isConfigured();
-  if (cfConfigured) {
-    const stillShort = enrichedCandidates
-      .filter(
-        (c) =>
-          !c.firecrawlEnriched && !c.jinaEnriched && c.content.length < 600,
-      )
-      .slice(0, 6);
-    if (stillShort.length > 0) {
-      const settled = await Promise.allSettled(
-        stillShort.map((c) => cloudflareWorkerProvider.extractUrl(c.url)),
-      );
-      settled.forEach((r, i) => {
-        if (r.status === "fulfilled" && r.value && r.value.length > 200) {
-          const url = stillShort[i].url;
-          const idx = enrichedCandidates.findIndex((c) => c.url === url);
-          if (idx >= 0) {
-            enrichedCandidates[idx] = {
-              ...enrichedCandidates[idx],
-              content: r.value.slice(0, 4000),
-            };
-            stats.cfWorkerEnriched++;
-          }
-        }
-      });
+    errors.push(...enriched.errors);
+    if (!enriched.value || !enriched.provider) continue;
+    enrichedCandidates[index] = {
+      ...candidate,
+      content: enriched.value.slice(0, 5_000),
+      firecrawlEnriched: enriched.provider === "firecrawl",
+      jinaEnriched: enriched.provider === "jina",
+    };
+    switch (enriched.provider) {
+      case "firecrawl":
+        stats.firecrawlEnriched++;
+        break;
+      case "jina":
+        stats.jinaEnriched++;
+        break;
+      case "olostep":
+        stats.olostepEnriched++;
+        break;
+      case "cloudflare-worker":
+        stats.cfWorkerEnriched++;
+        break;
     }
   }
 
@@ -599,8 +629,8 @@ export async function webIntelligenceFetch(options: {
   const opportunities: NormalizedOpportunity[] = [];
 
   try {
-    // Batched AI extraction (round-robin across Gemini → Groq → OpenRouter →
-    // Minimax, memoized by URL) instead of one 3-provider call per candidate.
+    // Batched AI extraction rotates across every configured limited AI provider,
+    // memoized by URL, and fails over on quota/upstream errors.
     const { extractions, rateLimited, usedScorers, cacheHits } =
       await extractOpportunitiesBatch(
         enrichedCandidates.map((c) => ({

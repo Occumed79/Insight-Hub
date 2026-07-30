@@ -34,6 +34,12 @@ interface TangoOpportunity {
   response_deadline?: string;
   naics_code?: string;
   psc_code?: string;
+  meta?: {
+    notice_type?: {
+      code?: string;
+      type?: string;
+    } | null;
+  } | null;
   office?: {
     agency_name?: string;
     department_name?: string;
@@ -137,7 +143,7 @@ export class TangoProvider implements DataSourceProvider {
       title: opportunity.title || "Untitled Opportunity",
       agency: opportunity.office?.agency_name || "Unknown Agency",
       subAgency: opportunity.office?.department_name || undefined,
-      type: opportunity.set_aside || "Unknown",
+      type: opportunity.meta?.notice_type?.type || "Solicitation",
       status: opportunity.active ? "active" : "archived",
       naicsCode: opportunity.naics_code || undefined,
       postedDate: postedDate ?? UNKNOWN_POSTED_DATE,
@@ -281,6 +287,26 @@ export class TangoProvider implements DataSourceProvider {
     endpoint.searchParams.set(
       "first_notice_date_before",
       TangoProvider.fmtDate(today),
+    );
+    endpoint.searchParams.set("active", "true");
+    endpoint.searchParams.set("notice_type", "o|k");
+    endpoint.searchParams.set(
+      "response_deadline_after",
+      TangoProvider.fmtDate(today),
+    );
+    endpoint.searchParams.set(
+      "response_deadline_before",
+      TangoProvider.fmtDate(
+        new Date(
+          today.getFullYear() + 1,
+          today.getMonth(),
+          today.getDate(),
+        ),
+      ),
+    );
+    endpoint.searchParams.set(
+      "shape",
+      "opportunity_id,title,active,first_notice_date,last_notice_date,response_deadline,naics_code,psc_code,office(*),place_of_performance(*),sam_url,set_aside,solicitation_number,description,meta(notice_type(code,type))",
     );
     endpoint.searchParams.set("limit", String(pageSize));
     endpoint.searchParams.set("page", "1");

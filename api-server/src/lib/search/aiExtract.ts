@@ -1,8 +1,17 @@
 import { createHash } from "crypto";
 import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
-import { cerebrasProvider } from "../providers/openAiCompatible";
+import { openrouterProvider } from "../providers/openrouter";
+import { minimaxProvider } from "../providers/minimax";
+import { clodProvider } from "../providers/clod";
+import {
+  cerebrasProvider,
+  deepseekProvider,
+  mistralProvider,
+  nvidiaProvider,
+} from "../providers/openAiCompatible";
 import { prioritizeCandidatesWithCloudflare } from "./candidateSemanticPriority";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export interface AiExtraction {
   isOpportunity: boolean;
@@ -60,15 +69,36 @@ export const AI_EXTRACTION_PROVIDER_ORDER = [
   "cerebras",
   "groq",
   "gemini",
+  "openrouter",
+  "mistral",
+  "deepseek",
+  "nvidia",
+  "minimax",
+  "clod",
 ] as const;
 
 const PRIMARY_PROVIDERS: AiTextProvider[] = [
   cerebrasProvider,
   groqProvider,
   geminiProvider,
+  openrouterProvider,
+  mistralProvider,
+  deepseekProvider,
+  nvidiaProvider,
+  minimaxProvider,
+  clodProvider,
 ];
 
-const CROSS_CHECK_PROVIDERS: AiTextProvider[] = [groqProvider, geminiProvider];
+const CROSS_CHECK_PROVIDERS: AiTextProvider[] = [
+  groqProvider,
+  geminiProvider,
+  openrouterProvider,
+  mistralProvider,
+  deepseekProvider,
+  nvidiaProvider,
+  minimaxProvider,
+  clodProvider,
+];
 const CHUNK_SIZE = 10;
 const CONTENT_CHARS = 2_200;
 const MAX_OUTPUT_TOKENS = 3_000;
@@ -118,7 +148,10 @@ function isRateLimit(error: unknown): boolean {
 }
 
 function stripJson(text: string): string {
-  return text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+  return text
+    .replace(/```json\n?/g, "")
+    .replace(/```/g, "")
+    .trim();
 }
 
 function parseJsonArray(text: string): unknown[] | null {
@@ -207,9 +240,7 @@ ITEMS:
 ${blocks}`;
 }
 
-export function shouldCrossCheckExtraction(
-  extraction: AiExtraction,
-): boolean {
+export function shouldCrossCheckExtraction(extraction: AiExtraction): boolean {
   if (!extraction.isOpportunity) return false;
   const score = extraction.relevanceScore ?? 0;
   return (
@@ -256,19 +287,23 @@ async function runProviderChain(
   maxTokens: number,
   skipProvider?: string,
 ): Promise<ProviderAttemptResult> {
-  let rateLimited = false;
-  for (const provider of providers) {
-    if (provider.name === skipProvider) continue;
-    try {
-      if (!(await provider.isConfigured())) continue;
-      const text = await provider.complete(prompt, maxTokens);
-      const rows = parseJsonArray(text);
-      if (rows) return { rows, scorer: provider.name, rateLimited };
-    } catch (error) {
-      if (isRateLimit(error)) rateLimited = true;
-    }
-  }
-  return { rows: null, scorer: null, rateLimited };
+  const result = await runLimitedProviderPool(
+    "opportunity-ai-extraction",
+    providers
+      .filter((provider) => provider.name !== skipProvider)
+      .map((provider) => ({
+        name: provider.name,
+        isConfigured: () => provider.isConfigured(),
+        run: async () =>
+          parseJsonArray(await provider.complete(prompt, maxTokens)),
+      })),
+    (rows) => Array.isArray(rows),
+  );
+  return {
+    rows: result.value,
+    scorer: result.provider,
+    rateLimited: result.errors.some((error) => isRateLimit(error)),
+  };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -300,7 +335,9 @@ function aiCandidateLimit(): number {
 export async function extractOpportunitiesBatch(
   inputs: BatchExtractInput[],
 ): Promise<BatchExtractResult> {
-  const extractions: (AiExtraction | null)[] = new Array(inputs.length).fill(null);
+  const extractions: (AiExtraction | null)[] = new Array(inputs.length).fill(
+    null,
+  );
   const usedScorers = new Set<string>();
   let rateLimited = false;
   let cacheHits = 0;
@@ -378,7 +415,10 @@ export async function extractOpportunitiesBatch(
   for (const group of chunk(prioritizedPending, CHUNK_SIZE)) {
     const primary = await runProviderChain(
       PRIMARY_PROVIDERS,
-      buildBatchPrompt(group.map((entry) => entry.input), today),
+      buildBatchPrompt(
+        group.map((entry) => entry.input),
+        today,
+      ),
       MAX_OUTPUT_TOKENS,
     );
     if (primary.rateLimited) rateLimited = true;
@@ -430,13 +470,13 @@ export async function extractOpportunitiesBatch(
             typeof object.index === "number"
               ? object.index
               : reviewItems[order]?.localIndex;
-          if (
-            typeof localIndex !== "number" ||
-            !provisional.has(localIndex)
-          ) {
+          if (typeof localIndex !== "number" || !provisional.has(localIndex)) {
             return;
           }
-          const corrected = extractionFromObject(raw, primary.scorer ?? "unknown");
+          const corrected = extractionFromObject(
+            raw,
+            primary.scorer ?? "unknown",
+          );
           if (!corrected) return;
           corrected.validatedBy = reviewerName;
           corrected.validationReason =

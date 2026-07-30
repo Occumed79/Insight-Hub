@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { classifyResult } from "./search/relevance";
 
 export type OpportunityQualityClassification =
   | "verified-open"
@@ -31,6 +32,9 @@ export interface OpportunityQualityView {
   deadlineKnown: boolean;
   buyerKnown: boolean;
   solicitationLike: boolean;
+  bidReadyNotice: boolean;
+  relevanceEligible: boolean;
+  relevanceScore: number;
   sourceVerified: boolean;
   sourceAuthority: "trusted" | "medium" | "low";
   evidenceFingerprint: string;
@@ -49,6 +53,7 @@ const DISCOVERY_PROVIDERS = new Set([
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
   "sam_gov",
+  "tango",
   "eunaBonfire",
   "texasEsbd",
   "nyScr",
@@ -82,6 +87,10 @@ const GENERAL_PAGE_RE =
   /procurement opportunities|bids & rfps|bid opportunities|solicitation 2026|all-tender-list|page \d+ of \d+|procurements:/i;
 const SOLICITATION_RE =
   /solicitation|request for proposal|\brfp\b|invitation to bid|\bitb\b|request for quote|\brfq\b|bid solicitation|sources sought|presolicitation|tender/i;
+const EARLY_SIGNAL_RE =
+  /\b(?:sources sought|presolicitation|pre-solicitation|special notice|request for information|\brfi\b|intent to bundle)\b/i;
+const BID_READY_RE =
+  /\b(?:solicitation|combined synopsis\/solicitation|request for proposal|\brfp\b|request for quote|\brfq\b|invitation for bids?|\bifb\b|invitation to bid|\bitb\b|tender)\b/i;
 
 function parseTags(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -254,6 +263,30 @@ export function classifyOpportunityQuality(
     SOLICITATION_RE.test(fullText) &&
     !BAD_TYPE_RE.test(identityText) &&
     !GENERAL_PAGE_RE.test(identityText);
+  const bidReadyNotice =
+    BID_READY_RE.test(identityText) && !EARLY_SIGNAL_RE.test(identityText);
+  const relevance = classifyResult({
+    title: String(opp.title ?? ""),
+    snippet: [
+      opp.type,
+      opp.solicitationNumber,
+      opp.description,
+      opp.agency,
+      opp.subAgency,
+      opp.naicsCode,
+      opp.naicsDescription,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    url,
+    date: opp.postedDate,
+    deadlineInFuture: hasFutureDeadline,
+    allowHistorical: true,
+  });
+  const relevanceEligible =
+    !relevance.rejected &&
+    relevance.score >= 65 &&
+    relevance.confidence !== "possible_adjacent";
   const structuredDirectEvidence =
     normalizedEvidenceVerified || completeStoredDirectEvidence;
   const reasons: string[] = [];
@@ -276,6 +309,8 @@ export function classifyOpportunityQuality(
     !sourceVerified ||
     !buyerKnown ||
     !solicitationLike ||
+    !bidReadyNotice ||
+    !relevanceEligible ||
     !confidenceOk
   )
     classification = "needs-verification";
@@ -290,6 +325,14 @@ export function classifyOpportunityQuality(
   if (!buyerKnown) reasons.push("Buyer identity is missing or generic.");
   if (!solicitationLike)
     reasons.push("The record is not clearly an actionable solicitation.");
+  if (!bidReadyNotice)
+    reasons.push(
+      "The notice is early-stage market research or not yet a bid-ready solicitation.",
+    );
+  if (!relevanceEligible)
+    reasons.push(
+      "The record does not have a strong current match to Occu-Med service lines.",
+    );
   if (classification === "award")
     reasons.push(
       "The record appears to be an award, purchase order, tabulation, or contract document.",
@@ -316,6 +359,9 @@ export function classifyOpportunityQuality(
     deadlineKnown,
     buyerKnown,
     solicitationLike,
+    bidReadyNotice,
+    relevanceEligible,
+    relevanceScore: relevance.score,
     sourceVerified,
     sourceAuthority: sourceVerified ? "trusted" : aggregator ? "medium" : "low",
     evidenceFingerprint: createHash("sha256")
@@ -367,7 +413,7 @@ export function opportunityQualityRank(
   const days = deadline
     ? Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000))
     : 999;
-  const relevance = Number.parseFloat(String(opp.relevanceScore ?? "50"));
+  const relevance = quality.relevanceScore;
   const classScore =
     quality.classification === "verified-open"
       ? 10000

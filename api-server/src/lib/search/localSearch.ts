@@ -12,9 +12,12 @@
 
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
-import { eq, ilike, or, and, gte } from "drizzle-orm";
+import { eq, ilike, or, and, gte, gt } from "drizzle-orm";
 import type { Opportunity } from "@workspace/db/schema";
 import { classifyOpportunityQuality, plainSummaryIneligibilityReason, summaryIneligibilityReason, type OpportunityQualityView, type SummaryIneligibilityReason } from "../opportunityQuality";
+import { meaningfulLocalSearchTerms } from "./localSearchPolicy";
+
+export { meaningfulLocalSearchTerms } from "./localSearchPolicy";
 
 export interface SearchFilters {
   source?: string;
@@ -22,6 +25,7 @@ export interface SearchFilters {
   state?: string;
   dateRange?: number;
   activeOnly?: boolean;
+  includeNonActionable?: boolean;
 }
 
 export interface SearchResult {
@@ -150,12 +154,23 @@ function cardReasons(opp: Opportunity, score: number, keywordReasons: string[]):
   ])).slice(0, 7);
 }
 
-function buildMatchReasons(opp: Opportunity, terms: string[]): { reasons: string[]; score: number } {
+function buildMatchReasons(opp: Opportunity, terms: string[], query: string): { reasons: string[]; score: number } {
   const reasons: string[] = [];
   let score = 0;
   const textFields = [opp.title, opp.description, opp.agency, opp.subAgency, opp.solicitationNumber, opp.naicsCode, opp.naicsDescription, opp.placeOfPerformance].filter(Boolean) as string[];
   const normFields = textFields.map((f) => ` ${f.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `);
   const normTerms = terms.map((t) => t.toLowerCase());
+  const normalizedQuery = query.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedTitle = opp.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedDescription = (opp.description ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  if (normalizedQuery.length >= 4 && normalizedTitle.includes(normalizedQuery)) {
+    reasons.push("Full search phrase appears in title");
+    score += 35;
+  } else if (normalizedQuery.length >= 4 && normalizedDescription.includes(normalizedQuery)) {
+    reasons.push("Full search phrase appears in saved source description");
+    score += 20;
+  }
 
   for (const term of normTerms) {
     const titleNorm = ` ${opp.title.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
@@ -167,36 +182,44 @@ function buildMatchReasons(opp: Opportunity, terms: string[]): { reasons: string
     if (normFields.some((f) => f.includes(` ${term} `))) { reasons.push("Query appears in searchable record text"); score += 5; }
   }
 
-  return { reasons: Array.from(new Set(reasons)), score };
+  return { reasons: Array.from(new Set(reasons)), score: Math.min(100, score) };
 }
 
-function rankAdjust(opp: Opportunity, baseScore: number): number {
-  let score = baseScore;
+function rankAdjust(opp: Opportunity, baseScore: number, quality: OpportunityQualityView): number {
   const now = new Date();
-  if (opp.status === "active") score += 10;
+  let freshness = 0;
   if (opp.responseDeadline && opp.responseDeadline > now) {
     const daysUntil = Math.ceil((opp.responseDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    score += daysUntil <= 30 ? 15 : daysUntil <= 90 ? 8 : 3;
+    freshness += daysUntil <= 30 ? 5 : daysUntil <= 90 ? 3 : 1;
   }
   const daysSincePosted = Math.ceil((now.getTime() - opp.postedDate.getTime()) / (1000 * 60 * 60 * 24));
-  if (daysSincePosted <= 7) score += 10;
-  else if (daysSincePosted <= 30) score += 5;
-  if (opp.source === "sam_gov" || opp.providerName === "samGov") score += 5;
-  return Math.max(0, Math.min(100, score));
+  if (daysSincePosted <= 7) freshness += 3;
+  else if (daysSincePosted <= 30) freshness += 2;
+  const officialSource = opp.source === "sam_gov" || opp.providerName === "samGov" ? 3 : 0;
+  const score = baseScore * 0.52 + quality.relevanceScore * 0.4 + freshness + officialSource;
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 export async function searchOpportunities(query: string, limit = 50, filters: SearchFilters = {}): Promise<SearchResponse> {
   const totalStart = performance.now();
-  const terms = query.trim().split(/\s+/).filter((t) => t.length > 0);
+  const terms = meaningfulLocalSearchTerms(query);
   const whereConditions: any[] = [];
 
   if (terms.length > 0) {
-    const searchPatterns = terms.map((t) => `%${escapeLike(t)}%`);
-    const textConditions = searchPatterns.flatMap((pattern) => [
-      ilike(opportunitiesTable.title, pattern), ilike(opportunitiesTable.description, pattern), ilike(opportunitiesTable.agency, pattern), ilike(opportunitiesTable.subAgency, pattern),
-      ilike(opportunitiesTable.solicitationNumber, pattern), ilike(opportunitiesTable.naicsCode, pattern), ilike(opportunitiesTable.naicsDescription, pattern), ilike(opportunitiesTable.placeOfPerformance, pattern),
-    ]);
-    whereConditions.push(or(...textConditions));
+    const conceptConditions = terms.map((term) => {
+      const pattern = `%${escapeLike(term)}%`;
+      return or(
+        ilike(opportunitiesTable.title, pattern),
+        ilike(opportunitiesTable.description, pattern),
+        ilike(opportunitiesTable.agency, pattern),
+        ilike(opportunitiesTable.subAgency, pattern),
+        ilike(opportunitiesTable.solicitationNumber, pattern),
+        ilike(opportunitiesTable.naicsCode, pattern),
+        ilike(opportunitiesTable.naicsDescription, pattern),
+        ilike(opportunitiesTable.placeOfPerformance, pattern),
+      );
+    });
+    whereConditions.push(and(...conceptConditions));
   }
 
   if (filters.source) whereConditions.push(or(ilike(opportunitiesTable.source, `%${escapeLike(filters.source.toLowerCase())}%`), ilike(opportunitiesTable.providerName, `%${escapeLike(filters.source.toLowerCase())}%`)));
@@ -207,17 +230,23 @@ export async function searchOpportunities(query: string, limit = 50, filters: Se
     cutoff.setDate(cutoff.getDate() - filters.dateRange);
     whereConditions.push(gte(opportunitiesTable.postedDate, cutoff));
   }
-  if (filters.activeOnly) whereConditions.push(eq(opportunitiesTable.status, "active"));
+  if (!filters.includeNonActionable) {
+    whereConditions.push(eq(opportunitiesTable.status, "active"));
+    whereConditions.push(gt(opportunitiesTable.responseDeadline, new Date()));
+  } else if (filters.activeOnly) {
+    whereConditions.push(eq(opportunitiesTable.status, "active"));
+  }
 
   const dbStart = performance.now();
-  const rows: Opportunity[] = await db.select().from(opportunitiesTable).where(whereConditions.length > 0 ? and(...whereConditions) : undefined).limit(200);
+  const rows: Opportunity[] = await db.select().from(opportunitiesTable).where(whereConditions.length > 0 ? and(...whereConditions) : undefined).limit(500);
   const dbMs = Math.round(performance.now() - dbStart);
 
   const ranked = rows
-    .map((opp: Opportunity): SearchResult => {
-      const { reasons, score } = buildMatchReasons(opp, terms);
-      const finalScore = rankAdjust(opp, score);
+    .map((opp: Opportunity): SearchResult | null => {
       const quality = classifyOpportunityQuality(opp);
+      if (!filters.includeNonActionable && !quality.actionable) return null;
+      const { reasons, score } = buildMatchReasons(opp, terms, query);
+      const finalScore = rankAdjust(opp, score, quality);
       const reasonCode = summaryIneligibilityReason(quality, quality.summaryEligible);
       return {
         id: opp.id,
@@ -241,8 +270,9 @@ export async function searchOpportunities(query: string, limit = 50, filters: Se
         summaryIneligibilityReason: reasonCode ? plainSummaryIneligibilityReason(reasonCode) : null,
       };
     })
-    .sort((a: SearchResult, b: SearchResult) => b.matchScore - a.matchScore)
-    .slice(0, limit);
+    .filter((result): result is SearchResult => result !== null)
+    .sort((a: SearchResult, b: SearchResult) => b.matchScore - a.matchScore);
+  const total = ranked.length;
 
-  return { results: ranked, total: rows.length, timing: { dbMs, totalMs: Math.round(performance.now() - totalStart) } };
+  return { results: ranked.slice(0, limit), total, timing: { dbMs, totalMs: Math.round(performance.now() - totalStart) } };
 }

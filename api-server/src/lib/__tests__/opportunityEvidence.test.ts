@@ -39,6 +39,26 @@ describe("centralized opportunity evidence normalization", () => {
     assert.equal(classifyOpportunityQuality(db, now).summaryEligible, true);
   });
 
+  it("treats Tango opportunities as trusted structured federal evidence", () => {
+    const db = normalizedToDbRecord({
+      ...complete,
+      externalId: "tango-1",
+      source: "tango",
+      providerName: "tango",
+      rawData: {
+        providerName: "tango",
+        providerType: "tango_makegov_api",
+        discoveryMethod: "direct_api",
+      },
+    }) as any;
+    assert.match(db.tags, /evidence:direct-structured/);
+    assert.equal(db.sourceConfidence, "high");
+    assert.equal(
+      classifyOpportunityQuality(db, now).classification,
+      "verified-open",
+    );
+  });
+
   it("preserves buyer and deadline provenance in the stored shape", () => {
     const db = normalizedToDbRecord(complete) as any;
     assert.equal(db.agency, "City of Example Health Department");

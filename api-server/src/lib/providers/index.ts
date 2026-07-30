@@ -26,6 +26,9 @@ export * from "./exa";
 export * from "./browseAi";
 export * from "./browserUse";
 export * from "./olostep";
+export * from "./parallel";
+export * from "./linkup";
+export * from "./socrata";
 export * from "./clod";
 export * from "./openAiCompatible";
 export * from "./cohere";
@@ -57,6 +60,9 @@ import { exaProvider } from "./exa";
 import { browseAiProvider } from "./browseAi";
 import { browserUseProvider } from "./browserUse";
 import { olostepProvider } from "./olostep";
+import { parallelProvider } from "./parallel";
+import { linkupProvider } from "./linkup";
+import { socrataProvider } from "./socrata";
 import { clodProvider } from "./clod";
 import { minimaxProvider } from "./minimax";
 import { youProvider } from "./you";
@@ -100,6 +106,9 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   browseAi: browseAiProvider,
   browserUse: browserUseProvider,
   olostep: olostepProvider,
+  parallel: parallelProvider,
+  linkup: linkupProvider,
+  socrata: socrataProvider,
   clod: clodProvider,
   minimax: minimaxProvider,
   you: youProvider,

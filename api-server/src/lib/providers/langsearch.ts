@@ -7,7 +7,12 @@
  * API docs: https://langsearch.com/docs
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { composeAbortSignal } from "./abortSignals";
 
@@ -18,8 +23,16 @@ const QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 
 const KEY_SLOTS = [
   { dbKey: "langsearchApiKey", envKey: "LANGSEARCH_API_KEY", slot: "primary" },
-  { dbKey: "langsearchApiKey2", envKey: "LANGSEARCH_API_KEY_2", slot: "secondary" },
-  { dbKey: "langsearchApiKey3", envKey: "LANGSEARCH_API_KEY_3", slot: "tertiary" },
+  {
+    dbKey: "langsearchApiKey2",
+    envKey: "LANGSEARCH_API_KEY_2",
+    slot: "secondary",
+  },
+  {
+    dbKey: "langsearchApiKey3",
+    envKey: "LANGSEARCH_API_KEY_3",
+    slot: "tertiary",
+  },
 ] as const;
 
 type LangsearchKeySlot = (typeof KEY_SLOTS)[number]["slot"];
@@ -59,6 +72,7 @@ export class LangsearchProvider implements DataSourceProvider {
   readonly name = "langsearch" as const;
 
   private readonly cooldownUntil = new Map<LangsearchKeySlot, number>();
+  private keyCursor = 0;
 
   private async getApiKeys(): Promise<ResolvedLangsearchKey[]> {
     const resolved = await Promise.all(
@@ -83,12 +97,20 @@ export class LangsearchProvider implements DataSourceProvider {
 
   private cooldownFor(status: number, body: string): number {
     if (status === 401 || status === 403) return QUOTA_COOLDOWN_MS;
-    if (/quota|daily|exhaust|limit reached/i.test(body)) return QUOTA_COOLDOWN_MS;
+    if (/quota|daily|exhaust|limit reached/i.test(body))
+      return QUOTA_COOLDOWN_MS;
     return TRANSIENT_COOLDOWN_MS;
   }
 
   private shouldFailOver(status: number): boolean {
-    return status === 401 || status === 403 || status === 408 || status === 409 || status === 429 || status >= 500;
+    return (
+      status === 401 ||
+      status === 403 ||
+      status === 408 ||
+      status === 409 ||
+      status === 429 ||
+      status >= 500
+    );
   }
 
   private async requestWebSearch(
@@ -101,12 +123,22 @@ export class LangsearchProvider implements DataSourceProvider {
     }
 
     const now = Date.now();
-    const available = keys.filter(({ slot }) => (this.cooldownUntil.get(slot) ?? 0) <= now);
-    const candidates = available.length > 0 ? available : keys;
+    const available = keys.filter(
+      ({ slot }) => (this.cooldownUntil.get(slot) ?? 0) <= now,
+    );
+    const eligible = available.length > 0 ? available : keys;
+    const offset = eligible.length > 0 ? this.keyCursor % eligible.length : 0;
+    const candidates = [
+      ...eligible.slice(offset),
+      ...eligible.slice(0, offset),
+    ];
     const errors: string[] = [];
 
     for (const { value: apiKey, slot } of candidates) {
-      const requestSignal = composeAbortSignal(LANGSEARCH_REQUEST_TIMEOUT_MS, options.signal);
+      const requestSignal = composeAbortSignal(
+        LANGSEARCH_REQUEST_TIMEOUT_MS,
+        options.signal,
+      );
       try {
         const response = await fetch(`${LANGSEARCH_BASE}/web-search`, {
           method: "POST",
@@ -125,9 +157,14 @@ export class LangsearchProvider implements DataSourceProvider {
 
         const body = await response.text();
         if (!response.ok) {
-          errors.push(`LangSearch ${slot} key HTTP ${response.status}: ${body.slice(0, 180)}`);
+          errors.push(
+            `LangSearch ${slot} key HTTP ${response.status}: ${body.slice(0, 180)}`,
+          );
           if (this.shouldFailOver(response.status)) {
-            this.cooldownUntil.set(slot, Date.now() + this.cooldownFor(response.status, body));
+            this.cooldownUntil.set(
+              slot,
+              Date.now() + this.cooldownFor(response.status, body),
+            );
             continue;
           }
           continue;
@@ -144,7 +181,9 @@ export class LangsearchProvider implements DataSourceProvider {
 
         if (data.code && data.code !== 200) {
           const message = data.msg ?? "unknown error";
-          errors.push(`LangSearch ${slot} key API error ${data.code}: ${message}`);
+          errors.push(
+            `LangSearch ${slot} key API error ${data.code}: ${message}`,
+          );
           this.cooldownUntil.set(
             slot,
             Date.now() + this.cooldownFor(data.code, message),
@@ -153,6 +192,9 @@ export class LangsearchProvider implements DataSourceProvider {
         }
 
         const pages = data.data?.webPages?.value ?? data.webPages?.value ?? [];
+        const successfulIndex = keys.findIndex((key) => key.slot === slot);
+        this.keyCursor =
+          keys.length > 0 ? (successfulIndex + 1) % keys.length : 0;
         if (errors.length > 0) {
           console.warn(
             JSON.stringify({
@@ -174,6 +216,38 @@ export class LangsearchProvider implements DataSourceProvider {
     }
 
     return { pages: [], errors };
+  }
+
+  async search(
+    query: string,
+    options: { dateRange?: number; signal?: AbortSignal } = {},
+  ): Promise<
+    Array<{
+      title: string;
+      url: string;
+      content: string;
+      dateRaw?: string;
+      keySlot?: LangsearchKeySlot;
+    }>
+  > {
+    const result = await this.requestWebSearch(query, options);
+    if (result.pages.length === 0 && result.errors.length > 0) {
+      throw new Error(result.errors.join("; "));
+    }
+    return result.pages.flatMap((page) => {
+      const url = page.url ?? page.displayUrl;
+      return url
+        ? [
+            {
+              title: page.name ?? url,
+              url,
+              content: page.summary || page.snippet || "",
+              dateRaw: page.datePublished ?? page.dateLastCrawled ?? undefined,
+              keySlot: result.slot,
+            },
+          ]
+        : [];
+    });
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
@@ -216,7 +290,9 @@ export class LangsearchProvider implements DataSourceProvider {
     return { records: records as any, total: records.length, errors };
   }
 
-  private freshnessForDateRange(dateRange?: number): "oneDay" | "oneWeek" | "oneMonth" | "oneYear" | "noLimit" {
+  private freshnessForDateRange(
+    dateRange?: number,
+  ): "oneDay" | "oneWeek" | "oneMonth" | "oneYear" | "noLimit" {
     if (!dateRange || dateRange <= 0) return "oneMonth";
     if (dateRange <= 1) return "oneDay";
     if (dateRange <= 7) return "oneWeek";

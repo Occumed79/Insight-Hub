@@ -8,9 +8,9 @@ process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
 const { MANUAL_RFP_PROVIDERS, resolveManualProviders } = await import("../providerRunner");
 
-test("manual Fetch Intelligence defaults to official SAM plus one AI discovery pass", () => {
-  assert.deepEqual(resolveManualProviders(), ["samGov", "aiDiscovery"]);
-  assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), ["samGov", "aiDiscovery"]);
+test("manual Fetch Intelligence defaults to Tango plus one browser discovery pass", () => {
+  assert.deepEqual(resolveManualProviders(), ["tango", "aiDiscovery"]);
+  assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), ["tango", "samGov", "aiDiscovery"]);
 });
 
 test("legacy scraper selections collapse into the AI discovery provider", () => {
@@ -20,6 +20,7 @@ test("legacy scraper selections collapse into the AI discovery provider", () => 
   );
 });
 
-test("direct scraper providers are no longer runnable through manual ingestion", () => {
-  assert.throws(() => resolveManualProviders(["tango"]), /Unsupported RFP provider/);
+test("Tango is a supported direct API provider while crawler providers stay unavailable", () => {
+  assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
+  assert.throws(() => resolveManualProviders(["firecrawl"]), /Unsupported RFP provider/);
 });
