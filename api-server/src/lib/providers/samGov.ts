@@ -3,30 +3,13 @@ import { resolveCredential, resolveCredentialWithSource, type ResolvedCredential
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { classifyResult } from "../search/relevance";
+import { buildSamGovTitleQueries, isBidReadySamOpportunity, type SamOpportunity } from "./samGovQuality";
+
+export { buildSamGovTitleQueries, isBidReadySamOpportunity } from "./samGovQuality";
 
 const SAM_GOV_DEFAULT_BASE = "https://api.sam.gov/opportunities/v2/search";
-
-interface SamOpportunity {
-  noticeId?: string;
-  title?: string;
-  solicitationNumber?: string;
-  fullParentPathName?: string;
-  type?: string;
-  baseType?: string;
-  active?: string;
-  naicsCode?: string;
-  classificationCode?: string;
-  postedDate?: string;
-  responseDeadLine?: string;
-  archiveDate?: string;
-  typeOfSetAside?: string;
-  typeOfSetAsideDescription?: string;
-  placeOfPerformance?: { city?: { name?: string }; state?: { code?: string } };
-  officeAddress?: { city?: string; state?: string };
-  description?: string;
-  uiLink?: string;
-  award?: { amount?: number | string; awardee?: { name?: string } };
-}
+const SAM_GOV_BID_NOTICE_TYPES = ["o", "k"] as const;
 
 export function formatSamGovApiError(status: number, body: string, credential: Pick<ResolvedCredential, "source" | "key">): string {
   const snippet = body.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -63,27 +46,13 @@ export class SamGovProvider implements DataSourceProvider {
     return !!key;
   }
 
-  // Occu-Med relevant NAICS codes:
-  // 621111 - Offices of Physicians (except Mental Health)
-  // 621999 - All Other Miscellaneous Ambulatory Health Care Services
-  // 621512 - Diagnostic Imaging Centers
-  // 621310 - Offices of Chiropractors (DOT/physical exams)
-  // 561320 - Temporary Help Services (staffed health programs)
-  // 923120 - Administration of Public Health Programs
-  private static readonly OCCUMED_NAICS = ["621111", "621999", "621512", "621310", "561320", "923120"];
-
-  // Occu-Med relevant PSC (Product Service Codes):
-  // Q201 - General health care services      Q301 - Laboratory testing
-  // Q501 - Medical (other)                    G004 - Medical/health social services
-  private static readonly OCCUMED_PSC = ["Q201", "Q301", "Q501"];
-
   private static fmtDate(d: Date): string {
     return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
   }
 
   /**
-   * Run a single SAM.gov query with the given extra params (keywords, ncode, or
-   * ccode) and return the relevance-filtered normalized records. Throws on quota.
+   * Run one supported SAM.gov title query and discard non-bid notices before
+   * normalization. SAM's public v2 API does not support a `keywords` parameter.
    */
   private async runQuery(
     apiKey: string,
@@ -99,10 +68,13 @@ export class SamGovProvider implements DataSourceProvider {
       api_key: apiKey,
       postedFrom: SamGovProvider.fmtDate(fromDate),
       postedTo: SamGovProvider.fmtDate(today),
+      rdlfrom: SamGovProvider.fmtDate(today),
+      rdlto: SamGovProvider.fmtDate(new Date(today.getFullYear() + 1, today.getMonth(), today.getDate())),
       limit: String(limit),
       offset: "0",
       ...extra,
     });
+    SAM_GOV_BID_NOTICE_TYPES.forEach((type) => params.append("ptype", type));
 
     const response = await fetch(`${baseUrl}?${params}`, { signal });
     if (!response.ok) {
@@ -118,7 +90,9 @@ export class SamGovProvider implements DataSourceProvider {
       throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
     }
 
-    return (json.opportunitiesData ?? []).map((o) => this.normalize(o));
+    return (json.opportunitiesData ?? [])
+      .filter((opportunity) => isBidReadySamOpportunity(opportunity, today))
+      .map((opportunity) => this.normalize(opportunity));
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
@@ -127,92 +101,59 @@ export class SamGovProvider implements DataSourceProvider {
     const apiKey = apiKeyCredential.value;
 
     const baseUrl = await this.getBaseUrl();
-    const dateRange = options.dateRange ?? 30;
+    const dateRange = Math.max(1, Math.min(365, options.dateRange ?? 30));
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - dateRange);
     const limit = options.limit ?? 100;
 
-    // Occu-Med default keywords to search when no custom keywords provided
-    const DEFAULT_KEYWORDS = "occupational health";
-    const searchKeywords = options.keywords?.trim() || DEFAULT_KEYWORDS;
-
-    // Note: we do NOT filter by typeOfNotice here because SAM.gov returns "o,p,k,r" format
-    // differently across API versions. Post-fetch relevance filtering handles quality instead.
-
-    // Primary keyword pull — throws on quota so the caller surfaces the message.
-    const normalized = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { keywords: searchKeywords }, fromDate, today, limit, options.signal);
-
-    // NAICS/PSC-targeted pulls (PR B): structured codes surface solicitations that
-    // keyword search misses (and come with real dates/values). Bounded to keep
-    // daily quota in check; failures degrade gracefully into warnings.
-    const targetedErrors: string[] = [];
-    const seen = new Set(normalized.map((o) => o.externalId).filter(Boolean));
-    const targetedQueries: Record<string, string>[] = [
-      ...SamGovProvider.OCCUMED_NAICS.map((ncode) => ({ ncode })),
-      ...SamGovProvider.OCCUMED_PSC.map((ccode) => ({ ccode })),
-    ];
-    const targetedResults = await Promise.allSettled(
-      targetedQueries.map((extra) => this.runQuery(apiKey, apiKeyCredential, baseUrl, extra, fromDate, today, limit, options.signal))
-    );
-    for (const r of targetedResults) {
-      if (r.status === "fulfilled") {
-        for (const opp of r.value) {
-          if (opp.externalId && seen.has(opp.externalId)) continue;
-          if (opp.externalId) seen.add(opp.externalId);
-          normalized.push(opp);
-        }
-      } else {
-        const msg = r.reason?.message ?? String(r.reason);
-        if (!targetedErrors.includes(msg)) targetedErrors.push(msg);
+    const normalized: NormalizedOpportunity[] = [];
+    const seen = new Set<string>();
+    for (const title of buildSamGovTitleQueries(options.keywords)) {
+      const matches = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { title }, fromDate, today, limit, options.signal);
+      for (const opportunity of matches) {
+        if (seen.has(opportunity.externalId)) continue;
+        seen.add(opportunity.externalId);
+        normalized.push(opportunity);
       }
     }
 
-    const opps = normalized;
-
-    // Broad Occu-Med relevance terms — intentionally loose here.
-    // The write-time quality filter in unifiedSearch handles strict rejection.
-    // Being too strict here causes SAM.gov to return 0 records even when good ones exist.
-    const OCCUMED_RELEVANT_TERMS = [
-      // Core service lines
-      "occupational health", "occupational medicine", "occupational medical",
-      "occ health", "occmed",
-      // Drug & alcohol
-      "drug test", "drug screen", "alcohol test", "substance abuse",
-      "dot drug", "mro ", "medical review officer", "breath alcohol",
-      "random test", "post-accident", "return to duty", "return-to-duty",
-      // Physicals & exams
-      "physical exam", "medical exam", "dot physical", "dot examination",
-      "pre-employment", "pre employment", "pre-placement",
-      "fitness for duty", "fit for duty", "work capacity",
-      // Surveillance & monitoring
-      "medical surveillance", "health surveillance", "employee health",
-      "workplace health", "worker health", "health screening",
-      "biometric", "biological monitoring",
-      // Specific tests
-      "audiometric", "audiogram", "hearing conservation", "pulmonary function",
-      "spirometry", "respirator fit", "fit test",
-      "vaccination", "immunization", "tb test", "tuberculosis",
-      // NAICS codes — exact match on any of these is a strong signal
-      "621111", "621999", "621512", "621310",
-    ];
-
-    // Loose pre-filter: pass anything that has at least one signal in title or NAICS.
-    // The write-time filter in unifiedSearch applies the strict rejection logic.
-    const relevant = opps.filter((opp) => {
-      const text = `${opp.title} ${opp.naicsCode ?? ""}`.toLowerCase();
-      const desc = (opp.description ?? "").toLowerCase();
-      return OCCUMED_RELEVANT_TERMS.some((term) => text.includes(term) || desc.includes(term));
+    const relevant = normalized.flatMap((opportunity) => {
+      const relevance = classifyResult({
+        title: opportunity.title,
+        snippet: [
+          opportunity.type,
+          opportunity.description,
+          opportunity.agency,
+          opportunity.subAgency,
+          opportunity.naicsCode,
+          opportunity.naicsDescription,
+        ].filter(Boolean).join(" "),
+        url: opportunity.sourceUrl,
+        date: opportunity.postedDate,
+        deadlineInFuture: Boolean(opportunity.responseDeadline && opportunity.responseDeadline > today),
+        allowHistorical: true,
+      });
+      if (relevance.rejected || relevance.score < 65 || relevance.confidence === "possible_adjacent") return [];
+      return [{
+        ...opportunity,
+        rawData: {
+          ...(opportunity.rawData ?? {}),
+          relevanceScore: relevance.score,
+          relevanceReason: relevance.reasons.join("; "),
+          relevanceConfidence: relevance.confidence,
+        },
+      }];
     });
 
-    const noMatchWarning = relevant.length === 0 && opps.length > 0
-      ? ["SAM.gov returned " + opps.length + " records but none matched. The API may be returning unrelated results for this keyword — try 'occupational health' or 'drug testing'."]
+    const noMatchWarning = relevant.length === 0 && normalized.length > 0
+      ? ["SAM.gov returned bid-ready notices, but none had a strong current match to Occu-Med service lines."]
       : [];
 
     return {
       records: relevant,
-      total: opps.length,
-      errors: [...noMatchWarning, ...targetedErrors],
+      total: normalized.length,
+      errors: noMatchWarning,
     };
   }
 
@@ -250,7 +191,7 @@ export class SamGovProvider implements DataSourceProvider {
       type: o.type ?? o.baseType ?? "Solicitation",
       status: o.active === "Yes" ? "active" : "archived",
       naicsCode: o.naicsCode,
-      postedDate: o.postedDate ? new Date(o.postedDate) : new Date(),
+      postedDate: o.postedDate ? new Date(o.postedDate) : new Date(0),
       responseDeadline: o.responseDeadLine ? new Date(o.responseDeadLine) : undefined,
       setAside: o.typeOfSetAsideDescription ?? o.typeOfSetAside,
       placeOfPerformance: place,
@@ -271,11 +212,17 @@ export class SamGovProvider implements DataSourceProvider {
         return d;
       })(),
       solicitationNumber: o.solicitationNumber,
-      sourceUrl: o.uiLink,
+      sourceUrl: o.noticeId ? `https://sam.gov/opp/${o.noticeId}/view` : o.uiLink,
       awardAmount,
       awardee: o.award?.awardee?.name,
       source: this.name,
-      rawData: o as Record<string, unknown>,
+      rawData: {
+        ...(o as Record<string, unknown>),
+        providerPlatform: "sam.gov",
+        providerNativeId: o.noticeId,
+        evidenceType: "direct-structured",
+        ...(!o.postedDate || Number.isNaN(new Date(o.postedDate).getTime()) ? { dateUnknown: true } : {}),
+      },
     };
   }
 }

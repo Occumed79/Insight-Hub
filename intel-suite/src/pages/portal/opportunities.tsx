@@ -58,10 +58,10 @@ import {
 export type OpportunityQualityViewMode = "actionable" | "needs-verification" | "closed" | "all";
 
 export const QUALITY_VIEW_TABS: Array<[OpportunityQualityViewMode, string]> = [
-  ["actionable", "Open & Verified"],
-  ["needs-verification", "Needs Verification"],
-  ["closed", "Closed/Archived"],
-  ["all", "All Records"],
+  ["actionable", "Bid-ready & Verified"],
+  ["needs-verification", "Early Leads / Verify"],
+  ["closed", "Closed / Non-biddable"],
+  ["all", "Audit: All Records"],
 ];
 
 export function qualityViewStatusFilter(currentView: OpportunityQualityViewMode, requestedStatus: "all" | "active" | "archived") {
@@ -168,7 +168,7 @@ export default function OpportunitiesDashboard() {
   const [qualityView, setQualityView] = useState<OpportunityQualityViewMode>("actionable");
   const [type, setType] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("90");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -364,7 +364,11 @@ export default function OpportunitiesDashboard() {
       const resp = await fetch(`${baseUrl}/api/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: localSearchQuery.trim(), limit: 50 }),
+        body: JSON.stringify({
+          query: localSearchQuery.trim(),
+          limit: 50,
+          filters: { activeOnly: true, dateRange: 180 },
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -588,8 +592,8 @@ export default function OpportunitiesDashboard() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-white tracking-tight">Opportunities</h1>
-          <p className="text-muted-foreground mt-1">Review active procurement leads in a cleaner card layout.</p>
+          <h1 className="text-3xl font-display font-bold text-white tracking-tight">Opportunity Intelligence</h1>
+          <p className="text-muted-foreground mt-1">Current, bid-ready RFPs that match Occu-Med's actual service lines.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" className="bg-background/50 backdrop-blur-md border-white/10 hover:bg-white/5 hover:text-white" onClick={() => setIsImportOpen(true)}>
@@ -653,7 +657,7 @@ export default function OpportunitiesDashboard() {
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Smart search across all stored opportunities..."
+            placeholder="Search current, verified opportunities..."
             className="pl-9 bg-background/50 border-white/10 focus-visible:ring-primary/50 text-white"
             value={localSearchQuery}
             onChange={(e) => setLocalSearchQuery(e.target.value)}
@@ -1006,7 +1010,7 @@ export default function OpportunitiesDashboard() {
                   <Input id="query" value={fetchQuery} onChange={(e) => setFetchQuery(e.target.value)} placeholder='e.g. "occupational health services" government RFP due in 30 days' className="bg-background/50 border-white/10 pl-9" />
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {["occupational health services city county RFP", "drug testing and DOT physical solicitation", "employee wellness contract opportunity state government"].map((preset) => (
+                  {["occupational health services", "drug and alcohol testing", "pre-employment physical examinations", "medical surveillance and audiometric testing"].map((preset) => (
                     <button key={preset} type="button" onClick={() => setFetchQuery(preset)} className="text-[10px] px-2 py-1 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80">{preset}</button>
                   ))}
                 </div>

@@ -59,10 +59,9 @@ function relevanceView(opp: Record<string, any>) {
     allowHistorical: true,
   });
   const tags = parseTags(opp.tags);
-  const storedScore = Number(opp.relevanceScore);
-  const score = Number.isFinite(storedScore)
-    ? Math.round(storedScore)
-    : classification.score;
+  // Stored scores may predate the current relevance rules, so never let them
+  // promote stale or previously misclassified records.
+  const score = classification.score;
   const dateUnknown =
     tags.includes("date-unknown") ||
     !opp.postedDate ||

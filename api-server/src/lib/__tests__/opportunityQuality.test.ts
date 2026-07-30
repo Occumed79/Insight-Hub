@@ -19,7 +19,32 @@ const base = {
 
 describe("opportunity quality classifier", () => {
   it("includes a future direct authoritative solicitation as verified-open", () => {
-    assert.equal(classifyOpportunityQuality(base, now).classification, "verified-open");
+    const quality = classifyOpportunityQuality(base, now);
+    assert.equal(quality.classification, "verified-open");
+    assert.equal(quality.bidReadyNotice, true);
+    assert.equal(quality.relevanceEligible, true);
+    assert.ok(quality.relevanceScore >= 65);
+  });
+
+  it("does not promote an irrelevant official solicitation", () => {
+    const quality = classifyOpportunityQuality({
+      ...base,
+      title: "RFP Janitorial Services",
+      description: "Request for proposals for custodial and janitorial services.",
+    }, now);
+    assert.equal(quality.actionable, false);
+    assert.equal(quality.relevanceEligible, false);
+  });
+
+  it("keeps early market research out of the bid-ready view", () => {
+    const quality = classifyOpportunityQuality({
+      ...base,
+      title: "Sources Sought for Occupational Health Services",
+      type: "Sources Sought",
+    }, now);
+    assert.equal(quality.actionable, false);
+    assert.equal(quality.bidReadyNotice, false);
+    assert.equal(quality.classification, "needs-verification");
   });
 
   it("excludes past deadlines and archived records from verified-open", () => {
@@ -91,7 +116,7 @@ describe("opportunity quality classifier", () => {
     rows.push({ ...base, id: "ost-a", title: "Q--Presolicitation Notice for OST HRP - SAM.gov", samUrl: "https://sam.gov/workspace/contract/opp/9aec430f1de94cd7bf7687f515b55ed8/view" });
     rows.push({ ...base, id: "ost-b", title: "Q--Presolicitation Notice for OST HRP - SAM.gov", samUrl: "https://sam.gov/opp/9aec430f1de94cd7bf7687f515b55ed8/view" });
     const page = buildOpportunityQualityPage(rows, "actionable", 56, 10, now);
-    assert.equal(page.total, 554);
+    assert.equal(page.total, 553);
     assert.ok(page.data.length > 0);
     assert.ok(page.data.every((row) => row.quality.classification === "verified-open"));
   });
