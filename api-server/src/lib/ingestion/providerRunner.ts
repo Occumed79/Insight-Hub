@@ -39,6 +39,7 @@ export const MANUAL_RFP_PROVIDERS = new Set([
 ]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
+const DEFAULT_OCCUMED_QUERY = "occupational health services";
 
 export interface ProviderRunResult {
   records: NormalizedOpportunity[];
@@ -79,29 +80,33 @@ export function resolveManualProviders(providers?: string[]): string[] {
   ];
 }
 
+export function effectiveProviderQuery(keywords?: string): string {
+  return keywords?.trim() || DEFAULT_OCCUMED_QUERY;
+}
+
 function applyProviderGuards(
   provider: string,
   records: NormalizedOpportunity[],
   errors: string[],
   keywords?: string,
 ): ProviderRunResult {
-  const partition = partitionProviderRecordsForQuery(records, keywords, 3);
+  const query = effectiveProviderQuery(keywords);
+  const partition = partitionProviderRecordsForQuery(records, query, 0);
   if (partition.rejectedCount > 0) {
     console.info(
       JSON.stringify({
         event: "rfp_provider_query_partitioned",
         provider,
-        query: keywords,
+        query,
         returned: partition.rawCount,
         matched: partition.matchedCount,
         rejected: partition.rejectedCount,
-        retainedRejectionSamples: partition.rejectedSamples.length,
+        retainedRejectionSamples: 0,
       }),
     );
   }
-  const admitted = [...partition.matched, ...partition.rejectedSamples];
 
-  const filtered = filterExpiredOpportunities(admitted);
+  const filtered = filterExpiredOpportunities(partition.matched);
   if (filtered.expiredSkipped > 0) {
     console.info(
       JSON.stringify({
@@ -116,6 +121,50 @@ function applyProviderGuards(
     records: filtered.records,
     errors,
     expiredSkipped: filtered.expiredSkipped,
+  };
+}
+
+async function applyStructuredFederalJudgePanel(
+  provider: string,
+  records: NormalizedOpportunity[],
+  errors: string[],
+  options: ProviderRunnerOptions,
+): Promise<ProviderRunResult> {
+  const guarded = applyProviderGuards(
+    provider,
+    records,
+    errors,
+    options.keywords,
+  );
+  if (guarded.records.length === 0) return guarded;
+
+  const { judgeStructuredOpportunities } = await import(
+    "../search/structuredOpportunityJudge"
+  );
+  const judged = await judgeStructuredOpportunities(guarded.records, {
+    providerName: provider,
+    signal: options.signal,
+  });
+
+  console.info(
+    JSON.stringify({
+      event: "rfp_structured_judge_panel",
+      provider,
+      candidates: guarded.records.length,
+      approved: judged.approved.length,
+      deterministicRejected: judged.deterministicRejected,
+      panelRejected: judged.panelRejected,
+      unjudged: judged.unjudged,
+      deferred: judged.deferred,
+      judges: judged.usedJudges,
+      errors: judged.errors.length,
+    }),
+  );
+
+  return {
+    records: judged.approved,
+    errors: [...guarded.errors, ...judged.errors],
+    expiredSkipped: guarded.expiredSkipped,
   };
 }
 
@@ -263,11 +312,11 @@ export async function fetchOneProvider(
       limit: 100,
       signal: options.signal,
     });
-    return applyProviderGuards(
+    return applyStructuredFederalJudgePanel(
       provider,
       result.records,
       result.errors ?? [],
-      options.keywords,
+      options,
     );
   }
 
@@ -279,11 +328,11 @@ export async function fetchOneProvider(
       limit: 100,
       signal: options.signal,
     });
-    return applyProviderGuards(
+    return applyStructuredFederalJudgePanel(
       provider,
       result.records,
       result.errors ?? [],
-      options.keywords,
+      options,
     );
   }
 
@@ -295,11 +344,11 @@ export async function fetchOneProvider(
       limit: 100,
       signal: options.signal,
     });
-    return applyProviderGuards(
+    return applyStructuredFederalJudgePanel(
       provider,
       result.records,
       result.errors ?? [],
-      options.keywords,
+      options,
     );
   }
 
