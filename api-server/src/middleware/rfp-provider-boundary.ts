@@ -1,47 +1,46 @@
 import { Router } from "express";
+import {
+  MANUAL_RFP_PROVIDERS,
+  PROVIDER_ALIASES,
+} from "../lib/ingestion/providerRunner";
 
 const router = Router();
 
-const ALLOWED_RFP_PROVIDER_REQUESTS = new Set([
-  "samGov",
-  "sam_gov",
-  "aiDiscovery",
-  "ai_discovery",
-  "webIntelligence",
-  // Legacy selections are still accepted at the request boundary and are
-  // collapsed into aiDiscovery by providerRunner. They no longer execute the
-  // retired scraper providers.
-  "publicPortalProviders",
-  "public_portal_providers",
-  "publicPortals",
-  "public_portals",
-  "statePortals",
-  "eunaBonfire",
-  "euna_bonfire",
-  "eunaSupplierNetwork",
-  "internationalPublicPortals",
-  "international_public_portals",
-  "internationalOpportunities",
+/**
+ * Keep the HTTP request boundary synchronized with the provider runner. The
+ * boundary accepts canonical provider names plus every legacy/UI alias that the
+ * runner knows how to normalize. This prevents a newly supported provider such
+ * as Tango or GovCon from being rejected before ingestion starts.
+ */
+export const ALLOWED_RFP_PROVIDER_REQUESTS = new Set<string>([
+  ...MANUAL_RFP_PROVIDERS,
+  ...PROVIDER_ALIASES.keys(),
 ]);
 
-/**
- * Keep the manual RFP fetch endpoint limited to the restored AI discovery path
- * and the official SAM.gov API. Legacy scraper names are accepted only so old
- * browser requests and persisted retries can be redirected into aiDiscovery.
- */
+export function unsupportedRfpProviders(providers: string[]): string[] {
+  return Array.from(
+    new Set(
+      providers.filter(
+        (provider) => !ALLOWED_RFP_PROVIDER_REQUESTS.has(provider),
+      ),
+    ),
+  );
+}
+
 router.post("/opportunities/fetch", (req, res, next) => {
   const providers = req.body?.providers;
   if (providers == null) return next();
 
-  if (!Array.isArray(providers) || providers.some((provider) => typeof provider !== "string")) {
+  if (
+    !Array.isArray(providers) ||
+    providers.some((provider) => typeof provider !== "string")
+  ) {
     return res.status(400).json({
       error: "providers must be an array of supported RFP provider names",
     });
   }
 
-  const unsupported = Array.from(
-    new Set(providers.filter((provider) => !ALLOWED_RFP_PROVIDER_REQUESTS.has(provider))),
-  );
+  const unsupported = unsupportedRfpProviders(providers);
 
   if (unsupported.length > 0) {
     return res.status(400).json({

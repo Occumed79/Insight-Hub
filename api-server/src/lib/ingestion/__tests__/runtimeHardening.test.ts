@@ -14,6 +14,9 @@ const { formatProviderProgress } = await import("../manualIngestion");
 const { isTransientPortalAdapterError } = await import(
   "../../providers/auditedPublicPortalProvider"
 );
+const { unsupportedRfpProviders } = await import(
+  "../../../middleware/rfp-provider-boundary"
+);
 
 test("recognizes nested Neon connection timeouts", () => {
   const error = new AggregateError(
@@ -111,4 +114,25 @@ test("retries only transient adapter failures", () => {
     isTransientPortalAdapterError("portal returned HTTP 403"),
     false,
   );
+});
+
+test("accepts Tango, GovCon, SAM.gov, and discovery provider names at the HTTP boundary", () => {
+  assert.deepEqual(
+    unsupportedRfpProviders([
+      "tango",
+      "tango_api",
+      "tangoApi",
+      "govcon",
+      "govcon_api",
+      "govconApi",
+      "samGov",
+      "sam_gov",
+      "aiDiscovery",
+      "ai_discovery",
+    ]),
+    [],
+  );
+  assert.deepEqual(unsupportedRfpProviders(["firecrawl", "tango"]), [
+    "firecrawl",
+  ]);
 });
