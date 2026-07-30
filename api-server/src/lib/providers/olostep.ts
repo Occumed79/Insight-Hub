@@ -1,17 +1,21 @@
 /**
  * Olostep Provider
  *
- * Role: Residential-proxy web scraping. Routes requests through real residential
- * IP addresses to bypass bot detection and Cloudflare protection on procurement
- * portals and vendor sites. Returns clean page content for AI analysis.
- *
- * API docs: https://www.olostep.com/docs
+ * Uses Olostep's current synchronous scrape endpoint to turn a page into
+ * markdown or text for downstream opportunity analysis.
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { composeAbortSignal } from "./abortSignals";
 
-const OLOSTEP_BASE = "https://agent.olostep.com/olostep-p2p-network";
+const OLOSTEP_SCRAPE_ENDPOINT = "https://api.olostep.com/v1/scrapes";
+const OLOSTEP_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface OlostepScrapeResult {
   url: string;
@@ -19,6 +23,19 @@ export interface OlostepScrapeResult {
   markdown_content?: string;
   text_content?: string;
   status_code?: number;
+}
+
+interface OlostepCreateResponse {
+  url_to_scrape?: string;
+  result?: {
+    html_content?: string;
+    markdown_content?: string;
+    text_content?: string;
+    page_metadata?: {
+      status_code?: number;
+      title?: string;
+    };
+  };
 }
 
 export class OlostepProvider implements DataSourceProvider {
@@ -41,56 +58,83 @@ export class OlostepProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  /**
-   * Scrape a URL through Olostep's residential proxy network.
-   * Returns markdown content for AI analysis.
-   */
   async scrape(
     url: string,
     options: {
-      formats?: ("markdown" | "html" | "text")[];
+      formats?: Array<"markdown" | "html" | "text">;
       waitFor?: number;
-    } = {}
+      signal?: AbortSignal;
+    } = {},
   ): Promise<OlostepScrapeResult | null> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return null;
 
-    const { formats = ["markdown"], waitFor } = options;
+    const formats = options.formats?.length
+      ? options.formats
+      : (["markdown"] as const);
+    const requestSignal = composeAbortSignal(
+      OLOSTEP_REQUEST_TIMEOUT_MS,
+      options.signal,
+    );
 
-    const params = new URLSearchParams({
-      token: apiKey,
-      url,
-      formats: formats.join(","),
-      ...(waitFor ? { wait_before_scraping: String(waitFor) } : {}),
-    });
-
-    const response = await fetch(`${OLOSTEP_BASE}?${params.toString()}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
+    let response: Response;
+    try {
+      response = await fetch(OLOSTEP_SCRAPE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          url_to_scrape: url,
+          formats,
+          ...(options.waitFor
+            ? { wait_before_scraping: options.waitFor }
+            : {}),
+        }),
+        signal: requestSignal.signal,
+      });
+    } finally {
+      requestSignal.cleanup();
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`Olostep error ${response.status}: ${text.slice(0, 200)}`);
+      throw new Error(
+        `Olostep error ${response.status}: ${text.slice(0, 200)}`,
+      );
     }
 
-    return response.json() as Promise<OlostepScrapeResult>;
+    const payload = (await response.json()) as OlostepCreateResponse;
+    const result = payload.result;
+    if (!result) return null;
+
+    return {
+      url: payload.url_to_scrape ?? url,
+      html_content: result.html_content,
+      markdown_content: result.markdown_content,
+      text_content: result.text_content,
+      status_code: result.page_metadata?.status_code,
+    };
   }
 
-  /**
-   * Scrape multiple URLs in parallel (up to 5 concurrent).
-   * Returns only successful results with content.
-   */
   async scrapeMany(urls: string[]): Promise<OlostepScrapeResult[]> {
-    const CONCURRENCY = 5;
+    const concurrency = 5;
     const results: OlostepScrapeResult[] = [];
 
-    for (let i = 0; i < urls.length; i += CONCURRENCY) {
-      const batch = urls.slice(i, i + CONCURRENCY);
-      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
-      for (const r of settled) {
-        if (r.status === "fulfilled" && r.value?.markdown_content) {
-          results.push(r.value);
+    for (let index = 0; index < urls.length; index += concurrency) {
+      const batch = urls.slice(index, index + concurrency);
+      const settled = await Promise.allSettled(
+        batch.map((url) => this.scrape(url)),
+      );
+      for (const item of settled) {
+        if (
+          item.status === "fulfilled" &&
+          item.value &&
+          (item.value.markdown_content || item.value.text_content)
+        ) {
+          results.push(item.value);
         }
       }
     }
@@ -98,11 +142,11 @@ export class OlostepProvider implements DataSourceProvider {
     return results;
   }
 
-  /**
-   * Get the text content from a URL, suitable for AI processing.
-   */
-  async getText(url: string): Promise<string | null> {
-    const result = await this.scrape(url, { formats: ["markdown"] });
+  async getText(url: string, signal?: AbortSignal): Promise<string | null> {
+    const result = await this.scrape(url, {
+      formats: ["markdown", "text"],
+      signal,
+    });
     return result?.markdown_content ?? result?.text_content ?? null;
   }
 }

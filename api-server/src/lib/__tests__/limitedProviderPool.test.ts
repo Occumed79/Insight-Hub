@@ -69,6 +69,8 @@ test("limited provider pools fall through and cool down quota failures", async (
   );
   assert.equal(result.provider, "fallback");
   assert.deepEqual(result.attempted, ["limited", "fallback"]);
+  assert.deepEqual(result.errors, []);
+  assert.match(result.recoveredErrors.join(" "), /429 quota exhausted/);
   assert.equal(
     limitedProviderPoolSnapshot()[0]?.poolProvider,
     "enrichment:limited",
@@ -119,5 +121,31 @@ test("limited provider pools stop waiting on a slow provider and continue", asyn
 
   assert.equal(result.provider, "fallback");
   assert.deepEqual(calls, ["slow", "fallback"]);
-  assert.match(result.errors.join(" "), /slow provider timed out after 20ms/);
+  assert.deepEqual(result.errors, []);
+  assert.match(
+    result.recoveredErrors.join(" "),
+    /slow provider timed out after 20ms/,
+  );
+});
+
+test("limited provider pools surface terminal errors when all fallbacks fail", async () => {
+  clearLimitedProviderPoolState();
+  const result = await runLimitedProviderPool<string[]>(
+    "terminal-test",
+    [
+      {
+        name: "broken",
+        isConfigured: async () => true,
+        run: async (): Promise<string[]> => {
+          throw new Error("upstream unavailable");
+        },
+      },
+    ],
+    (value) => value.length > 0,
+  );
+
+  assert.equal(result.value, null);
+  assert.equal(result.provider, null);
+  assert.match(result.errors.join(" "), /upstream unavailable/);
+  assert.deepEqual(result.recoveredErrors, []);
 });
