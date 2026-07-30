@@ -6,21 +6,66 @@ process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.AUTH_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
-const { MANUAL_RFP_PROVIDERS, resolveManualProviders } = await import("../providerRunner");
+const {
+  FEDERAL_MANUAL_PROVIDERS,
+  MANUAL_RFP_PROVIDERS,
+  resolveManualProviders,
+} = await import("../providerRunner");
 
-test("manual Fetch Intelligence defaults to Tango plus one browser discovery pass", () => {
-  assert.deepEqual(resolveManualProviders(), ["tango", "aiDiscovery"]);
-  assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), ["tango", "samGov", "aiDiscovery"]);
+test("manual Fetch Intelligence searches GovCon, SAM.gov, Tango, and browser discovery", () => {
+  assert.deepEqual(resolveManualProviders(), [
+    "govcon",
+    "samGov",
+    "tango",
+    "aiDiscovery",
+  ]);
+  assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), [
+    "govcon",
+    "samGov",
+    "tango",
+  ]);
+  assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), [
+    "govcon",
+    "samGov",
+    "tango",
+    "aiDiscovery",
+  ]);
 });
 
-test("legacy scraper selections collapse into the AI discovery provider", () => {
+test("selecting any federal source expands to all three structured federal APIs", () => {
+  assert.deepEqual(resolveManualProviders(["sam_gov"]), [
+    "govcon",
+    "samGov",
+    "tango",
+  ]);
+  assert.deepEqual(resolveManualProviders(["tango_api"]), [
+    "govcon",
+    "samGov",
+    "tango",
+  ]);
+  assert.deepEqual(resolveManualProviders(["govcon_api"]), [
+    "govcon",
+    "samGov",
+    "tango",
+  ]);
+});
+
+test("legacy portal selections collapse into one AI discovery provider after federal expansion", () => {
   assert.deepEqual(
-    resolveManualProviders(["sam_gov", "publicPortalProviders", "eunaBonfire", "internationalPublicPortals"]),
-    ["samGov", "aiDiscovery"],
+    resolveManualProviders([
+      "sam_gov",
+      "publicPortalProviders",
+      "eunaBonfire",
+      "internationalPublicPortals",
+    ]),
+    ["govcon", "samGov", "tango", "aiDiscovery"],
   );
 });
 
-test("Tango is a supported direct API provider while crawler providers stay unavailable", () => {
-  assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
-  assert.throws(() => resolveManualProviders(["firecrawl"]), /Unsupported RFP provider/);
+test("browser discovery can still run alone while crawler providers stay unavailable", () => {
+  assert.deepEqual(resolveManualProviders(["aiDiscovery"]), ["aiDiscovery"]);
+  assert.throws(
+    () => resolveManualProviders(["firecrawl"]),
+    /Unsupported RFP provider/,
+  );
 });
