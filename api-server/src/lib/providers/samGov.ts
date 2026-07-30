@@ -53,6 +53,11 @@ export class SamGovProvider implements DataSourceProvider {
   /**
    * Run one supported SAM.gov title query and discard non-bid notices before
    * normalization. SAM's public v2 API does not support a `keywords` parameter.
+   *
+   * Important: do not combine the posted-date window with a separate response-
+   * deadline window. SAM.gov validates the earliest and latest dates across the
+   * request and rejects a combined span greater than one year. Future response
+   * deadlines are filtered locally by isBidReadySamOpportunity instead.
    */
   private async runQuery(
     apiKey: string,
@@ -68,8 +73,6 @@ export class SamGovProvider implements DataSourceProvider {
       api_key: apiKey,
       postedFrom: SamGovProvider.fmtDate(fromDate),
       postedTo: SamGovProvider.fmtDate(today),
-      rdlfrom: SamGovProvider.fmtDate(today),
-      rdlto: SamGovProvider.fmtDate(new Date(today.getFullYear() + 1, today.getMonth(), today.getDate())),
       limit: String(limit),
       offset: "0",
       ...extra,
@@ -101,7 +104,7 @@ export class SamGovProvider implements DataSourceProvider {
     const apiKey = apiKeyCredential.value;
 
     const baseUrl = await this.getBaseUrl();
-    const dateRange = Math.max(1, Math.min(365, options.dateRange ?? 30));
+    const dateRange = Math.max(1, Math.min(364, options.dateRange ?? 30));
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - dateRange);

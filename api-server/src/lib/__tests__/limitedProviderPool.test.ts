@@ -88,3 +88,36 @@ test("limited provider pools fall through and cool down quota failures", async (
   assert.equal(emptyResult.provider, "fallback");
   assert.deepEqual(calls, ["fallback"]);
 });
+
+test("limited provider pools stop waiting on a slow provider and continue", async () => {
+  clearLimitedProviderPoolState();
+  const calls: string[] = [];
+  const result = await runLimitedProviderPool(
+    "bounded-test",
+    [
+      {
+        name: "slow",
+        isConfigured: async () => true,
+        run: async () => {
+          calls.push("slow");
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          return ["late"];
+        },
+      },
+      {
+        name: "fallback",
+        isConfigured: async () => true,
+        run: async () => {
+          calls.push("fallback");
+          return ["ok"];
+        },
+      },
+    ],
+    (value) => value.length > 0,
+    { attemptTimeoutMs: 20, budgetMs: 100 },
+  );
+
+  assert.equal(result.provider, "fallback");
+  assert.deepEqual(calls, ["slow", "fallback"]);
+  assert.match(result.errors.join(" "), /slow provider timed out after 20ms/);
+});
