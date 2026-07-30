@@ -1,18 +1,23 @@
 /**
  * Serper Provider (Google Search API)
  *
- * Role: Active web discovery — searches Google for RFPs, solicitations, and
- * procurement opportunities not indexed in SAM.gov (state/local/private sector).
- *
- * API docs: https://serper.dev/docs
+ * Role: active web discovery for state, local, and private-sector procurement
+ * opportunities that are not covered by the structured federal APIs.
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { composeAbortSignal } from "./abortSignals";
 
 const SERPER_BASE = "https://google.serper.dev";
 const SERPER_REQUEST_TIMEOUT_MS = 20_000;
+const DEFAULT_SAFE_QUERY = "occupational health services RFP solicitation";
+const MAX_SAFE_QUERY_LENGTH = 220;
 
 export interface SerperSearchResult {
   title: string;
@@ -20,6 +25,33 @@ export interface SerperSearchResult {
   snippet: string;
   date?: string;
   source?: string;
+}
+
+/**
+ * Serper free accounts reject several Google-style query patterns, including
+ * nested boolean groups and some advanced operators. Search quality is better
+ * when we send a compact plain-language query instead of spending a request on
+ * a pattern the account cannot execute.
+ */
+export function toSerperFreeTierQuery(query: string): string {
+  const withoutNegativeTerms = query.replace(
+    /-(?:"[^"]+"|'[^']+'|\S+)/g,
+    " ",
+  );
+  const withoutAdvancedOperators = withoutNegativeTerms
+    .replace(/\b(?:site|inurl|intitle|filetype):\S+/gi, " ")
+    .replace(/\b(?:OR|AND)\b/gi, " ")
+    .replace(/[()"']/g, " ")
+    .replace(/[^a-zA-Z0-9&/.,\-\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const safe = withoutAdvancedOperators || DEFAULT_SAFE_QUERY;
+  if (safe.length <= MAX_SAFE_QUERY_LENGTH) return safe;
+
+  const shortened = safe.slice(0, MAX_SAFE_QUERY_LENGTH + 1);
+  const lastSpace = shortened.lastIndexOf(" ");
+  return shortened.slice(0, lastSpace > 40 ? lastSpace : MAX_SAFE_QUERY_LENGTH);
 }
 
 export class SerperProvider implements DataSourceProvider {
@@ -42,27 +74,31 @@ export class SerperProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  /**
-   * Execute a single Google search query via Serper.
-   * @param type "search" (default) | "news" — news mode returns recently published articles
-   * @param tbs Time-based search filter: "qdr:w" = past week, "qdr:m" = past month
-   */
   async search(
     query: string,
     num: number = 10,
-    options: { type?: "search" | "news"; tbs?: string; page?: number; signal?: AbortSignal } = {}
+    options: {
+      type?: "search" | "news";
+      tbs?: string;
+      page?: number;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<SerperSearchResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Serper API key not configured.");
 
     const endpoint = options.type === "news" ? "/news" : "/search";
+    const body: Record<string, unknown> = {
+      q: toSerperFreeTierQuery(query),
+      num,
+    };
+    if (options.tbs) body.tbs = options.tbs;
+    if (options.page && options.page > 1) body.page = options.page;
 
-    const body: Record<string, unknown> = { q: query, num };
-    if (options.tbs) body["tbs"] = options.tbs;
-    // Serper paginates via a 1-based `page` field; omit for page 1.
-    if (options.page && options.page > 1) body["page"] = options.page;
-
-    const requestSignal = composeAbortSignal(SERPER_REQUEST_TIMEOUT_MS, options.signal);
+    const requestSignal = composeAbortSignal(
+      SERPER_REQUEST_TIMEOUT_MS,
+      options.signal,
+    );
     let response: Response;
     try {
       response = await fetch(`${SERPER_BASE}${endpoint}`, {
@@ -80,57 +116,79 @@ export class SerperProvider implements DataSourceProvider {
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`Serper API error ${response.status}: ${text.slice(0, 200)}`);
+      throw new Error(
+        `Serper API error ${response.status}: ${text.slice(0, 200)}`,
+      );
     }
 
     const json = (await response.json()) as {
-      organic?: { title?: string; link?: string; snippet?: string; date?: string; source?: string }[];
-      news?: { title?: string; link?: string; snippet?: string; date?: string; source?: string }[];
+      organic?: Array<{
+        title?: string;
+        link?: string;
+        snippet?: string;
+        date?: string;
+        source?: string;
+      }>;
+      news?: Array<{
+        title?: string;
+        link?: string;
+        snippet?: string;
+        date?: string;
+        source?: string;
+      }>;
     };
 
     const items = json.organic ?? json.news ?? [];
-
-    return items.map((r) => ({
-      title: r.title ?? "",
-      link: r.link ?? "",
-      snippet: r.snippet ?? "",
-      date: r.date,
-      source: r.source,
+    return items.map((result) => ({
+      title: result.title ?? "",
+      link: result.link ?? "",
+      snippet: result.snippet ?? "",
+      date: result.date,
+      source: result.source,
     }));
   }
 
-  /**
-   * Run multiple search queries in parallel and return deduplicated results.
-   */
-  async searchMultiple(queries: string[], numPerQuery: number = 10, options: { signal?: AbortSignal } = {}): Promise<SerperSearchResult[]> {
+  async searchMultiple(
+    queries: string[],
+    numPerQuery: number = 10,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<SerperSearchResult[]> {
     const batches = await Promise.all(
-      queries.map((q) =>
-        this.search(q, numPerQuery, { signal: options.signal }).catch((err) => {
-          console.error(`Serper search failed for query "${q}": ${err.message}`);
-          return [] as SerperSearchResult[];
-        })
-      )
+      queries.map((query) =>
+        this.search(query, numPerQuery, { signal: options.signal }).catch(
+          (error) => {
+            console.error(
+              `Serper search failed for query ${JSON.stringify(query)}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return [] as SerperSearchResult[];
+          },
+        ),
+      ),
     );
 
     const seen = new Set<string>();
     const deduped: SerperSearchResult[] = [];
     for (const batch of batches) {
-      for (const r of batch) {
-        if (r.link && !seen.has(r.link)) {
-          seen.add(r.link);
-          deduped.push(r);
+      for (const result of batch) {
+        if (result.link && !seen.has(result.link)) {
+          seen.add(result.link);
+          deduped.push(result);
         }
       }
     }
     return deduped;
   }
 
-  /**
-   * Enrich a known opportunity with related web context.
-   */
-  async enrichOpportunity(opportunityTitle: string, agency: string): Promise<SerperSearchResult[]> {
-    const query = `"${agency}" "${opportunityTitle}" government contract site:*.gov OR site:sam.gov`;
-    return this.search(query, 5);
+  async enrichOpportunity(
+    opportunityTitle: string,
+    agency: string,
+  ): Promise<SerperSearchResult[]> {
+    return this.search(
+      `${agency} ${opportunityTitle} government contract solicitation`,
+      5,
+    );
   }
 }
 
