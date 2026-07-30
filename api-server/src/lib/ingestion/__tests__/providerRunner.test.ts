@@ -9,6 +9,7 @@ process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 const {
   FEDERAL_MANUAL_PROVIDERS,
   MANUAL_RFP_PROVIDERS,
+  effectiveProviderQuery,
   resolveManualProviders,
 } = await import("../providerRunner");
 
@@ -48,6 +49,14 @@ test("selecting any federal source expands to all three structured federal APIs"
     "samGov",
     "tango",
   ]);
+});
+
+test("blank searches still enforce the Occu-Med service profile", () => {
+  assert.equal(effectiveProviderQuery(), "occupational health services");
+  assert.equal(
+    effectiveProviderQuery("  medical surveillance  "),
+    "medical surveillance",
+  );
 });
 
 test("legacy portal selections collapse into one AI discovery provider after federal expansion", () => {
