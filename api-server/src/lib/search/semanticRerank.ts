@@ -1,10 +1,8 @@
 import { envFlag } from "../config/env";
 import { cloudflareWorkersAi } from "../providers/cloudflareWorkersAi";
 import { cohereProvider } from "../providers/cohere";
-import {
-  embedTexts,
-  type EmbeddingProviderName,
-} from "./embeddings";
+import { embedTexts, type EmbeddingProviderName } from "./embeddings";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 // Describes the kind of opportunity Occu-Med wants to find. This is the stable
 // semantic profile used when the UI does not provide a narrower search focus.
@@ -23,7 +21,7 @@ const cachedProfileBySpace = new Map<string, number[]>();
 export function isSemanticRerankEnabled(): boolean {
   const configuredByEnvironment = Boolean(
     (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) ||
-      process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY,
   );
   return envFlag("ENABLE_SEMANTIC_RERANK", configuredByEnvironment);
 }
@@ -127,54 +125,52 @@ export async function semanticRerank<T>(
   topN: number = DEFAULT_TOP_N,
   focus?: string,
 ): Promise<SemanticRerankResult<T>[]> {
-  if (!isSemanticRerankEnabled() || items.length === 0) return passthrough(items);
+  if (!isSemanticRerankEnabled() || items.length === 0)
+    return passthrough(items);
 
   const head = items.slice(0, topN);
   const tail = items.slice(topN);
   const query = semanticQuery(focus);
 
-  try {
-    if (await cloudflareWorkersAi.isConfigured()) {
-      const scores = await cloudflareWorkersAi.rerank(
-        query,
-        head.map((entry) => entry.text),
-      );
-      if (scores?.length) {
-        return mergeScores(
-          head,
-          tail,
-          new Map(scores.map((score) => [score.index, score.score])),
-        );
-      }
-    }
-  } catch (error) {
-    console.warn(
-      `[semanticRerank] Cloudflare rerank failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+  const directRerank = await runLimitedProviderPool(
+    "opportunity-semantic-rerank",
+    [
+      {
+        name: "cloudflare",
+        isConfigured: () => cloudflareWorkersAi.isConfigured(),
+        run: async () => {
+          const scores = await cloudflareWorkersAi.rerank(
+            query,
+            head.map((entry) => entry.text),
+          );
+          return new Map(
+            (scores ?? []).map((score) => [score.index, score.score]),
+          );
+        },
+      },
+      {
+        name: "cohere",
+        isConfigured: () => cohereProvider.isConfigured(),
+        run: async () => {
+          const scores = await cohereProvider.rerank(
+            query,
+            head.map((entry) => entry.text),
+            head.length,
+          );
+          return new Map(
+            (scores ?? []).map((score) => [score.index, score.relevanceScore]),
+          );
+        },
+      },
+    ],
+    (scores) => scores.size > 0,
+  );
+  if (directRerank.value) {
+    return mergeScores(head, tail, directRerank.value);
   }
-
-  try {
-    if (await cohereProvider.isConfigured()) {
-      const scores = await cohereProvider.rerank(
-        query,
-        head.map((entry) => entry.text),
-        head.length,
-      );
-      if (scores?.length) {
-        return mergeScores(
-          head,
-          tail,
-          new Map(scores.map((score) => [score.index, score.relevanceScore])),
-        );
-      }
-    }
-  } catch (error) {
+  if (directRerank.errors.length > 0) {
     console.warn(
-      `[semanticRerank] Cohere rerank failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `[semanticRerank] Direct rerank providers failed: ${directRerank.errors.join("; ")}`,
     );
   }
 
@@ -182,7 +178,10 @@ export async function semanticRerank<T>(
     head.map((entry) => entry.text),
     "document",
   );
-  if (!documentEmbeddings || documentEmbeddings.vectors.length !== head.length) {
+  if (
+    !documentEmbeddings ||
+    documentEmbeddings.vectors.length !== head.length
+  ) {
     console.warn(
       "[semanticRerank] All semantic providers failed; using deterministic ranking.",
     );

@@ -32,12 +32,18 @@ function accepted(overrides: Partial<AiExtraction> = {}): AiExtraction {
 }
 
 describe("coordinated AI search intelligence stack", () => {
-  it("uses Cloudflare before Cerebras, with Groq and Gemini as fallbacks", () => {
+  it("keeps every configured trial AI available in the extraction fallback pool", () => {
     assert.deepEqual(AI_EXTRACTION_PROVIDER_ORDER, [
       "cloudflare-workers-ai",
       "cerebras",
       "groq",
       "gemini",
+      "openrouter",
+      "mistral",
+      "deepseek",
+      "nvidia",
+      "minimax",
+      "clod",
     ]);
   });
 

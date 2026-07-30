@@ -4,6 +4,7 @@ import type {
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -24,11 +25,7 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["internationalOpportunities", "aiDiscovery"],
 ]);
 
-export const MANUAL_RFP_PROVIDERS = new Set([
-  "tango",
-  "samGov",
-  "aiDiscovery",
-]);
+export const MANUAL_RFP_PROVIDERS = new Set(["tango", "samGov", "aiDiscovery"]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
 
@@ -103,10 +100,26 @@ function applyProviderGuards(
 }
 
 async function loadDiscoveryRuntime() {
-  const [serper, exa, langsearch, firecrawl, intelligence] = await Promise.all([
+  const [
+    serper,
+    exa,
+    langsearch,
+    parallel,
+    linkup,
+    you,
+    socrata,
+    websearch,
+    firecrawl,
+    intelligence,
+  ] = await Promise.all([
     import("../providers/serper"),
     import("../providers/exa"),
     import("../providers/langsearch"),
+    import("../providers/parallel"),
+    import("../providers/linkup"),
+    import("../providers/you"),
+    import("../providers/socrata"),
+    import("../providers/websearch"),
     import("../providers/firecrawl"),
     import("../search/webIntelligence"),
   ]);
@@ -114,6 +127,11 @@ async function loadDiscoveryRuntime() {
     serperProvider: serper.serperProvider,
     exaProvider: exa.exaProvider,
     langsearchProvider: langsearch.langsearchProvider,
+    parallelProvider: parallel.parallelProvider,
+    linkupProvider: linkup.linkupProvider,
+    youProvider: you.youProvider,
+    socrataProvider: socrata.socrataProvider,
+    websearchProvider: websearch.websearchProvider,
     firecrawlProvider: firecrawl.firecrawlProvider,
     webIntelligenceFetch: intelligence.webIntelligenceFetch,
   };
@@ -123,17 +141,41 @@ async function fetchConfiguredAiDiscovery(
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   const runtime = await loadDiscoveryRuntime();
-  const [useSerper, useExa, useLangsearch, useFirecrawl] = await Promise.all([
+  const [
+    useSerper,
+    useExa,
+    useLangsearch,
+    useParallel,
+    useLinkup,
+    useYou,
+    useSocrata,
+    useWebsearch,
+    useFirecrawl,
+  ] = await Promise.all([
     runtime.serperProvider.isConfigured().catch(() => false),
     runtime.exaProvider.isConfigured().catch(() => false),
     runtime.langsearchProvider.isConfigured().catch(() => false),
+    runtime.parallelProvider.isConfigured().catch(() => false),
+    runtime.linkupProvider.isConfigured().catch(() => false),
+    runtime.youProvider.isConfigured().catch(() => false),
+    runtime.socrataProvider.isConfigured().catch(() => false),
+    runtime.websearchProvider.isConfigured().catch(() => false),
     runtime.firecrawlProvider.isConfigured().catch(() => false),
   ]);
-  if (!useSerper && !useExa && !useLangsearch) {
+  if (
+    !useSerper &&
+    !useExa &&
+    !useLangsearch &&
+    !useParallel &&
+    !useLinkup &&
+    !useYou &&
+    !useSocrata &&
+    !useWebsearch
+  ) {
     return {
       records: [],
       errors: [
-        "AI Opportunity Discovery could not run because none of Serper, Exa, or LangSearch is configured.",
+        "AI Opportunity Discovery could not run because no supported search/discovery provider is configured.",
       ],
     };
   }
@@ -143,6 +185,11 @@ async function fetchConfiguredAiDiscovery(
     useSerper,
     useExa,
     useLangsearch,
+    useParallel,
+    useLinkup,
+    useYou,
+    useSocrata,
+    useWebsearch,
     useFirecrawl,
     signal: options.signal,
   });
@@ -156,6 +203,11 @@ async function fetchConfiguredAiDiscovery(
       serper: useSerper,
       exa: useExa,
       langsearch: useLangsearch,
+      parallel: useParallel,
+      linkup: useLinkup,
+      you: useYou,
+      socrata: useSocrata,
+      websearch: useWebsearch,
       candidates: result.stats.totalCandidates,
       preFiltered: result.stats.preFiltered,
       accepted: result.opportunities.length,
@@ -179,6 +231,48 @@ export async function fetchOneProvider(
       provider,
       result.records,
       result.errors,
+      options.keywords,
+    );
+  }
+
+  if (provider === "tango") {
+    const [{ tangoProvider }, { samGovProvider }] = await Promise.all([
+      import("../providers/tango"),
+      import("../providers/samGov"),
+    ]);
+    const federal = await runLimitedProviderPool(
+      "opportunity-structured-federal",
+      [
+        {
+          name: "tango",
+          isConfigured: () => tangoProvider.isConfigured(),
+          run: () =>
+            tangoProvider.fetch({
+              keywords: options.keywords,
+              dateRange: options.dateRange,
+              limit: 100,
+              signal: options.signal,
+            }),
+        },
+        {
+          name: "samGov",
+          isConfigured: () => samGovProvider.isConfigured(),
+          run: () =>
+            samGovProvider.fetch({
+              keywords: options.keywords,
+              dateRange: options.dateRange,
+              limit: 100,
+              signal: options.signal,
+            }),
+        },
+      ],
+      (result) => result.records.length > 0,
+      { rotate: false },
+    );
+    return applyProviderGuards(
+      provider,
+      federal.value?.records ?? [],
+      [...federal.errors, ...(federal.value?.errors ?? [])],
       options.keywords,
     );
   }

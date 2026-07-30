@@ -8,7 +8,12 @@
  * API docs: https://documentation.you.com/api-reference
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { OCCUMED_PROFILE } from "./gemini";
 
@@ -27,7 +32,12 @@ export class YouProvider implements DataSourceProvider {
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const apiKey = await this.getApiKey();
-    if (!apiKey) return { records: [], total: 0, errors: ["You.com API key not configured"] };
+    if (!apiKey)
+      return {
+        records: [],
+        total: 0,
+        errors: ["You.com API key not configured"],
+      };
 
     const queries = this.buildQueries(options.keywords);
     const records = [];
@@ -48,8 +58,13 @@ export class YouProvider implements DataSourceProvider {
           continue;
         }
 
-        const data = await res.json() as {
-          hits?: Array<{ title: string; url: string; description: string; snippets?: string[] }>;
+        const data = (await res.json()) as {
+          hits?: Array<{
+            title: string;
+            url: string;
+            description: string;
+            snippets?: string[];
+          }>;
         };
 
         for (const hit of data.hits ?? []) {
@@ -76,7 +91,10 @@ export class YouProvider implements DataSourceProvider {
   private buildQueries(keywords?: string): string[] {
     const year = new Date().getFullYear();
     const base = keywords
-      ? [`${keywords} RFP solicitation ${year}`, `${keywords} government contract bid ${year}`]
+      ? [
+          `${keywords} RFP solicitation ${year}`,
+          `${keywords} government contract bid ${year}`,
+        ]
       : [
           `occupational health services RFP solicitation ${year}`,
           `drug testing DOT physicals government contract ${year}`,
@@ -89,6 +107,46 @@ export class YouProvider implements DataSourceProvider {
   async getStatus(): Promise<ProviderStatus> {
     const configured = await this.isConfigured();
     return { name: this.name, configured, healthy: configured };
+  }
+
+  async search(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<Array<{ title: string; url: string; content: string }>> {
+    const apiKey = await this.getApiKey();
+    if (!apiKey) throw new Error("You.com API key not configured.");
+    const url = new URL(`${YOU_BASE}/search`);
+    url.searchParams.set("query", query);
+    url.searchParams.set("num_web_results", "15");
+    const response = await fetch(url, {
+      headers: { "X-API-Key": apiKey },
+      signal,
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(
+        `You.com API error ${response.status}: ${body.slice(0, 200)}`,
+      );
+    }
+    const data = JSON.parse(body) as {
+      hits?: Array<{
+        title?: string;
+        url?: string;
+        description?: string;
+        snippets?: string[];
+      }>;
+    };
+    return (data.hits ?? []).flatMap((hit) =>
+      hit.url
+        ? [
+            {
+              title: hit.title ?? hit.url,
+              url: hit.url,
+              content: (hit.snippets ?? []).join(" ") || hit.description || "",
+            },
+          ]
+        : [],
+    );
   }
 }
 
