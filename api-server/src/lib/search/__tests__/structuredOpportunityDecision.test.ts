@@ -6,7 +6,10 @@ import {
   structuredReviewCandidateLimit,
 } from "../structuredOpportunityDecision";
 
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
 function record(
+  now: number,
   overrides: Partial<NormalizedOpportunity> = {},
 ): NormalizedOpportunity {
   return {
@@ -15,8 +18,8 @@ function record(
     agency: "Example County",
     type: "Solicitation",
     status: "active",
-    postedDate: new Date("2026-07-01T00:00:00.000Z"),
-    responseDeadline: new Date("2026-09-01T00:00:00.000Z"),
+    postedDate: new Date(now - 30 * DAY_MS),
+    responseDeadline: new Date(now + 30 * DAY_MS),
     description:
       "The county requests proposals for pre-employment physical examinations, audiometric testing, spirometry, drug testing, and medical surveillance services for its workforce.",
     sourceUrl: "https://example.gov/procurement/rfp-26-1",
@@ -26,41 +29,38 @@ function record(
 }
 
 test("clear active Occu-Med procurements pass without spending AI credits", () => {
-  assert.equal(
-    isDeterministicallyActionable(
-      record(),
-      new Date("2026-07-31T00:00:00.000Z").getTime(),
-    ),
-    true,
-  );
+  const now = Date.now();
+  assert.equal(isDeterministicallyActionable(record(now), now), true);
 });
 
 test("unknown or expired deadlines do not bypass review", () => {
+  const now = Date.now();
   assert.equal(
     isDeterministicallyActionable(
-      record({ responseDeadline: undefined }),
-      new Date("2026-07-31T00:00:00.000Z").getTime(),
+      record(now, { responseDeadline: undefined }),
+      now,
     ),
     false,
   );
   assert.equal(
     isDeterministicallyActionable(
-      record({ responseDeadline: new Date("2026-07-01T00:00:00.000Z") }),
-      new Date("2026-07-31T00:00:00.000Z").getTime(),
+      record(now, { responseDeadline: new Date(now - DAY_MS) }),
+      now,
     ),
     false,
   );
 });
 
 test("incidental medical wording in unrelated procurements is not actionable", () => {
+  const now = Date.now();
   assert.equal(
     isDeterministicallyActionable(
-      record({
+      record(now, {
         title: "Parking Garage Construction Solicitation",
         description:
           "Construct a parking garage. Contractor shall comply with generic employee health and safety requirements.",
       }),
-      new Date("2026-07-31T00:00:00.000Z").getTime(),
+      now,
     ),
     false,
   );
