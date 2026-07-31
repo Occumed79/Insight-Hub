@@ -31,6 +31,17 @@ test("selecting a federal source keeps only that source in the run plan", () => 
   assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
 });
 
+test("selecting both federal sources retains the first and uses the other only as fallback", () => {
+  assert.deepEqual(resolveManualProviders(["tango", "samGov", "aiDiscovery"]), [
+    "tango",
+    "aiDiscovery",
+  ]);
+  assert.deepEqual(resolveManualProviders(["samGov", "tango", "aiDiscovery"]), [
+    "samGov",
+    "aiDiscovery",
+  ]);
+});
+
 test("GovCon is rejected by open-opportunity ingestion and reserved for forecast tools", () => {
   assert.throws(
     () => resolveManualProviders(["govcon"]),
