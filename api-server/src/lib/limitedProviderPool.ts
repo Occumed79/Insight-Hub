@@ -23,11 +23,13 @@ interface CooldownEntry {
 interface PoolWindow {
   startedAt: number;
   lastUsedAt: number;
+  attempts: number;
 }
 
 interface PoolRuntimePolicy {
   budgetMs?: number;
   attemptTimeoutMs?: number;
+  maxAttempts?: number;
 }
 
 const cooldowns = new Map<string, CooldownEntry>();
@@ -79,13 +81,16 @@ function rotated<T>(items: T[], start: number): T[] {
 
 function runtimePolicy(poolId: string): PoolRuntimePolicy {
   if (poolId === "opportunity-web-discovery") {
-    return { budgetMs: 30_000, attemptTimeoutMs: 7_000 };
+    return { budgetMs: 30_000, attemptTimeoutMs: 7_000, maxAttempts: 4 };
   }
   if (poolId === "opportunity-page-enrichment") {
-    return { budgetMs: 15_000, attemptTimeoutMs: 6_000 };
+    return { budgetMs: 15_000, attemptTimeoutMs: 6_000, maxAttempts: 8 };
   }
   if (poolId === "opportunity-ai-extraction") {
-    return { budgetMs: 25_000, attemptTimeoutMs: 8_000 };
+    return { budgetMs: 25_000, attemptTimeoutMs: 8_000, maxAttempts: 5 };
+  }
+  if (poolId === "opportunity-structured-review") {
+    return { budgetMs: 25_000, attemptTimeoutMs: 10_000, maxAttempts: 3 };
   }
   if (poolId === "opportunity-structured-federal") {
     return { budgetMs: 70_000, attemptTimeoutMs: 35_000 };
@@ -96,7 +101,7 @@ function runtimePolicy(poolId: string): PoolRuntimePolicy {
 function currentPoolWindow(poolId: string, now: number): PoolWindow {
   const existing = poolWindows.get(poolId);
   if (!existing || now - existing.lastUsedAt > POOL_WINDOW_IDLE_RESET_MS) {
-    const created = { startedAt: now, lastUsedAt: now };
+    const created = { startedAt: now, lastUsedAt: now, attempts: 0 };
     poolWindows.set(poolId, created);
     return created;
   }
@@ -151,6 +156,9 @@ function logRecoveredErrors(
  * cursor so the next request begins with a different provider. Provider errors
  * enter cooldown, but a recovered fallback failure is diagnostic—not a failed
  * Fetch Intelligence run. Only an exhausted pool returns terminal errors.
+ *
+ * Opportunity pools also enforce a shared call ceiling across the active run
+ * window. This prevents one manual search from burning every trial allowance.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -160,6 +168,7 @@ export async function runLimitedProviderPool<T>(
     rotate?: boolean;
     budgetMs?: number;
     attemptTimeoutMs?: number;
+    maxAttempts?: number;
   } = {},
 ): Promise<LimitedProviderPoolResult<T>> {
   const configured: LimitedProviderAttempt<T>[] = [];
@@ -168,8 +177,9 @@ export async function runLimitedProviderPool<T>(
   const policy: PoolRuntimePolicy = {
     budgetMs: options.budgetMs ?? defaults.budgetMs,
     attemptTimeoutMs: options.attemptTimeoutMs ?? defaults.attemptTimeoutMs,
+    maxAttempts: options.maxAttempts ?? defaults.maxAttempts,
   };
-  const window = policy.budgetMs
+  const window = policy.budgetMs || policy.maxAttempts
     ? currentPoolWindow(poolId, Date.now())
     : undefined;
 
@@ -199,6 +209,16 @@ export async function runLimitedProviderPool<T>(
     }
     if (cooldown) cooldowns.delete(key);
 
+    if (window && policy.maxAttempts != null) {
+      window.lastUsedAt = Date.now();
+      if (window.attempts >= policy.maxAttempts) {
+        encounteredErrors.push(
+          `${poolId} reached its ${policy.maxAttempts}-call trial budget; returning partial results`,
+        );
+        break;
+      }
+    }
+
     let effectiveTimeoutMs = policy.attemptTimeoutMs;
     if (window && policy.budgetMs) {
       window.lastUsedAt = Date.now();
@@ -215,6 +235,8 @@ export async function runLimitedProviderPool<T>(
     }
 
     attempted.push(attempt.name);
+    if (window) window.attempts += 1;
+
     try {
       const value = await withAttemptTimeout(
         attempt.run(),
