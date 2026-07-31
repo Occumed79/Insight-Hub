@@ -260,7 +260,7 @@ function providerAvailable(provider: JudgeProvider): boolean {
   return cooldownRemaining(provider.name) === 0;
 }
 
-function providerFailureCooldown(error: unknown): number {
+export function structuredJudgeFailureCooldownMs(error: unknown): number {
   const message = conciseError(error).toLowerCase();
   if (
     /\b(?:401|402|403)\b/.test(message) ||
@@ -282,7 +282,7 @@ function providerFailureCooldown(error: unknown): number {
 
 function coolProvider(provider: JudgeProvider, error: unknown): void {
   providerCooldowns.set(provider.name, {
-    until: Date.now() + providerFailureCooldown(error),
+    until: Date.now() + structuredJudgeFailureCooldownMs(error),
     reason: conciseError(error),
   });
 }
@@ -291,7 +291,7 @@ function clearProviderCooldown(provider: JudgeProvider): void {
   providerCooldowns.delete(provider.name);
 }
 
-function shouldSplitJudgeBatch(error: unknown): boolean {
+export function shouldSplitStructuredJudgeBatch(error: unknown): boolean {
   const message = conciseError(error).toLowerCase();
   return /request too large|\b413\b|context (?:length|window)|too many tokens|token limit|malformed panel json|returned only \d+\/\d+ panel decisions/.test(
     message,
@@ -392,7 +392,7 @@ async function runJudge(
     clearProviderCooldown(provider);
     return votes;
   } catch (error) {
-    if (records.length > 1 && shouldSplitJudgeBatch(error)) {
+    if (records.length > 1 && shouldSplitStructuredJudgeBatch(error)) {
       const midpoint = Math.ceil(records.length / 2);
       const halves = [
         records.slice(0, midpoint),
