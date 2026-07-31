@@ -9,6 +9,7 @@ process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 const { toSerperFreeTierQuery } = await import("../serper");
 const { TangoProvider } = await import("../tango");
 const { OlostepProvider } = await import("../olostep");
+const { SocrataProvider } = await import("../socrata");
 
 test("Serper removes free-tier-incompatible boolean and negative operators", () => {
   const safe = toSerperFreeTierQuery(
@@ -96,5 +97,44 @@ test("Olostep posts to the current v1 scrape endpoint with bearer auth", async (
     globalThis.fetch = originalFetch;
     if (originalApiKey === undefined) delete process.env.OLOSTEP_API_KEY;
     else process.env.OLOSTEP_API_KEY = originalApiKey;
+  }
+});
+
+test("Socrata accepts the configured app token without requiring an API key pair", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalAppToken = process.env.SOCRATA_APP_TOKEN;
+  const originalApiKey = process.env.SOCRATA_API_KEY;
+  const originalApiSecret = process.env.SOCRATA_API_SECRET;
+  let appToken = "";
+  let authorization = "";
+
+  process.env.SOCRATA_APP_TOKEN = "test-socrata-app-token";
+  delete process.env.SOCRATA_API_KEY;
+  delete process.env.SOCRATA_API_SECRET;
+  globalThis.fetch = async (_input, init) => {
+    const headers = init?.headers as Record<string, string> | undefined;
+    appToken = headers?.["X-App-Token"] ?? "";
+    authorization = headers?.Authorization ?? "";
+    return new Response(JSON.stringify({ results: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const provider = new SocrataProvider();
+    assert.equal(await provider.isConfigured(), true);
+    const results = await provider.search("occupational health procurement");
+    assert.deepEqual(results, []);
+    assert.equal(appToken, "test-socrata-app-token");
+    assert.equal(authorization, "");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalAppToken === undefined) delete process.env.SOCRATA_APP_TOKEN;
+    else process.env.SOCRATA_APP_TOKEN = originalAppToken;
+    if (originalApiKey === undefined) delete process.env.SOCRATA_API_KEY;
+    else process.env.SOCRATA_API_KEY = originalApiKey;
+    if (originalApiSecret === undefined) delete process.env.SOCRATA_API_SECRET;
+    else process.env.SOCRATA_API_SECRET = originalApiSecret;
   }
 });
