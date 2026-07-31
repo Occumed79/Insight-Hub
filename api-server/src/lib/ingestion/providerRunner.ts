@@ -9,8 +9,6 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
   ["tango_api", "tango"],
   ["tangoApi", "tango"],
-  ["govcon_api", "govcon"],
-  ["govconApi", "govcon"],
   ["ai_discovery", "aiDiscovery"],
   ["webIntelligence", "aiDiscovery"],
   ["publicPortalProviders", "aiDiscovery"],
@@ -26,11 +24,10 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["internationalOpportunities", "aiDiscovery"],
 ]);
 
-export const FEDERAL_MANUAL_PROVIDERS = [
-  "govcon",
-  "samGov",
-  "tango",
-] as const;
+// GovCon is deliberately excluded from open-opportunity ingestion. Its trial
+// allowance is reserved for the Forecasts and Recompete Watch workspaces,
+// where its forecast/incumbent data is differentiated and useful.
+export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
 const FEDERAL_MANUAL_PROVIDER_SET = new Set<string>(FEDERAL_MANUAL_PROVIDERS);
 
 export const MANUAL_RFP_PROVIDERS = new Set([
@@ -301,22 +298,6 @@ export async function fetchOneProvider(
       result.records,
       result.errors,
       options.keywords,
-    );
-  }
-
-  if (provider === "govcon") {
-    const { govConOpportunityProvider } = await import("../providers/govcon");
-    const result = await govConOpportunityProvider.fetch({
-      keywords: options.keywords,
-      dateRange: options.dateRange,
-      limit: 100,
-      signal: options.signal,
-    });
-    return applyStructuredFederalJudgePanel(
-      provider,
-      result.records,
-      result.errors ?? [],
-      options,
     );
   }
 
