@@ -10,6 +10,10 @@ import { composeAbortSignal } from "./abortSignals";
 const SOCRATA_DISCOVERY_URL = "https://api.us.socrata.com/api/catalog/v1";
 const REQUEST_TIMEOUT_MS = 20_000;
 
+type SocrataCredentials =
+  | { mode: "app-token"; appToken: string }
+  | { mode: "api-key"; key: string; secret: string };
+
 export interface SocrataCatalogResult {
   title: string;
   description: string;
@@ -22,12 +26,19 @@ export interface SocrataCatalogResult {
 export class SocrataProvider implements DataSourceProvider {
   readonly name = "socrata" as const;
 
-  private async credentials(): Promise<{ key: string; secret: string } | null> {
-    const [key, secret] = await Promise.all([
+  private async credentials(): Promise<SocrataCredentials | null> {
+    const [appToken, key, secret] = await Promise.all([
+      resolveCredential("socrataAppToken", "SOCRATA_APP_TOKEN"),
       resolveCredential("socrataApiKey", "SOCRATA_API_KEY"),
       resolveCredential("socrataApiSecret", "SOCRATA_API_SECRET"),
     ]);
-    return key && secret ? { key, secret } : null;
+
+    // Public catalogue discovery only needs the Tyler/Socrata application
+    // token. Retain API-key/secret Basic authentication as a compatible
+    // fallback for accounts that already use that credential pair.
+    if (appToken) return { mode: "app-token", appToken };
+    if (key && secret) return { mode: "api-key", key, secret };
+    return null;
   }
 
   async isConfigured(): Promise<boolean> {
@@ -39,19 +50,30 @@ export class SocrataProvider implements DataSourceProvider {
     signal?: AbortSignal,
   ): Promise<SocrataCatalogResult[]> {
     const credentials = await this.credentials();
-    if (!credentials)
-      throw new Error("Socrata API key/secret pair not configured.");
+    if (!credentials) {
+      throw new Error(
+        "Socrata is not configured. Set SOCRATA_APP_TOKEN or the SOCRATA_API_KEY/SOCRATA_API_SECRET pair.",
+      );
+    }
+
     const url = new URL(SOCRATA_DISCOVERY_URL);
     url.searchParams.set("q", query);
     url.searchParams.set("only", "datasets");
     url.searchParams.set("limit", "20");
     const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, signal);
+
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (credentials.mode === "app-token") {
+      headers["X-App-Token"] = credentials.appToken;
+    } else {
+      headers.Authorization = `Basic ${Buffer.from(
+        `${credentials.key}:${credentials.secret}`,
+      ).toString("base64")}`;
+    }
+
     try {
       const response = await fetch(url, {
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${credentials.key}:${credentials.secret}`).toString("base64")}`,
-          Accept: "application/json",
-        },
+        headers,
         signal: requestSignal.signal,
       });
       const body = await response.text();
