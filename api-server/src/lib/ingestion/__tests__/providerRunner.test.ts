@@ -13,42 +13,43 @@ const {
   resolveManualProviders,
 } = await import("../providerRunner");
 
-test("manual Fetch Intelligence searches GovCon, SAM.gov, Tango, and browser discovery", () => {
+test("manual Fetch Intelligence searches SAM.gov, Tango, and browser discovery without GovCon", () => {
   assert.deepEqual(resolveManualProviders(), [
-    "govcon",
     "samGov",
     "tango",
     "aiDiscovery",
   ]);
   assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), [
-    "govcon",
     "samGov",
     "tango",
   ]);
   assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), [
-    "govcon",
     "samGov",
     "tango",
     "aiDiscovery",
   ]);
 });
 
-test("selecting any federal source expands to all three structured federal APIs", () => {
+test("selecting either open-opportunity federal source expands only to SAM.gov and Tango", () => {
   assert.deepEqual(resolveManualProviders(["sam_gov"]), [
-    "govcon",
     "samGov",
     "tango",
   ]);
   assert.deepEqual(resolveManualProviders(["tango_api"]), [
-    "govcon",
     "samGov",
     "tango",
   ]);
-  assert.deepEqual(resolveManualProviders(["govcon_api"]), [
-    "govcon",
-    "samGov",
-    "tango",
-  ]);
+});
+
+test("GovCon is rejected by open-opportunity ingestion and reserved for forecast tools", () => {
+  assert.throws(
+    () => resolveManualProviders(["govcon"]),
+    /Unsupported RFP provider/,
+  );
+  assert.throws(
+    () => resolveManualProviders(["govcon_api"]),
+    /Unsupported RFP provider/,
+  );
 });
 
 test("blank searches still enforce the Occu-Med service profile", () => {
@@ -67,7 +68,7 @@ test("legacy portal selections collapse into one AI discovery provider after fed
       "eunaBonfire",
       "internationalPublicPortals",
     ]),
-    ["govcon", "samGov", "tango", "aiDiscovery"],
+    ["samGov", "tango", "aiDiscovery"],
   );
 });
 

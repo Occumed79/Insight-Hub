@@ -116,21 +116,22 @@ test("retries only transient adapter failures", () => {
   );
 });
 
-test("accepts Tango, GovCon, SAM.gov, and discovery provider names at the HTTP boundary", () => {
+test("accepts Tango, SAM.gov, and discovery names while reserving GovCon for forecast tools", () => {
   assert.deepEqual(
     unsupportedRfpProviders([
       "tango",
       "tango_api",
       "tangoApi",
-      "govcon",
-      "govcon_api",
-      "govconApi",
       "samGov",
       "sam_gov",
       "aiDiscovery",
       "ai_discovery",
     ]),
     [],
+  );
+  assert.deepEqual(
+    unsupportedRfpProviders(["govcon", "govcon_api", "govconApi"]),
+    ["govcon", "govcon_api", "govconApi"],
   );
   assert.deepEqual(unsupportedRfpProviders(["firecrawl", "tango"]), [
     "firecrawl",
