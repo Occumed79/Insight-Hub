@@ -4,6 +4,7 @@ import type {
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
+import { runLimitedProviderPool } from "../limitedProviderPool";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -28,7 +29,6 @@ export const PROVIDER_ALIASES = new Map<string, string>([
 // allowance is reserved for the Forecasts and Recompete Watch workspaces,
 // where its forecast/incumbent data is differentiated and useful.
 export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
-const FEDERAL_MANUAL_PROVIDER_SET = new Set<string>(FEDERAL_MANUAL_PROVIDERS);
 
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
@@ -37,6 +37,8 @@ export const MANUAL_RFP_PROVIDERS = new Set([
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
 const DEFAULT_OCCUMED_QUERY = "occupational health services";
+
+type StructuredFederalProvider = (typeof FEDERAL_MANUAL_PROVIDERS)[number];
 
 export interface ProviderRunResult {
   records: NormalizedOpportunity[];
@@ -49,6 +51,12 @@ export interface ProviderRunnerOptions {
   dateRange?: number;
   signal?: AbortSignal;
   onProgress?: (event: ProviderProgressEvent) => void | Promise<void>;
+}
+
+function isStructuredFederalProvider(
+  provider: string,
+): provider is StructuredFederalProvider {
+  return provider === "samGov" || provider === "tango";
 }
 
 export function resolveManualProviders(providers?: string[]): string[] {
@@ -66,14 +74,14 @@ export function resolveManualProviders(providers?: string[]): string[] {
     throw new Error(`Unsupported RFP provider(s): ${unsupported.join(", ")}`);
   }
 
-  const includesFederalSource = resolved.some((provider) =>
-    FEDERAL_MANUAL_PROVIDER_SET.has(provider),
-  );
-  if (!includesFederalSource) return resolved;
-
+  // Keep at most one structured federal source in the persisted run plan. The
+  // selected source runs first and fetchOneProvider invokes the other source
+  // only when the primary returns no actionable records or fails.
+  const selectedFederal = resolved.find(isStructuredFederalProvider);
+  if (!selectedFederal) return resolved;
   return [
-    ...FEDERAL_MANUAL_PROVIDERS,
-    ...resolved.filter((provider) => !FEDERAL_MANUAL_PROVIDER_SET.has(provider)),
+    selectedFederal,
+    ...resolved.filter((provider) => !isStructuredFederalProvider(provider)),
   ];
 }
 
@@ -121,7 +129,7 @@ function applyProviderGuards(
   };
 }
 
-async function applyStructuredFederalJudgePanel(
+async function applyStructuredFederalDecision(
   provider: string,
   records: NormalizedOpportunity[],
   errors: string[],
@@ -135,34 +143,140 @@ async function applyStructuredFederalJudgePanel(
   );
   if (guarded.records.length === 0) return guarded;
 
-  const { judgeStructuredOpportunities } = await import(
-    "../search/structuredOpportunityJudge"
+  const { decideStructuredOpportunities } = await import(
+    "../search/structuredOpportunityDecision"
   );
-  const judged = await judgeStructuredOpportunities(guarded.records, {
-    providerName: provider,
-    signal: options.signal,
-  });
+  const decided = await decideStructuredOpportunities(guarded.records);
+
+  if (decided.diagnostics.length > 0) {
+    console.warn(
+      JSON.stringify({
+        event: "rfp_structured_review_recovered",
+        provider,
+        reviewer: decided.reviewer,
+        diagnostics: decided.diagnostics,
+      }),
+    );
+  }
 
   console.info(
     JSON.stringify({
-      event: "rfp_structured_judge_panel",
+      event: "rfp_structured_decision",
       provider,
       candidates: guarded.records.length,
-      approved: judged.approved.length,
-      deterministicRejected: judged.deterministicRejected,
-      panelRejected: judged.panelRejected,
-      unjudged: judged.unjudged,
-      deferred: judged.deferred,
-      judges: judged.usedJudges,
-      errors: judged.errors.length,
+      approved: decided.approved.length,
+      deterministicApproved: decided.deterministicApproved,
+      aiApproved: decided.aiApproved,
+      rejected: decided.rejected,
+      reviewHeld: decided.reviewHeld,
+      reviewer: decided.reviewer,
     }),
   );
 
+  // Recovered or optional AI review failures are diagnostics, not terminal run
+  // errors. Clear deterministic matches must remain usable even if every trial
+  // AI key is unavailable.
   return {
-    records: judged.approved,
-    errors: [...guarded.errors, ...judged.errors],
+    records: decided.approved,
+    errors: guarded.errors,
     expiredSkipped: guarded.expiredSkipped,
   };
+}
+
+async function fetchStructuredFederalProvider(
+  provider: StructuredFederalProvider,
+  options: ProviderRunnerOptions,
+): Promise<ProviderRunResult> {
+  if (provider === "samGov") {
+    const { samGovProvider } = await import("../providers/samGov");
+    const result = await samGovProvider.fetch({
+      keywords: options.keywords,
+      dateRange: options.dateRange,
+      limit: 100,
+      signal: options.signal,
+    });
+    return applyStructuredFederalDecision(
+      provider,
+      result.records,
+      result.errors ?? [],
+      options,
+    );
+  }
+
+  const { tangoProvider } = await import("../providers/tango");
+  const result = await tangoProvider.fetch({
+    keywords: options.keywords,
+    dateRange: options.dateRange,
+    limit: 100,
+    signal: options.signal,
+  });
+  return applyStructuredFederalDecision(
+    provider,
+    result.records,
+    result.errors ?? [],
+    options,
+  );
+}
+
+async function fetchStructuredFederalWithFallback(
+  primary: StructuredFederalProvider,
+  options: ProviderRunnerOptions,
+): Promise<ProviderRunResult> {
+  const fallback: StructuredFederalProvider =
+    primary === "tango" ? "samGov" : "tango";
+  const result = await runLimitedProviderPool(
+    "opportunity-structured-source",
+    [primary, fallback].map((provider) => ({
+      name: provider,
+      isConfigured: async () => {
+        if (provider === "samGov") {
+          const { samGovProvider } = await import("../providers/samGov");
+          return samGovProvider.isConfigured();
+        }
+        const { tangoProvider } = await import("../providers/tango");
+        return tangoProvider.isConfigured();
+      },
+      run: async () => {
+        const value = await fetchStructuredFederalProvider(provider, options);
+        if (value.records.length === 0 && value.errors.length > 0) {
+          throw new Error(value.errors.join("; "));
+        }
+        return value;
+      },
+    })),
+    (value) => value.records.length > 0,
+    {
+      rotate: false,
+      maxAttempts: 2,
+      budgetMs: 70_000,
+      attemptTimeoutMs: 35_000,
+    },
+  );
+
+  if (result.value) {
+    const diagnostics = Array.from(
+      new Set([...result.recoveredErrors, ...result.value.errors]),
+    );
+    if (diagnostics.length > 0) {
+      console.warn(
+        JSON.stringify({
+          event: "rfp_structured_source_fallback_recovered",
+          requestedProvider: primary,
+          successfulProvider: result.provider,
+          diagnostics,
+        }),
+      );
+    }
+    return { ...result.value, errors: [] };
+  }
+
+  // A source returning zero relevant opportunities is a valid search outcome,
+  // not an ingestion failure. Preserve only genuine upstream/configuration
+  // failures after both structured sources have been attempted.
+  const terminalErrors = result.errors.filter(
+    (error) => !/returned no usable result/i.test(error),
+  );
+  return { records: [], errors: terminalErrors };
 }
 
 async function loadDiscoveryRuntime() {
@@ -301,36 +415,8 @@ export async function fetchOneProvider(
     );
   }
 
-  if (provider === "samGov") {
-    const { samGovProvider } = await import("../providers/samGov");
-    const result = await samGovProvider.fetch({
-      keywords: options.keywords,
-      dateRange: options.dateRange,
-      limit: 100,
-      signal: options.signal,
-    });
-    return applyStructuredFederalJudgePanel(
-      provider,
-      result.records,
-      result.errors ?? [],
-      options,
-    );
-  }
-
-  if (provider === "tango") {
-    const { tangoProvider } = await import("../providers/tango");
-    const result = await tangoProvider.fetch({
-      keywords: options.keywords,
-      dateRange: options.dateRange,
-      limit: 100,
-      signal: options.signal,
-    });
-    return applyStructuredFederalJudgePanel(
-      provider,
-      result.records,
-      result.errors ?? [],
-      options,
-    );
+  if (provider === "samGov" || provider === "tango") {
+    return fetchStructuredFederalWithFallback(provider, options);
   }
 
   if (WEB_DISCOVERY_PROVIDERS.has(provider)) {
