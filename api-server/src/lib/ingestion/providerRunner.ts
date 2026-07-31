@@ -53,6 +53,12 @@ export interface ProviderRunnerOptions {
   onProgress?: (event: ProviderProgressEvent) => void | Promise<void>;
 }
 
+function isStructuredFederalProvider(
+  provider: string,
+): provider is StructuredFederalProvider {
+  return provider === "samGov" || provider === "tango";
+}
+
 export function resolveManualProviders(providers?: string[]): string[] {
   const resolved = Array.from(
     new Set(
@@ -68,10 +74,15 @@ export function resolveManualProviders(providers?: string[]): string[] {
     throw new Error(`Unsupported RFP provider(s): ${unsupported.join(", ")}`);
   }
 
-  // Do not broadcast one manual selection to every trial federal API. The
-  // selected provider runs first and fetchOneProvider invokes the other source
+  // Keep at most one structured federal source in the persisted run plan. The
+  // selected source runs first and fetchOneProvider invokes the other source
   // only when the primary returns no actionable records or fails.
-  return resolved;
+  const selectedFederal = resolved.find(isStructuredFederalProvider);
+  if (!selectedFederal) return resolved;
+  return [
+    selectedFederal,
+    ...resolved.filter((provider) => !isStructuredFederalProvider(provider)),
+  ];
 }
 
 export function effectiveProviderQuery(keywords?: string): string {
@@ -225,7 +236,13 @@ async function fetchStructuredFederalWithFallback(
         const { tangoProvider } = await import("../providers/tango");
         return tangoProvider.isConfigured();
       },
-      run: () => fetchStructuredFederalProvider(provider, options),
+      run: async () => {
+        const value = await fetchStructuredFederalProvider(provider, options);
+        if (value.records.length === 0 && value.errors.length > 0) {
+          throw new Error(value.errors.join("; "));
+        }
+        return value;
+      },
     })),
     (value) => value.records.length > 0,
     {
@@ -237,17 +254,20 @@ async function fetchStructuredFederalWithFallback(
   );
 
   if (result.value) {
-    if (result.recoveredErrors.length > 0) {
+    const diagnostics = Array.from(
+      new Set([...result.recoveredErrors, ...result.value.errors]),
+    );
+    if (diagnostics.length > 0) {
       console.warn(
         JSON.stringify({
           event: "rfp_structured_source_fallback_recovered",
           requestedProvider: primary,
           successfulProvider: result.provider,
-          diagnostics: result.recoveredErrors,
+          diagnostics,
         }),
       );
     }
-    return result.value;
+    return { ...result.value, errors: [] };
   }
 
   // A source returning zero relevant opportunities is a valid search outcome,
