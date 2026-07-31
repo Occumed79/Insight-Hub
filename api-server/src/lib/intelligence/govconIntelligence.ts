@@ -153,7 +153,13 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
   const deterministic = records.map((record) => deterministicScore(record, mode));
   let similarities: number[] | null = null;
 
-  if (process.env.GEMINI_API_KEY?.trim()) {
+  // GovCon already returns structured forecast and incumbent data. Preserve
+  // trial AI allowances by using local deterministic ranking by default. A
+  // deployment may explicitly opt into Gemini semantic reranking when desired.
+  const semanticRankingEnabled =
+    process.env.GOVCON_SEMANTIC_RANKING_ENABLED === "true";
+
+  if (semanticRankingEnabled && process.env.GEMINI_API_KEY?.trim()) {
     try {
       const documentResult = await embedTexts(records.map(normalizedText), "document", "gemini");
       if (
