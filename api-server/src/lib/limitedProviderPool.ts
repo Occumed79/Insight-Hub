@@ -151,6 +151,22 @@ function logRecoveredErrors(
   );
 }
 
+function logBudgetReached(
+  poolId: string,
+  limitType: "calls" | "runtime",
+  limit: number,
+): void {
+  console.info(
+    JSON.stringify({
+      event: "limited_provider_pool_budget_reached",
+      poolId,
+      limitType,
+      limit,
+      outcome: "partial-results-preserved",
+    }),
+  );
+}
+
 /**
  * Runs limited-capacity providers sequentially. Each success advances the pool
  * cursor so the next request begins with a different provider. Provider errors
@@ -158,7 +174,7 @@ function logRecoveredErrors(
  * Fetch Intelligence run. Only an exhausted pool returns terminal errors.
  *
  * Opportunity pools also enforce a shared call ceiling across the active run
- * window. This prevents one manual search from burning every trial allowance.
+ * window. Reaching that ceiling is normal partial completion, not an error.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -199,6 +215,7 @@ export async function runLimitedProviderPool<T>(
   const attempted: string[] = [];
   const skippedCooldown: string[] = [];
   const now = Date.now();
+  let budgetReached = false;
 
   for (const attempt of ordered) {
     const key = poolProviderKey(poolId, attempt.name);
@@ -212,9 +229,8 @@ export async function runLimitedProviderPool<T>(
     if (window && policy.maxAttempts != null) {
       window.lastUsedAt = Date.now();
       if (window.attempts >= policy.maxAttempts) {
-        encounteredErrors.push(
-          `${poolId} reached its ${policy.maxAttempts}-call trial budget; returning partial results`,
-        );
+        logBudgetReached(poolId, "calls", policy.maxAttempts);
+        budgetReached = true;
         break;
       }
     }
@@ -224,9 +240,8 @@ export async function runLimitedProviderPool<T>(
       window.lastUsedAt = Date.now();
       const remaining = policy.budgetMs - (Date.now() - window.startedAt);
       if (remaining <= 0) {
-        encounteredErrors.push(
-          `${poolId} reached its ${policy.budgetMs}ms runtime budget; returning partial results`,
-        );
+        logBudgetReached(poolId, "runtime", policy.budgetMs);
+        budgetReached = true;
         break;
       }
       effectiveTimeoutMs = effectiveTimeoutMs
@@ -290,8 +305,8 @@ export async function runLimitedProviderPool<T>(
     provider: null,
     attempted,
     skippedCooldown,
-    errors: encounteredErrors,
-    recoveredErrors: [],
+    errors: budgetReached ? [] : encounteredErrors,
+    recoveredErrors: budgetReached ? encounteredErrors : [],
   };
 }
 
