@@ -50,13 +50,13 @@ export interface StructuredJudgeResult {
 const JUDGE_PROVIDERS: JudgeProvider[] = [
   cerebrasProvider,
   groqProvider,
-  geminiProvider,
-  mistralProvider,
-  deepseekProvider,
-  nvidiaProvider,
   openrouterProvider,
+  mistralProvider,
+  nvidiaProvider,
   minimaxProvider,
   clodProvider,
+  geminiProvider,
+  deepseekProvider,
 ];
 
 export const STRUCTURED_JUDGE_PROVIDER_ORDER = JUDGE_PROVIDERS.map(
@@ -65,12 +65,17 @@ export const STRUCTURED_JUDGE_PROVIDER_ORDER = JUDGE_PROVIDERS.map(
 
 const PANEL_SIZE = 3;
 const MIN_PANEL_SIZE = 2;
-const CHUNK_SIZE = 10;
+const CHUNK_SIZE = 4;
 const MIN_APPROVAL_SCORE = 76;
 const MIN_INDIVIDUAL_YES_SCORE = 68;
 const DEFAULT_CANDIDATE_LIMIT = 10;
 const PROVIDER_TIMEOUT_MS = 28_000;
+const MAX_DESCRIPTION_CHARS = 1_400;
+const MAX_OUTPUT_TOKENS = 900;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
+const SHORT_COOLDOWN_MS = 10 * 60 * 1_000;
+const RATE_LIMIT_COOLDOWN_MS = 20 * 60 * 1_000;
+const TERMINAL_COOLDOWN_MS = 6 * 60 * 60 * 1_000;
 const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
 
 type JsonRecord = Record<string, unknown>;
@@ -80,7 +85,13 @@ interface CachedDecision {
   expiresAt: number;
 }
 
+interface ProviderCooldown {
+  until: number;
+  reason: string;
+}
+
 const decisionCache = new Map<string, CachedDecision>();
+const providerCooldowns = new Map<string, ProviderCooldown>();
 
 function cacheKey(record: NormalizedOpportunity): string {
   return createHash("sha256")
@@ -197,7 +208,7 @@ function recordText(record: NormalizedOpportunity): string {
     record.responseDeadline
       ? `Response deadline: ${record.responseDeadline.toISOString()}`
       : "Response deadline: unknown",
-    `Description: ${(record.description ?? "").slice(0, 3_200)}`,
+    `Description: ${(record.description ?? "").slice(0, MAX_DESCRIPTION_CHARS)}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -227,10 +238,64 @@ Reject records where medical, health, workforce, safety, testing, or regulatory 
 Return ONLY JSON in this shape:
 {"results":[{"index":0,"isOpportunity":true,"relevanceScore":92,"reason":"The core scope purchases occupational medical examinations and drug testing."}]}
 
-Score relevance to Occu-Med from 0 to 100. Be conservative. Analyze every item.
+Return exactly one result for every numbered item. Keep each reason under 25 words. Do not include markdown.
+Score relevance to Occu-Med from 0 to 100. Be conservative.
 
 ITEMS:
 ${items}`;
+}
+
+function cooldownRemaining(providerName: string): number {
+  const entry = providerCooldowns.get(providerName);
+  if (!entry) return 0;
+  const remaining = entry.until - Date.now();
+  if (remaining <= 0) {
+    providerCooldowns.delete(providerName);
+    return 0;
+  }
+  return remaining;
+}
+
+function providerAvailable(provider: JudgeProvider): boolean {
+  return cooldownRemaining(provider.name) === 0;
+}
+
+function providerFailureCooldown(error: unknown): number {
+  const message = conciseError(error).toLowerCase();
+  if (
+    /\b(?:401|402|403)\b/.test(message) ||
+    /invalid api key|api key not valid|unauthori[sz]ed|insufficient balance|payment required|account disabled|permission denied|invalid credential/.test(
+      message,
+    )
+  ) {
+    return TERMINAL_COOLDOWN_MS;
+  }
+  if (
+    /\b429\b|rate limit|quota exceeded|too many requests|resource exhausted/.test(
+      message,
+    )
+  ) {
+    return RATE_LIMIT_COOLDOWN_MS;
+  }
+  return SHORT_COOLDOWN_MS;
+}
+
+function coolProvider(provider: JudgeProvider, error: unknown): void {
+  providerCooldowns.set(provider.name, {
+    until: Date.now() + providerFailureCooldown(error),
+    reason: conciseError(error),
+  });
+}
+
+function clearProviderCooldown(provider: JudgeProvider): void {
+  providerCooldowns.delete(provider.name);
+}
+
+function shouldSplitJudgeBatch(error: unknown): boolean {
+  const message = conciseError(error).toLowerCase();
+  return /request too large|\b413\b|context (?:length|window)|too many tokens|token limit|malformed panel json|returned only \d+\/\d+ panel decisions/.test(
+    message,
+  );
 }
 
 async function completeWithTimeout(
@@ -251,13 +316,16 @@ async function completeWithTimeout(
   });
 
   try {
-    return await Promise.race([provider.complete(prompt, 2_400), deadline]);
+    return await Promise.race([
+      provider.complete(prompt, MAX_OUTPUT_TOKENS),
+      deadline,
+    ]);
   } finally {
     if (timeout) clearTimeout(timeout);
   }
 }
 
-async function runJudge(
+async function runJudgeBatch(
   provider: JudgeProvider,
   providerName: string,
   records: NormalizedOpportunity[],
@@ -293,12 +361,59 @@ async function runJudge(
     });
   });
 
-  if (votes.size < Math.max(1, Math.ceil(records.length * 0.7))) {
+  if (votes.size < records.length) {
     throw new Error(
       `${provider.name} returned only ${votes.size}/${records.length} panel decisions`,
     );
   }
   return votes;
+}
+
+async function runJudge(
+  provider: JudgeProvider,
+  providerName: string,
+  records: NormalizedOpportunity[],
+  signal?: AbortSignal,
+): Promise<Map<number, StructuredJudgeVote>> {
+  if (!providerAvailable(provider)) {
+    const cooldown = providerCooldowns.get(provider.name);
+    throw new Error(
+      `${provider.name} judge is cooling down after: ${cooldown?.reason ?? "provider failure"}`,
+    );
+  }
+
+  try {
+    const votes = await runJudgeBatch(
+      provider,
+      providerName,
+      records,
+      signal,
+    );
+    clearProviderCooldown(provider);
+    return votes;
+  } catch (error) {
+    if (records.length > 1 && shouldSplitJudgeBatch(error)) {
+      const midpoint = Math.ceil(records.length / 2);
+      const halves = [
+        records.slice(0, midpoint),
+        records.slice(midpoint),
+      ].filter((items) => items.length > 0);
+      const merged = new Map<number, StructuredJudgeVote>();
+      let offset = 0;
+      for (const half of halves) {
+        const votes = await runJudge(provider, providerName, half, signal);
+        for (const [index, vote] of votes) {
+          merged.set(index + offset, vote);
+        }
+        offset += half.length;
+      }
+      clearProviderCooldown(provider);
+      return merged;
+    }
+
+    coolProvider(provider, error);
+    throw error;
+  }
 }
 
 export function aggregateJudgePanelVotes(
@@ -366,12 +481,13 @@ async function collectInitialPanelVotes(
   providerName: string,
   group: NormalizedOpportunity[],
   signal: AbortSignal | undefined,
-  errors: string[],
+  diagnostics: string[],
   usedJudges: Set<string>,
   groupJudgeNames: Set<string>,
 ): Promise<Array<Map<number, StructuredJudgeVote>>> {
   const votes: Array<Map<number, StructuredJudgeVote>> = [];
-  const firstWave = providers.slice(0, MIN_PANEL_SIZE);
+  const available = providers.filter(providerAvailable);
+  const firstWave = available.slice(0, MIN_PANEL_SIZE);
   const firstResults = await Promise.allSettled(
     firstWave.map((provider) => runJudge(provider, providerName, group, signal)),
   );
@@ -385,10 +501,10 @@ async function collectInitialPanelVotes(
       groupJudgeNames.add(provider.name);
       return;
     }
-    errors.push(`${provider.name} judge: ${conciseError(result.reason)}`);
+    diagnostics.push(`${provider.name} judge: ${conciseError(result.reason)}`);
   });
 
-  for (const provider of providers.slice(MIN_PANEL_SIZE)) {
+  for (const provider of available.slice(MIN_PANEL_SIZE)) {
     if (votes.length >= MIN_PANEL_SIZE) break;
     try {
       const result = await runJudge(provider, providerName, group, signal);
@@ -396,11 +512,25 @@ async function collectInitialPanelVotes(
       usedJudges.add(provider.name);
       groupJudgeNames.add(provider.name);
     } catch (error) {
-      errors.push(`${provider.name} judge: ${conciseError(error)}`);
+      diagnostics.push(`${provider.name} judge: ${conciseError(error)}`);
     }
   }
 
   return votes;
+}
+
+function logRecoveredJudgeDiagnostics(
+  providerName: string,
+  diagnostics: string[],
+): void {
+  if (diagnostics.length === 0) return;
+  console.warn(
+    JSON.stringify({
+      event: "rfp_judge_provider_failover_recovered",
+      sourceProvider: providerName,
+      failures: Array.from(new Set(diagnostics)).slice(0, 12),
+    }),
+  );
 }
 
 export async function judgeStructuredOpportunities(
@@ -408,6 +538,7 @@ export async function judgeStructuredOpportunities(
   options: { providerName: string; signal?: AbortSignal },
 ): Promise<StructuredJudgeResult> {
   const errors: string[] = [];
+  const diagnostics: string[] = [];
   const usedJudges = new Set<string>();
   const deterministic = records
     .map((record) => ({
@@ -439,9 +570,13 @@ export async function judgeStructuredOpportunities(
   const configured: JudgeProvider[] = [];
   for (const provider of JUDGE_PROVIDERS) {
     try {
-      if (await provider.isConfigured()) configured.push(provider);
+      if ((await provider.isConfigured()) && providerAvailable(provider)) {
+        configured.push(provider);
+      }
     } catch (error) {
-      errors.push(`${provider.name} configuration check: ${conciseError(error)}`);
+      diagnostics.push(
+        `${provider.name} configuration check: ${conciseError(error)}`,
+      );
     }
   }
 
@@ -460,7 +595,7 @@ export async function judgeStructuredOpportunities(
           options.providerName,
           group,
           options.signal,
-          errors,
+          diagnostics,
           usedJudges,
           groupJudgeNames,
         )),
@@ -478,7 +613,7 @@ export async function judgeStructuredOpportunities(
       });
 
       if (disagreement && providerVotes.length >= MIN_PANEL_SIZE) {
-        for (const provider of configured) {
+        for (const provider of configured.filter(providerAvailable)) {
           if (groupJudgeNames.has(provider.name)) continue;
           try {
             const votes = await runJudge(
@@ -492,7 +627,7 @@ export async function judgeStructuredOpportunities(
             groupJudgeNames.add(provider.name);
             break;
           } catch (error) {
-            errors.push(
+            diagnostics.push(
               `${provider.name} tie-break judge: ${conciseError(error)}`,
             );
           }
@@ -523,10 +658,17 @@ export async function judgeStructuredOpportunities(
     });
   }
 
+  const uniqueDiagnostics = Array.from(new Set(diagnostics));
   if (selected.length > 0 && configured.length < MIN_PANEL_SIZE) {
     errors.push(
-      `Structured RFP judge panel requires at least ${MIN_PANEL_SIZE} configured AI judges; only ${configured.length} were available. Unjudged records were not promoted.`,
+      `Structured RFP judge panel requires at least ${MIN_PANEL_SIZE} healthy AI judges; only ${configured.length} were available. Invalid, exhausted, or failing keys were skipped.`,
     );
+  } else if (unjudged > 0) {
+    errors.push(
+      `Structured RFP judge panel could not obtain two complete decisions for ${unjudged} candidate${unjudged === 1 ? "" : "s"}. ${uniqueDiagnostics.slice(0, 4).join(" | ")}`,
+    );
+  } else {
+    logRecoveredJudgeDiagnostics(options.providerName, uniqueDiagnostics);
   }
 
   return {
@@ -537,10 +679,11 @@ export async function judgeStructuredOpportunities(
     unjudged,
     deferred,
     usedJudges: [...usedJudges],
-    errors: Array.from(new Set(errors)).slice(0, 12),
+    errors: Array.from(new Set(errors)).slice(0, 4),
   };
 }
 
 export function clearStructuredJudgeCache(): void {
   decisionCache.clear();
+  providerCooldowns.clear();
 }
