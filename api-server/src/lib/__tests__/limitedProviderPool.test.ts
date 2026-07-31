@@ -163,7 +163,8 @@ test("limited provider pools enforce a shared call ceiling across repeated run s
   assert.equal(second.provider, "trial-search");
   assert.equal(third.value, null);
   assert.equal(calls, 2);
-  assert.match(third.errors.join(" "), /2-call trial budget/);
+  assert.deepEqual(third.errors, []);
+  assert.deepEqual(third.recoveredErrors, []);
 });
 
 test("limited provider pools surface terminal errors when all fallbacks fail", async () => {
