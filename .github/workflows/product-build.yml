@@ -45,5 +45,8 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Opportunity decision regressions
+        run: pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/__tests__/limitedProviderPool.test.ts src/lib/search/__tests__/structuredOpportunityDecision.test.ts
+
       - name: Build production applications
         run: pnpm run build:prod
