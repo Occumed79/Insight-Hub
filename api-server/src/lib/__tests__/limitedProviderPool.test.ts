@@ -128,6 +128,44 @@ test("limited provider pools stop waiting on a slow provider and continue", asyn
   );
 });
 
+test("limited provider pools enforce a shared call ceiling across repeated run steps", async () => {
+  clearLimitedProviderPoolState();
+  let calls = 0;
+  const provider = {
+    name: "trial-search",
+    isConfigured: async () => true,
+    run: async () => {
+      calls += 1;
+      return [String(calls)];
+    },
+  };
+
+  const first = await runLimitedProviderPool(
+    "trial-budget-test",
+    [provider],
+    (value) => value.length > 0,
+    { maxAttempts: 2, budgetMs: 5_000 },
+  );
+  const second = await runLimitedProviderPool(
+    "trial-budget-test",
+    [provider],
+    (value) => value.length > 0,
+    { maxAttempts: 2, budgetMs: 5_000 },
+  );
+  const third = await runLimitedProviderPool(
+    "trial-budget-test",
+    [provider],
+    (value) => value.length > 0,
+    { maxAttempts: 2, budgetMs: 5_000 },
+  );
+
+  assert.equal(first.provider, "trial-search");
+  assert.equal(second.provider, "trial-search");
+  assert.equal(third.value, null);
+  assert.equal(calls, 2);
+  assert.match(third.errors.join(" "), /2-call trial budget/);
+});
+
 test("limited provider pools surface terminal errors when all fallbacks fail", async () => {
   clearLimitedProviderPoolState();
   const result = await runLimitedProviderPool<string[]>(
