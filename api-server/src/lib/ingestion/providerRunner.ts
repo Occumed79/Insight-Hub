@@ -121,7 +121,7 @@ function applyProviderGuards(
   };
 }
 
-async function applyStructuredFederalJudgePanel(
+async function applyStructuredFederalDecision(
   provider: string,
   records: NormalizedOpportunity[],
   errors: string[],
@@ -135,32 +135,42 @@ async function applyStructuredFederalJudgePanel(
   );
   if (guarded.records.length === 0) return guarded;
 
-  const { judgeStructuredOpportunities } = await import(
-    "../search/structuredOpportunityJudge"
+  const { decideStructuredOpportunities } = await import(
+    "../search/structuredOpportunityDecision"
   );
-  const judged = await judgeStructuredOpportunities(guarded.records, {
-    providerName: provider,
-    signal: options.signal,
-  });
+  const decided = await decideStructuredOpportunities(guarded.records);
+
+  if (decided.diagnostics.length > 0) {
+    console.warn(
+      JSON.stringify({
+        event: "rfp_structured_review_recovered",
+        provider,
+        reviewer: decided.reviewer,
+        diagnostics: decided.diagnostics,
+      }),
+    );
+  }
 
   console.info(
     JSON.stringify({
-      event: "rfp_structured_judge_panel",
+      event: "rfp_structured_decision",
       provider,
       candidates: guarded.records.length,
-      approved: judged.approved.length,
-      deterministicRejected: judged.deterministicRejected,
-      panelRejected: judged.panelRejected,
-      unjudged: judged.unjudged,
-      deferred: judged.deferred,
-      judges: judged.usedJudges,
-      errors: judged.errors.length,
+      approved: decided.approved.length,
+      deterministicApproved: decided.deterministicApproved,
+      aiApproved: decided.aiApproved,
+      rejected: decided.rejected,
+      reviewHeld: decided.reviewHeld,
+      reviewer: decided.reviewer,
     }),
   );
 
+  // Recovered or optional AI review failures are diagnostics, not terminal run
+  // errors. Clear deterministic matches must remain usable even if every trial
+  // AI key is unavailable.
   return {
-    records: judged.approved,
-    errors: [...guarded.errors, ...judged.errors],
+    records: decided.approved,
+    errors: guarded.errors,
     expiredSkipped: guarded.expiredSkipped,
   };
 }
@@ -309,7 +319,7 @@ export async function fetchOneProvider(
       limit: 100,
       signal: options.signal,
     });
-    return applyStructuredFederalJudgePanel(
+    return applyStructuredFederalDecision(
       provider,
       result.records,
       result.errors ?? [],
@@ -325,7 +335,7 @@ export async function fetchOneProvider(
       limit: 100,
       signal: options.signal,
     });
-    return applyStructuredFederalJudgePanel(
+    return applyStructuredFederalDecision(
       provider,
       result.records,
       result.errors ?? [],
