@@ -13,12 +13,8 @@ const {
   resolveManualProviders,
 } = await import("../providerRunner");
 
-test("manual Fetch Intelligence searches SAM.gov, Tango, and browser discovery without GovCon", () => {
-  assert.deepEqual(resolveManualProviders(), [
-    "samGov",
-    "tango",
-    "aiDiscovery",
-  ]);
+test("manual Fetch Intelligence defaults to Tango plus browser discovery without broadcasting federal APIs", () => {
+  assert.deepEqual(resolveManualProviders(), ["tango", "aiDiscovery"]);
   assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), [
     "samGov",
     "tango",
@@ -30,15 +26,9 @@ test("manual Fetch Intelligence searches SAM.gov, Tango, and browser discovery w
   ]);
 });
 
-test("selecting either open-opportunity federal source expands only to SAM.gov and Tango", () => {
-  assert.deepEqual(resolveManualProviders(["sam_gov"]), [
-    "samGov",
-    "tango",
-  ]);
-  assert.deepEqual(resolveManualProviders(["tango_api"]), [
-    "samGov",
-    "tango",
-  ]);
+test("selecting a federal source keeps only that source in the run plan", () => {
+  assert.deepEqual(resolveManualProviders(["sam_gov"]), ["samGov"]);
+  assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
 });
 
 test("GovCon is rejected by open-opportunity ingestion and reserved for forecast tools", () => {
@@ -60,7 +50,7 @@ test("blank searches still enforce the Occu-Med service profile", () => {
   );
 });
 
-test("legacy portal selections collapse into one AI discovery provider after federal expansion", () => {
+test("legacy portal selections collapse into one AI discovery provider without adding a second federal source", () => {
   assert.deepEqual(
     resolveManualProviders([
       "sam_gov",
@@ -68,7 +58,7 @@ test("legacy portal selections collapse into one AI discovery provider after fed
       "eunaBonfire",
       "internationalPublicPortals",
     ]),
-    ["samGov", "tango", "aiDiscovery"],
+    ["samGov", "aiDiscovery"],
   );
 });
 
