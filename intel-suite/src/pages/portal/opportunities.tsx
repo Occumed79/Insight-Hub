@@ -660,39 +660,6 @@ export default function OpportunitiesDashboard() {
         )}
       </div>
 
-      {/* ── Fast Local Search (POST /api/search) ─────────────────────────── */}
-      <form onSubmit={handleLocalSearch} className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search current, verified opportunities..."
-            className="pl-9 bg-background/50 border-white/10 focus-visible:ring-primary/50 text-white"
-            value={localSearchQuery}
-            onChange={(e) => setLocalSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
-          <Button
-            type="submit"
-            disabled={isLocalSearching || !localSearchQuery.trim()}
-            className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20"
-          >
-            {isLocalSearching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-            {isLocalSearching ? "Searching..." : "Search"}
-          </Button>
-          {showLocalSearchResults && (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-white/10 bg-transparent hover:bg-white/5 text-white/80"
-              onClick={handleClearLocalSearch}
-            >
-              ✕ Clear
-            </Button>
-          )}
-        </div>
-      </form>
-
       <QualityViewTabs value={qualityView} onChange={(value) => { setQualityView(value); setStatus("all"); setPage(1); }} />
 
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center">
@@ -778,7 +745,7 @@ export default function OpportunitiesDashboard() {
                           exit={{ opacity: 0, y: -8 }}
                           transition={{ delay: Math.min(i * 0.025, 0.25) }}
                           onClick={() => handleOpenSummary(opp)}
-                          className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
+                          className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-blue-950/30 hover:bg-blue-950/40 hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex flex-wrap gap-2 items-center">
@@ -873,7 +840,7 @@ export default function OpportunitiesDashboard() {
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ delay: Math.min(i * 0.025, 0.25) }}
                     onClick={() => handleOpenSummary(opp)}
-                    className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-white/[0.035] hover:bg-white/[0.055] hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
+                    className="group relative min-h-[210px] rounded-2xl border border-white/10 bg-blue-950/30 hover:bg-blue-950/40 hover:border-primary/30 transition-all duration-200 p-4 flex flex-col gap-3 shadow-lg shadow-black/10 cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-wrap gap-2 items-center">
