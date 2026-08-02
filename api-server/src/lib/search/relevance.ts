@@ -313,21 +313,6 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       hasAny(haystack, ["medical screening", "vaccination"])) ||
     (hasAny(haystack, ["essential job functions"]) &&
       hasAny(haystack, ["medical examination", "medical evaluation"]));
-  const pathA = hasProc && explicit;
-  const pathB = hasProc && componentCount >= 2 && hasWorkOrReg;
-  const pathC = hasProc && regulatoryProgram;
-  const pathD =
-    hasProc &&
-    hasNetwork &&
-    hasAny(haystack, [
-      "medical examination",
-      "surveillance",
-      "testing",
-      "occupational health",
-      "deployment",
-      "drug testing",
-      "physical",
-    ]);
   
   // Require explicit medical terms in title for pathB (component-based matching)
   // This prevents false positives from general procurement terms
@@ -337,6 +322,23 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     "respiratory", "hearing", "vision", "immunization", "vaccination",
     "physiologic", "vascular", "fit test"
   ]);
+  
+  const pathA = hasProc && explicit;
+  const pathB = hasProc && componentCount >= 2 && hasWorkOrReg;
+  const pathC = hasProc && regulatoryProgram;
+  const pathD =
+    hasProc &&
+    hasNetwork &&
+    titleHasMedical &&
+    hasAny(haystack, [
+      "medical examination",
+      "surveillance",
+      "testing",
+      "occupational health",
+      "deployment",
+      "drug testing",
+      "physical",
+    ]);
   
   const pathBStrict = hasProc && componentCount >= 2 && hasWorkOrReg && titleHasMedical;
   
