@@ -332,9 +332,10 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
   // Require explicit medical terms in title for pathB (component-based matching)
   // This prevents false positives from general procurement terms
   const titleHasMedical = hasAny(titleNorm, [
-    "medical", "health", "physical", "examination", "screening", "testing",
+    "medical", "health", "physical", "examination", "screening",
     "surveillance", "occupational", "wellness", "clinic", "drug", "audiometric",
-    "respiratory", "hearing", "vision", "immunization", "vaccination"
+    "respiratory", "hearing", "vision", "immunization", "vaccination",
+    "physiologic", "vascular", "fit test"
   ]);
   
   const pathBStrict = hasProc && componentCount >= 2 && hasWorkOrReg && titleHasMedical;
