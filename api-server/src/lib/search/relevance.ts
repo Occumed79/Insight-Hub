@@ -328,6 +328,17 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       "drug testing",
       "physical",
     ]);
+  
+  // Require explicit medical terms in title for pathB (component-based matching)
+  // This prevents false positives from general procurement terms
+  const titleHasMedical = hasAny(titleNorm, [
+    "medical", "health", "physical", "examination", "screening", "testing",
+    "surveillance", "occupational", "wellness", "clinic", "drug", "audiometric",
+    "respiratory", "hearing", "vision", "immunization", "vaccination"
+  ]);
+  
+  const pathBStrict = hasProc && componentCount >= 2 && hasWorkOrReg && titleHasMedical;
+  
   const pathE =
     hasProc &&
     hasAny(titleNorm, [
@@ -337,14 +348,17 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       "screening services",
       "professional medical services",
     ]) &&
-    (explicit || pathB || pathC || pathD);
+    (explicit || pathBStrict || pathC || pathD);
+  
+  const accepted =
+    (pathA || pathBStrict || pathC || pathD || pathE) && conditionalPenalty < 40;
   if (pathA) {
     reasons.push("Explicit Occu-Med service phrase with procurement signal");
     reasonCodes.push(REASON_CODES.explicit);
   }
-  if (pathB) {
+  if (pathBStrict) {
     reasons.push(
-      "Multiple compatible medical/test components with workforce or regulatory context",
+      "Multiple compatible medical/test components with workforce or regulatory context and medical title",
     );
     reasonCodes.push(REASON_CODES.component);
   }
@@ -372,7 +386,7 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     ? 82
     : pathC
       ? 80
-      : pathB
+      : pathBStrict
         ? 74
         : pathD
           ? 72
@@ -426,8 +440,6 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     reasons.push("Job-title wording without procurement signal");
   }
   score = Math.max(0, Math.min(100, score - conditionalPenalty));
-  const accepted =
-    (pathA || pathB || pathC || pathD || pathE) && conditionalPenalty < 40;
   const confidence: RelevanceConfidence = !accepted
     ? score >= 40
       ? "insufficient"
