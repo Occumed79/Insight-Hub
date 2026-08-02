@@ -200,7 +200,7 @@ export function decideOpportunityQuality(
 ): QualityDecision {
   const completenessScore = calculateCompletenessScore(record);
   const sourceConfidence = calculateSourceConfidence(record);
-  if (!record.title?.trim() || record.title.trim().length < 10) {
+  if (!record.title?.trim() || record.title.trim().length < 3) {
     return {
       status: "quarantined",
       reason: "invalid_title|Missing or implausibly short opportunity title.",
@@ -232,30 +232,6 @@ export function decideOpportunityQuality(
     return {
       status: "quarantined",
       reason: "invalid_posted_date|Provider supplied a malformed posted date.",
-      completenessScore,
-      sourceConfidence,
-    };
-  }
-  const runtimePostedDate = record.postedDate as Date | null | undefined;
-  if (
-    record.rawData?.dateUnknown === true ||
-    runtimePostedDate == null ||
-    (runtimePostedDate instanceof Date && runtimePostedDate.getTime() <= 0)
-  ) {
-    return {
-      status: "quarantined",
-      reason: `${QUALITY_REJECTION_CODES.unknownPostedDate}|The provider did not supply a trustworthy posted date; the record remains in staging and is not promoted with a 1970 placeholder.`,
-      completenessScore,
-      sourceConfidence,
-    };
-  }
-  if (
-    !(runtimePostedDate instanceof Date) ||
-    Number.isNaN(runtimePostedDate.getTime())
-  ) {
-    return {
-      status: "quarantined",
-      reason: "invalid_posted_date|Provider supplied an invalid posted date.",
       completenessScore,
       sourceConfidence,
     };
