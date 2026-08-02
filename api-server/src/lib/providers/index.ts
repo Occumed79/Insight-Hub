@@ -38,6 +38,10 @@ export * from "./qdrant";
 export * from "./pinecone";
 export * from "./cloudflareWorker";
 export * from "./configOnly";
+export * from "./selfHostedCrawler";
+export * from "./rssAggregator";
+export * from "./localLlm";
+export * from "./selfHostedSearch";
 
 import "./manualCrawlerRegistration";
 import { samGovProvider } from "./samGov";
@@ -82,6 +86,10 @@ import { qdrantProvider } from "./qdrant";
 import { pineconeProvider } from "./pinecone";
 import { cloudflareWorkerProvider } from "./cloudflareWorker";
 import { falProvider, mongoDbProvider } from "./configOnly";
+import { selfHostedCrawlerProvider } from "./selfHostedCrawler";
+import { rssAggregatorProvider } from "./rssAggregator";
+import { localLlmProvider } from "./localLlm";
+import { selfHostedSearchProvider } from "./selfHostedSearch";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -127,6 +135,10 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   mongoDb: mongoDbProvider,
   voyage: voyageProvider,
   huggingFace: huggingFaceProvider,
+  selfHostedCrawler: selfHostedCrawlerProvider,
+  rssAggregator: rssAggregatorProvider,
+  localLlm: localLlmProvider,
+  selfHostedSearch: selfHostedSearchProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {

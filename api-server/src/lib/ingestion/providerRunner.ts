@@ -23,6 +23,10 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["eunaSupplierNetwork", "aiDiscovery"],
   ["international_public_portals", "aiDiscovery"],
   ["internationalOpportunities", "aiDiscovery"],
+  ["rss_aggregator", "rssAggregator"],
+  ["rssAggregator", "rssAggregator"],
+  ["scheduled_crawler", "scheduledCrawler"],
+  ["scheduledCrawler", "scheduledCrawler"],
 ]);
 
 // GovCon is deliberately excluded from open-opportunity ingestion. Its trial
@@ -33,6 +37,8 @@ export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
   "aiDiscovery",
+  "rssAggregator",
+  "scheduledCrawler",
 ]);
 
 const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
@@ -411,6 +417,33 @@ export async function fetchOneProvider(
       provider,
       result.records,
       result.errors,
+      options.keywords,
+    );
+  }
+
+  if (provider === "rssAggregator") {
+    const { rssAggregatorProvider } = await import("../providers/rssAggregator");
+    const result = await rssAggregatorProvider.fetch({
+      limit: 100,
+      signal: options.signal,
+    });
+    return applyProviderGuards(
+      provider,
+      result.records,
+      result.errors ?? [],
+      options.keywords,
+    );
+  }
+
+  if (provider === "scheduledCrawler") {
+    const { scheduledCrawler } = await import("../crawler/scheduledCrawler");
+    const crawlResults = await scheduledCrawler.runScheduledCrawl(options.signal);
+    const allRecords = crawlResults.flatMap((r: any) => r.opportunities);
+    const errors = crawlResults.filter((r: any) => r.error).map((r: any) => `${r.target.name}: ${r.error}`);
+    return applyProviderGuards(
+      provider,
+      allRecords,
+      errors,
       options.keywords,
     );
   }

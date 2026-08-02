@@ -20,6 +20,9 @@ import { socrataProvider } from "../providers/socrata";
 import { websearchProvider } from "../providers/websearch";
 import { olostepProvider } from "../providers/olostep";
 import { cloudflareWorkerProvider } from "../providers/cloudflareWorker";
+import { rssAggregatorProvider } from "../providers/rssAggregator";
+import { selfHostedCrawlerProvider } from "../providers/selfHostedCrawler";
+import { selfHostedSearchProvider } from "../providers/selfHostedSearch";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
@@ -37,6 +40,8 @@ const SERPER_RESULTS_PER_QUERY = 30;
 const EXA_RESULTS_PER_QUERY = 20;
 
 type SearchCandidateProvider =
+  | "rssAggregator"
+  | "selfHostedSearch"
   | "serper"
   | "exa"
   | "you"
@@ -131,6 +136,7 @@ interface Candidate {
   dateRaw?: string;
   firecrawlEnriched?: boolean;
   jinaEnriched?: boolean;
+  selfHostedCrawlerEnriched?: boolean;
 }
 
 function isRfpCandidate(candidate: Candidate): boolean {
@@ -242,6 +248,9 @@ export async function webIntelligenceFetch(options: {
   useWebsearch?: boolean;
   useGroqFetch?: boolean;
   useOpenrouterFetch?: boolean;
+  useRssAggregator?: boolean;
+  useSelfHostedSearch?: boolean;
+  useSelfHostedCrawler?: boolean;
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   const errors: string[] = [];
@@ -254,12 +263,15 @@ export async function webIntelligenceFetch(options: {
     linkupResults: 0,
     socrataResults: 0,
     websearchResults: 0,
+    rssAggregatorResults: 0,
+    selfHostedSearchResults: 0,
     totalCandidates: 0,
     preFiltered: 0,
     firecrawlEnriched: 0,
     jinaEnriched: 0,
     olostepEnriched: 0,
     cfWorkerEnriched: 0,
+    selfHostedCrawlerEnriched: 0,
     extracted: 0,
     heuristicExtracted: 0,
     rejected: 0,
@@ -279,6 +291,9 @@ export async function webIntelligenceFetch(options: {
   const useLinkup = options.useLinkup === true;
   const useSocrata = options.useSocrata === true;
   const useWebsearch = options.useWebsearch === true;
+  const useRssAggregator = options.useRssAggregator !== false; // Default to true for stable provider
+  const useSelfHostedSearch = options.useSelfHostedSearch !== false; // Default to true for stable provider
+  const useSelfHostedCrawler = options.useSelfHostedCrawler !== false; // Default to true for stable provider
 
   type SerperQuery = {
     query: string;
@@ -369,6 +384,47 @@ export async function webIntelligenceFetch(options: {
       run: () => Promise<Candidate[]>;
     }> = [];
 
+    // Prioritize stable sources (Tier 1)
+    if (useRssAggregator) {
+      attempts.push({
+        name: "rssAggregator",
+        isConfigured: () => rssAggregatorProvider.isConfigured(),
+        run: async () => {
+          const result = await rssAggregatorProvider.fetch({ limit: 50, signal: options.signal });
+          stats.rssAggregatorResults += result.records.length;
+          return result.records.map((record) => ({
+            title: record.title,
+            url: record.sourceUrl || "",
+            content: record.description || record.title,
+            sourceProvider: "rssAggregator" as const,
+            dateRaw: record.postedDate?.toISOString(),
+          }));
+        },
+      });
+    }
+
+    if (useSelfHostedSearch) {
+      attempts.push({
+        name: "selfHostedSearch",
+        isConfigured: () => selfHostedSearchProvider.isConfigured(),
+        run: async () => {
+          const results = await selfHostedSearchProvider.search({
+            query,
+            limit: 20,
+          });
+          stats.selfHostedSearchResults += results.length;
+          return results.map((result) => ({
+            title: result.title,
+            url: result.url || "",
+            content: result.description || result.title,
+            sourceProvider: "selfHostedSearch" as const,
+            dateRaw: undefined,
+          }));
+        },
+      });
+    }
+
+    // External APIs (Tier 2/3) - fallback when stable sources unavailable
     if (useSerper) {
       attempts.push({
         name: "serper",
@@ -520,6 +576,12 @@ export async function webIntelligenceFetch(options: {
     errors.push(...result.errors);
     if (!result.value || !result.provider) continue;
     switch (result.provider) {
+      case "rssAggregator":
+        stats.rssAggregatorResults += result.value.length;
+        break;
+      case "selfHostedSearch":
+        stats.selfHostedSearchResults += result.value.length;
+        break;
       case "serper":
         stats.serperResults += result.value.length;
         break;
@@ -565,10 +627,24 @@ export async function webIntelligenceFetch(options: {
 
   for (const { candidate, index } of toEnrich) {
     const enrichmentAttempts = [
+      // Prioritize self-hosted crawler (Tier 1)
+      ...(useSelfHostedCrawler
+        ? [
+            {
+              name: "selfHostedCrawler" as const,
+              isConfigured: () => selfHostedCrawlerProvider.isConfigured(),
+              run: async () => {
+                const result = await selfHostedCrawlerProvider.getText(candidate.url);
+                return result;
+              },
+            },
+          ]
+        : []),
+      // External scraping APIs (Tier 3) - fallback
       ...(useFirecrawl
         ? [
             {
-              name: "firecrawl",
+              name: "firecrawl" as const,
               isConfigured: () => firecrawlProvider.isConfigured(),
               run: async () =>
                 (await firecrawlProvider.scrape(candidate.url))?.markdown ??
@@ -577,17 +653,17 @@ export async function webIntelligenceFetch(options: {
           ]
         : []),
       {
-        name: "jina",
+        name: "jina" as const,
         isConfigured: () => jinaProvider.isConfigured(),
         run: () => jinaProvider.extractUrl(candidate.url, 5_000),
       },
       {
-        name: "olostep",
+        name: "olostep" as const,
         isConfigured: () => olostepProvider.isConfigured(),
         run: () => olostepProvider.getText(candidate.url),
       },
       {
-        name: "cloudflare-worker",
+        name: "cloudflare-worker" as const,
         isConfigured: () => cloudflareWorkerProvider.isConfigured(),
         run: () => cloudflareWorkerProvider.extractUrl(candidate.url),
       },
@@ -604,8 +680,12 @@ export async function webIntelligenceFetch(options: {
       content: enriched.value.slice(0, 5_000),
       firecrawlEnriched: enriched.provider === "firecrawl",
       jinaEnriched: enriched.provider === "jina",
+      selfHostedCrawlerEnriched: enriched.provider === "selfHostedCrawler",
     };
     switch (enriched.provider) {
+      case "selfHostedCrawler":
+        stats.selfHostedCrawlerEnriched++;
+        break;
       case "firecrawl":
         stats.firecrawlEnriched++;
         break;

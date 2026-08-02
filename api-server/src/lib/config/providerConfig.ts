@@ -2,7 +2,7 @@ import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "texasEsbd" | "nyScr" | "publicPortalProviders" | "eunaBonfire" | "internationalPublicPortals" | "gemini" | "serper" | "tango" | "bidnet" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "parallel" | "linkup" | "socrata" | "websearch" | "grantsGov" | "usaSpending" | "federalRegister" | "cerebras" | "cohere" | "deepseek" | "fal" | "mistral" | "nvidia" | "pinecone" | "qdrant" | "cloudflareWorker" | "mongoDb" | "voyage" | "huggingFace";
+export type ProviderName = "samGov" | "texasEsbd" | "nyScr" | "publicPortalProviders" | "eunaBonfire" | "internationalPublicPortals" | "gemini" | "serper" | "tango" | "bidnet" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "parallel" | "linkup" | "socrata" | "websearch" | "grantsGov" | "usaSpending" | "federalRegister" | "cerebras" | "cohere" | "deepseek" | "fal" | "mistral" | "nvidia" | "pinecone" | "qdrant" | "cloudflareWorker" | "mongoDb" | "voyage" | "huggingFace" | "selfHostedCrawler" | "rssAggregator" | "localLlm" | "selfHostedSearch";
 
 export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegister">;
 
@@ -241,6 +241,10 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   mongoDb: provider("mongoDb", "MongoDB API", "search", "research_analysis", [secretField("mongoDbApi", "MONGO_DB_API", "MongoDB API Key / URL")], ["External document store", "Future enrichment cache"], "partial"),
   voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Vector indexing fallback"], "active"),
   huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Embeddings", "Model inference", "Vector indexing fallback"], "active"),
+  selfHostedCrawler: provider("selfHostedCrawler", "Self-Hosted Crawler", "search", "web_discovery", [secretField("selfHostedCrawlerUrl", "SELF_HOSTED_CRAWLER_URL", "Crawler Service URL")], ["Full-page scraping", "Markdown extraction", "No API keys required"], "active"),
+  rssAggregator: provider("rssAggregator", "RSS Feed Aggregator", "procurement", "direct_source", [], ["Government RSS feeds", "Real-time updates", "No API keys required"], "live", "Aggregates RSS feeds from official government portals for stable, real-time opportunity discovery without API dependencies."),
+  localLlm: provider("localLlm", "Local LLM (Ollama/LocalAI)", "ai", "hybrid", [secretField("localLlmEndpoint", "LOCAL_LLM_ENDPOINT", "LLM Endpoint URL")], ["AI extraction", "Scoring", "No API keys required"], "active", "Local LLM provider supporting Ollama, LocalAI, or any OpenAI-compatible local server for AI extraction and scoring without external API dependencies."),
+  selfHostedSearch: provider("selfHostedSearch", "Self-Hosted Search (Meilisearch/Typesense)", "search", "research_analysis", [secretField("selfHostedSearchEndpoint", "SELF_HOSTED_SEARCH_ENDPOINT", "Search Engine URL")], ["Full-text search", "No API keys required", "Self-hosted"], "active", "Self-hosted search engine provider supporting Meilisearch, Typesense, or any OpenSearch/Elasticsearch-compatible server for search capabilities without external API dependencies."),
 };
 
 /**

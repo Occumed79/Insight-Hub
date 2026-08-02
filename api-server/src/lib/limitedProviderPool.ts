@@ -81,18 +81,24 @@ function rotated<T>(items: T[], start: number): T[] {
 
 function runtimePolicy(poolId: string): PoolRuntimePolicy {
   if (poolId === "opportunity-web-discovery") {
-    return { budgetMs: 30_000, attemptTimeoutMs: 7_000, maxAttempts: 4 };
+    // Prioritize stable sources: RSS feeds, direct portals, self-hosted crawler
+    // Fallback to external APIs only when stable sources fail
+    return { budgetMs: 45_000, attemptTimeoutMs: 10_000, maxAttempts: 6 };
   }
   if (poolId === "opportunity-page-enrichment") {
-    return { budgetMs: 15_000, attemptTimeoutMs: 6_000, maxAttempts: 8 };
+    // Prioritize self-hosted crawler over external scraping APIs
+    return { budgetMs: 20_000, attemptTimeoutMs: 15_000, maxAttempts: 10 };
   }
   if (poolId === "opportunity-ai-extraction") {
-    return { budgetMs: 25_000, attemptTimeoutMs: 8_000, maxAttempts: 5 };
+    // Prioritize local LLM over external AI APIs
+    return { budgetMs: 35_000, attemptTimeoutMs: 12_000, maxAttempts: 8 };
   }
   if (poolId === "opportunity-structured-review") {
-    return { budgetMs: 25_000, attemptTimeoutMs: 10_000, maxAttempts: 3 };
+    // Prioritize direct federal sources (SAM.gov, Tango) over external APIs
+    return { budgetMs: 30_000, attemptTimeoutMs: 15_000, maxAttempts: 5 };
   }
   if (poolId === "opportunity-structured-federal") {
+    // Federal structured sources are already stable, give them more time
     return { budgetMs: 70_000, attemptTimeoutMs: 35_000 };
   }
   return {};

@@ -4,6 +4,7 @@ import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
 import { clodProvider } from "../providers/clod";
+import { localLlmProvider } from "../providers/localLlm";
 import {
   cerebrasProvider,
   deepseekProvider,
@@ -58,13 +59,15 @@ interface AiTextProvider {
 }
 
 /**
- * Cerebras has the largest available working quota, so it is the normal path
+ * Local LLM (Tier 1 - Most Stable) is prioritized as it has no API keys and no rate limits.
+ * Cerebras has the largest available working quota among external APIs, so it is the normal path
  * rather than an edge-case reviewer. Cloudflare Workers AI now orders and
  * trims the uncached candidate pool before Cerebras receives it. Groq and
  * Gemini preserve continuity only when Cerebras is unavailable, rate-limited,
  * or returns malformed output.
  */
 export const AI_EXTRACTION_PROVIDER_ORDER = [
+  "local-llm",
   "cloudflare-workers-ai",
   "cerebras",
   "groq",
@@ -78,6 +81,12 @@ export const AI_EXTRACTION_PROVIDER_ORDER = [
 ] as const;
 
 const PRIMARY_PROVIDERS: AiTextProvider[] = [
+  // Wrap localLlmProvider to match AiTextProvider interface
+  {
+    name: "local-llm",
+    isConfigured: () => localLlmProvider.isConfigured(),
+    complete: (prompt: string, maxTokens?: number) => localLlmProvider.complete(prompt, { maxTokens }),
+  },
   cerebrasProvider,
   groqProvider,
   geminiProvider,
@@ -90,6 +99,11 @@ const PRIMARY_PROVIDERS: AiTextProvider[] = [
 ];
 
 const CROSS_CHECK_PROVIDERS: AiTextProvider[] = [
+  {
+    name: "local-llm",
+    isConfigured: () => localLlmProvider.isConfigured(),
+    complete: (prompt: string, maxTokens?: number) => localLlmProvider.complete(prompt, { maxTokens }),
+  },
   groqProvider,
   geminiProvider,
   openrouterProvider,

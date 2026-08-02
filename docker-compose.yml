@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # Meilisearch - Self-hosted search engine
+  meilisearch:
+    image: getmeili/meilisearch:v1.5
+    container_name: insight-hub-meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=insight-hub-master-key-change-in-production
+      - MEILI_ENV=production
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meilisearch_data:/meili_data
+    restart: unless-stopped
+    networks:
+      - insight-hub-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Ollama - Local LLM (requires GPU support)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: insight-hub-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - insight-hub-network
+    # GPU support (uncomment if you have NVIDIA GPU with nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    environment:
+      - OLLAMA_NUM_THREAD=4
+      - OLLAMA_MAX_QUEUE=8
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Self-hosted crawler service (placeholder - implementation required)
+  crawler:
+    build:
+      context: ./crawler-service
+      dockerfile: Dockerfile
+    container_name: insight-hub-crawler
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CRAWLER_TIMEOUT_MS=30000
+      - CRAWLER_MAX_CONCURRENT=5
+      - CRAWLER_USER_AGENT=Insight-Hub-Crawler/1.0
+    restart: unless-stopped
+    networks:
+      - insight-hub-network
+    depends_on:
+      - meilisearch
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis - Optional: For caching and job queue
+  redis:
+    image: redis:7-alpine
+    container_name: insight-hub-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - insight-hub-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  meilisearch_data:
+    driver: local
+  ollama_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  insight-hub-network:
+    driver: bridge
