@@ -30,7 +30,7 @@ export class SocrataProvider implements DataSourceProvider {
     const [appToken, key, secret] = await Promise.all([
       resolveCredential("socrataAppToken", "SOCRATA_APP_TOKEN"),
       resolveCredential("socrataApiKey", "SOCRATA_API_KEY"),
-      resolveCredential("socrataApiSecret", "SOCRATA_API_SECRET"),
+      resolveCredential("socrataApiSecret", "SOCRATA_APP_SECRET"),
     ]);
 
     // Public catalogue discovery only needs the Tyler/Socrata application

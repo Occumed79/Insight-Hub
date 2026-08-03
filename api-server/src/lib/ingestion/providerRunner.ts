@@ -37,6 +37,9 @@ export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
   "aiDiscovery",
+  "usaSpending",
+  "grantsGov",
+  "socrata",
   "rssAggregator",
   "scheduledCrawler",
 ]);

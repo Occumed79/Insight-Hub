@@ -133,3 +133,13 @@ services:
         sync: false
       - key: LOCAL_GOV_BID_SOURCES_ENABLED
         sync: false
+      - key: USASPENDING_API_BASE
+        sync: false
+      - key: GRANTS_GOV_API_BASE
+        sync: false
+      - key: SOCRATA_APP_TOKEN
+        sync: false
+      - key: SOCRATA_APP_SECRET
+        sync: false
+      - key: DATA_GOV_API_KEY
+        sync: false
