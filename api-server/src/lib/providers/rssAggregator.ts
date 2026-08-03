@@ -38,6 +38,24 @@ const GOVERNMENT_RSS_FEEDS: RssFeedConfig[] = [
     category: "Grants",
   },
   {
+    name: "Federal Register RSS",
+    url: "https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=general-services-administration&conditions%5Btopics%5D%5B%5D=procurement",
+    agency: "Federal",
+    category: "Federal Register",
+  },
+  {
+    name: "NIH Guide RSS",
+    url: "https://grants.nih.gov/grants/guide/rss.xml",
+    agency: "NIH",
+    category: "Healthcare Grants",
+  },
+  {
+    name: "VA OSDBU RSS",
+    url: "https://www.va.gov/osdbu/rss.xml",
+    agency: "VA",
+    category: "Veterans Affairs",
+  },
+  {
     name: "California RSS",
     url: "https://www.calbuy.ca.gov/BidOpportunities/RSS",
     state: "CA",
