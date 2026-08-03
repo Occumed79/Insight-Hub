@@ -2,7 +2,7 @@ import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "texasEsbd" | "nyScr" | "publicPortalProviders" | "eunaBonfire" | "internationalPublicPortals" | "gemini" | "serper" | "tango" | "bidnet" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "parallel" | "linkup" | "socrata" | "websearch" | "grantsGov" | "usaSpending" | "federalRegister" | "cerebras" | "cohere" | "deepseek" | "fal" | "mistral" | "nvidia" | "pinecone" | "qdrant" | "cloudflareWorker" | "mongoDb" | "voyage" | "huggingFace" | "selfHostedCrawler" | "rssAggregator" | "localLlm" | "selfHostedSearch";
+export type ProviderName = "samGov" | "texasEsbd" | "nyScr" | "publicPortalProviders" | "eunaBonfire" | "internationalPublicPortals" | "gemini" | "serper" | "tango" | "bidnet" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "parallel" | "linkup" | "socrata" | "websearch" | "grantsGov" | "usaSpending" | "federalRegister" | "cerebras" | "cohere" | "deepseek" | "fal" | "mistral" | "nvidia" | "pinecone" | "qdrant" | "cloudflareWorker" | "mongoDb" | "voyage" | "huggingFace" | "selfHostedCrawler" | "rssAggregator" | "localLlm" | "selfHostedSearch" | "emailNotifications";
 
 export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegister">;
 
@@ -245,6 +245,36 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   rssAggregator: provider("rssAggregator", "RSS Feed Aggregator", "procurement", "direct_source", [], ["Government RSS feeds", "Real-time updates", "No API keys required"], "live", "Aggregates RSS feeds from official government portals for stable, real-time opportunity discovery without API dependencies."),
   localLlm: provider("localLlm", "Local LLM (Ollama/LocalAI)", "ai", "hybrid", [secretField("localLlmEndpoint", "LOCAL_LLM_ENDPOINT", "LLM Endpoint URL")], ["AI extraction", "Scoring", "No API keys required"], "active", "Local LLM provider supporting Ollama, LocalAI, or any OpenAI-compatible local server for AI extraction and scoring without external API dependencies."),
   selfHostedSearch: provider("selfHostedSearch", "Self-Hosted Search (Meilisearch/Typesense)", "search", "research_analysis", [secretField("selfHostedSearchEndpoint", "SELF_HOSTED_SEARCH_ENDPOINT", "Search Engine URL")], ["Full-text search", "No API keys required", "Self-hosted"], "active", "Self-hosted search engine provider supporting Meilisearch, Typesense, or any OpenSearch/Elasticsearch-compatible server for search capabilities without external API dependencies."),
+  emailNotifications: {
+    ...provider("emailNotifications", "Email Notifications", "procurement", "direct_source", [
+      {
+        key: "imapHost",
+        label: "IMAP Host",
+        type: "text",
+        placeholder: "imap.gmail.com",
+        dbKey: "emailImapHost",
+        envKey: "EMAIL_IMAP_HOST",
+      },
+      {
+        key: "imapPort",
+        label: "IMAP Port",
+        type: "text",
+        placeholder: "993",
+        dbKey: "emailImapPort",
+        envKey: "EMAIL_IMAP_PORT",
+      },
+      {
+        key: "imapUser",
+        label: "Email Address",
+        type: "text",
+        placeholder: "procurement@example.com",
+        dbKey: "emailImapUser",
+        envKey: "EMAIL_IMAP_USER",
+      },
+      secretField("emailImapPassword", "EMAIL_IMAP_PASSWORD", "Email Password/App Password"),
+    ], ["Email notification parsing", "Official portal alerts", "No scraping required"], "partial", "Polls a dedicated email inbox for procurement opportunity notifications from government portals. Uses IMAP to fetch emails and extracts opportunity details with Occu-Med relevance filtering."),
+    optionalFields: [],
+  },
 };
 
 /**

@@ -143,3 +143,11 @@ services:
         sync: false
       - key: DATA_GOV_API_KEY
         sync: false
+      - key: EMAIL_IMAP_HOST
+        sync: false
+      - key: EMAIL_IMAP_PORT
+        sync: false
+      - key: EMAIL_IMAP_USER
+        sync: false
+      - key: EMAIL_IMAP_PASSWORD
+        sync: false

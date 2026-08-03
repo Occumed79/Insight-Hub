@@ -42,6 +42,7 @@ export * from "./selfHostedCrawler";
 export * from "./rssAggregator";
 export * from "./localLlm";
 export * from "./selfHostedSearch";
+export * from "./emailNotifications";
 
 import "./manualCrawlerRegistration";
 import { samGovProvider } from "./samGov";
@@ -90,6 +91,7 @@ import { selfHostedCrawlerProvider } from "./selfHostedCrawler";
 import { rssAggregatorProvider } from "./rssAggregator";
 import { localLlmProvider } from "./localLlm";
 import { selfHostedSearchProvider } from "./selfHostedSearch";
+import { emailNotificationProvider } from "./emailNotifications";
 import type { DataSourceProvider } from "./types";
 import type { ProviderName } from "../config/providerConfig";
 
@@ -139,6 +141,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   rssAggregator: rssAggregatorProvider,
   localLlm: localLlmProvider,
   selfHostedSearch: selfHostedSearchProvider,
+  emailNotifications: emailNotificationProvider,
 };
 
 export function getProvider(name: ProviderName): DataSourceProvider {
