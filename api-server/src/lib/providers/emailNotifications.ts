@@ -17,6 +17,9 @@ import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderF
 import { resolveCredential } from "../config/providerConfig";
 import { classifyResult } from "../search/relevance";
 
+// @ts-ignore - imapflow types may not be available
+import ImapFlow from "imapflow";
+
 interface EmailConfig {
   host: string;
   port: number;
@@ -104,17 +107,51 @@ export class EmailNotificationProvider implements DataSourceProvider {
   }
 
   private async fetchRecentEmails(config: EmailConfig, signal?: AbortSignal): Promise<EmailMessage[]> {
-    // Since we don't have an IMAP library, we'll simulate this with a placeholder
-    // In production, you'd use a library like 'imap' or 'imapflow'
-    // For now, return empty array - this needs actual IMAP implementation
+    const messages: EmailMessage[] = [];
     
-    // TODO: Implement actual IMAP polling using 'imapflow' or similar library
-    // Example structure:
-    // const client = await new ImapFlow({ host, port, user, password, tls }).connect();
-    // const mailbox = await client.mailboxOpen('INBOX');
-    // const messages = await client.fetch({ limit: 50 }, ['envelope', 'body']);
+    try {
+      const client = new ImapFlow({
+        host: config.host,
+        port: config.port,
+        secure: config.tls,
+        auth: {
+          user: config.user,
+          pass: config.password,
+        },
+      });
+
+      await client.connect();
+      
+      const mailbox = await client.mailboxOpen('INBOX');
+      
+      // Fetch last 50 messages
+      const range = `${Math.max(1, mailbox.exists - 49)}:*`;
+      
+      for await (const message of client.fetch(range, { envelope: true, source: true }, { signal })) {
+        if (message.envelope && message.source) {
+          const text = Buffer.from(message.source).toString('utf-8');
+          
+          // Extract plain text body (simple extraction)
+          const bodyMatch = text.match(/Content-Type: text\/plain[\s\S]*?\r\n\r\n([\s\S]*?)(?=\r\n--|\r\n\r\nContent-Type:|$)/i);
+          const body = bodyMatch ? bodyMatch[1].replace(/\r\n/g, '\n').trim() : text.slice(0, 5000);
+          
+          messages.push({
+            from: message.envelope.from?.[0]?.address || message.envelope.sender?.[0]?.address || '',
+            subject: message.envelope.subject || '',
+            body: body,
+            date: message.envelope.date || new Date(),
+            messageId: message.envelope.messageId || '',
+          });
+        }
+      }
+      
+      await client.logout();
+    } catch (error) {
+      console.error('IMAP fetch error:', error);
+      throw error;
+    }
     
-    return [];
+    return messages;
   }
 
   private extractOpportunity(message: EmailMessage): NormalizedOpportunity | null {

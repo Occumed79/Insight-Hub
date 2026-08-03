@@ -272,7 +272,7 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
         envKey: "EMAIL_IMAP_USER",
       },
       secretField("emailImapPassword", "EMAIL_IMAP_PASSWORD", "Email Password/App Password"),
-    ], ["Email notification parsing", "Official portal alerts", "No scraping required"], "partial", "Polls a dedicated email inbox for procurement opportunity notifications from government portals. Uses IMAP to fetch emails and extracts opportunity details with Occu-Med relevance filtering."),
+    ], ["Email notification parsing", "Official portal alerts", "No scraping required"], "live", "Polls a dedicated email inbox for procurement opportunity notifications from government portals. Uses IMAP to fetch emails and extracts opportunity details with Occu-Med relevance filtering."),
     optionalFields: [],
   },
 };
