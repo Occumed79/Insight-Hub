@@ -39,7 +39,9 @@ test("database query descriptors do not preserve parameter literals", () => {
 test("database query telemetry evicts old descriptors and retains no SQL text or values", async () => {
   resetDatabaseQueryTelemetryForTests();
   const stubPool = instrumentPoolQueries(
-    { query: async () => ({ rows: [] }) },
+    {
+      query: async (..._args: any[]) => ({ rows: [] }),
+    },
     "rfp",
   );
 
