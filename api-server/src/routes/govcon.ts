@@ -173,6 +173,17 @@ function statusIsClosed(status: string | null): boolean {
   return /closed|cancelled|canceled|complete|completed|awarded|archived|inactive/i.test(status);
 }
 
+function startOfUtcDay(now: number): number {
+  const date = new Date(now);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function currentFederalFiscalYear(now: number): number {
+  const date = new Date(now);
+  return date.getUTCFullYear() + (date.getUTCMonth() >= 9 ? 1 : 0);
+}
+
 /**
  * Forecast mode keeps genuinely forward-looking forecast records. Recompete
  * mode additionally requires incumbent/award evidence and sensible timing so a
@@ -188,14 +199,30 @@ export function isGovConSemanticCandidate(
 
   const solicitationMs = dateMs(record.estimatedSolicitationDate);
   const expirationMs = dateMs(record.incumbentAward?.expires ?? null);
-  const forecastTiming = Boolean(
+  const hasForecastTiming = Boolean(
     solicitationMs != null ||
       record.estimatedAwardFiscalYear != null ||
       record.estimatedAwardQuarter,
   );
 
   if (mode === "forecast") {
-    return forecastTiming || /forecast|planned|planning|active|open|anticipated/i.test(record.status ?? "");
+    const currentFy = currentFederalFiscalYear(now);
+    const solicitationInWindow =
+      solicitationMs != null &&
+      solicitationMs >= startOfUtcDay(now) &&
+      solicitationMs <= now + 5 * 365 * DAY_MS;
+    const awardFiscalYearInWindow =
+      record.estimatedAwardFiscalYear != null &&
+      record.estimatedAwardFiscalYear >= currentFy &&
+      record.estimatedAwardFiscalYear <= currentFy + 5;
+
+    // If the source supplied forecast timing, require that timing itself to be
+    // current/future. A stale date must not be rescued by a generic "planned"
+    // or "active" status label. Status is only a fallback when timing is absent.
+    if (hasForecastTiming) {
+      return solicitationInWindow || awardFiscalYearInWindow;
+    }
+    return /forecast|planned|planning|active|open|anticipated/i.test(record.status ?? "");
   }
 
   if (!record.isRecompete || record.recompeteEvidence === "none") return false;
