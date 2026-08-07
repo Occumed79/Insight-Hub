@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
 
 const baseUrl = process.env.INSIGHT_E2E_BASE_URL ?? "http://127.0.0.1:4173";
+const browserEngine = process.env.INSIGHT_E2E_BROWSER ?? "chromium";
+const browserType = { chromium, firefox, webkit }[browserEngine];
+if (!browserType) throw new Error(`Unsupported INSIGHT_E2E_BROWSER: ${browserEngine}`);
+
 const future = new Date(Date.now() + 45 * 86_400_000).toISOString();
 const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
 
@@ -75,7 +79,7 @@ function forecastRecord(recompete) {
 
 await waitForServer();
 
-const browser = await chromium.launch({ headless: true });
+const browser = await browserType.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await page.emulateMedia({ reducedMotion: "reduce" });
 const pageErrors = [];
@@ -215,7 +219,7 @@ async function assertNoDocumentOverflow(label) {
   const metrics = await viewportMetrics();
   assert.ok(
     metrics.scrollWidth <= metrics.clientWidth + 1,
-    `${label} horizontally overflows viewport: ${metrics.scrollWidth} > ${metrics.clientWidth}`,
+    `${browserEngine} ${label} horizontally overflows viewport: ${metrics.scrollWidth} > ${metrics.clientWidth}`,
   );
   return metrics;
 }
@@ -265,6 +269,13 @@ async function assertPortalChrome(path, activeLabel) {
 
   const skipLink = page.getByRole("link", { name: "Skip to content" });
   await skipLink.waitFor();
+  await skipLink.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.id ?? null),
+    "portal-main-content",
+    `${browserEngine} ${path} skip link must move keyboard focus to main content`,
+  );
 
   const metrics = await assertNoDocumentOverflow(path);
   const mainId = await page.locator("main").getAttribute("id");
@@ -313,6 +324,7 @@ async function assertFetchDialogContained(viewportWidth, viewportHeight) {
     `Dialog must remain inside the ${viewportHeight}px viewport height`,
   );
   await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
 }
 
 try {
@@ -341,11 +353,12 @@ try {
   assert.deepEqual(
     pageErrors,
     [],
-    `browser emitted UI page errors: ${pageErrors.join(" | ")}`,
+    `${browserEngine} emitted UI page errors: ${pageErrors.join(" | ")}`,
   );
   console.log(
     JSON.stringify({
       event: "insight_hub_ui_hardening_passed",
+      browser: browserEngine,
       viewports: ["390x844", "320x700"],
       reducedMotion: true,
       verified: [
@@ -353,12 +366,13 @@ try {
         "landing-page-vertical-scroll",
         "landing-page-reduced-motion",
         "portal-navigation-active-state",
-        "keyboard-skip-target",
+        "keyboard-skip-focus",
         "mobile-horizontal-overflow",
         "44px-workspace-touch-targets",
         "reduced-motion-background-guard",
         "mobile-dialog-viewport-containment-390",
         "mobile-dialog-viewport-containment-320",
+        "modal-escape-dismissal",
         "accessible-relevant-news-search",
         "news-outbound-touch-target",
       ],
