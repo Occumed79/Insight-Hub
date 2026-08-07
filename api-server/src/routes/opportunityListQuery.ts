@@ -35,7 +35,11 @@ export function boundNumeric(value: number): SQL<number> {
   return sql<number>`${value}::numeric`;
 }
 
-export function opportunityListErrorDetail(error: unknown): string {
+export function opportunityListErrorDetail(
+  error: unknown,
+  exposeInternalDetail = process.env.NODE_ENV !== "production",
+): string {
+  if (!exposeInternalDetail) return "Opportunity query failed";
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown opportunity query error";
 }
@@ -46,7 +50,9 @@ export function opportunityListErrorDetail(error: unknown): string {
  * the read endpoint depend on migrations that are unrelated to rendering the
  * Opportunities page.
  */
-export function opportunityListSelection(table: typeof import("@workspace/db/schema").opportunitiesTable) {
+export function opportunityListSelection(
+  table: typeof import("@workspace/db/schema").opportunitiesTable,
+) {
   return {
     id: table.id,
     noticeId: table.noticeId,
