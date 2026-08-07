@@ -237,6 +237,23 @@ async function mutateDurableProviderBudget(
   }
 }
 
+export function sanitizeProviderErrorMessage(message: string): string {
+  return message
+    .replace(
+      /(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,;]+/gi,
+      "$1[redacted]",
+    )
+    .replace(
+      /([?&](?:api_?key|key|token|access_token|auth)=)[^&\s]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*\b/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|pk)-[A-Za-z0-9_-]{12,}\b/g, "[redacted-token]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+}
+
 function classifyFailure(error: unknown): {
   outcome: ProviderBudgetOutcome;
   cooldownMs: number;
@@ -276,7 +293,9 @@ async function recordBudgetMutation(
         JSON.stringify({
           event: "provider_budget_persist_failed",
           provider,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeProviderErrorMessage(
+            error instanceof Error ? error.message : String(error),
+          ),
         }),
       );
     }
@@ -317,7 +336,7 @@ export async function recordProviderFailure(
       now.getTime() + failure.cooldownMs,
     ),
     lastOutcome: failure.outcome,
-    lastError: failure.message.replace(/\s+/g, " ").slice(0, 300),
+    lastError: sanitizeProviderErrorMessage(failure.message),
     lastAttemptAt: now.toISOString(),
   }));
 }
