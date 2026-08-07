@@ -6,6 +6,11 @@ import type { FeedbackGrade } from "./feedbackModel";
 
 const PREFIX = "feedback-context:v1:";
 const MAX_ADJUSTMENT = 20;
+const MAX_AGENCIES = 128;
+const MAX_NAICS = 256;
+const MAX_TAGS = 512;
+const MAX_KEYWORDS = 1_024;
+const MAX_GRADES_BY_OPPORTUNITY = 5_000;
 const GRADE_WEIGHT: Record<FeedbackGrade, number> = {
   excellent: 2,
   good: 1,
@@ -208,8 +213,6 @@ async function loadContexts(
       states.set(hash, parseState(context, values.get(`${PREFIX}${hash}`)));
     }
   } catch {
-    // Ranking remains available if contextual learning storage is temporarily
-    // unavailable. One failed batch read must not explode into N retries.
     for (const [hash, context] of entries) states.set(hash, blank(context));
   }
   return states;
@@ -221,6 +224,33 @@ function add(map: Record<string, number>, key: unknown, weight: number): void {
   const next = (map[normalized] ?? 0) + weight;
   if (Math.abs(next) < 0.000001) delete map[normalized];
   else map[normalized] = next;
+}
+
+function pruneSignalMap(map: Record<string, number>, limit: number): void {
+  const entries = Object.entries(map);
+  if (entries.length <= limit) return;
+  entries
+    .sort((left, right) => {
+      const magnitude = Math.abs(right[1]) - Math.abs(left[1]);
+      return magnitude !== 0 ? magnitude : left[0].localeCompare(right[0]);
+    })
+    .slice(limit)
+    .forEach(([key]) => delete map[key]);
+}
+
+function pruneContextState(state: ContextSignalState): void {
+  pruneSignalMap(state.agencies, MAX_AGENCIES);
+  pruneSignalMap(state.naics, MAX_NAICS);
+  pruneSignalMap(state.tags, MAX_TAGS);
+  pruneSignalMap(state.keywords, MAX_KEYWORDS);
+
+  const gradeIds = Object.keys(state.gradesByOpportunity);
+  const overflow = gradeIds.length - MAX_GRADES_BY_OPPORTUNITY;
+  if (overflow > 0) {
+    for (const id of gradeIds.slice(0, overflow)) {
+      delete state.gradesByOpportunity[id];
+    }
+  }
 }
 
 function keywordSignals(opportunity: OpportunityLike): string[] {
@@ -263,9 +293,6 @@ export async function recordContextFeedback(
 
   try {
     await client.query("BEGIN");
-    // Context feedback is a JSON aggregate. Serialize read/modify/write across
-    // requests and API instances so simultaneous grades cannot overwrite one
-    // another and re-grading a card replaces, rather than duplicates, its vote.
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
     const result = await client.query<{ value: string }>(
       "SELECT value FROM settings WHERE key = $1 FOR UPDATE",
@@ -276,11 +303,13 @@ export async function recordContextFeedback(
 
     if (previousGrade) {
       applyContribution(state, opportunity, -GRADE_WEIGHT[previousGrade]);
+      delete state.gradesByOpportunity[opportunityId];
     } else {
       state.grades += 1;
     }
     applyContribution(state, opportunity, GRADE_WEIGHT[grade]);
     state.gradesByOpportunity[opportunityId] = grade;
+    pruneContextState(state);
     state.updatedAt = new Date().toISOString();
 
     await client.query(
