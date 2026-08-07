@@ -1,565 +1,223 @@
-# Insight-Hub Stability Architecture
+# Insight Hub Stability Architecture
 
-## Overview
+## Purpose
 
-This document describes the stability improvements implemented to reduce dependency on external API keys and rate-limited services. The architecture prioritizes self-hosted solutions and direct government sources over third-party APIs.
+This document describes the current hardened runtime architecture for opportunity and acquisition intelligence. It replaces the older self-hosted-first design notes, which no longer match production ownership.
 
-## Problem Statement
+The primary goals are:
 
-The original architecture relied heavily on external APIs (Serper, Exa, Firecrawl, Olostep, Jina, You.com, DeepSeek, Cloudflare Workers AI, etc.) which caused several issues:
+- preserve source quality and provenance;
+- prevent one provider failure from suppressing other sources;
+- conserve limited API and model allowances;
+- keep stale, closed, or semantically unrelated records out of actionable views;
+- make retries, cooldowns, feedback, and rate limits durable across API instances;
+- keep legacy crawler and local-model experiments from silently re-entering production paths.
 
-- **Invalid API Keys**: Multiple providers had missing or invalid API keys
-- **Rate Limits**: SAM.gov quota exceeded, Groq TPM limits
-- **Timeout Issues**: Firecrawl and Olostep timeouts
-- **Cost**: Per-token and per-call costs for external services
-- **Reliability**: External service outages and deprecations
+## Runtime Ownership
 
-## Solution Architecture
+The machine-readable source ownership registry is `api-server/src/lib/sourceArchitecture.ts`. That registry is authoritative when older comments or historical files disagree with current behavior.
 
-### Provider Tier Strategy
+### Direct opportunity sources
 
-Providers are organized into three tiers based on stability and reliability:
+- **SAM.gov** — official U.S. federal opportunities.
+- **Tango** — independent structured federal opportunity pool.
+- **Texas ESBD / Texas SmartBuy** — dedicated Texas public procurement adapter.
+- **New York State Contract Reporter** — dedicated New York public procurement adapter.
 
-#### Tier 1: Most Stable (No API Keys Required)
-- **Direct Government Sources**: SAM.gov, Texas ESBD, NY SCR, Grants.gov
-- **Self-Hosted Services**: Local LLM, Self-Hosted Crawler, Self-Hosted Search
-- **RSS Feeds**: RSS Aggregator for government portals
-- **Public Portals**: Direct integration with public government portals
+Manual federal opportunity discovery keeps SAM.gov and Tango independent. A weak or empty result from one does not suppress the other.
 
-#### Tier 2: Moderately Stable (External APIs with Good Reliability)
-- **Neural Search**: Exa, Parallel, Linkup
-- **AI Inference**: Groq, Gemini, OpenRouter, Cerebras, Cohere
-- **Vector Services**: Pinecone, Voyage
+### Browser/search discovery
 
-#### Tier 3: Fallback (External APIs with Rate Limits or Issues)
-- **Search APIs**: Serper, You.com, LangSearch
-- **Scraping APIs**: Firecrawl, Olostep, Jina
-- **AI APIs**: DeepSeek, Cloudflare Workers AI
+Configured discovery providers may include LangSearch, Serper, Exa, Parallel, Linkup, You.com, Socrata, and WebSearch. The runtime selects a bounded subset using durable provider availability/yield state instead of randomly exhausting every configured trial key.
 
-#### Disabled: Not Recommended for Production
-- **Deprecated**: BrowseAI, BrowserUse
-- **Limited Coverage**: BidNet, EUNA Bonfire, International Portals
-- **Experimental**: CLōD, Fal AI
+Browser/search discovery is supplemental. It does not replace structured federal sources and it does not grant search snippets the same authority as official records.
 
-## New Components
+### Page enrichment
 
-### 1. Self-Hosted Crawler (`selfHostedCrawler.ts`)
+Managed enrichment may use Jina, Olostep, Firecrawl, and related explicitly enabled services. Enrichment is separate from discovery so a page-extraction failure does not redefine source ownership.
 
-**Purpose**: Replace external scraping APIs (Firecrawl, Olostep, Jina) with a self-hosted crawler.
+### AI review
 
-**Features**:
-- Playwright-based web scraping
-- Full-page content extraction
-- Markdown conversion
-- Screenshot and PDF generation
-- Configurable timeouts and retries
-- No API keys required
+Ambiguous structured opportunities may be reviewed by a bounded panel of configured external model providers. Clear high-confidence records remain deterministic to avoid unnecessary model spend.
 
-**Configuration**:
-```bash
-SELF_HOSTED_CRAWLER_URL=http://localhost:3000
-```
+Panel safeguards include:
 
-**Usage**:
-```typescript
-import { selfHostedCrawlerProvider } from "./providers/selfHostedCrawler";
-
-const content = await selfHostedCrawlerProvider.getText(url);
-const markdown = await selfHostedCrawlerProvider.extractMarkdown(url);
-```
-
-### 2. RSS Feed Aggregator (`rssAggregator.ts`)
+- at most one vote per provider per record;
+- distinct-provider consensus;
+- early stop once consensus is reached;
+- stricter threshold when only one judge is available;
+- durable provider cooldown/budget accounting.
 
-**Purpose**: Aggregate RSS feeds from government portals for stable, real-time discovery.
-
-**Features**:
-- No API keys required
-- Real-time updates
-- Official government sources
-- Low bandwidth
-- Stable and reliable
-
-**Supported Feeds**:
-- SAM.gov RSS
-- Grants.gov RSS
-- California RSS
-- Florida RSS
-- Texas RSS
-- New York RSS
+### Forecast and recompete intelligence
 
-**Usage**:
-```typescript
-import { rssAggregatorProvider } from "./providers/rssAggregator";
+- **Forecasts** are owned by the GovCon + official federal forecast ensemble.
+- **Recompete Watch** requires incumbent/award evidence and sensible timing.
+- **USAspending/SAM verification** remains part of official award/recompete verification.
+- **FAR/DFARS RSS** belongs to policy intelligence, not the Forecast pipeline.
 
-const result = await rssAggregatorProvider.fetch({ limit: 50 });
-```
-
-### 3. Local LLM Provider (`localLlm.ts`)
-
-**Purpose**: Provide AI extraction and scoring using locally-hosted LLMs instead of external APIs.
-
-**Features**:
-- Supports Ollama, LocalAI, or any OpenAI-compatible server
-- No API keys required
-- No rate limits
-- Privacy (data stays local)
-- Cost-effective
-
-**Configuration**:
-```bash
-LOCAL_LLM_ENDPOINT=http://localhost:11434
-LOCAL_LLM_MODEL=llama3.2
-```
-
-**Usage**:
-```typescript
-import { localLlmProvider } from "./providers/localLlm";
-
-const extraction = await localLlmProvider.extractOpportunityFromWebResult(title, url, content);
-const score = await localLlmProvider.scoreRelevance(title, description, orgContext);
-const queries = await localLlmProvider.generateSearchQueries(keywords);
-```
-
-### 4. Self-Hosted Search (`selfHostedSearch.ts`)
-
-**Purpose**: Provide search capabilities using a self-hosted search engine.
-
-**Features**:
-- Supports Meilisearch, Typesense, or OpenSearch/Elasticsearch
-- No API keys required
-- Full control over search behavior
-- Scalable
-- Works offline
-
-**Configuration**:
-```bash
-SELF_HOSTED_SEARCH_ENDPOINT=http://localhost:7700
-SELF_HOSTED_SEARCH_API_KEY=your-api-key
-SELF_HOSTED_SEARCH_INDEX=opportunities
-```
-
-**Usage**:
-```typescript
-import { selfHostedSearchProvider } from "./providers/selfHostedSearch";
-
-const results = await selfHostedSearchProvider.search({
-  query: "occupational health services",
-  limit: 100,
-});
-```
-
-### 5. Scheduled Crawler (`scheduledCrawler.ts`)
-
-**Purpose**: Periodically crawl known government portal URLs with change detection.
-
-**Features**:
-- Scheduled crawling with configurable intervals
-- Change detection using content hashing
-- Opportunity caching
-- New/changed opportunity detection
-- No API keys required
-
-**Default Targets**:
-- SAM.gov RSS
-- Grants.gov RSS
-- Texas ESBD
-- New York SCR
-
-**Usage**:
-```typescript
-import { scheduledCrawler } from "./crawler/scheduledCrawler";
-
-// Run scheduled crawl
-const results = await scheduledCrawler.runScheduledCrawl();
-
-// Add custom target
-scheduledCrawler.addTarget({
-  url: "https://example.gov/rss",
-  name: "Custom Portal",
-  crawlIntervalMs: 60 * 60 * 1000, // 1 hour
-  enabled: true,
-});
-
-// Get schedule status
-const status = scheduledCrawler.getScheduleStatus();
-```
-
-### 6. Enhanced Heuristic Extraction (`heuristicExtract.ts`)
-
-**Purpose**: Improve fallback extraction when AI is unavailable.
-
-**Enhancements**:
-- More date format patterns (international, ordinal dates)
-- Enhanced value extraction (estimated value, budget)
-- Expanded agency patterns (schools, universities)
-- Location extraction (city, state)
-- Contact extraction (email, phone)
-- Solicitation number extraction
-
-**Usage**:
-```typescript
-import { extractMetadataFromText } from "./search/heuristicExtract";
-
-const metadata = extractMetadataFromText(content, title);
-// Returns: deadline, estimatedValue, agencyHint, location, contact, solicitationNumber
-```
-
-### 7. Provider Tier Configuration (`providerTiers.ts`)
-
-**Purpose**: Define stability hierarchy and provider priorities.
-
-**Features**:
-- Tier-based provider organization
-- Stability scoring
-- Use case recommendations
-- Self-hosted requirement tracking
-- API key requirement tracking
-
-**Usage**:
-```typescript
-import { 
-  getProvidersByTier, 
-  getRecommendedProviders, 
-  isStableProvider 
-} from "./config/providerTiers";
-
-// Get Tier 1 providers
-const tier1 = getProvidersByTier("tier1");
-
-// Get recommended providers for discovery
-const discoveryProviders = getRecommendedProviders("discovery");
-
-// Check if provider is stable
-const stable = isStableProvider("samGov"); // true
-```
-
-## Provider Pool Configuration Updates
-
-The `limitedProviderPool.ts` has been updated to prioritize stable sources:
-
-### Web Discovery Pool
-- **Budget**: 45s (increased from 30s)
-- **Timeout**: 10s (increased from 7s)
-- **Attempts**: 6 (increased from 4)
-- **Priority**: RSS feeds → Direct portals → Self-hosted crawler → External APIs
-
-### Page Enrichment Pool
-- **Budget**: 20s (increased from 15s)
-- **Timeout**: 15s (increased from 12s)
-- **Attempts**: 10 (increased from 8)
-- **Priority**: Self-hosted crawler → Direct portal parsers → External scraping APIs
-
-### AI Extraction Pool
-- **Budget**: 35s (increased from 25s)
-- **Timeout**: 12s (increased from 8s)
-- **Attempts**: 8 (increased from 5)
-- **Priority**: Local LLM → Gemini → Groq → Other AI APIs
-
-### Structured Review Pool
-- **Budget**: 30s (increased from 25s)
-- **Timeout**: 15s (increased from 10s)
-- **Attempts**: 5 (increased from 3)
-- **Priority**: Direct federal sources → External APIs
-
-## Deployment Recommendations
-
-### Option 1: Self-Hosted Everything (Most Stable)
-
-**Infrastructure**:
-- Ollama for local LLM (run on GPU server)
-- Meilisearch for search index
-- Playwright-based crawler service
-- PostgreSQL for database
-- Qdrant for vector database
-
-**Benefits**:
-- No external API dependencies
-- No rate limits
-- Maximum control
-- Privacy
-- Cost-effective (no per-token costs)
-
-**Requirements**:
-- GPU server for Ollama (recommended: NVIDIA GPU with 8GB+ VRAM)
-- CPU server for Meilisearch and crawler
-- 16GB+ RAM for LLM inference
-- Storage for search index and cached content
-
-### Option 2: Hybrid (Balanced)
-
-**Use Self-Hosted For**:
-- RSS feed aggregation
-- Direct government portal scraping
-- Heuristic extraction
-- Scheduled crawling
-
-**Use External APIs For**:
-- AI extraction (when local LLM unavailable)
-- Search (when self-hosted search unavailable)
-- Vector embeddings (when local unavailable)
-
-**Benefits**:
-- Reduced API dependency
-- Fallback to external services when needed
-- Lower infrastructure requirements
-
-### Option 3: Cloud-Native (Minimal Infrastructure)
-
-**Use Self-Hosted For**:
-- RSS feed aggregation
-- Heuristic extraction
-- Direct government portal scraping
-
-**Use External APIs For**:
-- AI extraction
-- Search
-- Vector embeddings
-
-**Benefits**:
-- Minimal infrastructure
-- Still reduces API dependency significantly
-- Good balance of stability and convenience
-
-## Environment Variables
-
-### Self-Hosted Crawler
-```bash
-SELF_HOSTED_CRAWLER_URL=http://localhost:3000
-```
-
-### Local LLM
-```bash
-LOCAL_LLM_ENDPOINT=http://localhost:11434
-LOCAL_LLM_MODEL=llama3.2
-```
-
-### Self-Hosted Search
-```bash
-SELF_HOSTED_SEARCH_ENDPOINT=http://localhost:7700
-SELF_HOSTED_SEARCH_API_KEY=your-api-key
-SELF_HOSTED_SEARCH_INDEX=opportunities
-```
-
-### Existing Providers (Optional - for fallback)
-```bash
-# External APIs (Tier 2/3 - optional)
-GEMINI_API_KEY=your-key
-GROQ_API_KEY=your-key
-EXA_API_KEY=your-key
-SERPER_API_KEY=your-key
-FIRECRAWL_API_KEY=your-key
-OLOSTEP_API_KEY=your-key
-```
-
-## Migration Guide
-
-### Step 1: Deploy Self-Hosted Services
-
-**Ollama**:
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull model
-ollama pull llama3.2
-
-# Start server
-ollama serve
-```
-
-**Meilisearch**:
-```bash
-# Using Docker
-docker run -d -p 7700:7700 \
-  -v $(pwd)/meili_data:/meili_data \
-  getmeili/meilisearch
-
-# Create index
-curl -X POST http://localhost:7700/indexes \
-  -H 'Content-Type: application/json' \
-  --data-binary '{
-    "uid": "opportunities",
-    "primaryKey": "id"
-  }'
-```
-
-**Self-Hosted Crawler**:
-```bash
-# Deploy crawler service (implementation required)
-# See selfHostedCrawler.ts for API specification
-```
-
-### Step 2: Update Environment Variables
-
-Add self-hosted service URLs to your environment:
-
-```bash
-# Render dashboard or .env file
-LOCAL_LLM_ENDPOINT=http://your-ollama-server:11434
-SELF_HOSTED_SEARCH_ENDPOINT=http://your-meilisearch-server:7700
-SELF_HOSTED_CRAWLER_URL=http://your-crawler-server:3000
-```
-
-### Step 3: Test New Providers
-
-```bash
-# Test local LLM
-curl http://localhost:11434/api/generate -d '{
-  "model": "llama3.2",
-  "prompt": "Test"
-}'
-
-# Test Meilisearch
-curl http://localhost:7700/health
-
-# Test crawler (if deployed)
-curl http://localhost:3000/health
-```
-
-### Step 4: Update Application Configuration
-
-The provider pool will automatically prioritize stable sources. No code changes required for basic usage.
-
-### Step 5: Monitor and Adjust
-
-- Monitor logs for provider usage
-- Adjust timeouts and budgets as needed
-- Add custom RSS feeds to scheduled crawler
-- Fine-tune heuristic extraction patterns
-
-## Monitoring
-
-### Provider Usage Logs
-
-The system logs provider usage and fallback behavior:
-
-```json
-{
-  "event": "limited_provider_pool_recovered",
-  "poolId": "opportunity-web-discovery",
-  "successfulProvider": "rssAggregator",
-  "attempted": ["rssAggregator", "samGov"],
-  "recoveredErrors": []
-}
-```
-
-### Health Checks
-
-Each provider includes a health check:
-
-```typescript
-const status = await localLlmProvider.getStatus();
-// Returns: { name: "localLlm", configured: true, healthy: true }
-```
-
-### Scheduled Crawler Status
-
-```typescript
-const status = scheduledCrawler.getScheduleStatus();
-// Returns: { targets: [...], lastRun, nextRun, isRunning }
-```
-
-## Troubleshooting
-
-### Local LLM Not Responding
-
-**Check**: Ollama service is running
-```bash
-curl http://localhost:11434/api/tags
-```
-
-**Solution**: Start Ollama service
-```bash
-ollama serve
-```
-
-### Self-Hosted Search Not Working
-
-**Check**: Meilisearch health
-```bash
-curl http://localhost:7700/health
-```
-
-**Solution**: Restart Meilisearch container
-```bash
-docker restart meilisearch
-```
-
-### RSS Feeds Not Updating
-
-**Check**: Scheduled crawler status
-```typescript
-const status = scheduledCrawler.getScheduleStatus();
-console.log(status);
-```
-
-**Solution**: Manually trigger crawl
-```typescript
-await scheduledCrawler.runScheduledCrawl();
-```
-
-### Heuristic Extraction Not Working
-
-**Check**: Pattern matching in logs
-**Solution**: Add custom patterns to `heuristicExtract.ts`
-
-## Performance Considerations
-
-### Local LLM Performance
-
-- **GPU**: 10-50 tokens/second
-- **CPU**: 1-5 tokens/second
-- **RAM**: 8GB+ recommended for 7B models
-- **Model Size**: 7B models recommended for balance of speed and quality
-
-### Self-Hosted Search Performance
-
-- **Index Size**: Depends on document count
-- **Query Speed**: 10-100ms for typical queries
-- **RAM**: 2GB+ recommended for production
-- **CPU**: Multi-core beneficial
-
-### Scheduled Crawler Performance
-
-- **Crawl Interval**: 1 hour default
-- **Change Detection**: Hash-based, fast
-- **Cache Size**: Depends on opportunity count
-- **Network**: Bandwidth for RSS feeds only
-
-## Cost Comparison
-
-### External API Approach (Previous)
-- Monthly API costs: $500-2000+
-- Rate limits affecting reliability
-- API key management overhead
-- Vendor lock-in
-
-### Self-Hosted Approach (New)
-- Infrastructure: $50-200/month (servers)
-- No per-token costs
-- No rate limits
-- Full control
-- Vendor-independent
-
-### Hybrid Approach (Balanced)
-- Infrastructure: $20-100/month
-- Reduced API costs: $50-500/month
-- Fallback to external APIs
-- Balanced reliability and cost
-
-## Future Enhancements
-
-1. **Additional State Portals**: Expand direct portal integrations
-2. **Custom Parsers**: Build parsers for specific portal formats
-3. **ML-Based Extraction**: Train custom models for extraction
-4. **Distributed Crawling**: Scale crawler horizontally
-5. **Real-time Updates**: WebSocket-based updates from RSS feeds
-6. **Advanced Change Detection**: Diff-based change detection
-7. **Caching Layer**: Redis-based caching for frequently accessed content
-8. **Monitoring Dashboard**: UI for monitoring provider health and usage
-
-## Conclusion
-
-The new stability architecture significantly reduces dependency on external APIs while maintaining or improving functionality. By prioritizing self-hosted solutions and direct government sources, the system becomes more reliable, cost-effective, and maintainable.
-
-The tier-based provider strategy ensures graceful degradation - if self-hosted services are unavailable, the system falls back to external APIs, and if those fail, heuristic extraction provides a final fallback layer.
+The retired `/api/federal-intel/forecast` path is not a second forecast source.
+
+## Explicitly Retired or Disabled Paths
+
+The following are not production opportunity-discovery owners:
+
+- Local LLM / Ollama / LocalAI extraction;
+- self-hosted crawler as a manual opportunity source;
+- self-hosted search as a manual opportunity source;
+- scheduled crawler as a manual opportunity source;
+- browser-automation experiments such as BrowseAI/BrowserUse;
+- Cloudflare worker extraction paths that were disabled after authentication/reliability failures;
+- award/history or policy feeds treated as if they were open RFP sources.
+
+### Local LLM retirement
+
+Local LLM support is retired from the hardened runtime. The old provider implementation and Ollama setup script were removed, provider settings no longer expose it, the provider registry returns an explicit retired tombstone, and deployment configuration no longer requests `LOCAL_LLM_ENDPOINT` or `LOCAL_LLM_MODEL`.
+
+Do not add Local LLM/Ollama back as a fallback without a new architecture decision, dedicated resource sizing, isolation from the web process, production health gates, and explicit ownership in `sourceArchitecture.ts`.
+
+## Provider Budget Ledger
+
+Provider allowance state is stored durably in the existing RFP settings KV table. No schema migration is required.
+
+The ledger tracks:
+
+- daily and monthly request counts;
+- successes, failures, empty results, and useful result yield;
+- last outcome/error;
+- last attempt/success timestamps;
+- durable cooldown deadlines.
+
+Quota, authentication, rate-limit, timeout, and reliability failures receive bounded cooldowns. Writes are serialized with transaction-scoped PostgreSQL advisory locks so concurrent requests or multiple API instances cannot overwrite counters or erase a newer cooldown.
+
+A short-lived process cache reduces unnecessary reads but is intentionally non-authoritative.
+
+## Opportunity Acceptance Boundary
+
+Raw discovery is not equivalent to an actionable opportunity.
+
+Structured and discovered records pass through guards for:
+
+- query/service relevance;
+- expiration and deadline state;
+- deterministic or panel review where appropriate;
+- cross-source deduplication;
+- opportunity quality classification;
+- durable user suppression/feedback.
+
+The normal actionable view excludes records marked **Not relevant**. The All Records view remains the audit/recovery surface.
+
+Bulk destructive “purge junk” behavior is disabled. Rejected evidence belongs in staging/audit paths rather than being used as a reason to delete canonical production history indiscriminately.
+
+## Forecast Freshness Boundary
+
+A forecast record with explicit timing must contain current/future timing. A stale solicitation date or past federal fiscal year cannot be rescued merely because the source labels the record `planned`, `forecast`, `active`, or `open`.
+
+Status fallback is used only when the source genuinely provides no timing fields.
+
+Supplemental official-agency forecast search results are restricted to government/military hosts, procurement-forecast language, Occu-Med-compatible scope, and freshness signals. Search-provider failures are recorded as failures rather than being converted into false zero-result successes.
+
+## Feedback Learning
+
+Feedback is split into global scope/content learning and contextual learning.
+
+### Global learning
+
+Provider identity is diagnostic only. A poor result from SAM, Tango, Serper, or another source cannot poison all future records from that provider.
+
+Global relevance learning uses meaningful overlap such as:
+
+- agency;
+- NAICS;
+- tags/service scope;
+- title/content keywords.
+
+Bounded rescoring requires an actual shared signal and excludes already graded unrelated records.
+
+### Contextual learning
+
+Contextual feedback aggregates are transactionally updated with PostgreSQL advisory locks. Re-grading the same opportunity in the same context replaces the previous contribution rather than double-counting it.
+
+## API Safety Boundary
+
+The API applies:
+
+- restricted production CORS;
+- full-origin mutation checks, including scheme;
+- bounded request bodies;
+- strict payload validation on expensive/high-risk mutation routes;
+- security headers;
+- capability-based optional write/admin tokens;
+- shared durable rate limiting with a bounded local fallback when the database is unavailable.
+
+The production proxy terminates TLS ahead of the Node process, so the Express application trusts exactly one proxy hop. This allows origin checks and per-client rate limits to use the forwarded HTTPS protocol/client address correctly.
+
+These controls reduce abuse and accidental expensive operations. They are not a substitute for a full end-user authentication/session system if the application is exposed to untrusted users.
+
+## Database and Concurrency Rules
+
+For JSON aggregates or counters stored in the settings KV table:
+
+1. use a database transaction;
+2. acquire a transaction-scoped advisory lock for the logical key;
+3. read the current row;
+4. perform the read/modify/write while still holding the lock;
+5. commit before updating any process cache.
+
+Do not implement durable counters as an unlocked `SELECT` followed by an upsert. That loses concurrent updates across requests or instances.
+
+## Cache Rules
+
+Caches must be:
+
+- bounded by entry count;
+- bounded by TTL;
+- invalidated or bypassed for correctness-sensitive state;
+- paired with in-flight request deduplication when identical upstream calls can consume quota.
+
+Forecast response caches and provider-budget caches follow these rules.
+
+## Observability
+
+`/api/hardening/diagnostics` exposes non-secret architecture and provider-budget telemetry for troubleshooting.
+
+Useful diagnostics include:
+
+- source role and active/disabled ownership;
+- provider/key-slot cooldown state;
+- recovered provider failures;
+- structured-review decisions;
+- forecast source breakdown and deduplication counts;
+- ingestion rejection/expiration counts.
+
+Never include raw API keys, write tokens, database credentials, or secret environment values in diagnostics.
+
+## CI and Release Gates
+
+The hardened branch is expected to pass the repository gates for:
+
+- workspace/API typecheck;
+- hardening regressions;
+- opportunity-ingestion regressions;
+- opportunity-quality regressions;
+- Forecast/Recompete semantic tests;
+- frontend production build;
+- API production build;
+- crawler-foundation compatibility tests;
+- statewide/catalogue verification where those workflows apply.
+
+A green build on an older commit is not validation of a newer hardening commit. Always evaluate checks against the current PR head.
+
+## Production Safety Principles
+
+- Do not make one provider a hidden fallback that suppresses independent sources.
+- Do not treat search-engine results as official structured records.
+- Do not spend AI calls on records a deterministic rule can confidently decide.
+- Do not erase a quota/reliability cooldown because a concurrent request happened to succeed.
+- Do not allow stale forecast timing to survive on a generic status label.
+- Do not let feedback about one source become a source-wide relevance penalty.
+- Do not expose retired integrations as configurable/healthy providers.
+- Do not claim production browser behavior is validated solely because repository CI is green.
+
+## Current Direction
+
+Insight Hub now favors a small number of explicit, observable owners for each job instead of accumulating overlapping fallback paths. New integrations should be added to the authoritative source registry first, assigned one primary role, given a clear budget/reliability strategy, and covered by a regression that proves they cannot degrade existing source independence or data quality.
