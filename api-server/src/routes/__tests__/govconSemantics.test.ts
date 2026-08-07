@@ -4,9 +4,14 @@ import test from "node:test";
 process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
-const [{ isGovConSemanticCandidate }, { isForwardForecast }] = await Promise.all([
+const [
+  { isGovConSemanticCandidate },
+  { isForwardForecast },
+  { forecastSearchHitCurrent },
+] = await Promise.all([
   import("../govcon"),
   import("../govcon-forecast-ensemble"),
+  import("../../lib/intelligence/agencyForecastDiscovery"),
 ]);
 
 const DAY_MS = 86_400_000;
@@ -107,6 +112,45 @@ test("status fallback is used only when timing fields are absent", () => {
       status: "anticipated",
     }),
     now,
+    true,
+  );
+});
+
+test("official forecast search rejects stale dated hits", () => {
+  const now = Date.UTC(2026, 7, 6, 12, 0, 0);
+  assert.equal(
+    forecastSearchHitCurrent(
+      {
+        title: "FY2024 Occupational Health Acquisition Forecast",
+        text: "Planned employee medical examination procurement.",
+        date: new Date(now - 700 * DAY_MS).toISOString(),
+      },
+      now,
+    ),
+    false,
+  );
+});
+
+test("official forecast search rejects explicitly old forecast years without dates", () => {
+  const now = Date.UTC(2026, 7, 6, 12, 0, 0);
+  assert.equal(
+    forecastSearchHitCurrent(
+      {
+        title: "FY2024 Acquisition Forecast",
+        text: "Occupational health and medical surveillance forecast",
+      },
+      now,
+    ),
+    false,
+  );
+  assert.equal(
+    forecastSearchHitCurrent(
+      {
+        title: "FY2026 Acquisition Forecast",
+        text: "Occupational health and medical surveillance forecast",
+      },
+      now,
+    ),
     true,
   );
 });
