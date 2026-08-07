@@ -13,6 +13,8 @@ import {
 } from "./publicPortalRuntimeMetadata";
 
 const SAM_GOV_PORTAL_ID = "us-sam-gov";
+const NAPA_COUNTY_PORTAL_ID = "ca-napa-county";
+const NAPA_COUNTY_OPENGOV_SLUG = "countyofnapa";
 
 function safeHostname(value: string): string {
   try {
@@ -35,6 +37,17 @@ function runtimeEndpoint(
   accessMode: PublicPortalRuntimeMetadata["accessMode"];
   adapterFamily: string;
 } {
+  if (portalId === NAPA_COUNTY_PORTAL_ID) {
+    const searchUrl = `https://procurement.opengov.com/portal/${NAPA_COUNTY_OPENGOV_SLUG}`;
+    return {
+      sourceUrl: searchUrl,
+      searchUrl,
+      domain: "procurement.opengov.com",
+      accessMode: "public_html",
+      adapterFamily: "opengov-api",
+    };
+  }
+
   const openGovTenant = OPENGOV_TENANT_BY_PORTAL_ID.get(portalId);
   if (openGovTenant) {
     const searchUrl = `https://procurement.opengov.com/portal/embed/${openGovTenant.tenantSlug}/project-list?departmentId=all&status=all`;
