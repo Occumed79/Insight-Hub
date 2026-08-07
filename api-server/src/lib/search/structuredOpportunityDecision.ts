@@ -1,6 +1,5 @@
 import type { NormalizedOpportunity } from "../providers/types";
 import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch";
-import { runLimitedProviderPool } from "../limitedProviderPool";
 import { geminiProvider } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -12,6 +11,11 @@ import {
   mistralProvider,
   nvidiaProvider,
 } from "../providers/openAiCompatible";
+import {
+  recordProviderFailure,
+  recordProviderSuccess,
+  selectBudgetedProviders,
+} from "../providerBudget";
 
 interface ReviewProvider {
   name: string;
@@ -36,12 +40,17 @@ interface ReviewVote {
   reason: string;
 }
 
+interface PanelDecision extends ReviewVote {
+  method: "panel-ai-review" | "single-ai-review";
+  reviewers: string[];
+}
+
 const REVIEW_PROVIDERS: ReviewProvider[] = [
   cerebrasProvider,
   groqProvider,
-  openrouterProvider,
   mistralProvider,
   nvidiaProvider,
+  openrouterProvider,
   minimaxProvider,
   clodProvider,
   geminiProvider,
@@ -49,25 +58,31 @@ const REVIEW_PROVIDERS: ReviewProvider[] = [
 ];
 
 const DETERMINISTIC_ACCEPT_SCORE = 78;
-const AI_ACCEPT_SCORE = 72;
+const PANEL_ACCEPT_SCORE = 72;
+const SINGLE_JUDGE_ACCEPT_SCORE = 82;
 const AMBIGUOUS_MIN_SCORE = 55;
 const DEFAULT_REVIEW_LIMIT = 3;
 const REVIEW_DESCRIPTION_CHARS = 1_200;
 const REVIEW_OUTPUT_TOKENS = 700;
+const PANEL_SIZE = 3;
+const PANEL_CONSENSUS = 2;
 
 function existingTags(record: NormalizedOpportunity): string[] {
   const tags = record.rawData?.tags;
   return Array.isArray(tags)
-    ? tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+    ? tags.filter(
+        (tag): tag is string =>
+          typeof tag === "string" && tag.trim().length > 0,
+      )
     : [];
 }
 
 function withDecision(
   record: NormalizedOpportunity,
-  method: "deterministic" | "single-ai-review",
+  method: "deterministic" | "panel-ai-review" | "single-ai-review",
   score: number,
   reason: string,
-  reviewer?: string,
+  reviewers: string[] = [],
 ): NormalizedOpportunity {
   return {
     ...record,
@@ -77,21 +92,31 @@ function withDecision(
       opportunityDecisionMethod: method,
       relevanceScore: score,
       relevanceReason: reason,
-      ...(reviewer ? { opportunityReviewer: reviewer } : {}),
+      ...(reviewers.length > 0
+        ? {
+            opportunityReviewer: reviewers.join(","),
+            opportunityReviewers: reviewers,
+          }
+        : {}),
       tags: Array.from(
         new Set([
           ...existingTags(record),
           "actionable",
           method === "deterministic"
             ? "deterministic-approved"
-            : "single-ai-reviewed",
+            : method === "panel-ai-review"
+              ? "panel-ai-reviewed"
+              : "single-ai-reviewed",
         ]),
       ),
     },
   };
 }
 
-function hasFutureDeadline(record: NormalizedOpportunity, now = Date.now()): boolean {
+function hasFutureDeadline(
+  record: NormalizedOpportunity,
+  now = Date.now(),
+): boolean {
   return Boolean(
     record.responseDeadline &&
       !Number.isNaN(record.responseDeadline.getTime()) &&
@@ -202,51 +227,146 @@ function buildReviewPrompt(records: NormalizedOpportunity[]): string {
     )
     .join("\n\n");
 
-  return `You are the single fallback reviewer for Occu-Med procurement discovery.
+  return `You are one independent judge in a procurement relevance panel for Occu-Med.
 Today is ${new Date().toISOString().slice(0, 10)}.
 
 Approve only when the PRIMARY PURCHASED SCOPE is a real, currently open procurement for services Occu-Med can perform or coordinate: occupational health, employment or deployment medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluation or fit testing, vaccinations, fitness-for-duty evaluations, or provider-network program management.
 
 Reject expired, awarded, cancelled, closed, construction, IT, equipment, pharmaceuticals, treatment-only care, general clinical staffing, insurance administration, grants, jobs, news, and records where medical language is incidental boilerplate. Do not approve an unknown deadline unless the record contains clear evidence that responses are currently being accepted.
 
-Return only JSON in this shape and exactly one row per item:
+Judge independently. Do not assume another model will correct you. Return only JSON in this shape and exactly one row per item:
 {"results":[{"index":0,"isOpportunity":true,"relevanceScore":86,"reason":"Core scope purchases employee medical examinations and testing; deadline is open."}]}
 
 ITEMS:
 ${items}`;
 }
 
+function panelResolved(
+  votesByIndex: Map<number, Array<{ provider: string; vote: ReviewVote }>>,
+  recordCount: number,
+): boolean {
+  if (recordCount === 0) return true;
+  for (let index = 0; index < recordCount; index += 1) {
+    const rows = votesByIndex.get(index) ?? [];
+    const yes = rows.filter((row) => row.vote.isOpportunity).length;
+    const no = rows.length - yes;
+    if (yes < PANEL_CONSENSUS && no < PANEL_CONSENSUS) return false;
+  }
+  return true;
+}
+
 async function reviewAmbiguous(
   records: NormalizedOpportunity[],
 ): Promise<{
-  votes: ReviewVote[];
-  reviewer: string | null;
+  decisions: PanelDecision[];
+  reviewers: string[];
   diagnostics: string[];
 }> {
   if (records.length === 0) {
-    return { votes: [], reviewer: null, diagnostics: [] };
+    return { decisions: [], reviewers: [], diagnostics: [] };
   }
 
-  const result = await runLimitedProviderPool(
-    "opportunity-structured-review",
-    REVIEW_PROVIDERS.map((provider) => ({
-      name: provider.name,
-      isConfigured: () => provider.isConfigured(),
-      run: async () =>
-        parseReviewVotes(
-          await provider.complete(buildReviewPrompt(records), REVIEW_OUTPUT_TOKENS),
-        ),
+  const configuredRows = await Promise.all(
+    REVIEW_PROVIDERS.map(async (provider) => ({
+      provider,
+      configured: await provider.isConfigured().catch(() => false),
     })),
-    (votes) => Array.isArray(votes) && votes.length === records.length,
   );
+  const configured = configuredRows
+    .filter((row) => row.configured)
+    .map((row) => row.provider);
+
+  const selectedNames = await selectBudgetedProviders(
+    configured.map((provider) => `judge:${provider.name}`),
+    PANEL_SIZE,
+  );
+  const selected = selectedNames
+    .map((name) =>
+      configured.find((provider) => `judge:${provider.name}` === name),
+    )
+    .filter((provider): provider is ReviewProvider => Boolean(provider));
+
+  const diagnostics: string[] = [];
+  const reviewers: string[] = [];
+  const votesByIndex = new Map<
+    number,
+    Array<{ provider: string; vote: ReviewVote }>
+  >();
+  const prompt = buildReviewPrompt(records);
+
+  for (const provider of selected) {
+    const budgetName = `judge:${provider.name}`;
+    try {
+      const votes = parseReviewVotes(
+        await provider.complete(prompt, REVIEW_OUTPUT_TOKENS),
+      );
+      if (!votes || votes.length !== records.length) {
+        throw new Error(
+          `${provider.name} returned ${votes?.length ?? 0}/${records.length} valid panel votes`,
+        );
+      }
+      reviewers.push(provider.name);
+      await recordProviderSuccess(budgetName, votes.length);
+      for (const vote of votes) {
+        if (vote.index < 0 || vote.index >= records.length) continue;
+        const rows = votesByIndex.get(vote.index) ?? [];
+        rows.push({ provider: provider.name, vote });
+        votesByIndex.set(vote.index, rows);
+      }
+      if (panelResolved(votesByIndex, records.length)) break;
+    } catch (error) {
+      await recordProviderFailure(budgetName, error);
+      diagnostics.push(
+        `${provider.name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  const decisions: PanelDecision[] = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const rows = votesByIndex.get(index) ?? [];
+    if (rows.length === 0) continue;
+    const positive = rows.filter((row) => row.vote.isOpportunity);
+    const negative = rows.filter((row) => !row.vote.isOpportunity);
+
+    if (positive.length >= PANEL_CONSENSUS) {
+      const score = Math.round(
+        positive.reduce((sum, row) => sum + row.vote.relevanceScore, 0) /
+          positive.length,
+      );
+      if (score < PANEL_ACCEPT_SCORE) continue;
+      decisions.push({
+        index,
+        isOpportunity: true,
+        relevanceScore: score,
+        reason: positive.map((row) => row.vote.reason).slice(0, 2).join(" | "),
+        method: "panel-ai-review",
+        reviewers: positive.map((row) => row.provider),
+      });
+      continue;
+    }
+
+    // If only one judge is available, preserve continuity but require a much
+    // stronger score than a panel decision. One weak model can never outvote a
+    // second negative judge.
+    if (
+      rows.length === 1 &&
+      positive.length === 1 &&
+      negative.length === 0 &&
+      positive[0]!.vote.relevanceScore >= SINGLE_JUDGE_ACCEPT_SCORE
+    ) {
+      decisions.push({
+        ...positive[0]!.vote,
+        method: "single-ai-review",
+        reviewers: [positive[0]!.provider],
+      });
+    }
+  }
 
   return {
-    votes: result.value ?? [],
-    reviewer: result.provider,
-    diagnostics:
-      result.value && result.provider
-        ? result.recoveredErrors
-        : result.errors,
+    decisions,
+    reviewers,
+    diagnostics: Array.from(new Set(diagnostics)).slice(0, 8),
   };
 }
 
@@ -301,17 +421,16 @@ export async function decideStructuredOpportunities(
   const review = await reviewAmbiguous(selected.map((entry) => entry.record));
   let aiApproved = 0;
 
-  for (const vote of review.votes) {
-    const target = selected[vote.index];
-    if (!target) continue;
-    if (!vote.isOpportunity || vote.relevanceScore < AI_ACCEPT_SCORE) continue;
+  for (const decision of review.decisions) {
+    const target = selected[decision.index];
+    if (!target || !decision.isOpportunity) continue;
     approved.push(
       withDecision(
         target.record,
-        "single-ai-review",
-        vote.relevanceScore,
-        vote.reason,
-        review.reviewer ?? undefined,
+        decision.method,
+        decision.relevanceScore,
+        decision.reason,
+        decision.reviewers,
       ),
     );
     aiApproved += 1;
@@ -325,7 +444,7 @@ export async function decideStructuredOpportunities(
     aiApproved,
     rejected,
     reviewHeld,
-    reviewer: review.reviewer,
-    diagnostics: Array.from(new Set(review.diagnostics)).slice(0, 8),
+    reviewer: review.reviewers.length > 0 ? review.reviewers.join(",") : null,
+    diagnostics: review.diagnostics,
   };
 }
