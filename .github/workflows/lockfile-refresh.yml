@@ -1,0 +1,42 @@
+name: Lockfile refresh
+
+on:
+  push:
+    branches:
+      - hardening/finalize-release-security-governance
+    paths:
+      - pnpm-workspace.yaml
+      - api-server/package.json
+      - .github/workflows/lockfile-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening/finalize-release-security-governance
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Refresh lockfile from declared safe constraints
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Commit refreshed lockfile
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "Lockfile already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "Refresh lockfile for security dependency patches"
+          git push origin HEAD:hardening/finalize-release-security-governance
