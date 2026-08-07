@@ -133,7 +133,10 @@ export function forecastSearchHitCurrent(
 
   const currentYear = new Date(now).getUTCFullYear();
   const combined = `${hit.title} ${hit.text}`;
-  const years = Array.from(combined.matchAll(/\b(20\d{2})\b/g))
+  // Do not require a word boundary before the year: official forecast titles
+  // commonly use FY2026/FY27-style prefixes where the preceding Y is itself a
+  // word character. Numeric lookarounds avoid accidentally reading longer IDs.
+  const years = Array.from(combined.matchAll(/(?<!\d)(20\d{2})(?!\d)/g))
     .map((match) => Number(match[1]))
     .filter(Number.isFinite);
   if (years.length === 0) return true;
