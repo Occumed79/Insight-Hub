@@ -8,6 +8,7 @@ import {
   RFP_INGESTION_PROVIDER_NAMES,
   type RfpProviderName,
 } from "../lib/config/providerConfig";
+import { sourceDefinition } from "../lib/sourceArchitecture";
 
 const router = Router();
 
@@ -15,35 +16,38 @@ const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>([
   "texasEsbd",
   "nyScr",
 ]);
-const RETIRED_PROVIDER_NAMES = new Set<RfpProviderName>(["localLlm"]);
-const PROVIDER_NAMES = (
-  Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]
-).filter(
-  (name) =>
-    !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name) &&
-    !RETIRED_PROVIDER_NAMES.has(name),
-);
 const RFP_INGESTION_PROVIDER_SET = new Set<string>(
   RFP_INGESTION_PROVIDER_NAMES,
 );
 
+function isRetiredProvider(name: RfpProviderName): boolean {
+  const source = sourceDefinition(name);
+  return Boolean(source && (!source.active || source.role === "legacy_disabled"));
+}
+
+const PROVIDER_NAMES = (
+  Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]
+).filter(
+  (name) =>
+    !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name) && !isRetiredProvider(name),
+);
+
 function ingestionMode(name: RfpProviderName) {
-  if (name === "bidnet") return "stub" as const;
-  if (name === "publicPortalProviders") return "hybrid" as const;
-  if (PROVIDER_DEFINITIONS[name].useCase === "web_discovery") {
-    return "discovery" as const;
-  }
-  return "direct" as const;
+  const source = sourceDefinition(name);
+  if (source?.role === "direct_source") return "direct" as const;
+  if (source?.role === "browser_discovery") return "discovery" as const;
+  if (source?.role === "enrichment") return "enrichment" as const;
+  if (source?.role === "ai_judge") return "judge" as const;
+  if (source?.role === "retrieval") return "retrieval" as const;
+  if (source?.role === "intelligence") return "intelligence" as const;
+  return "support" as const;
 }
 
 /**
  * GET /api/providers
- * Returns status of all configured RFP/opportunity providers.
- *
- * USAspending and Federal Register are intentionally excluded here because they
- * feed Federal Agencies intelligence windows instead of the RFP provider list.
- * Retired providers are intentionally omitted so Settings cannot imply a legacy
- * runtime is still supported merely because its historical definition remains.
+ * Returns only integrations that the authoritative source-ownership registry
+ * considers active. Retired/legacy integrations are intentionally absent so
+ * Settings cannot imply that disabled crawler/browser/model paths are usable.
  */
 router.get("/providers", async (req, res) => {
   try {
@@ -51,6 +55,7 @@ router.get("/providers", async (req, res) => {
       PROVIDER_NAMES.map(async (name) => {
         const provider = providerRegistry[name];
         const def = PROVIDER_DEFINITIONS[name];
+        const source = sourceDefinition(name);
         try {
           const status = await provider.getStatus();
           return {
@@ -59,6 +64,7 @@ router.get("/providers", async (req, res) => {
             description: def.description,
             category: def.category,
             useCase: def.useCase,
+            sourceRole: source?.role ?? null,
             ingestionEligible: RFP_INGESTION_PROVIDER_SET.has(name),
             ingestionMode: ingestionMode(name),
             capabilities: def.capabilities,
@@ -97,6 +103,7 @@ router.get("/providers", async (req, res) => {
             description: def.description,
             category: def.category,
             useCase: def.useCase,
+            sourceRole: source?.role ?? null,
             ingestionEligible: RFP_INGESTION_PROVIDER_SET.has(name),
             ingestionMode: ingestionMode(name),
             capabilities: def.capabilities,
@@ -136,20 +143,8 @@ router.get("/providers", async (req, res) => {
 });
 
 /**
- * PUT /api/providers/:name
- * Save or remove credentials for a specific provider.
- *
- * Field handling rules:
- *   - A field key that is absent from the body → current stored value is PRESERVED.
- *   - A field key present with a non-empty string value → stored/updated.
- *   - A field key present with an empty string OR explicitly listed in the
- *     top-level `remove` array → the stored database value is DELETED (cleared).
- *
- * The `remove` array is the unambiguous removal path:
- *   { "remove": ["bidnetApiKey", "bidnetBaseUrl"] }
- * An empty string value is also treated as an explicit clear to match form behaviour.
- *
- * Environment-variable credentials are never touched — only DB overrides are removed.
+ * Save/remove credentials only for active integrations. Retired integrations
+ * return 410 even if a historical ProviderDefinition still exists.
  */
 router.put("/providers/:name", async (req, res) => {
   try {
@@ -159,7 +154,7 @@ router.put("/providers/:name", async (req, res) => {
     if (!def) {
       return res.status(404).json({ error: `Unknown RFP provider: ${name}` });
     }
-    if (RETIRED_PROVIDER_NAMES.has(providerName)) {
+    if (isRetiredProvider(providerName)) {
       return res.status(410).json({
         error: `${def.displayName} is retired and cannot accept new runtime configuration.`,
       });
@@ -170,7 +165,6 @@ router.put("/providers/:name", async (req, res) => {
     }
 
     const body = req.body as Record<string, unknown>;
-
     const explicitRemove = new Set<string>(
       Array.isArray(body.remove)
         ? (body.remove as unknown[]).filter(
@@ -248,11 +242,7 @@ router.put("/providers/:name", async (req, res) => {
 });
 
 /**
- * DELETE /api/providers/:name/credential/:dbKey
- * Explicitly remove a single stored database credential override.
- * The corresponding environment variable (if any) is unaffected.
- *
- * Cleanup remains available for retired providers so stale historical DB
+ * Cleanup remains available for retired providers so stale historical database
  * overrides can be removed even though new configuration is blocked.
  */
 router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
