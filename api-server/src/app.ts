@@ -37,24 +37,30 @@ function logicalDatabaseForPath(pathname: string): LogicalDatabase {
 }
 
 function configuredCorsOrigins(): Set<string> {
-  return new Set(
-    (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
+  const origins = new Set<string>();
+  for (const raw of (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "").split(",")) {
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      origins.add(new URL(value).origin);
+    } catch {
+      // Invalid allowlist entries are ignored rather than broadening access.
+    }
+  }
+  return origins;
 }
 
 function corsOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
-  if (configuredCorsOrigins().has(origin)) return true;
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const url = new URL(origin);
+  try {
+    const normalizedOrigin = new URL(origin).origin;
+    if (configuredCorsOrigins().has(normalizedOrigin)) return true;
+    if (process.env.NODE_ENV !== "production") {
+      const url = new URL(normalizedOrigin);
       return url.hostname === "localhost" || url.hostname === "127.0.0.1";
-    } catch {
-      return false;
     }
+  } catch {
+    return false;
   }
   return false;
 }
@@ -68,6 +74,10 @@ function corsOriginAllowed(origin: string | undefined): boolean {
 };
 
 const app: Express = express();
+// Render terminates TLS in front of the Node process. Trust exactly the first
+// proxy hop so req.protocol reflects HTTPS and req.ip reflects the client rather
+// than collapsing all rate limits onto the proxy address.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
