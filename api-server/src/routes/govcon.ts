@@ -13,6 +13,11 @@ import {
 } from "../lib/intelligence/govconIntelligence";
 import { verifyRecompete } from "../lib/intelligence/recompeteVerification";
 import { indexVectorDocuments } from "../lib/search/vectorIndex";
+import {
+  providerBudgetAvailable,
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "../lib/providerBudget";
 
 const router: IRouter = Router();
 
@@ -22,6 +27,7 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 40;
 const RELEVANCE_THRESHOLD = 44;
+const DAY_MS = 86_400_000;
 
 type JsonRecord = Record<string, unknown>;
 type NormalizedForecast = ReturnType<typeof normalizeForecast>;
@@ -36,6 +42,7 @@ type ForecastPayload = {
     hasNext: boolean;
   };
   sourcePageRecords: number;
+  semanticRejectedCount: number;
   suppressedCount: number;
   lowRelevanceCount: number;
   filtersApplied: JsonRecord;
@@ -95,6 +102,12 @@ function firstString(record: JsonRecord, keys: string[]): string | null {
   return null;
 }
 
+function dateMs(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeForecast(rawValue: unknown) {
   const raw = asRecord(rawValue);
   const incumbentAward = asRecord(raw.incumbent_award);
@@ -102,7 +115,18 @@ function normalizeForecast(rawValue: unknown) {
   const sourceId = firstString(raw, ["source_id", "id", "forecast_id"]);
   const title = firstString(raw, ["title", "requirement_title", "description"]) ?? "Untitled forecast";
   const agency = firstString(raw, ["agency", "agency_name", "department_name"]) ?? "Unknown agency";
-  const incumbentName = firstString(raw, ["incumbent_name", "current_incumbent"]) ?? firstString(incumbentAward, ["recipient_name"]);
+  const incumbentName =
+    firstString(raw, ["incumbent_name", "current_incumbent"]) ??
+    firstString(incumbentAward, ["recipient_name"]);
+  const explicitRecompete = asBoolean(raw.is_recompete);
+  const hasIncumbentAward = Object.keys(incumbentAward).length > 0;
+  const recompeteEvidence = explicitRecompete
+    ? "explicit"
+    : hasIncumbentAward
+      ? "incumbent-award"
+      : incumbentName
+        ? "incumbent-name"
+        : "none";
 
   return {
     id: sourceId ?? `${source ?? "govcon"}:${agency}:${title}`,
@@ -122,9 +146,10 @@ function normalizeForecast(rawValue: unknown) {
     estimatedAwardFiscalYear: asNumber(raw.est_award_fy ?? raw.estimated_award_fy),
     estimatedAwardQuarter: firstString(raw, ["est_award_quarter", "estimated_award_quarter"]),
     status: firstString(raw, ["status", "lifecycle_status"]),
-    isRecompete: asBoolean(raw.is_recompete) || Boolean(incumbentName) || Object.keys(incumbentAward).length > 0,
+    isRecompete: explicitRecompete || Boolean(incumbentName) || hasIncumbentAward,
+    recompeteEvidence,
     incumbentName,
-    incumbentAward: Object.keys(incumbentAward).length
+    incumbentAward: hasIncumbentAward
       ? {
           recipientName: firstString(incumbentAward, ["recipient_name"]),
           currentValue: asNumber(incumbentAward.current_value),
@@ -141,6 +166,56 @@ function normalizeForecast(rawValue: unknown) {
     sourceUrl: firstString(raw, ["source_url", "url", "forecast_url"]),
     lastUpdatedDate: firstString(raw, ["last_updated_date", "updated_at", "modified_date"]),
   };
+}
+
+function statusIsClosed(status: string | null): boolean {
+  if (!status) return false;
+  return /closed|cancelled|canceled|complete|completed|awarded|archived|inactive/i.test(status);
+}
+
+/**
+ * Forecast mode keeps genuinely forward-looking forecast records. Recompete
+ * mode additionally requires incumbent/award evidence and sensible timing so a
+ * normal active solicitation cannot be mislabeled as a recompete merely because
+ * its proposal deadline is close.
+ */
+export function isGovConSemanticCandidate(
+  record: NormalizedForecast,
+  mode: GovConFeedbackMode,
+  now = Date.now(),
+): boolean {
+  if (statusIsClosed(record.status)) return false;
+
+  const solicitationMs = dateMs(record.estimatedSolicitationDate);
+  const expirationMs = dateMs(record.incumbentAward?.expires ?? null);
+  const forecastTiming = Boolean(
+    solicitationMs != null ||
+      record.estimatedAwardFiscalYear != null ||
+      record.estimatedAwardQuarter,
+  );
+
+  if (mode === "forecast") {
+    return forecastTiming || /forecast|planned|planning|active|open|anticipated/i.test(record.status ?? "");
+  }
+
+  if (!record.isRecompete || record.recompeteEvidence === "none") return false;
+
+  const solicitationInWindow =
+    solicitationMs != null &&
+    solicitationMs >= now - 120 * DAY_MS &&
+    solicitationMs <= now + 3 * 365 * DAY_MS;
+  const expiryInWindow =
+    expirationMs != null &&
+    expirationMs >= now - 180 * DAY_MS &&
+    expirationMs <= now + 3 * 365 * DAY_MS;
+
+  // Explicit GovCon recompete flags with incumbent evidence remain useful when
+  // a source omits timing fields; otherwise require a real forecast/expiry signal.
+  return (
+    solicitationInWindow ||
+    expiryInWindow ||
+    (record.recompeteEvidence === "explicit" && Boolean(record.incumbentName || record.incumbentAward))
+  );
 }
 
 function pruneCache(): void {
@@ -186,6 +261,7 @@ function scheduleVectorIndex(cacheKey: string, mode: GovConFeedbackMode, records
           sourceUrl: record.sourceUrl,
           relevanceScore: record.relevance.score,
           incumbentName: record.incumbentName,
+          recompeteEvidence: record.recompeteEvidence,
         },
       })),
       { batchSize: 20 },
@@ -206,6 +282,14 @@ async function fetchForecasts(
   fitOnly: boolean,
   focus?: string,
 ): Promise<ForecastPayload> {
+  const budgetName = `govcon:${mode}`;
+  if (!(await providerBudgetAvailable(budgetName))) {
+    throw Object.assign(
+      new Error(`GovCon ${mode} requests are temporarily cooling down after an upstream quota or reliability failure.`),
+      { statusCode: 429 },
+    );
+  }
+
   const apiKey = process.env.GOVCON_API_KEY?.trim();
   if (!apiKey) {
     throw Object.assign(new Error("GOVCON_API_KEY is not configured"), { statusCode: 503 });
@@ -228,7 +312,7 @@ async function fetchForecasts(
 
     if (!response.ok) {
       const details = (await response.text().catch(() => "")).slice(0, 300);
-      const statusCode = response.status === 429 ? 429 : 502;
+      const statusCode = response.status === 429 ? 429 : response.status === 401 || response.status === 403 ? 503 : 502;
       throw Object.assign(
         new Error(`GovCon API returned ${response.status}${details ? `: ${details}` : ""}`),
         { statusCode },
@@ -239,16 +323,19 @@ async function fetchForecasts(
     const data = Array.isArray(upstream.data) ? upstream.data : [];
     const pagination = asRecord(upstream.pagination);
     const normalized = data.map(normalizeForecast);
+    const semantic = normalized.filter((record) => isGovConSemanticCandidate(record, mode));
     const suppressions = await loadGovConSuppressions(mode).catch((error) => {
       logger.warn({ err: error, mode }, "GovCon feedback could not be loaded; continuing without persistent suppression");
       return { recordIds: new Set<string>(), fingerprints: new Set<string>() };
     });
-    const unsuppressed = normalized.filter((record) => !isGovConRecordSuppressed(suppressions, record));
+    const unsuppressed = semantic.filter((record) => !isGovConRecordSuppressed(suppressions, record));
     const ranked = await rankGovConRecords(unsuppressed, mode, focus);
     const lowRelevanceCount = ranked.filter((record) => record.relevance.score < RELEVANCE_THRESHOLD).length;
     const records = fitOnly
       ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
       : ranked;
+
+    await recordProviderSuccess(budgetName, records.length);
 
     return {
       records,
@@ -259,13 +346,17 @@ async function fetchForecasts(
         hasNext: asBoolean(pagination.has_next),
       },
       sourcePageRecords: normalized.length,
-      suppressedCount: normalized.length - unsuppressed.length,
+      semanticRejectedCount: normalized.length - semantic.length,
+      suppressedCount: semantic.length - unsuppressed.length,
       lowRelevanceCount,
       filtersApplied: asRecord(upstream.filters_applied),
       semanticProvider: records.some((record) => record.relevance.provider === "gemini") ? "gemini" : "deterministic",
       source: "govconapi",
       fetchedAt: new Date().toISOString(),
     };
+  } catch (error) {
+    await recordProviderFailure(budgetName, error);
+    throw error;
   } finally {
     clearTimeout(timer);
   }
