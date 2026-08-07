@@ -16,12 +16,16 @@ const router = Router();
 const GOVCON_BASE_URL = "https://govconapi.com/api/v1";
 const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 10 * 60_000;
+const MAX_CACHE_ENTRIES = 40;
 const RELEVANCE_THRESHOLD = 44;
+const DAY_MS = 86_400_000;
 
 type JsonRecord = Record<string, unknown>;
 type ForecastRecord = ReturnType<typeof normalizeGovConForecast>;
+type ForecastPayload = Record<string, unknown> & { records: unknown[] };
 
-const cache = new Map<string, { expiresAt: number; payload: any }>();
+const cache = new Map<string, { expiresAt: number; payload: ForecastPayload }>();
+const inFlight = new Map<string, Promise<ForecastPayload>>();
 
 function stringQuery(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -62,7 +66,10 @@ function asNumber(value: unknown): number | null {
 }
 
 function asBoolean(value: unknown): boolean {
-  return value === true || (typeof value === "string" && value.toLowerCase() === "true");
+  return (
+    value === true ||
+    (typeof value === "string" && value.toLowerCase() === "true")
+  );
 }
 
 function normalizeGovConForecast(rawValue: unknown) {
@@ -105,14 +112,20 @@ function normalizeGovConForecast(rawValue: unknown) {
       "estimated_value",
       "amount_range",
     ]),
-    valueLow: asNumber(raw.value_low ?? raw.amount_min ?? raw.estimated_value_low),
-    valueHigh: asNumber(raw.value_high ?? raw.amount_max ?? raw.estimated_value_high),
+    valueLow: asNumber(
+      raw.value_low ?? raw.amount_min ?? raw.estimated_value_low,
+    ),
+    valueHigh: asNumber(
+      raw.value_high ?? raw.amount_max ?? raw.estimated_value_high,
+    ),
     estimatedSolicitationDate: firstString(raw, [
       "est_solicitation_date",
       "estimated_solicitation_date",
       "solicitation_date",
     ]),
-    estimatedAwardFiscalYear: asNumber(raw.est_award_fy ?? raw.estimated_award_fy),
+    estimatedAwardFiscalYear: asNumber(
+      raw.est_award_fy ?? raw.estimated_award_fy,
+    ),
     estimatedAwardQuarter: firstString(raw, [
       "est_award_quarter",
       "estimated_award_quarter",
@@ -131,25 +144,148 @@ function normalizeGovConForecast(rawValue: unknown) {
         }
       : null,
     pointOfContact: {
-      name: firstString(raw, ["poc_name", "point_of_contact_name", "requirement_owner"]),
+      name: firstString(raw, [
+        "poc_name",
+        "point_of_contact_name",
+        "requirement_owner",
+      ]),
       email: firstString(raw, ["poc_email", "point_of_contact_email"]),
       phone: firstString(raw, ["poc_phone", "point_of_contact_phone"]),
     },
     sourceUrl: firstString(raw, ["source_url", "url", "forecast_url"]),
-    lastUpdatedDate: firstString(raw, ["last_updated_date", "updated_at", "modified_date"]),
+    lastUpdatedDate: firstString(raw, [
+      "last_updated_date",
+      "updated_at",
+      "modified_date",
+    ]),
   };
 }
 
-function isForwardForecast(record: ForecastRecord): boolean {
-  if (/closed|cancelled|canceled|complete|awarded|archived|inactive/i.test(record.status)) {
+function startOfUtcDay(now: number): number {
+  const date = new Date(now);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function currentFederalFiscalYear(now: number): number {
+  const date = new Date(now);
+  return date.getUTCFullYear() + (date.getUTCMonth() >= 9 ? 1 : 0);
+}
+
+export function isForwardForecast(
+  record: ForecastRecord,
+  now = Date.now(),
+): boolean {
+  if (
+    /closed|cancelled|canceled|complete|completed|awarded|archived|inactive/i.test(
+      record.status,
+    )
+  ) {
     return false;
   }
-  return Boolean(
-    record.estimatedSolicitationDate ||
-      record.estimatedAwardFiscalYear ||
-      record.estimatedAwardQuarter ||
-      /forecast|planned|planning|anticipated|active|open/i.test(record.status),
+
+  const solicitationMs = record.estimatedSolicitationDate
+    ? Date.parse(record.estimatedSolicitationDate)
+    : Number.NaN;
+  const hasSolicitation = Number.isFinite(solicitationMs);
+  const hasTiming = Boolean(
+    hasSolicitation ||
+      record.estimatedAwardFiscalYear != null ||
+      record.estimatedAwardQuarter,
   );
+  if (!hasTiming) {
+    return /forecast|planned|planning|anticipated|active|open/i.test(
+      record.status,
+    );
+  }
+
+  const currentFy = currentFederalFiscalYear(now);
+  const solicitationInWindow =
+    hasSolicitation &&
+    solicitationMs >= startOfUtcDay(now) &&
+    solicitationMs <= now + 5 * 365 * DAY_MS;
+  const awardFiscalYearInWindow =
+    record.estimatedAwardFiscalYear != null &&
+    record.estimatedAwardFiscalYear >= currentFy &&
+    record.estimatedAwardFiscalYear <= currentFy + 5;
+  return solicitationInWindow || awardFiscalYearInWindow;
+}
+
+function pruneCache(now = Date.now()): void {
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    cache.delete(oldest);
+  }
+}
+
+function normalizedText(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function forecastKey(record: any): string {
+  const sourceUrl = String(record.sourceUrl ?? "").trim();
+  if (sourceUrl) {
+    try {
+      const url = new URL(sourceUrl);
+      url.hash = "";
+      for (const key of [
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+      ]) {
+        url.searchParams.delete(key);
+      }
+      return `url:${url.toString().replace(/\/$/, "").toLowerCase()}`;
+    } catch {
+      return `url:${sourceUrl.replace(/\/$/, "").toLowerCase()}`;
+    }
+  }
+  return `text:${normalizedText(record.agency)}:${normalizedText(record.title)}`;
+}
+
+function dedupeForecasts(records: any[]): any[] {
+  const byKey = new Map<string, any>();
+  for (const record of records) {
+    const key = forecastKey(record);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, record);
+      continue;
+    }
+    // Prefer the record with explicit forecast timing, then richer content.
+    const existingTiming = Number(
+      Boolean(
+        existing.estimatedSolicitationDate ||
+          existing.estimatedAwardFiscalYear ||
+          existing.estimatedAwardQuarter,
+      ),
+    );
+    const candidateTiming = Number(
+      Boolean(
+        record.estimatedSolicitationDate ||
+          record.estimatedAwardFiscalYear ||
+          record.estimatedAwardQuarter,
+      ),
+    );
+    const existingRichness = String(existing.description ?? "").length;
+    const candidateRichness = String(record.description ?? "").length;
+    if (
+      candidateTiming > existingTiming ||
+      (candidateTiming === existingTiming && candidateRichness > existingRichness)
+    ) {
+      byKey.set(key, record);
+    }
+  }
+  return [...byKey.values()];
 }
 
 async function fetchGovConForecastPool(
@@ -158,10 +294,20 @@ async function fetchGovConForecastPool(
 ): Promise<{ records: ForecastRecord[]; rawCount: number; error: string | null }> {
   const budgetName = "govcon:forecast";
   if (!(await providerBudgetAvailable(budgetName))) {
-    return { records: [], rawCount: 0, error: "GovCon forecast budget is cooling down or exhausted." };
+    return {
+      records: [],
+      rawCount: 0,
+      error: "GovCon forecast budget is cooling down or exhausted.",
+    };
   }
   const apiKey = process.env.GOVCON_API_KEY?.trim();
-  if (!apiKey) return { records: [], rawCount: 0, error: "GOVCON_API_KEY is not configured" };
+  if (!apiKey) {
+    return {
+      records: [],
+      rawCount: 0,
+      error: "GOVCON_API_KEY is not configured",
+    };
+  }
 
   const url = new URL(`${GOVCON_BASE_URL}/forecasts/search`);
   url.searchParams.set("limit", "100");
@@ -170,13 +316,18 @@ async function fetchGovConForecastPool(
   url.searchParams.set("sort_by", "est_award_fy");
   url.searchParams.set("sort_order", "asc");
   if (focus) url.searchParams.set("keywords", focus);
-  for (const [key, value] of Object.entries(filters)) if (value) url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) url.searchParams.set(key, value);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -201,11 +352,120 @@ async function fetchGovConForecastPool(
   }
 }
 
-function matchesFilters(record: any, filters: Record<string, string | undefined>): boolean {
-  if (filters.agency && !record.agency.toLowerCase().includes(filters.agency.toLowerCase())) return false;
-  if (filters.naics && record.naics && !record.naics.startsWith(filters.naics)) return false;
-  if (filters.state && record.state && record.state.toLowerCase() !== filters.state.toLowerCase()) return false;
+function matchesFilters(
+  record: any,
+  filters: Record<string, string | undefined>,
+): boolean {
+  if (
+    filters.agency &&
+    !String(record.agency ?? "")
+      .toLowerCase()
+      .includes(filters.agency.toLowerCase())
+  ) {
+    return false;
+  }
+  if (
+    filters.naics &&
+    (!record.naics || !String(record.naics).startsWith(filters.naics))
+  ) {
+    return false;
+  }
+  if (
+    filters.state &&
+    (!record.state ||
+      String(record.state).toLowerCase() !== filters.state.toLowerCase())
+  ) {
+    return false;
+  }
+  if (
+    filters.source &&
+    !String(record.source ?? "")
+      .toLowerCase()
+      .includes(filters.source.toLowerCase())
+  ) {
+    return false;
+  }
+  if (
+    filters.set_aside &&
+    !String(record.setAside ?? "")
+      .toLowerCase()
+      .includes(filters.set_aside.toLowerCase())
+  ) {
+    return false;
+  }
   return true;
+}
+
+async function buildForecastPayload(
+  limit: number,
+  offset: number,
+  fitOnly: boolean,
+  focus: string | undefined,
+  filters: Record<string, string | undefined>,
+): Promise<ForecastPayload> {
+  const [govcon, agency] = await Promise.all([
+    fetchGovConForecastPool(focus, filters),
+    fetchAgencyForecastLeads(focus),
+  ]);
+  const agencyFiltered = agency.records.filter((record) =>
+    matchesFilters(record, filters),
+  );
+  const beforeDedupe = [...govcon.records, ...agencyFiltered];
+  const combined = dedupeForecasts(beforeDedupe);
+  if (combined.length === 0 && govcon.error && agency.errors.length) {
+    throw Object.assign(new Error("No forecast source could return usable records."), {
+      statusCode: 502,
+      diagnostics: [govcon.error, ...agency.errors].slice(0, 6),
+    });
+  }
+
+  const suppressions = await loadGovConSuppressions("forecast").catch(() => ({
+    recordIds: new Set<string>(),
+    fingerprints: new Set<string>(),
+  }));
+  const unsuppressed = combined.filter(
+    (record) => !isGovConRecordSuppressed(suppressions, record),
+  );
+  const ranked = await rankGovConRecords(unsuppressed, "forecast", focus);
+  const filtered = fitOnly
+    ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
+    : ranked;
+  const records = filtered.slice(offset, offset + limit);
+
+  return {
+    records,
+    pagination: {
+      limit,
+      offset,
+      total: filtered.length,
+      hasNext: offset + limit < filtered.length,
+    },
+    sourcePageRecords: beforeDedupe.length,
+    deduplicatedRecords: Math.max(0, beforeDedupe.length - combined.length),
+    semanticRejectedCount: Math.max(
+      0,
+      govcon.rawCount - govcon.records.length,
+    ),
+    suppressedCount: combined.length - unsuppressed.length,
+    lowRelevanceCount: ranked.filter(
+      (record) => record.relevance.score < RELEVANCE_THRESHOLD,
+    ).length,
+    filtersApplied: filters,
+    semanticProvider: records.some(
+      (record) => record.relevance.provider === "gemini",
+    )
+      ? "gemini"
+      : "deterministic",
+    source: "govcon+official-fco",
+    sourceBreakdown: {
+      govcon: govcon.records.length,
+      officialAgencyForecasts: agencyFiltered.length,
+      agencyDiscoveryProviders: agency.providers,
+      recoveredErrors: [govcon.error, ...agency.errors].filter(Boolean),
+    },
+    fetchedAt: new Date().toISOString(),
+    cached: false,
+  };
 }
 
 router.get("/govcon/forecasts", async (req, res, next) => {
@@ -224,78 +484,39 @@ router.get("/govcon/forecasts", async (req, res, next) => {
     state: stringQuery(req.query.state, 2),
   };
   const cacheKey = JSON.stringify({ limit, offset, fitOnly, focus, filters });
+  pruneCache();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json({ ...cached.payload, cached: true });
   }
 
   try {
-    const [govcon, agency] = await Promise.all([
-      fetchGovConForecastPool(focus, filters),
-      fetchAgencyForecastLeads(focus),
-    ]);
-    const agencyFiltered = agency.records.filter((record) =>
-      matchesFilters(record, filters),
-    );
-    const combined = [...govcon.records, ...agencyFiltered];
-    if (combined.length === 0 && govcon.error && agency.errors.length) {
-      return res.status(502).json({
-        error: "No forecast source could return usable records.",
-        diagnostics: [govcon.error, ...agency.errors].slice(0, 6),
-      });
+    let request = inFlight.get(cacheKey);
+    if (!request) {
+      request = buildForecastPayload(limit, offset, fitOnly, focus, filters);
+      inFlight.set(cacheKey, request);
     }
-
-    const suppressions = await loadGovConSuppressions("forecast").catch(() => ({
-      recordIds: new Set<string>(),
-      fingerprints: new Set<string>(),
-    }));
-    const unsuppressed = combined.filter(
-      (record) => !isGovConRecordSuppressed(suppressions, record),
-    );
-    const ranked = await rankGovConRecords(unsuppressed, "forecast", focus);
-    const filtered = fitOnly
-      ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
-      : ranked;
-    const records = filtered.slice(offset, offset + limit);
-
-    const payload = {
-      records,
-      pagination: {
-        limit,
-        offset,
-        total: filtered.length,
-        hasNext: offset + limit < filtered.length,
-      },
-      sourcePageRecords: combined.length,
-      semanticRejectedCount:
-        Math.max(0, govcon.rawCount - govcon.records.length),
-      suppressedCount: combined.length - unsuppressed.length,
-      lowRelevanceCount: ranked.filter(
-        (record) => record.relevance.score < RELEVANCE_THRESHOLD,
-      ).length,
-      filtersApplied: filters,
-      semanticProvider: records.some(
-        (record) => record.relevance.provider === "gemini",
-      )
-        ? "gemini"
-        : "deterministic",
-      source: "govcon+official-fco",
-      sourceBreakdown: {
-        govcon: govcon.records.length,
-        officialAgencyForecasts: agencyFiltered.length,
-        agencyDiscoveryProviders: agency.providers,
-        recoveredErrors: [govcon.error, ...agency.errors].filter(Boolean),
-      },
-      fetchedAt: new Date().toISOString(),
-      cached: false,
-    };
-    cache.set(cacheKey, { payload, expiresAt: Date.now() + CACHE_TTL_MS });
+    const payload = await request;
+    pruneCache();
+    cache.set(cacheKey, {
+      payload,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
     return res.json(payload);
   } catch (error) {
     logger.error({ err: error }, "Forecast ensemble failed");
-    return res.status(502).json({
-      error: error instanceof Error ? error.message : "Forecast ensemble failed",
+    const statusCode =
+      Number((error as { statusCode?: number }).statusCode) || 502;
+    const diagnostics = (error as { diagnostics?: unknown }).diagnostics;
+    return res.status(statusCode).json({
+      error:
+        error instanceof Error ? error.message : "Forecast ensemble failed",
+      ...(Array.isArray(diagnostics)
+        ? { diagnostics: diagnostics.slice(0, 6) }
+        : {}),
     });
+  } finally {
+    inFlight.delete(cacheKey);
   }
 });
 
