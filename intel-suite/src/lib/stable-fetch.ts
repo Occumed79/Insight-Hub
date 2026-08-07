@@ -4,6 +4,7 @@ const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [250, 750];
 const FALLBACK_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHED_BODY_BYTES = 5 * 1024 * 1024;
+export const MAX_STABLE_FETCH_CACHE_ENTRIES = 64;
 
 type CachedResponse = {
   body: ArrayBuffer;
@@ -37,10 +38,20 @@ function resolveRequest(input: RequestInfo | URL, init?: RequestInit): { method:
   return { method, url: new URL(rawUrl, globalThis.location?.href ?? "http://localhost") };
 }
 
-function responseFromCache(entry: CachedResponse): Response {
+function newRequestId(): string {
+  try {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  } catch {
+    // Fall through to a non-secret correlation identifier.
+  }
+  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function responseFromCache(entry: CachedResponse, requestId: string): Response {
   const headers = new Headers(entry.headers);
   headers.set("cache-control", "no-store");
   headers.set("x-insight-hub-data-source", "last-known-good");
+  headers.set("x-request-id", requestId);
   return new Response(entry.body.slice(0), {
     status: entry.status,
     statusText: entry.statusText,
@@ -70,12 +81,30 @@ async function cacheSuccessfulJson(response: Response): Promise<CachedResponse |
   }
 }
 
+function pruneStableCache(cache: Map<string, CachedResponse>, now = Date.now()): void {
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size >= MAX_STABLE_FETCH_CACHE_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestExpiry = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt < oldestExpiry) {
+        oldestExpiry = entry.expiresAt;
+        oldestKey = key;
+      }
+    }
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+}
+
 /**
  * Stabilizes same-origin API reads in the browser.
  *
  * GET requests are retried for transient Render/Neon failures. When every retry
- * fails, the most recent successful JSON response is returned for a short
- * window instead of allowing a valid list to flash to an empty state.
+ * fails, the most recent successful JSON response is returned for a short,
+ * bounded window instead of allowing a valid list to flash to an empty state.
  */
 export function installStableFetch(): void {
   const stableGlobal = globalThis as StableFetchGlobal;
@@ -94,6 +123,7 @@ export function installStableFetch(): void {
     if (!isSameOriginApi) return nativeFetch(input, init);
 
     const cacheKey = url.toString();
+    const requestId = newRequestId();
     let lastError: unknown = new Error(`GET ${url.pathname} failed`);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -105,6 +135,7 @@ export function installStableFetch(): void {
         headers.set("accept", headers.get("accept") ?? "application/json");
         headers.set("cache-control", "no-cache");
         headers.set("pragma", "no-cache");
+        if (!headers.has("x-request-id")) headers.set("x-request-id", requestId);
 
         const response = await nativeFetch(input, {
           ...init,
@@ -115,7 +146,11 @@ export function installStableFetch(): void {
 
         if (response.ok) {
           const cached = await cacheSuccessfulJson(response);
-          if (cached) lastKnownGood.set(cacheKey, cached);
+          if (cached) {
+            pruneStableCache(lastKnownGood);
+            lastKnownGood.delete(cacheKey);
+            lastKnownGood.set(cacheKey, cached);
+          }
           return response;
         }
 
@@ -134,8 +169,11 @@ export function installStableFetch(): void {
       if (attempt < RETRY_DELAYS_MS.length) await wait(RETRY_DELAYS_MS[attempt]);
     }
 
+    pruneStableCache(lastKnownGood);
     const cached = lastKnownGood.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return responseFromCache(cached);
+    if (cached && cached.expiresAt > Date.now()) {
+      return responseFromCache(cached, requestId);
+    }
     if (cached) lastKnownGood.delete(cacheKey);
 
     throw lastError;
