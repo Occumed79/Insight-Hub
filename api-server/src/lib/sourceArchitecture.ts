@@ -3,6 +3,7 @@ export type InsightSourceRole =
   | "browser_discovery"
   | "enrichment"
   | "ai_judge"
+  | "retrieval"
   | "intelligence"
   | "legacy_disabled";
 
@@ -14,13 +15,16 @@ export interface InsightSourceDefinition {
 }
 
 /**
- * Authoritative runtime ownership map. A provider belongs to one primary role;
- * this prevents the same integration from silently acting as a crawler, search
- * engine, judge, and direct procurement source in different code paths.
+ * Authoritative runtime ownership map. Every provider represented by the tier
+ * registry belongs to one primary role here; this prevents the same integration
+ * from silently acting as a crawler, search engine, judge, and direct source in
+ * different code paths without an explicit ownership decision.
  */
 export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "samGov", role: "direct_source", active: true, purpose: "Official structured U.S. federal opportunities" },
   { name: "tango", role: "direct_source", active: true, purpose: "Structured federal opportunity pool" },
+  { name: "texasEsbd", role: "direct_source", active: true, purpose: "Texas official procurement compatibility source" },
+  { name: "nyScr", role: "direct_source", active: true, purpose: "New York official procurement compatibility source" },
 
   { name: "langsearch", role: "browser_discovery", active: true, purpose: "State/local/private web opportunity discovery" },
   { name: "serper", role: "browser_discovery", active: true, purpose: "Search-engine opportunity discovery" },
@@ -34,6 +38,7 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "jina", role: "enrichment", active: true, purpose: "Managed page text extraction" },
   { name: "olostep", role: "enrichment", active: true, purpose: "Managed difficult-page extraction" },
   { name: "firecrawl", role: "enrichment", active: true, purpose: "Managed page extraction when explicitly enabled" },
+  { name: "cohere", role: "enrichment", active: true, purpose: "Semantic reranking and analysis" },
 
   { name: "cerebras", role: "ai_judge", active: true, purpose: "Primary low-cost procurement judge" },
   { name: "groq", role: "ai_judge", active: true, purpose: "Fast procurement judge" },
@@ -45,17 +50,32 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "minimax", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
   { name: "clod", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
 
+  { name: "pinecone", role: "retrieval", active: true, purpose: "Vector retrieval memory" },
+  { name: "qdrant", role: "retrieval", active: true, purpose: "Vector retrieval memory" },
+  { name: "voyage", role: "retrieval", active: true, purpose: "Embedding provider" },
+  { name: "huggingFace", role: "retrieval", active: true, purpose: "Model and embedding utility provider" },
+
   { name: "govcon", role: "intelligence", active: true, purpose: "Forecast and recompete/incumbent intelligence" },
   { name: "gnews", role: "intelligence", active: true, purpose: "Federal contractor and acquisition news" },
   { name: "rssAggregator", role: "intelligence", active: true, purpose: "Explicitly selected supplemental notices only" },
   { name: "emailNotifications", role: "intelligence", active: true, purpose: "Explicitly selected procurement-alert inbox" },
+  { name: "grantsGov", role: "intelligence", active: true, purpose: "Federal grants intelligence; not open-RFP ingestion" },
 
   { name: "scheduledCrawler", role: "legacy_disabled", active: false, purpose: "Removed from manual RFP ingestion" },
   { name: "selfHostedCrawler", role: "legacy_disabled", active: false, purpose: "Not used by manual opportunity discovery" },
   { name: "selfHostedSearch", role: "legacy_disabled", active: false, purpose: "Not used by manual opportunity discovery" },
+  { name: "localLlm", role: "legacy_disabled", active: false, purpose: "Retired self-hosted model path; excluded from hardened extraction" },
+  { name: "usaSpending", role: "legacy_disabled", active: false, purpose: "Award/history intelligence only; not open-RFP ingestion" },
+  { name: "federalRegister", role: "legacy_disabled", active: false, purpose: "Policy/rule intelligence only; not opportunity ingestion" },
   { name: "publicPortalProviders", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
   { name: "eunaBonfire", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
   { name: "internationalPublicPortals", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
+  { name: "bidnet", role: "legacy_disabled", active: false, purpose: "Direct endpoint is not implemented" },
+  { name: "browseAi", role: "legacy_disabled", active: false, purpose: "Browser automation path disabled" },
+  { name: "browserUse", role: "legacy_disabled", active: false, purpose: "Browser automation path disabled" },
+  { name: "cloudflareWorker", role: "legacy_disabled", active: false, purpose: "Worker extraction path disabled after authentication failures" },
+  { name: "mongoDb", role: "legacy_disabled", active: false, purpose: "Unused alternate database integration" },
+  { name: "fal", role: "legacy_disabled", active: false, purpose: "Media/model utility; not procurement discovery" },
 ];
 
 export function activeSourcesForRole(role: InsightSourceRole): string[] {
