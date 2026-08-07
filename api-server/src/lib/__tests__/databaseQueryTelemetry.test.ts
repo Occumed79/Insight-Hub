@@ -3,8 +3,9 @@ import test from "node:test";
 import {
   databaseQueryTelemetrySnapshot,
   describeSqlQuery,
+  instrumentPoolQueries,
   resetDatabaseQueryTelemetryForTests,
-} from "@workspace/db";
+} from "../../../../lib/db/src/queryTelemetry";
 
 test("database query descriptors expose operation and relation without values", () => {
   assert.deepEqual(
@@ -35,14 +36,31 @@ test("database query descriptors do not preserve parameter literals", () => {
   assert.equal(descriptor.includes("do not expose me"), false);
 });
 
-test("database query telemetry snapshot remains bounded and contains no SQL text", async () => {
+test("database query telemetry evicts old descriptors and retains no SQL text or values", async () => {
   resetDatabaseQueryTelemetryForTests();
-  const { rfpPool } = await import("@workspace/db");
-  await rfpPool.query("SELECT 1 AS healthy");
+  const stubPool = instrumentPoolQueries(
+    { query: async () => ({ rows: [] }) },
+    "rfp",
+  );
+
+  await stubPool.query("SELECT 1 AS healthy");
+  for (let index = 0; index < 200; index += 1) {
+    await stubPool.query(`SELECT id FROM relation_${index} WHERE secret = $1`, [
+      `secret-${index}`,
+    ]);
+  }
+
   const snapshot = databaseQueryTelemetrySnapshot();
-  assert.ok(snapshot.queries.length <= snapshot.metricLimit);
   assert.equal(snapshot.metricLimit, 64);
+  assert.equal(snapshot.queries.length, snapshot.metricLimit);
+  assert.equal(snapshot.queries.some((entry) => entry.relation === "relation_0"), false);
+  assert.equal(snapshot.queries.some((entry) => entry.relation === "relation_199"), true);
+
   const serialized = JSON.stringify(snapshot);
-  assert.equal(serialized.includes("SELECT 1 AS healthy"), false);
-  assert.equal(serialized.includes("values"), false);
+  assert.equal(serialized.includes("SELECT id FROM relation_199"), false);
+  assert.equal(serialized.includes("secret-199"), false);
+  for (const entry of snapshot.queries) {
+    assert.equal(Object.hasOwn(entry, "text"), false);
+    assert.equal(Object.hasOwn(entry, "values"), false);
+  }
 });
