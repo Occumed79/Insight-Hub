@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Request } from "express";
 import {
+  adminReadAllowed,
   expensiveRoutePolicy,
   mutationOriginAllowed,
 } from "../api-hardening";
@@ -12,6 +13,7 @@ function request(values: {
   host?: string;
   origin?: string;
   protocol?: string;
+  token?: string;
 }): Request {
   return {
     method: values.method,
@@ -20,6 +22,7 @@ function request(values: {
     get(name: string) {
       if (name.toLowerCase() === "host") return values.host;
       if (name.toLowerCase() === "origin") return values.origin;
+      if (name.toLowerCase() === "x-insight-hub-write-token") return values.token;
       return undefined;
     },
   } as unknown as Request;
@@ -97,6 +100,58 @@ test("explicit allowed origins can perform writes", () => {
   } finally {
     if (old === undefined) delete process.env.INSIGHT_HUB_ALLOWED_ORIGINS;
     else process.env.INSIGHT_HUB_ALLOWED_ORIGINS = old;
+  }
+});
+
+test("administrative reads require the configured admin capability token", () => {
+  const old = process.env.INSIGHT_HUB_ADMIN_TOKEN;
+  try {
+    process.env.INSIGHT_HUB_ADMIN_TOKEN = "admin-secret";
+    assert.equal(
+      adminReadAllowed(
+        request({ method: "GET", path: "/hardening/diagnostics" }),
+      ),
+      false,
+    );
+    assert.equal(
+      adminReadAllowed(
+        request({
+          method: "GET",
+          path: "/hardening/diagnostics",
+          token: "wrong-secret",
+        }),
+      ),
+      false,
+    );
+    assert.equal(
+      adminReadAllowed(
+        request({
+          method: "GET",
+          path: "/hardening/diagnostics",
+          token: "admin-secret",
+        }),
+      ),
+      true,
+    );
+  } finally {
+    if (old === undefined) delete process.env.INSIGHT_HUB_ADMIN_TOKEN;
+    else process.env.INSIGHT_HUB_ADMIN_TOKEN = old;
+  }
+});
+
+test("administrative reads remain available when no admin token is configured", () => {
+  const old = process.env.INSIGHT_HUB_ADMIN_TOKEN;
+  try {
+    delete process.env.INSIGHT_HUB_ADMIN_TOKEN;
+    assert.equal(
+      adminReadAllowed(
+        request({ method: "GET", path: "/hardening/diagnostics" }),
+      ),
+      true,
+    );
+  } finally {
+    if (old === undefined) delete process.env.INSIGHT_HUB_ADMIN_TOKEN;
+    else process.env.INSIGHT_HUB_ADMIN_TOKEN = old;
   }
 });
 
