@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   AI_EXTRACTION_PROVIDER_ORDER,
+  MAX_EXTRACTION_CACHE_ENTRIES,
+  extractOpportunitiesBatch,
   shouldCrossCheckExtraction,
   type AiExtraction,
 } from "../aiExtract";
@@ -45,6 +47,20 @@ describe("coordinated AI search intelligence stack", () => {
       "minimax",
       "clod",
     ]);
+  });
+
+  it("keeps the long-lived extraction cache hard bounded", () => {
+    assert.ok(MAX_EXTRACTION_CACHE_ENTRIES > 0);
+    assert.ok(MAX_EXTRACTION_CACHE_ENTRIES <= 256);
+  });
+
+  it("stops AI extraction immediately when its parent run is already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("manual ingestion cancelled"));
+    await assert.rejects(
+      extractOpportunitiesBatch([], controller.signal),
+      /manual ingestion cancelled/,
+    );
   });
 
   it("cross-checks only ambiguous accepted records", () => {
