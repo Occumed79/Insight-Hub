@@ -4,7 +4,10 @@ import test from "node:test";
 process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
-const { isGovConSemanticCandidate } = await import("../govcon");
+const [{ isGovConSemanticCandidate }, { isForwardForecast }] = await Promise.all([
+  import("../govcon"),
+  import("../govcon-forecast-ensemble"),
+]);
 
 const DAY_MS = 86_400_000;
 
@@ -43,62 +46,67 @@ function candidate(now: number, overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
+function assertForecastDecision(
+  item: ReturnType<typeof candidate>,
+  now: number,
+  expected: boolean,
+): void {
+  assert.equal(
+    isGovConSemanticCandidate(item, "forecast", now),
+    expected,
+    "legacy GovCon semantic gate",
+  );
+  assert.equal(
+    isForwardForecast(item, now),
+    expected,
+    "live forecast ensemble gate",
+  );
+}
+
 test("forecast mode requires forward-looking forecast semantics", () => {
   const now = Date.now();
-  assert.equal(isGovConSemanticCandidate(candidate(now), "forecast", now), true);
-  assert.equal(
-    isGovConSemanticCandidate(candidate(now, { status: "closed" }), "forecast", now),
-    false,
-  );
+  assertForecastDecision(candidate(now), now, true);
+  assertForecastDecision(candidate(now, { status: "closed" }), now, false);
 });
 
 test("stale forecast dates are rejected even when status says planned", () => {
   const now = Date.now();
-  assert.equal(
-    isGovConSemanticCandidate(
-      candidate(now, {
-        estimatedSolicitationDate: new Date(now - 60 * DAY_MS).toISOString(),
-        estimatedAwardFiscalYear: null,
-        estimatedAwardQuarter: null,
-        status: "planned",
-      }),
-      "forecast",
-      now,
-    ),
+  assertForecastDecision(
+    candidate(now, {
+      estimatedSolicitationDate: new Date(now - 60 * DAY_MS).toISOString(),
+      estimatedAwardFiscalYear: null,
+      estimatedAwardQuarter: null,
+      status: "planned",
+    }),
+    now,
     false,
   );
 });
 
 test("past award fiscal years are rejected when no future timing exists", () => {
   const now = Date.now();
-  assert.equal(
-    isGovConSemanticCandidate(
-      candidate(now, {
-        estimatedSolicitationDate: null,
-        estimatedAwardFiscalYear: currentFederalFiscalYear(now) - 1,
-        estimatedAwardQuarter: "Q4",
-        status: "forecast",
-      }),
-      "forecast",
-      now,
-    ),
+  assertForecastDecision(
+    candidate(now, {
+      estimatedSolicitationDate: null,
+      estimatedAwardFiscalYear: currentFederalFiscalYear(now) - 1,
+      estimatedAwardQuarter: "Q4",
+      status: "forecast",
+    }),
+    now,
     false,
   );
 });
 
 test("status fallback is used only when timing fields are absent", () => {
   const now = Date.now();
-  assert.equal(
-    isGovConSemanticCandidate(
-      candidate(now, {
-        estimatedSolicitationDate: null,
-        estimatedAwardFiscalYear: null,
-        estimatedAwardQuarter: null,
-        status: "anticipated",
-      }),
-      "forecast",
-      now,
-    ),
+  assertForecastDecision(
+    candidate(now, {
+      estimatedSolicitationDate: null,
+      estimatedAwardFiscalYear: null,
+      estimatedAwardQuarter: null,
+      status: "anticipated",
+    }),
+    now,
     true,
   );
 });
