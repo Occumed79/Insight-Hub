@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { rfpDb, settingsTable } from "@workspace/db";
+import { rfpDb, rfpPool, settingsTable } from "@workspace/db";
 
 export type ProviderBudgetOutcome =
   | "success"
@@ -27,8 +27,15 @@ export interface ProviderBudgetState {
   lastSuccessAt?: string;
 }
 
+interface MemoryBudgetEntry {
+  state: ProviderBudgetState;
+  loadedAt: number;
+}
+
 const KEY_PREFIX = "provider-budget:v1:";
-const memory = new Map<string, ProviderBudgetState>();
+const memory = new Map<string, MemoryBudgetEntry>();
+const writeQueues = new Map<string, Promise<void>>();
+const MEMORY_TTL_MS = 5_000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
@@ -92,13 +99,17 @@ function parseState(
   }
 }
 
+function cacheState(state: ProviderBudgetState): void {
+  memory.set(state.provider, { state, loadedAt: Date.now() });
+}
+
 export async function getProviderBudget(
   provider: string,
 ): Promise<ProviderBudgetState> {
   const cached = memory.get(provider);
-  if (cached) {
-    const normalized = normalizeWindow(cached);
-    memory.set(provider, normalized);
+  if (cached && Date.now() - cached.loadedAt < MEMORY_TTL_MS) {
+    const normalized = normalizeWindow(cached.state);
+    memory.set(provider, { ...cached, state: normalized });
     return normalized;
   }
 
@@ -109,35 +120,66 @@ export async function getProviderBudget(
       .where(eq(settingsTable.key, budgetKey(provider)))
       .limit(1);
     const state = parseState(provider, row?.value);
-    memory.set(provider, state);
+    cacheState(state);
     return state;
   } catch {
-    const state = blankState(provider);
-    memory.set(provider, state);
-    return state;
+    // Never make a failed durable read sticky. Another instance may already
+    // have persisted a quota cooldown that this process must observe as soon
+    // as the database is reachable again.
+    return cached ? normalizeWindow(cached.state) : blankState(provider);
   }
 }
 
-async function persistProviderBudget(
-  state: ProviderBudgetState,
+async function withProviderWriteQueue(
+  provider: string,
+  operation: () => Promise<void>,
 ): Promise<void> {
-  memory.set(state.provider, state);
+  const previous = writeQueues.get(provider) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  writeQueues.set(provider, current);
   try {
-    await rfpDb
-      .insert(settingsTable)
-      .values({ key: budgetKey(state.provider), value: JSON.stringify(state) })
-      .onConflictDoUpdate({
-        target: settingsTable.key,
-        set: { value: JSON.stringify(state) },
-      });
-  } catch (error) {
-    console.warn(
-      JSON.stringify({
-        event: "provider_budget_persist_failed",
-        provider: state.provider,
-        error: error instanceof Error ? error.message : String(error),
-      }),
+    await current;
+  } finally {
+    if (writeQueues.get(provider) === current) writeQueues.delete(provider);
+  }
+}
+
+async function mutateDurableProviderBudget(
+  provider: string,
+  mutate: (
+    state: ProviderBudgetState,
+    now: Date,
+  ) => ProviderBudgetState,
+): Promise<ProviderBudgetState> {
+  const client = await rfpPool.connect();
+  const key = budgetKey(provider);
+  try {
+    await client.query("BEGIN");
+    // The transaction-scoped advisory lock serializes the JSON read/modify/write
+    // across concurrent requests and across multiple API instances. The row
+    // lock alone is insufficient before the settings row exists.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
+    const result = await client.query<{ value: string }>(
+      'SELECT value FROM settings WHERE key = $1 FOR UPDATE',
+      [key],
     );
+    const now = new Date();
+    const current = parseState(provider, result.rows[0]?.value);
+    const next = mutate(normalizeWindow(current, now), now);
+    await client.query(
+      `INSERT INTO settings (key, value)
+       VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(next)],
+    );
+    await client.query("COMMIT");
+    cacheState(next);
+    return next;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -175,36 +217,63 @@ function classifyFailure(error: unknown): {
   return { outcome: "error", cooldownMs: MINUTE, message };
 }
 
+async function recordBudgetMutation(
+  provider: string,
+  mutate: (
+    state: ProviderBudgetState,
+    now: Date,
+  ) => ProviderBudgetState,
+): Promise<void> {
+  await withProviderWriteQueue(provider, async () => {
+    try {
+      await mutateDurableProviderBudget(provider, mutate);
+    } catch (error) {
+      // Budget telemetry must not turn an otherwise successful provider call
+      // into a failed user operation. Preserve same-process ordering in memory
+      // while the database is unavailable, but do not pretend it was durable.
+      const now = new Date();
+      const current = normalizeWindow(await getProviderBudget(provider), now);
+      cacheState(mutate(current, now));
+      console.warn(
+        JSON.stringify({
+          event: "provider_budget_persist_failed",
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  });
+}
+
 export async function recordProviderSuccess(
   provider: string,
   usefulResults: number,
 ): Promise<void> {
-  const now = new Date();
-  const state = normalizeWindow(await getProviderBudget(provider), now);
-  await persistProviderBudget({
+  await recordBudgetMutation(provider, (state, now) => ({
     ...state,
     requestsToday: state.requestsToday + 1,
     requestsThisMonth: state.requestsThisMonth + 1,
     successes: state.successes + 1,
     usefulResults: state.usefulResults + Math.max(0, usefulResults),
     emptyResults: state.emptyResults + (usefulResults > 0 ? 0 : 1),
-    cooldownUntil: 0,
+    // A success that completes after another concurrent request established a
+    // cooldown must not erase that newer failure signal.
+    cooldownUntil:
+      state.cooldownUntil > now.getTime() ? state.cooldownUntil : 0,
     lastOutcome: usefulResults > 0 ? "success" : "empty",
     lastError: undefined,
     lastAttemptAt: now.toISOString(),
     lastSuccessAt:
       usefulResults > 0 ? now.toISOString() : state.lastSuccessAt,
-  });
+  }));
 }
 
 export async function recordProviderFailure(
   provider: string,
   error: unknown,
 ): Promise<void> {
-  const now = new Date();
   const failure = classifyFailure(error);
-  const state = normalizeWindow(await getProviderBudget(provider), now);
-  await persistProviderBudget({
+  await recordBudgetMutation(provider, (state, now) => ({
     ...state,
     requestsToday: state.requestsToday + 1,
     requestsThisMonth: state.requestsThisMonth + 1,
@@ -216,7 +285,7 @@ export async function recordProviderFailure(
     lastOutcome: failure.outcome,
     lastError: failure.message.replace(/\s+/g, " ").slice(0, 300),
     lastAttemptAt: now.toISOString(),
-  });
+  }));
 }
 
 export async function providerBudgetAvailable(
