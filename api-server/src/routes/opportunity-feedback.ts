@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod/v4";
 import {
   submitGrade,
   getFeedbackForOpportunity,
@@ -6,29 +7,47 @@ import {
   reScoreAllOpportunities,
   type FeedbackGrade,
 } from "../lib/learning/feedbackModel";
+import {
+  contextualFeedbackSummary,
+  recordContextFeedback,
+} from "../lib/learning/contextualFeedback";
 
 const router = Router();
 
-const VALID_GRADES: FeedbackGrade[] = ["excellent", "good", "poor", "spam"];
+const feedbackBodySchema = z.object({
+  grade: z.enum(["excellent", "good", "poor", "spam"]),
+  notes: z.string().max(2_000).optional(),
+  queryContext: z.string().max(240).optional(),
+});
 
-/**
- * POST /api/opportunities/:id/feedback
- * Submit or update a grade for an opportunity.
- * Body: { grade: "excellent" | "good" | "poor" | "spam", notes?: string }
- */
+/** Submit/update feedback and persist both the global and contextual model. */
 router.post("/opportunities/:id/feedback", async (req, res) => {
   try {
-    const { id } = req.params;
-    const { grade, notes } = req.body as { grade?: string; notes?: string };
-
-    if (!grade || !VALID_GRADES.includes(grade as FeedbackGrade)) {
+    const parsed = feedbackBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
       return res.status(400).json({
-        error: `Invalid grade. Must be one of: ${VALID_GRADES.join(", ")}`,
+        error: "Invalid feedback payload.",
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
       });
     }
 
+    const { id } = req.params;
+    const { grade, notes, queryContext } = parsed.data;
     await submitGrade(id, grade as FeedbackGrade, notes);
-    return res.json({ success: true, opportunityId: id, grade });
+    const context = await recordContextFeedback(
+      id,
+      grade as FeedbackGrade,
+      queryContext,
+    );
+    return res.json({
+      success: true,
+      opportunityId: id,
+      grade,
+      learningContext: context,
+    });
   } catch (err: any) {
     req.log.error(err);
     if (err.message?.includes("not found")) {
@@ -38,10 +57,6 @@ router.post("/opportunities/:id/feedback", async (req, res) => {
   }
 });
 
-/**
- * GET /api/opportunities/:id/feedback
- * Get the existing grade for an opportunity (or null if ungraded).
- */
 router.get("/opportunities/:id/feedback", async (req, res) => {
   try {
     const { id } = req.params;
@@ -53,30 +68,30 @@ router.get("/opportunities/:id/feedback", async (req, res) => {
   }
 });
 
-/**
- * GET /api/opportunities/feedback/model-summary
- * Returns the current state of learned signal weights.
- * Useful for showing what the model has learned in the settings view.
- */
-router.get("/opportunities/feedback/model-summary", async (_req, res) => {
+/** Global model plus an optional exact query-context model for diagnostics. */
+router.get("/opportunities/feedback/model-summary", async (req, res) => {
   try {
-    const summary = await getModelSummary();
-    return res.json(summary);
+    const [summary, contextual] = await Promise.all([
+      getModelSummary(),
+      contextualFeedbackSummary(
+        typeof req.query.context === "string" ? req.query.context : undefined,
+      ),
+    ]);
+    return res.json({ ...summary, contextual });
   } catch (err) {
-    _req.log.error(err);
+    req.log.error(err);
     return res.status(500).json({ error: "Failed to build model summary" });
   }
 });
 
-/**
- * POST /api/opportunities/feedback/rescore
- * Manually trigger a full re-score of all opportunities.
- * (Normally happens automatically after each grade submission.)
- */
 router.post("/opportunities/feedback/rescore", async (req, res) => {
   try {
     const { updated } = await reScoreAllOpportunities();
-    return res.json({ success: true, message: "All opportunities re-scored.", updated });
+    return res.json({
+      success: true,
+      message: "All opportunities re-scored.",
+      updated,
+    });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Re-score failed" });
