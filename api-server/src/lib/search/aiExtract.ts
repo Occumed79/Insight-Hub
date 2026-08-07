@@ -54,7 +54,11 @@ export interface BatchExtractResult {
 interface AiTextProvider {
   name: string;
   isConfigured(): Promise<boolean>;
-  complete(prompt: string, maxTokens?: number): Promise<string>;
+  complete(
+    prompt: string,
+    maxTokens?: number,
+    signal?: AbortSignal,
+  ): Promise<string>;
 }
 
 /**
@@ -323,8 +327,10 @@ async function runProviderChain(
       .map((provider) => ({
         name: provider.name,
         isConfigured: () => provider.isConfigured(),
-        run: async () =>
-          parseJsonArray(await provider.complete(prompt, maxTokens)),
+        run: async (attemptSignal) =>
+          parseJsonArray(
+            await provider.complete(prompt, maxTokens, attemptSignal),
+          ),
       })),
     (rows) => Array.isArray(rows),
     { signal },

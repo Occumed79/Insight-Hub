@@ -76,10 +76,17 @@ export class OpenAiCompatibleProvider implements DataSourceProvider {
   async complete(
     prompt: string,
     maxTokens = 512,
-    modelOverride?: string,
+    modelOverrideOrSignal?: string | AbortSignal,
+    signal?: AbortSignal,
   ): Promise<string> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error(`${this.displayName} API key not configured.`);
+    const modelOverride =
+      typeof modelOverrideOrSignal === "string" ? modelOverrideOrSignal : undefined;
+    const parentSignal =
+      modelOverrideOrSignal instanceof AbortSignal
+        ? modelOverrideOrSignal
+        : signal;
     const model = modelOverride ?? (await this.getModel());
     const body: Record<string, unknown> = {
       model,
@@ -103,7 +110,9 @@ export class OpenAiCompatibleProvider implements DataSourceProvider {
         ...this.extraHeaders,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: parentSignal
+        ? AbortSignal.any([parentSignal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
     });
 
     if (response.status === 429) {

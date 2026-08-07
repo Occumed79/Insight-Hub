@@ -43,7 +43,11 @@ export class ClodProvider implements DataSourceProvider {
   /**
    * Send a chat completion to the CLōD endpoint.
    */
-  async complete(prompt: string, maxTokens = 512): Promise<string> {
+  async complete(
+    prompt: string,
+    maxTokens = 512,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("CLōD API key not configured.");
 
@@ -61,6 +65,9 @@ export class ClodProvider implements DataSourceProvider {
         max_tokens: maxTokens,
         temperature: 0.2,
       }),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {

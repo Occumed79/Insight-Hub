@@ -861,6 +861,7 @@ async function runProviderWithDeadline(
       controller.abort(error);
       reject(error);
     }, deadlineMs);
+    timeout.unref?.();
   });
   const beat = setInterval(() => {
     void safeHeartbeat(runId, progressMessage, progressProvider);
@@ -1082,7 +1083,7 @@ async function executePersistedRun(
   } finally {
     clearTimeout(runTimeout);
     activeRunControllers.delete(runId);
-    const archived = cancelled
+    const archived = cancelled || timedOut
       ? 0
       : await reconcileExpiredOpportunities().catch(() => 0);
     const latest = await getIngestionRun(runId).catch(() => null);
