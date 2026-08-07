@@ -5,6 +5,7 @@ import requestObservability from "../middleware/request-observability";
 import healthRouter from "./health";
 import databaseStatusRouter from "./database-status";
 import hardeningDiagnosticsRouter from "./hardening-diagnostics";
+import retentionLifecycleRouter from "./retention-lifecycle";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
@@ -44,6 +45,7 @@ router.use(apiRequestValidationRouter);
 router.use(healthRouter);
 router.use(databaseStatusRouter);
 router.use(hardeningDiagnosticsRouter);
+router.use(retentionLifecycleRouter);
 
 router.use(
   lazyRouter(

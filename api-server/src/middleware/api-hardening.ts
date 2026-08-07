@@ -30,7 +30,6 @@ function configuredOrigins(): Set<string> {
     try {
       origins.add(new URL(value).origin);
     } catch {
-      // Invalid allowlist entries never broaden access.
     }
   }
   return origins;
@@ -63,11 +62,6 @@ function safeTokenMatch(required: string, supplied: string): boolean {
   );
 }
 
-/**
- * Sensitive read-only diagnostics are protected whenever an administrative
- * deployment capability is configured. Leaving the token unset preserves the
- * current single-user/local behavior instead of silently locking operators out.
- */
 export function adminReadAllowed(req: Request): boolean {
   const required = process.env.INSIGHT_HUB_ADMIN_TOKEN?.trim();
   if (!required) return true;
@@ -75,11 +69,6 @@ export function adminReadAllowed(req: Request): boolean {
   return safeTokenMatch(required, supplied);
 }
 
-/**
- * Separate ordinary interactive writes from administrative capabilities. The
- * app does not currently have a user/session identity layer, so tokens are
- * deployment capabilities rather than pretend user authentication.
- */
 export function writeCapability(
   req: Pick<Request, "method" | "path">,
 ): WriteCapability {
@@ -92,6 +81,7 @@ export function writeCapability(
     path === "/opportunities/import" ||
     path === "/opportunities/enrich" ||
     path === "/opportunities/reconcile-expired" ||
+    path.startsWith("/hardening/retention") ||
     (/^\/opportunities\/[^/]+$/.test(path) && method === "DELETE") ||
     path.startsWith("/source-monitor/") ||
     path.startsWith("/settings") ||
@@ -143,6 +133,9 @@ export function expensiveRoutePolicy(
   }
   if (method === "POST" && path === "/opportunities/feedback/rescore") {
     return { bucket: "feedback-rescore", limit: 1, windowMs: 10 * 60_000 };
+  }
+  if (method === "POST" && path === "/hardening/retention/apply") {
+    return { bucket: "retention-apply", limit: 1, windowMs: 10 * 60_000 };
   }
   if (method === "POST" && /^\/opportunities\/[^/]+\/feedback\/?$/.test(path)) {
     return { bucket: "opportunity-feedback", limit: 120, windowMs: 60_000 };
@@ -234,8 +227,6 @@ router.use(async (req, res, next) => {
     }
     return next();
   } catch (error) {
-    // Database telemetry must not take the app down. A bounded local limiter is
-    // the degraded fallback; logs make the loss of shared enforcement visible.
     req.log?.warn?.(error, "shared rate limiter unavailable; using local fallback");
     const fallback = consumeFallback(client, policy, Date.now());
     if (!fallback.allowed) {

@@ -5,6 +5,7 @@ import {
   adminReadAllowed,
   expensiveRoutePolicy,
   mutationOriginAllowed,
+  writeCapability,
 } from "../api-hardening";
 
 function request(values: {
@@ -153,6 +154,20 @@ test("administrative reads remain available when no admin token is configured", 
     if (old === undefined) delete process.env.INSIGHT_HUB_ADMIN_TOKEN;
     else process.env.INSIGHT_HUB_ADMIN_TOKEN = old;
   }
+});
+
+test("retention apply is an administrative write with a one-per-ten-minute policy", () => {
+  assert.equal(
+    writeCapability({ method: "POST", path: "/hardening/retention/apply" } as Request),
+    "admin_write",
+  );
+  assert.deepEqual(
+    expensiveRoutePolicy({
+      method: "POST",
+      path: "/hardening/retention/apply",
+    } as Request),
+    { bucket: "retention-apply", limit: 1, windowMs: 10 * 60_000 },
+  );
 });
 
 test("expensive routes have bounded policies", () => {
