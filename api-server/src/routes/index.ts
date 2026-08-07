@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import apiHardeningRouter from "../middleware/api-hardening";
+import apiRequestValidationRouter from "../middleware/api-request-validation";
 import healthRouter from "./health";
 import databaseStatusRouter from "./database-status";
 import hardeningDiagnosticsRouter from "./hardening-diagnostics";
@@ -36,6 +37,7 @@ router.use((_req, res, next) => {
 });
 
 router.use(apiHardeningRouter);
+router.use(apiRequestValidationRouter);
 
 router.use(healthRouter);
 router.use(databaseStatusRouter);
@@ -93,8 +95,6 @@ router.use(prospectLocationsRouter);
 router.use(prospectContactsRouter);
 router.use(clientsRouter);
 router.use(clientContactsRouter);
-// Prevent the legacy forecast bucket from reappearing and route FAR/DFARS to
-// Policy Radar before the generic federal-intel implementation can handle them.
 router.use(forecastPolicyBoundaryRouter);
 router.use(federalIntelRouter);
 router.use(stateAgenciesRouter);
