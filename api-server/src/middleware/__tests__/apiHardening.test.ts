@@ -11,10 +11,12 @@ function request(values: {
   path: string;
   host?: string;
   origin?: string;
+  protocol?: string;
 }): Request {
   return {
     method: values.method,
     path: values.path,
+    protocol: values.protocol ?? "https",
     get(name: string) {
       if (name.toLowerCase() === "host") return values.host;
       if (name.toLowerCase() === "origin") return values.origin;
@@ -55,10 +57,32 @@ test("same-origin writes are accepted and cross-origin writes are rejected", () 
   }
 });
 
+test("same host with the wrong URL scheme is rejected", () => {
+  const old = process.env.INSIGHT_HUB_ALLOWED_ORIGINS;
+  try {
+    delete process.env.INSIGHT_HUB_ALLOWED_ORIGINS;
+    assert.equal(
+      mutationOriginAllowed(
+        request({
+          method: "POST",
+          path: "/opportunities/fetch",
+          host: "insight.example.com",
+          protocol: "https",
+          origin: "http://insight.example.com",
+        }),
+      ),
+      false,
+    );
+  } finally {
+    if (old === undefined) delete process.env.INSIGHT_HUB_ALLOWED_ORIGINS;
+    else process.env.INSIGHT_HUB_ALLOWED_ORIGINS = old;
+  }
+});
+
 test("explicit allowed origins can perform writes", () => {
   const old = process.env.INSIGHT_HUB_ALLOWED_ORIGINS;
   try {
-    process.env.INSIGHT_HUB_ALLOWED_ORIGINS = "https://trusted.example.com";
+    process.env.INSIGHT_HUB_ALLOWED_ORIGINS = "https://trusted.example.com/";
     assert.equal(
       mutationOriginAllowed(
         request({
