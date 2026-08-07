@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
+import apiHardeningRouter from "../middleware/api-hardening";
 import healthRouter from "./health";
 import databaseStatusRouter from "./database-status";
+import hardeningDiagnosticsRouter from "./hardening-diagnostics";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
@@ -31,8 +33,13 @@ router.use((_req, res, next) => {
   next();
 });
 
+// Security, same-origin mutation checks, optional write-token enforcement, and
+// expensive-operation rate budgets must run before any write-capable route.
+router.use(apiHardeningRouter);
+
 router.use(healthRouter);
 router.use(databaseStatusRouter);
+router.use(hardeningDiagnosticsRouter);
 
 // Keep the always-on read API small. RFP ingestion, provider inventories, and
 // the portal catalogue pull in hundreds of adapter modules and are loaded only
