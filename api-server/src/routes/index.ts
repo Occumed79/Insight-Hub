@@ -16,6 +16,7 @@ import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
+import govconForecastEnsembleRouter from "./govcon-forecast-ensemble";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
@@ -33,17 +34,12 @@ router.use((_req, res, next) => {
   next();
 });
 
-// Security, same-origin mutation checks, optional write-token enforcement, and
-// expensive-operation rate budgets must run before any write-capable route.
 router.use(apiHardeningRouter);
 
 router.use(healthRouter);
 router.use(databaseStatusRouter);
 router.use(hardeningDiagnosticsRouter);
 
-// Keep the always-on read API small. RFP ingestion, provider inventories, and
-// the portal catalogue pull in hundreds of adapter modules and are loaded only
-// when a matching endpoint is actually requested.
 router.use(
   lazyRouter(
     (req) => /^\/opportunities\/[^/]+\/summary\/?$/.test(req.path),
@@ -87,6 +83,9 @@ router.use(
     () => import("./rfp-sources"),
   ),
 );
+// Forecasts use GovCon + official governmentwide/agency FCO discovery. The
+// dedicated recompete path falls through to govconRouter unchanged.
+router.use(govconForecastEnsembleRouter);
 router.use(govconRouter);
 router.use(relevantNewsRouter);
 router.use(competitorsRouter);
