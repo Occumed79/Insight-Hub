@@ -18,6 +18,7 @@ import {
   civicEngageTenantProvider,
   CIVICENGAGE_PORTAL_IDS,
 } from "./civicEngageBids";
+import { OpenGovProvider } from "./openGov";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
 import {
@@ -41,6 +42,19 @@ const statewideProviders = new Map<string, DataSourceProvider>(
       new StatewideProcurementProvider(config),
     ]),
 );
+
+// Napa County's county site now directs procurement users to OpenGov. Keep the
+// stable catalogue ID while routing collection through the current official
+// structured endpoint instead of the legacy CivicEngage bids page.
+const napaCountyOpenGovProvider = new OpenGovProvider([
+  {
+    portalId: "ca-napa-county",
+    tenantSlug: "countyofnapa",
+    buyerName: "Napa County",
+    state: "CA",
+    capability: "dedicated_listing_and_detail",
+  },
+]);
 
 const STATIC_ADAPTER_IDS = new Set<string>([
   "tx-esbd",
@@ -69,6 +83,7 @@ export function getRegisteredPublicPortalAdapter(
   if (sourceId === "tx-esbd") return texasEsbdProvider;
   if (sourceId === "ny-contract-reporter") return nyScrProvider;
   if (sourceId === CAL_EPROCURE_SOURCE.id) return calEprocureProvider;
+  if (sourceId === "ca-napa-county") return napaCountyOpenGovProvider;
   return (
     jaggaerSciQuestTenantProvider(sourceId) ??
     bonfireTenantProvider(sourceId) ??
