@@ -18,7 +18,21 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: rfp_core
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d rfp_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       RFP_DATABASE_URL: postgresql://test:test@localhost:5432/rfp_core
       INTEL_DATABASE_URL: postgresql://test:test@localhost:5432/intel
@@ -42,6 +56,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare logical integration databases
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U test -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE intel;
+          CREATE DATABASE auth;
+          CREATE DATABASE app;
+          SQL
+
       - name: Typecheck
         run: pnpm run typecheck
 
@@ -50,6 +74,9 @@ jobs:
 
       - name: Full-scope acceptance benchmark
         run: pnpm --filter @workspace/api-server run test:acceptance
+
+      - name: Real Postgres routing integration
+        run: pnpm --filter @workspace/api-server run test:db-integration
 
       - name: Opportunity ingestion regressions
         run: pnpm --filter @workspace/api-server run test:ingestion
@@ -66,7 +93,7 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @workspace/api-server exec playwright install --with-deps chromium
 
-      - name: Browser acceptance - Opportunities
+      - name: Browser acceptance - intelligence workspaces
         shell: bash
         run: |
           set -euo pipefail
