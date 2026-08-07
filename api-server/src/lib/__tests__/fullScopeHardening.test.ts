@@ -10,7 +10,9 @@ const architecture = await import("../sourceArchitecture");
 const { MANUAL_RFP_PROVIDERS } = await import("../ingestion/providerRunner");
 const { PROVIDER_DEFINITIONS } = await import("../config/providerConfig");
 const { PROVIDER_TIERS } = await import("../config/providerTiers");
-const { providerBudgetPolicy } = await import("../providerBudget");
+const { providerBudgetPolicy, sanitizeProviderErrorMessage } = await import(
+  "../providerBudget"
+);
 const { deriveOpportunityContext, normalizeQueryContext } = await import(
   "../learning/contextualFeedback"
 );
@@ -105,6 +107,17 @@ test("provider budget policy enforces configured daily monthly and reserve ceili
       process.env.INSIGHT_BUDGET_LANGSEARCH_PRIMARY_RESERVE = oldReserve;
     }
   }
+});
+
+test("provider telemetry redacts common secret-bearing error formats", () => {
+  const sanitized = sanitizeProviderErrorMessage(
+    "HTTP 401 Authorization: Bearer super-secret-token https://api.example.test/search?api_key=abc123&token=xyz789 sk-proj-1234567890abcdef",
+  );
+  assert.doesNotMatch(
+    sanitized,
+    /super-secret-token|abc123|xyz789|sk-proj-1234567890abcdef/,
+  );
+  assert.match(sanitized, /redacted/i);
 });
 
 test("query contexts remain distinct and service scope fallback is stable", () => {
