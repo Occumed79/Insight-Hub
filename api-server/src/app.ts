@@ -28,12 +28,39 @@ const INTEL_API_PREFIXES = [
 ];
 
 function logicalDatabaseForPath(pathname: string): LogicalDatabase {
-  return INTEL_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return INTEL_API_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  )
     ? "intel"
     : "rfp";
 }
 
-(globalThis as any).safeDate = (value: string | number | Date | null | undefined): Date | null => {
+function configuredCorsOrigins(): Set<string> {
+  return new Set(
+    (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function corsOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+  if (configuredCorsOrigins().has(origin)) return true;
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      const url = new URL(origin);
+      return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+(globalThis as any).safeDate = (
+  value: string | number | Date | null | undefined,
+): Date | null => {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -60,9 +87,17 @@ app.use(
     },
   }),
 );
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      callback(null, corsOriginAllowed(origin));
+    },
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    maxAge: 600,
+  }),
+);
+app.use(express.json({ limit: "512kb" }));
+app.use(express.urlencoded({ extended: true, limit: "512kb" }));
 
 app.use((req, _res, next) => {
   runWithDbContext(logicalDatabaseForPath(req.path), () => next());
@@ -176,7 +211,9 @@ app.post("/api/source-monitor/cleanup-junk", async (_req, res) => {
       SELECT COUNT(*)::int AS deleted_count FROM deleted
     `);
 
-    const deletedCount = Number(result?.rows?.[0]?.deleted_count ?? result?.[0]?.deleted_count ?? 0);
+    const deletedCount = Number(
+      result?.rows?.[0]?.deleted_count ?? result?.[0]?.deleted_count ?? 0,
+    );
     return res.json({ deletedCount });
   } catch (err: any) {
     logger.error({ err }, "Failed to clean source monitor junk items");
