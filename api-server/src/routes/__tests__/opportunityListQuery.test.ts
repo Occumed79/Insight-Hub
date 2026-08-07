@@ -17,7 +17,10 @@ const dialect = new PgDialect();
 describe("opportunity list PostgreSQL pattern filters", () => {
   it("binds LIKE ANY values as a text array instead of a record tuple", () => {
     const query = dialect.sqlToQuery(
-      likeAnyText(sql`lower(title)`, ["%occupational health%", "%drug test%"]),
+      likeAnyText(sql`lower(title)`, [
+        "%occupational health%",
+        "%drug test%",
+      ]),
     );
 
     assert.match(query.sql, /LIKE ANY\(ARRAY\[\$1, \$2\]::text\[\]\)/);
@@ -28,7 +31,9 @@ describe("opportunity list PostgreSQL pattern filters", () => {
   it("builds a valid empty text array and a negated filter", () => {
     assert.equal(dialect.sqlToQuery(boundTextArray([])).sql, "ARRAY[]::text[]");
     assert.match(
-      dialect.sqlToQuery(notLikeAnyText(sql`lower(title)`, ["%vacancy%"])).sql,
+      dialect.sqlToQuery(
+        notLikeAnyText(sql`lower(title)`, ["%vacancy%"]),
+      ).sql,
       /^NOT \(lower\(title\) LIKE ANY\(ARRAY\[\$1\]::text\[\]\)\)$/,
     );
   });
@@ -42,20 +47,22 @@ describe("opportunity list PostgreSQL pattern filters", () => {
     assert.deepEqual(query.params, [15]);
   });
 
-  it("preserves the real database error for the API response", () => {
+  it("preserves internal query detail only outside production responses", () => {
+    const error = new Error("operator is not unique: - unknown");
     assert.equal(
-      opportunityListErrorDetail(
-        new Error("operator is not unique: - unknown"),
-      ),
+      opportunityListErrorDetail(error, true),
       "operator is not unique: - unknown",
     );
     assert.equal(
-      opportunityListErrorDetail(undefined),
+      opportunityListErrorDetail(error, false),
+      "Opportunity query failed",
+    );
+    assert.equal(
+      opportunityListErrorDetail(undefined, true),
       "Unknown opportunity query error",
     );
   });
 });
-
 
 describe("opportunity list production schema compatibility", () => {
   it("does not select backend-only provider_key for the public list response", () => {
@@ -65,7 +72,7 @@ describe("opportunity list production schema compatibility", () => {
           ([alias, column]) => sql`${column} as ${sql.identifier(alias)}`,
         ),
         sql`, `,
-      )} from ${opportunitiesTable}`
+      )} from ${opportunitiesTable}`,
     );
 
     assert.doesNotMatch(query.sql, /provider_key/);
@@ -96,7 +103,7 @@ describe("opportunity list production schema compatibility", () => {
           ([alias, column]) => sql`${column} as ${sql.identifier(alias)}`,
         ),
         sql`, `,
-      )} from ${opportunitiesTable} where ${where} order by ${desc(rankExpr)} limit ${50} offset ${0}`
+      )} from ${opportunitiesTable} where ${where} order by ${desc(rankExpr)} limit ${50} offset ${0}`,
     );
 
     assert.match(query.sql, /where/);
