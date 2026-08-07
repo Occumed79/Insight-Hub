@@ -1,4 +1,4 @@
-import { intelPool, rfpPool } from "@workspace/db";
+import { rfpPool } from "@workspace/db";
 
 const READINESS_CACHE_MS = 5_000;
 const DATABASE_PROBE_TIMEOUT_MS = 2_500;
@@ -7,6 +7,8 @@ export interface DatabaseProbeResult {
   ok: boolean;
   latencyMs: number;
   error?: string;
+  skipped?: boolean;
+  owner?: string;
 }
 
 export interface RuntimeReadiness {
@@ -31,10 +33,7 @@ function conciseError(error: unknown): string {
   return String(error).slice(0, 300);
 }
 
-async function probePool(
-  pool: typeof rfpPool,
-  logicalDatabase: "rfp" | "intel",
-): Promise<DatabaseProbeResult> {
+async function probePool(pool: typeof rfpPool): Promise<DatabaseProbeResult> {
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const queryConfig = {
@@ -45,7 +44,7 @@ async function probePool(
   query.catch(() => undefined);
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`${logicalDatabase} readiness probe timed out`)),
+      () => reject(new Error("rfp readiness probe timed out")),
       DATABASE_PROBE_TIMEOUT_MS + 250,
     );
   });
@@ -65,13 +64,15 @@ async function probePool(
 }
 
 async function performReadinessProbe(): Promise<RuntimeReadiness> {
-  const [rfp, intel] = await Promise.all([
-    probePool(rfpPool, "rfp"),
-    probePool(intelPool, "intel"),
-  ]);
-  const dependenciesHealthy = rfp.ok && intel.ok;
+  const rfp = await probePool(rfpPool);
+  const intel: DatabaseProbeResult = {
+    ok: true,
+    latencyMs: 0,
+    skipped: true,
+    owner: "Insight-Hub2.0",
+  };
   const result: RuntimeReadiness = {
-    ok: ready && !shuttingDown && dependenciesHealthy,
+    ok: ready && !shuttingDown && rfp.ok,
     ready,
     shuttingDown,
     checkedAt: new Date().toISOString(),
@@ -117,9 +118,7 @@ export function invalidateReadinessCache(): void {
   cacheExpiresAt = 0;
 }
 
-export async function runtimeReadiness(
-  force = false,
-): Promise<RuntimeReadiness> {
+export async function runtimeReadiness(force = false): Promise<RuntimeReadiness> {
   if (!force && cachedReadiness && Date.now() < cacheExpiresAt) {
     return cachedReadiness;
   }
