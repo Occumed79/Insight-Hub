@@ -72,13 +72,21 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
     description: "Aggregates RSS feeds from government portals",
     priority: 5,
   },
+  emailNotifications: {
+    name: "emailNotifications",
+    tier: "tier1",
+    requiresApiKey: false,
+    requiresSelfHosted: false,
+    description: "Email-based opportunity notification ingestion",
+    priority: 6,
+  },
   selfHostedCrawler: {
     name: "selfHostedCrawler",
     tier: "tier1",
     requiresApiKey: false,
     requiresSelfHosted: true,
     description: "Self-hosted web crawler (Playwright-based)",
-    priority: 6,
+    priority: 7,
   },
   localLlm: {
     name: "localLlm",
@@ -86,7 +94,7 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
     requiresApiKey: false,
     requiresSelfHosted: true,
     description: "Local LLM (Ollama/LocalAI) for AI extraction",
-    priority: 7,
+    priority: 8,
   },
   selfHostedSearch: {
     name: "selfHostedSearch",
@@ -94,7 +102,7 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
     requiresApiKey: false,
     requiresSelfHosted: true,
     description: "Self-hosted search engine (Meilisearch/Typesense)",
-    priority: 8,
+    priority: 9,
   },
   publicPortalProviders: {
     name: "publicPortalProviders",
@@ -102,7 +110,7 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
     requiresApiKey: false,
     requiresSelfHosted: false,
     description: "Direct integration with public government portals",
-    priority: 9,
+    priority: 10,
   },
   grantsGov: {
     name: "grantsGov",
@@ -110,7 +118,7 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
     requiresApiKey: false,
     requiresSelfHosted: false,
     description: "Official federal grants portal",
-    priority: 10,
+    priority: 11,
   },
 
   // === Tier 2: Moderately Stable (External APIs with Good Reliability) ===
