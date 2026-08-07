@@ -8,10 +8,12 @@ const [
   { isGovConSemanticCandidate },
   { isForwardForecast },
   { forecastSearchHitCurrent },
+  { policyFeedDate },
 ] = await Promise.all([
   import("../govcon"),
   import("../govcon-forecast-ensemble"),
   import("../../lib/intelligence/agencyForecastDiscovery"),
+  import("../forecast-policy-boundary"),
 ]);
 
 const DAY_MS = 86_400_000;
@@ -152,6 +154,15 @@ test("official forecast search rejects explicitly old forecast years without dat
       now,
     ),
     true,
+  );
+});
+
+test("policy feed dates degrade malformed values to null", () => {
+  assert.equal(policyFeedDate(null), null);
+  assert.equal(policyFeedDate("not-a-real-date"), null);
+  assert.equal(
+    policyFeedDate("Thu, 06 Aug 2026 12:00:00 GMT")?.toISOString(),
+    "2026-08-06T12:00:00.000Z",
   );
 });
 
