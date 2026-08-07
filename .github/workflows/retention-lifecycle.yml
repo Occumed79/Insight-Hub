@@ -1,0 +1,69 @@
+name: Retention lifecycle
+
+on:
+  pull_request:
+    paths:
+      - "api-server/src/lib/retentionLifecycle.ts"
+      - "api-server/src/routes/retention-lifecycle.ts"
+      - "api-server/src/middleware/api-hardening.ts"
+      - "api-server/src/middleware/__tests__/apiHardening.test.ts"
+      - "api-server/src/lib/__tests__/retentionLifecycle.integration.test.ts"
+      - ".github/workflows/retention-lifecycle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retention-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: rfp_core
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d rfp_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RFP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      INTEL_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      AUTH_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      APP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply declared RFP schema
+        run: pnpm --filter @workspace/db exec drizzle-kit push --config ./drizzle.config.ts --force
+
+      - name: Run startup migrations
+        run: pnpm --filter @workspace/api-server exec node --import tsx -e "import('./src/lib/rfp-startup-migrate.ts').then((m) => m.runRfpStartupMigrations())"
+
+      - name: Retention policy integration
+        run: pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/__tests__/retentionLifecycle.integration.test.ts
+
+      - name: API retention safety regression
+        run: pnpm --filter @workspace/api-server exec node --import tsx --test src/middleware/__tests__/apiHardening.test.ts
