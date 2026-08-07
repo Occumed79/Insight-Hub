@@ -30,6 +30,7 @@ export type RetentionPreview = {
     sourceRegistry: true;
     dedupeKeys: true;
     latestRawEvidence: true;
+    pendingStaging: true;
   };
 };
 
@@ -94,13 +95,31 @@ function terminalStatusSql() {
 }
 
 async function previewWithExecutor(
-  executor: typeof rfpDb,
+  executor: Pick<typeof rfpDb, "execute">,
   now: Date,
   policy: RetentionPolicy,
 ): Promise<RetentionPreview> {
   const stagingBefore = daysBefore(now, policy.stagingDays);
   const rawBefore = daysBefore(now, policy.rawDays);
   const runBefore = daysBefore(now, policy.runDays);
+
+  const stagingWillSurvive = sql`
+    staging.quality_status = 'pending'
+    OR staging.updated_at >= ${stagingBefore}
+  `;
+
+  const rawWillSurvive = sql`
+    raw.collected_at >= ${rawBefore}
+    OR EXISTS (
+      SELECT 1 FROM opportunity_source_registry registry
+      WHERE registry.latest_raw_record_id = raw.id
+    )
+    OR EXISTS (
+      SELECT 1 FROM opportunity_staging staging
+      WHERE staging.raw_record_id = raw.id
+        AND (${stagingWillSurvive})
+    )
+  `;
 
   const [opportunities, staging, raw, runs] = await Promise.all([
     executor.execute(sql`
@@ -121,12 +140,13 @@ async function previewWithExecutor(
       FROM opportunity_raw_records raw
       WHERE raw.collected_at < ${rawBefore}
         AND NOT EXISTS (
-          SELECT 1 FROM opportunity_staging staging
-          WHERE staging.raw_record_id = raw.id
-        )
-        AND NOT EXISTS (
           SELECT 1 FROM opportunity_source_registry registry
           WHERE registry.latest_raw_record_id = raw.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM opportunity_staging staging
+          WHERE staging.raw_record_id = raw.id
+            AND (${stagingWillSurvive})
         )
     `),
     executor.execute(sql`
@@ -135,12 +155,14 @@ async function previewWithExecutor(
       WHERE run.status IN (${terminalStatusSql()})
         AND coalesce(run.completed_at, run.updated_at) < ${runBefore}
         AND NOT EXISTS (
-          SELECT 1 FROM opportunity_raw_records raw
-          WHERE raw.run_id = run.id
-        )
-        AND NOT EXISTS (
           SELECT 1 FROM opportunity_staging staging
           WHERE staging.run_id = run.id
+            AND (${stagingWillSurvive})
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM opportunity_raw_records raw
+          WHERE raw.run_id = run.id
+            AND (${rawWillSurvive})
         )
     `),
   ]);
@@ -166,6 +188,7 @@ async function previewWithExecutor(
       sourceRegistry: true,
       dedupeKeys: true,
       latestRawEvidence: true,
+      pendingStaging: true,
     },
   };
 }
@@ -189,7 +212,7 @@ export async function applyRetentionLifecycle(
       sql`SELECT pg_advisory_xact_lock(hashtextextended('insight-hub-retention-lifecycle', 0))`,
     );
 
-    const preview = await previewWithExecutor(tx as typeof rfpDb, now, policy);
+    const preview = await previewWithExecutor(tx, now, policy);
 
     const archived = await tx.execute(sql`
       UPDATE opportunities
@@ -236,7 +259,7 @@ export async function applyRetentionLifecycle(
       RETURNING id
     `);
 
-    return {
+    const result: RetentionApplyResult = {
       ...preview,
       appliedAt: now.toISOString(),
       applied: {
@@ -246,5 +269,18 @@ export async function applyRetentionLifecycle(
         ingestionRunsPruned: affectedRows(runs),
       },
     };
+
+    if (
+      result.applied.opportunitiesArchived > preview.candidates.opportunitiesToArchive ||
+      result.applied.stagingRowsPruned > preview.candidates.stagingRowsToPrune ||
+      result.applied.rawRowsPruned > preview.candidates.rawRowsToPrune ||
+      result.applied.ingestionRunsPruned > preview.candidates.ingestionRunsToPrune
+    ) {
+      throw new Error(
+        "Retention apply exceeded its transaction-scoped preview; transaction aborted.",
+      );
+    }
+
+    return result;
   });
 }
