@@ -29,6 +29,8 @@ export interface ProviderBudgetState {
 
 const KEY_PREFIX = "provider-budget:v1:";
 const memory = new Map<string, ProviderBudgetState>();
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 
 function budgetKey(provider: string): string {
   return `${KEY_PREFIX}${provider}`;
@@ -57,7 +59,10 @@ function blankState(provider: string, now = new Date()): ProviderBudgetState {
   };
 }
 
-function normalizeWindow(state: ProviderBudgetState, now = new Date()): ProviderBudgetState {
+function normalizeWindow(
+  state: ProviderBudgetState,
+  now = new Date(),
+): ProviderBudgetState {
   const dayKey = utcDayKey(now);
   const monthKey = utcMonthKey(now);
   return {
@@ -70,7 +75,10 @@ function normalizeWindow(state: ProviderBudgetState, now = new Date()): Provider
   };
 }
 
-function parseState(provider: string, raw: string | undefined): ProviderBudgetState {
+function parseState(
+  provider: string,
+  raw: string | undefined,
+): ProviderBudgetState {
   if (!raw) return blankState(provider);
   try {
     const parsed = JSON.parse(raw) as Partial<ProviderBudgetState>;
@@ -84,7 +92,9 @@ function parseState(provider: string, raw: string | undefined): ProviderBudgetSt
   }
 }
 
-export async function getProviderBudget(provider: string): Promise<ProviderBudgetState> {
+export async function getProviderBudget(
+  provider: string,
+): Promise<ProviderBudgetState> {
   const cached = memory.get(provider);
   if (cached) {
     const normalized = normalizeWindow(cached);
@@ -108,7 +118,9 @@ export async function getProviderBudget(provider: string): Promise<ProviderBudge
   }
 }
 
-async function persistProviderBudget(state: ProviderBudgetState): Promise<void> {
+async function persistProviderBudget(
+  state: ProviderBudgetState,
+): Promise<void> {
   memory.set(state.provider, state);
   try {
     await rfpDb
@@ -135,19 +147,32 @@ function classifyFailure(error: unknown): {
   message: string;
 } {
   const message = error instanceof Error ? error.message : String(error);
-  if (/quota|credit|balance|billing|monthly|daily limit|resource exhausted/i.test(message)) {
-    return { outcome: "quota", cooldownMs: 6 * 60 * 60 * 1000, message };
+  if (
+    /quota|credit|balance|billing|monthly|daily limit|resource exhausted/i.test(
+      message,
+    )
+  ) {
+    // Trial allowances are often daily or monthly. A full-day durable cooldown
+    // is deliberately conservative: it prevents redeploys from repeatedly
+    // burning a known-exhausted key while still allowing automatic recovery.
+    return { outcome: "quota", cooldownMs: 24 * HOUR, message };
   }
   if (/\b429\b|rate.?limit|too many requests|throttl/i.test(message)) {
-    return { outcome: "rate_limited", cooldownMs: 15 * 60 * 1000, message };
+    return { outcome: "rate_limited", cooldownMs: 15 * MINUTE, message };
   }
-  if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api.?key/i.test(message)) {
-    return { outcome: "auth", cooldownMs: 6 * 60 * 60 * 1000, message };
+  if (
+    /\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api.?key/i.test(message)
+  ) {
+    return { outcome: "auth", cooldownMs: 24 * HOUR, message };
   }
-  if (/timeout|timed out|abort|ECONNRESET|ECONNREFUSED|\b5\d\d\b/i.test(message)) {
-    return { outcome: "timeout", cooldownMs: 2 * 60 * 1000, message };
+  if (
+    /timeout|timed out|abort|ECONNRESET|ECONNREFUSED|\b5\d\d\b/i.test(
+      message,
+    )
+  ) {
+    return { outcome: "timeout", cooldownMs: 2 * MINUTE, message };
   }
-  return { outcome: "error", cooldownMs: 60 * 1000, message };
+  return { outcome: "error", cooldownMs: MINUTE, message };
 }
 
 export async function recordProviderSuccess(
@@ -167,7 +192,8 @@ export async function recordProviderSuccess(
     lastOutcome: usefulResults > 0 ? "success" : "empty",
     lastError: undefined,
     lastAttemptAt: now.toISOString(),
-    lastSuccessAt: usefulResults > 0 ? now.toISOString() : state.lastSuccessAt,
+    lastSuccessAt:
+      usefulResults > 0 ? now.toISOString() : state.lastSuccessAt,
   });
 }
 
@@ -183,14 +209,19 @@ export async function recordProviderFailure(
     requestsToday: state.requestsToday + 1,
     requestsThisMonth: state.requestsThisMonth + 1,
     failures: state.failures + 1,
-    cooldownUntil: Math.max(state.cooldownUntil, now.getTime() + failure.cooldownMs),
+    cooldownUntil: Math.max(
+      state.cooldownUntil,
+      now.getTime() + failure.cooldownMs,
+    ),
     lastOutcome: failure.outcome,
     lastError: failure.message.replace(/\s+/g, " ").slice(0, 300),
     lastAttemptAt: now.toISOString(),
   });
 }
 
-export async function providerBudgetAvailable(provider: string): Promise<boolean> {
+export async function providerBudgetAvailable(
+  provider: string,
+): Promise<boolean> {
   const state = await getProviderBudget(provider);
   return state.cooldownUntil <= Date.now();
 }
@@ -198,8 +229,12 @@ export async function providerBudgetAvailable(provider: string): Promise<boolean
 function usefulness(state: ProviderBudgetState): number {
   const attempts = Math.max(1, state.successes + state.failures);
   const successRate = state.successes / attempts;
-  const yieldPerSuccess = state.successes > 0 ? state.usefulResults / state.successes : 0;
-  const quotaPenalty = state.lastOutcome === "quota" || state.lastOutcome === "rate_limited" ? 100 : 0;
+  const yieldPerSuccess =
+    state.successes > 0 ? state.usefulResults / state.successes : 0;
+  const quotaPenalty =
+    state.lastOutcome === "quota" || state.lastOutcome === "rate_limited"
+      ? 100
+      : 0;
   return successRate * 40 + Math.min(40, yieldPerSuccess) - quotaPenalty;
 }
 
