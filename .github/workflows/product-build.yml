@@ -45,6 +45,11 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Procurement DB independence without Intel URL
+        env:
+          INTEL_DATABASE_URL: ""
+        run: pnpm --filter @workspace/api-server run test:db-independence
+
       - name: Opportunity decision regressions
         run: pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/__tests__/limitedProviderPool.test.ts src/lib/ingestion/__tests__/providerRunner.test.ts src/lib/search/__tests__/structuredOpportunityDecision.test.ts
 
