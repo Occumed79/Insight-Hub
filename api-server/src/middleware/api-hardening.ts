@@ -92,6 +92,7 @@ export function writeCapability(
     path === "/opportunities/import" ||
     path === "/opportunities/enrich" ||
     path === "/opportunities/reconcile-expired" ||
+    path.startsWith("/hardening/retention") ||
     (/^\/opportunities\/[^/]+$/.test(path) && method === "DELETE") ||
     path.startsWith("/source-monitor/") ||
     path.startsWith("/settings") ||
@@ -143,6 +144,9 @@ export function expensiveRoutePolicy(
   }
   if (method === "POST" && path === "/opportunities/feedback/rescore") {
     return { bucket: "feedback-rescore", limit: 1, windowMs: 10 * 60_000 };
+  }
+  if (method === "POST" && path === "/hardening/retention/apply") {
+    return { bucket: "retention-apply", limit: 1, windowMs: 10 * 60_000 };
   }
   if (method === "POST" && /^\/opportunities\/[^/]+\/feedback\/?$/.test(path)) {
     return { bucket: "opportunity-feedback", limit: 120, windowMs: 60_000 };
@@ -234,8 +238,6 @@ router.use(async (req, res, next) => {
     }
     return next();
   } catch (error) {
-    // Database telemetry must not take the app down. A bounded local limiter is
-    // the degraded fallback; logs make the loss of shared enforcement visible.
     req.log?.warn?.(error, "shared rate limiter unavailable; using local fallback");
     const fallback = consumeFallback(client, policy, Date.now());
     if (!fallback.allowed) {
