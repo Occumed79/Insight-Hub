@@ -60,14 +60,14 @@ describe("full catalogue completion", () => {
     );
   });
 
-  it("routes Napa County through its current official OpenGov procurement endpoint", () => {
+  it("keeps Napa County on its current official public listing collector", () => {
     const portal = PUBLISHED_DIRECT_RFP_PORTAL_BY_ID.get("ca-napa-county");
     assert.ok(portal);
-    assert.equal(portal?.domain, "procurement.opengov.com");
-    assert.match(portal?.searchUrl ?? "", /procurement\.opengov\.com\/portal\/countyofnapa/);
+    assert.equal(portal?.domain, "napacounty.gov");
+    assert.match(portal?.searchUrl ?? "", /napacounty\.gov\/bids\.aspx/i);
     const adapter = getRegisteredPublicPortalAdapter("ca-napa-county");
     assert.ok(adapter);
-    assert.equal(adapter?.constructor.name, "OpenGovProvider");
+    assert.notEqual(adapter?.constructor.name, "OpenGovProvider");
   });
 
   it("contains no disabled, unfinished, manual-only, or unadapted public rows", () => {
