@@ -13,11 +13,6 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import NotFound from "@/pages/not-found";
 
 const OpportunitiesDashboard = lazy(() => import("@/pages/portal/opportunities"));
-const EntitiesPage = lazy(() => import("@/pages/portal/entities"));
-const CompetitorsPage = lazy(() => import("@/pages/portal/competitors"));
-const ProspectDetailPage = lazy(() => import("@/pages/portal/prospect-detail"));
-const FederalAgenciesPage = lazy(() => import("@/pages/portal/federal-agencies"));
-const StateAgenciesPage = lazy(() => import("@/pages/portal/state-agencies"));
 const ForecastsPage = lazy(() => import("@/pages/portal/forecasts"));
 const RecompeteWatchPage = lazy(() => import("@/pages/portal/recompete-watch"));
 const RelevantNewsPage = lazy(() => import("@/pages/portal/relevant-news"));
@@ -58,14 +53,6 @@ function WorkspaceFallback() {
   );
 }
 
-function EntityProspectsRoute() {
-  return <EntitiesPage defaultTab="prospects" />;
-}
-
-function EntityClientsRoute() {
-  return <EntitiesPage defaultTab="clients" />;
-}
-
 function PortalRouter() {
   return (
     <PortalLayout>
@@ -75,13 +62,6 @@ function PortalRouter() {
           <Route path="/portal/forecasts" component={ForecastsPage} />
           <Route path="/portal/recompete-watch" component={RecompeteWatchPage} />
           <Route path="/portal/relevant-news" component={RelevantNewsPage} />
-          <Route path="/portal/entities" component={EntityProspectsRoute} />
-          <Route path="/portal/clients" component={EntityClientsRoute} />
-          <Route path="/portal/competitors" component={CompetitorsPage} />
-          <Route path="/portal/prospects/:id" component={ProspectDetailPage} />
-          <Route path="/portal/prospects" component={EntityProspectsRoute} />
-          <Route path="/portal/federal-agencies" component={FederalAgenciesPage} />
-          <Route path="/portal/state-agencies" component={StateAgenciesPage} />
           <Route path="/portal/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
