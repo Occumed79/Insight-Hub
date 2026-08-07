@@ -10,6 +10,7 @@ import {
   contextualFeedbackSummary,
   recordContextFeedback,
 } from "../lib/learning/contextualFeedback";
+import { adminReadAllowed } from "../middleware/api-hardening";
 
 const router = Router();
 const FEEDBACK_GRADES = new Set<FeedbackGrade>([
@@ -91,12 +92,23 @@ router.post("/opportunities/:id/feedback", async (req, res) => {
     const { id } = req.params;
     const { grade, notes, queryContext } = parsed.data;
     await submitGrade(id, grade, notes);
-    const context = await recordContextFeedback(id, grade, queryContext);
+
+    let learningContext: Awaited<ReturnType<typeof recordContextFeedback>> | null =
+      null;
+    let contextualPersisted = true;
+    try {
+      learningContext = await recordContextFeedback(id, grade, queryContext);
+    } catch (contextError) {
+      contextualPersisted = false;
+      req.log.error(contextError, "contextual feedback persistence failed after global grade commit");
+    }
+
     return res.json({
       success: true,
       opportunityId: id,
       grade,
-      learningContext: context,
+      learningContext,
+      contextualPersisted,
     });
   } catch (err: any) {
     req.log.error(err);
@@ -120,6 +132,12 @@ router.get("/opportunities/:id/feedback", async (req, res) => {
 
 /** Global model plus an optional exact query-context model for diagnostics. */
 router.get("/opportunities/feedback/model-summary", async (req, res) => {
+  if (!adminReadAllowed(req)) {
+    return res.status(401).json({
+      error: "Administrative read authorization is required.",
+    });
+  }
+
   try {
     const [summary, contextual] = await Promise.all([
       getModelSummary(),
