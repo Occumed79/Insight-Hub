@@ -3,8 +3,6 @@
  *
  * Role: AI-native search API optimized for LLM workflows. Returns clean,
  * structured results well-suited for procurement opportunity discovery.
- *
- * API docs: https://langsearch.com/docs
  */
 
 import type {
@@ -15,6 +13,11 @@ import type {
 } from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { composeAbortSignal } from "./abortSignals";
+import {
+  providerBudgetAvailable,
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "../providerBudget";
 
 const LANGSEARCH_BASE = "https://api.langsearch.com/v1";
 const LANGSEARCH_REQUEST_TIMEOUT_MS = 30_000;
@@ -22,7 +25,11 @@ const TRANSIENT_COOLDOWN_MS = 15 * 60 * 1_000;
 const QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 
 const KEY_SLOTS = [
-  { dbKey: "langsearchApiKey", envKey: "LANGSEARCH_API_KEY", slot: "primary" },
+  {
+    dbKey: "langsearchApiKey",
+    envKey: "LANGSEARCH_API_KEY",
+    slot: "primary",
+  },
   {
     dbKey: "langsearchApiKey2",
     envKey: "LANGSEARCH_API_KEY_2",
@@ -68,6 +75,10 @@ interface LangsearchRequestResult {
   slot?: LangsearchKeySlot;
 }
 
+function slotBudgetName(slot: LangsearchKeySlot): string {
+  return `langsearch:${slot}`;
+}
+
 export class LangsearchProvider implements DataSourceProvider {
   readonly name = "langsearch" as const;
 
@@ -96,8 +107,9 @@ export class LangsearchProvider implements DataSourceProvider {
 
   private cooldownFor(status: number, body: string): number {
     if (status === 401 || status === 403) return QUOTA_COOLDOWN_MS;
-    if (/quota|daily|exhaust|limit reached/i.test(body))
+    if (/quota|daily|exhaust|limit reached/i.test(body)) {
       return QUOTA_COOLDOWN_MS;
+    }
     return TRANSIENT_COOLDOWN_MS;
   }
 
@@ -112,19 +124,35 @@ export class LangsearchProvider implements DataSourceProvider {
     );
   }
 
+  private async availableKeys(): Promise<ResolvedLangsearchKey[]> {
+    const keys = await this.getApiKeys();
+    const now = Date.now();
+    const rows = await Promise.all(
+      keys.map(async (key) => ({
+        key,
+        durableAvailable: await providerBudgetAvailable(
+          slotBudgetName(key.slot),
+        ),
+      })),
+    );
+    return rows
+      .filter(
+        ({ key, durableAvailable }) =>
+          durableAvailable && (this.cooldownUntil.get(key.slot) ?? 0) <= now,
+      )
+      .map(({ key }) => key);
+  }
+
   private async requestWebSearch(
     query: string,
     options: { dateRange?: number; signal?: AbortSignal } = {},
   ): Promise<LangsearchRequestResult> {
-    const keys = await this.getApiKeys();
-    if (keys.length === 0) {
+    const configuredKeys = await this.getApiKeys();
+    if (configuredKeys.length === 0) {
       return { pages: [], errors: ["LangSearch API key not configured"] };
     }
 
-    const now = Date.now();
-    const candidates = keys.filter(
-      ({ slot }) => (this.cooldownUntil.get(slot) ?? 0) <= now,
-    );
+    const candidates = await this.availableKeys();
     if (candidates.length === 0) {
       return {
         pages: [],
@@ -136,10 +164,12 @@ export class LangsearchProvider implements DataSourceProvider {
 
     const errors: string[] = [];
 
-    // Keys remain in primary -> secondary -> tertiary order. A successful key is
-    // reused until it reaches quota or fails; the next key is a true fallback,
-    // not a round-robin target that burns all three allowances together.
+    // Keys remain primary -> secondary -> tertiary. Successful keys are reused
+    // until quota/upstream failure. Slot-level cooldowns are also persisted in
+    // the RFP settings store so redeploys cannot immediately re-burn a known
+    // exhausted trial key.
     for (const { value: apiKey, slot } of candidates) {
+      const budgetName = slotBudgetName(slot);
       const requestSignal = composeAbortSignal(
         LANGSEARCH_REQUEST_TIMEOUT_MS,
         options.signal,
@@ -162,15 +192,14 @@ export class LangsearchProvider implements DataSourceProvider {
 
         const body = await response.text();
         if (!response.ok) {
-          errors.push(
-            `LangSearch ${slot} key HTTP ${response.status}: ${body.slice(0, 180)}`,
-          );
+          const message = `LangSearch ${slot} key HTTP ${response.status}: ${body.slice(0, 180)}`;
+          errors.push(message);
+          await recordProviderFailure(budgetName, message);
           if (this.shouldFailOver(response.status)) {
             this.cooldownUntil.set(
               slot,
               Date.now() + this.cooldownFor(response.status, body),
             );
-            continue;
           }
           continue;
         }
@@ -179,24 +208,27 @@ export class LangsearchProvider implements DataSourceProvider {
         try {
           data = JSON.parse(body) as LangsearchResponse;
         } catch {
-          errors.push(`LangSearch ${slot} key returned malformed JSON`);
+          const message = `LangSearch ${slot} key returned malformed JSON`;
+          errors.push(message);
+          await recordProviderFailure(budgetName, message);
           this.cooldownUntil.set(slot, Date.now() + TRANSIENT_COOLDOWN_MS);
           continue;
         }
 
         if (data.code && data.code !== 200) {
-          const message = data.msg ?? "unknown error";
-          errors.push(
-            `LangSearch ${slot} key API error ${data.code}: ${message}`,
-          );
+          const apiMessage = data.msg ?? "unknown error";
+          const message = `LangSearch ${slot} key API error ${data.code}: ${apiMessage}`;
+          errors.push(message);
+          await recordProviderFailure(budgetName, message);
           this.cooldownUntil.set(
             slot,
-            Date.now() + this.cooldownFor(data.code, message),
+            Date.now() + this.cooldownFor(data.code, apiMessage),
           );
           continue;
         }
 
         const pages = data.data?.webPages?.value ?? data.webPages?.value ?? [];
+        await recordProviderSuccess(budgetName, pages.length);
         if (errors.length > 0) {
           console.warn(
             JSON.stringify({
@@ -208,9 +240,11 @@ export class LangsearchProvider implements DataSourceProvider {
         }
         return { pages, errors: [], slot };
       } catch (error) {
-        errors.push(
-          `LangSearch ${slot} key request failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const message = `LangSearch ${slot} key request failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        errors.push(message);
+        await recordProviderFailure(budgetName, message);
         this.cooldownUntil.set(slot, Date.now() + TRANSIENT_COOLDOWN_MS);
       } finally {
         requestSignal.cleanup();
@@ -244,7 +278,8 @@ export class LangsearchProvider implements DataSourceProvider {
               title: page.name ?? url,
               url,
               content: page.summary || page.snippet || "",
-              dateRaw: page.datePublished ?? page.dateLastCrawled ?? undefined,
+              dateRaw:
+                page.datePublished ?? page.dateLastCrawled ?? undefined,
               keySlot: result.slot,
             },
           ]

@@ -1,6 +1,24 @@
 import { ReactNode } from "react";
-import { ArrowLeft, Settings } from "lucide-react";
-import { Link } from "wouter";
+import {
+  ArrowLeft,
+  CalendarRange,
+  Newspaper,
+  RefreshCcw,
+  Search,
+  Settings,
+} from "lucide-react";
+import { Link, useLocation } from "wouter";
+
+const PORTAL_NAV_ITEMS = [
+  { href: "/portal/opportunities", label: "Opportunities", icon: Search },
+  { href: "/portal/forecasts", label: "Forecasts", icon: CalendarRange },
+  { href: "/portal/recompete-watch", label: "Recompete Watch", icon: RefreshCcw },
+  { href: "/portal/relevant-news", label: "Relevant News", icon: Newspaper },
+] as const;
+
+export function isPortalNavActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 const GlowBackground = () => (
   <>
@@ -29,18 +47,27 @@ const GlowBackground = () => (
         0%, 100% { opacity: 0.55; transform: scale(1); }
         50%       { opacity: 0.85; transform: scale(1.15); }
       }
+      @media (prefers-reduced-motion: reduce) {
+        .portal-orb { animation: none !important; }
+      }
+      @media (max-width: 640px) {
+        .portal-orb-low-priority { display: none; }
+      }
     `}</style>
 
     <div
+      aria-hidden="true"
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 0,
         pointerEvents: "none",
         overflow: "hidden",
+        contain: "strict",
       }}
     >
       <div
+        className="portal-orb"
         style={{
           position: "absolute",
           top: "-10%",
@@ -52,10 +79,10 @@ const GlowBackground = () => (
             "radial-gradient(circle at center, rgba(56,182,255,0.55) 0%, rgba(56,182,255,0.25) 35%, transparent 70%)",
           filter: "blur(40px)",
           animation: "orb1 18s ease-in-out infinite",
-          willChange: "transform",
         }}
       />
       <div
+        className="portal-orb"
         style={{
           position: "absolute",
           bottom: "-8%",
@@ -68,10 +95,10 @@ const GlowBackground = () => (
           filter: "blur(45px)",
           animation: "orb2 22s ease-in-out infinite",
           animationDelay: "-10s",
-          willChange: "transform",
         }}
       />
       <div
+        className="portal-orb portal-orb-low-priority"
         style={{
           position: "absolute",
           top: "30%",
@@ -84,10 +111,10 @@ const GlowBackground = () => (
           filter: "blur(35px)",
           animation: "orb3 14s ease-in-out infinite",
           animationDelay: "-6s",
-          willChange: "transform",
         }}
       />
       <div
+        className="portal-orb portal-orb-low-priority"
         style={{
           position: "absolute",
           top: "5%",
@@ -100,10 +127,10 @@ const GlowBackground = () => (
           filter: "blur(25px)",
           animation: "orb-pulse 8s ease-in-out infinite",
           animationDelay: "-3s",
-          willChange: "transform, opacity",
         }}
       />
       <div
+        className="portal-orb portal-orb-low-priority"
         style={{
           position: "absolute",
           bottom: "10%",
@@ -116,7 +143,6 @@ const GlowBackground = () => (
           filter: "blur(30px)",
           animation: "orb-pulse 13s ease-in-out infinite",
           animationDelay: "-7s",
-          willChange: "transform, opacity",
         }}
       />
     </div>
@@ -124,36 +150,91 @@ const GlowBackground = () => (
 );
 
 export function PortalLayout({ children }: { children: ReactNode }) {
+  const [pathname] = useLocation();
+
   return (
-    <div className="flex min-h-screen w-full bg-background relative" style={{ isolation: "isolate" }}>
+    <div
+      className="relative flex min-h-dvh w-full min-w-0 bg-background"
+      style={{ isolation: "isolate" }}
+    >
+      <a
+        href="#portal-main-content"
+        className="fixed left-4 top-3 z-[100] -translate-y-24 rounded-lg border border-primary/40 bg-background px-4 py-2 text-sm font-semibold text-white shadow-xl transition-transform focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+
       <GlowBackground />
 
-      <div className="flex min-h-screen w-full flex-col" style={{ position: "relative", zIndex: 10 }}>
-        <header className="flex h-16 shrink-0 items-center border-b border-white/5 bg-background/40 px-4 backdrop-blur-md md:px-8">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Insight Hub</span>
-          </Link>
-
-          <div className="ml-auto flex items-center gap-3">
+      <div
+        className="relative z-10 flex min-h-dvh min-w-0 w-full flex-col"
+      >
+        <div className="sticky top-0 z-40 border-b border-white/5 bg-background/70 backdrop-blur-xl">
+          <header className="flex h-16 min-w-0 items-center px-3 sm:px-4 md:px-8">
             <Link
-              href="/portal/settings"
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/65 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-white"
+              href="/"
+              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-white"
             >
-              <Settings className="h-4 w-4" />
-              <span className="hidden sm:inline">Procurement Operations</span>
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden xs:inline sm:inline">Insight Hub</span>
             </Link>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-gradient-to-tr from-primary/40 to-primary/20">
-              <span className="text-xs font-bold text-white">IS</span>
-            </div>
-          </div>
-        </header>
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-7xl">{children}</div>
+            <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
+              <Link
+                href="/portal/settings"
+                aria-current={pathname === "/portal/settings" ? "page" : undefined}
+                className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                  pathname === "/portal/settings"
+                    ? "border-primary/40 bg-primary/15 text-white"
+                    : "border-white/10 bg-white/5 text-white/65 hover:border-primary/40 hover:bg-primary/10 hover:text-white"
+                }`}
+              >
+                <Settings className="h-4 w-4" />
+                <span className="hidden lg:inline">Procurement Operations</span>
+              </Link>
+              <div
+                aria-hidden="true"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-gradient-to-tr from-primary/40 to-primary/20"
+              >
+                <span className="text-xs font-bold text-white">IS</span>
+              </div>
+            </div>
+          </header>
+
+          <nav
+            aria-label="Intelligence workspaces"
+            className="ui-scroll-x border-t border-white/[0.04] px-3 sm:px-4 md:px-8"
+          >
+            <div className="mx-auto flex min-w-max max-w-7xl items-center gap-2 py-2">
+              {PORTAL_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const active = isPortalNavActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-primary/40 bg-primary/20 text-white shadow-[0_0_24px_rgba(70,155,255,0.16)]"
+                        : "border-white/10 bg-white/[0.045] text-white/60 hover:border-primary/30 hover:bg-primary/10 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
+
+        <main
+          id="portal-main-content"
+          tabIndex={-1}
+          className="ui-page-shell ui-scrollbar-stable ui-safe-bottom flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8"
+        >
+          <div className="mx-auto min-w-0 w-full max-w-7xl">{children}</div>
         </main>
       </div>
     </div>

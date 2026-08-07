@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, gt, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { classifyResult } from "../lib/search/relevance";
@@ -8,9 +8,13 @@ import {
   semanticRerank,
 } from "../lib/search/semanticRerank";
 import {
-  OpportunityQualityPageAccumulator,
+  canonicalSamOpportunityUrl,
+  classifyOpportunityQuality,
+  opportunityQualityRank,
+  qualityMatchesView,
   type OpportunityViewMode,
 } from "../lib/opportunityQuality";
+import { contextualAdjustments } from "../lib/learning/contextualFeedback";
 import {
   opportunityListErrorDetail,
   opportunityListSelection,
@@ -23,6 +27,9 @@ const VIEW_MODES = new Set<OpportunityViewMode>([
   "closed",
   "all",
 ]);
+const FEEDBACK_RANK_WEIGHT = 15;
+const MAX_RANKING_CANDIDATES = 2_000;
+const MIN_RANKING_CANDIDATES = 500;
 
 function parseTags(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -38,7 +45,58 @@ function parseTags(raw: unknown): string[] {
   }
 }
 
-function relevanceView(opp: Record<string, any>) {
+function feedbackAdjustment(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  const delta = ((parsed - 50) / 50) * FEEDBACK_RANK_WEIGHT;
+  return Math.round(
+    Math.max(-FEEDBACK_RANK_WEIGHT, Math.min(FEEDBACK_RANK_WEIGHT, delta)),
+  );
+}
+
+function sourceAuthority(provider: unknown): {
+  label: "official" | "structured" | "discovery" | "other";
+  bonus: number;
+} {
+  const value = String(provider ?? "").toLowerCase();
+  if (value === "samgov" || value === "sam_gov") {
+    return { label: "official", bonus: 240 };
+  }
+  if (value === "tango") return { label: "structured", bonus: 180 };
+  if (
+    [
+      "langsearch",
+      "serper",
+      "exa",
+      "parallel",
+      "linkup",
+      "you",
+      "socrata",
+      "websearch",
+      "aidiscovery",
+    ].includes(value)
+  ) {
+    return { label: "discovery", bonus: 20 };
+  }
+  return { label: "other", bonus: 0 };
+}
+
+function crossSourceKey(row: Record<string, any>): string {
+  const solicitation = String(row.solicitationNumber ?? row.noticeId ?? "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+  if (solicitation) {
+    const agency = String(row.agency ?? "")
+      .replace(/[^a-z0-9]/gi, "")
+      .toLowerCase();
+    return `sol:${agency}:${solicitation}`;
+  }
+  const canonicalUrl = canonicalSamOpportunityUrl(row.samUrl);
+  if (canonicalUrl) return `url:${canonicalUrl.toLowerCase()}`;
+  return `id:${row.id}`;
+}
+
+function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
   const classification = classifyResult({
     title: opp.title,
     snippet: [
@@ -54,13 +112,11 @@ function relevanceView(opp: Record<string, any>) {
     date: opp.postedDate,
     deadlineInFuture: Boolean(
       opp.responseDeadline &&
-      new Date(opp.responseDeadline).getTime() > Date.now(),
+        new Date(opp.responseDeadline).getTime() > Date.now(),
     ),
     allowHistorical: true,
   });
   const tags = parseTags(opp.tags);
-  // Stored scores may predate the current relevance rules, so never let them
-  // promote stale or previously misclassified records.
   const score = classification.score;
   const dateUnknown =
     tags.includes("date-unknown") ||
@@ -76,6 +132,7 @@ function relevanceView(opp: Record<string, any>) {
         : score >= 50
           ? "medium"
           : "low";
+  const globalAdjustment = feedbackAdjustment(opp.userConfidence);
   return {
     score,
     reasons: classification.reasons.slice(0, 4),
@@ -85,13 +142,15 @@ function relevanceView(opp: Record<string, any>) {
     confidence,
     feedbackScore:
       opp.userConfidence == null ? null : Number(opp.userConfidence),
-    feedbackAdj: 0,
+    feedbackAdj: globalAdjustment + contextualAdjustment,
+    globalFeedbackAdj: globalAdjustment,
+    contextualFeedbackAdj: contextualAdjustment,
     semanticSimilarity: null as number | null,
     postedDate: dateUnknown ? null : opp.postedDate,
   };
 }
 
-function mapOpportunity(opp: Record<string, any>) {
+function mapOpportunity(opp: Record<string, any>, contextualAdjustment = 0) {
   return {
     ...opp,
     awardAmount: opp.awardAmount ? Number(opp.awardAmount) : undefined,
@@ -104,20 +163,16 @@ function mapOpportunity(opp: Record<string, any>) {
       ? Number(opp.relevanceScore)
       : undefined,
     tags: parseTags(opp.tags),
-    relevance: relevanceView(opp),
+    relevance: relevanceView(opp, contextualAdjustment),
   };
 }
 
-/**
- * Canonical list boundary. SQL applies only explicit user filters; the quality
- * classifier controls actionability, then the configured semantic stack may
- * reorder the already-selected page. Semantic failure never blocks the list.
- */
 router.get("/opportunities", async (req, res) => {
   try {
     const search = String(req.query.search ?? "").trim();
     const status = String(req.query.status ?? "").trim();
     const type = String(req.query.type ?? "").trim();
+    const naicsCode = String(req.query.naicsCode ?? "").trim();
     const agency = String(req.query.agency ?? "").trim();
     const source = String(req.query.source ?? "").trim();
     const viewRaw = String(req.query.view ?? "actionable").trim();
@@ -142,6 +197,7 @@ router.get("/opportunities", async (req, res) => {
       conditions.push(eq(opportunitiesTable.status, status));
     }
     if (type) conditions.push(ilike(opportunitiesTable.type, `%${type}%`));
+    if (naicsCode) conditions.push(eq(opportunitiesTable.naicsCode, naicsCode));
     if (agency) conditions.push(ilike(opportunitiesTable.agency, `%${agency}%`));
     if (source) {
       const sourceAliases: Record<string, string[]> = {
@@ -184,30 +240,82 @@ router.get("/opportunities", async (req, res) => {
         sql`coalesce(${opportunitiesTable.tags}, '') not ilike '%stale%'`,
       );
     }
+    if (view !== "all") {
+      conditions.push(
+        sql`coalesce(${opportunitiesTable.userGrade}, '') <> 'spam'`,
+      );
+    }
 
+    const candidateCap = Math.min(
+      MAX_RANKING_CANDIDATES,
+      Math.max(MIN_RANKING_CANDIDATES, page * limit * 10),
+    );
     const rows = await db
       .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(
-        asc(
-          sql`case when ${opportunitiesTable.responseDeadline} is null then 1 else 0 end`,
-        ),
-        asc(opportunitiesTable.responseDeadline),
-        asc(opportunitiesTable.title),
-      );
+        desc(opportunitiesTable.postedDate),
+        desc(opportunitiesTable.relevanceScore),
+        asc(opportunitiesTable.id),
+      )
+      .limit(candidateCap);
 
-    const accumulator = new OpportunityQualityPageAccumulator(
-      view,
-      page,
-      limit,
-    );
-    for (const row of rows) accumulator.add(row);
-    const qualityPage = accumulator.finish();
-    let data: any[] = qualityPage.data.map((item) => ({
-      ...mapOpportunity(item),
-      quality: item.quality,
-    }));
+    const context = await contextualAdjustments(rows, search || undefined);
+    const best = new Map<
+      string,
+      {
+        item: any;
+        rank: number;
+        authority: ReturnType<typeof sourceAuthority>;
+        contextHash: string;
+      }
+    >();
+
+    for (const row of rows) {
+      const quality = classifyOpportunityQuality(row);
+      if (!qualityMatchesView(quality, view)) continue;
+      const contextual = context.get(String(row.id)) ?? {
+        adjustment: 0,
+        context: "",
+        contextHash: "",
+      };
+      const mapped = mapOpportunity(row, contextual.adjustment);
+      const authority = sourceAuthority(row.providerName ?? row.source);
+      const rank =
+        opportunityQualityRank(row, quality) +
+        authority.bonus +
+        feedbackAdjustment(row.userConfidence) * 4 +
+        contextual.adjustment * 6;
+      const key = crossSourceKey(row);
+      const existing = best.get(key);
+      if (!existing || rank > existing.rank) {
+        best.set(key, {
+          item: {
+            ...mapped,
+            quality,
+            crossSource: {
+              canonicalKey: key,
+              rank,
+              authority: authority.label,
+              contextHash: contextual.contextHash,
+              suppressed: row.userGrade === "spam",
+            },
+          },
+          rank,
+          authority,
+          contextHash: contextual.contextHash,
+        });
+      }
+    }
+
+    const sorted = Array.from(best.values()).sort((left, right) => {
+      if (right.rank !== left.rank) return right.rank - left.rank;
+      return String(left.item.title).localeCompare(String(right.item.title));
+    });
+    const total = sorted.length;
+    const offset = (page - 1) * limit;
+    let data = sorted.slice(offset, offset + limit).map((row) => row.item);
 
     if (isSemanticRerankEnabled() && data.length > 0) {
       try {
@@ -215,7 +323,8 @@ router.get("/opportunities", async (req, res) => {
           data.map((item) => ({
             item,
             baseScore:
-              item.relevance.score + (item.relevance.feedbackAdj ?? 0),
+              item.crossSource.rank +
+              (item.relevance.contextualFeedbackAdj ?? 0),
             text: [
               item.title,
               item.type,
@@ -238,16 +347,24 @@ router.get("/opportunities", async (req, res) => {
           return result.item;
         });
       } catch (error) {
-        req.log.warn(error, "semantic rerank failed; using quality order");
+        req.log.warn(error, "semantic rerank failed; using cross-source rank");
       }
     }
 
     return res.json({
       data,
-      total: qualityPage.total,
+      total,
       page,
       limit,
       view,
+      ranking: {
+        mode: "cross-source-v2",
+        candidates: rows.length,
+        candidateCap,
+        truncated: rows.length >= candidateCap,
+        canonicalRecords: total,
+        queryContext: search || null,
+      },
     });
   } catch (error) {
     req.log.error(error);
@@ -258,8 +375,6 @@ router.get("/opportunities", async (req, res) => {
   }
 });
 
-// Bulk deletion contradicts the raw -> staging -> canonical audit contract.
-// Historical canonical data is preserved; future junk is rejected/quarantined.
 router.post("/opportunities/purge-junk", (_req, res) =>
   res.status(410).json({
     error: "Purge Junk is disabled.",

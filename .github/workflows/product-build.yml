@@ -18,7 +18,21 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: rfp_core
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d rfp_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       RFP_DATABASE_URL: postgresql://test:test@localhost:5432/rfp_core
       INTEL_DATABASE_URL: postgresql://test:test@localhost:5432/intel
@@ -42,11 +56,49 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare logical integration databases
+        env:
+          PGPASSWORD: test
+        run: |
+          psql -h localhost -U test -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE intel;
+          CREATE DATABASE auth;
+          CREATE DATABASE app;
+          SQL
+
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Opportunity decision regressions
-        run: pnpm --filter @workspace/api-server exec node --import tsx --test src/lib/__tests__/limitedProviderPool.test.ts src/lib/ingestion/__tests__/providerRunner.test.ts src/lib/search/__tests__/structuredOpportunityDecision.test.ts
+      - name: Hardening regressions
+        run: pnpm --filter @workspace/api-server run test:hardening
+
+      - name: Full-scope acceptance benchmark
+        run: pnpm --filter @workspace/api-server run test:acceptance
+
+      - name: Real Postgres routing integration
+        run: pnpm --filter @workspace/api-server run test:db-integration
+
+      - name: Opportunity ingestion regressions
+        run: pnpm --filter @workspace/api-server run test:ingestion
+
+      - name: Opportunity quality regressions
+        run: pnpm --filter @workspace/api-server run test:quality
+
+      - name: Frontend opportunity regressions
+        run: pnpm --filter @workspace/intel-suite run test:quality
 
       - name: Build production applications
         run: pnpm run build:prod
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @workspace/api-server exec playwright install --with-deps chromium
+
+      - name: Browser acceptance - intelligence workspaces and UI hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=4173 NODE_ENV=production pnpm --filter @workspace/intel-suite run serve >/tmp/insight-hub-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true; cat /tmp/insight-hub-preview.log || true' EXIT
+          INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173 node api-server/scripts/opportunities-browser-smoke.mjs
+          INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173 node api-server/scripts/ui-hardening-browser-smoke.mjs

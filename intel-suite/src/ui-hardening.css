@@ -1,0 +1,181 @@
+/* Insight Hub UI hardening layer.
+   This file intentionally avoids changing the visual design language; it adds
+   resilience, accessibility, responsive behavior, and motion/performance guards. */
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: hidden;
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body,
+#root {
+  min-height: 100dvh;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+@supports (overflow: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
+:where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+:where(button, [role="button"], a, input, select, textarea) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, [role="button"])[disabled],
+:where(button, [role="button"])[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+.ui-page-shell {
+  min-width: 0;
+  width: 100%;
+}
+
+.ui-scroll-x {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ui-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.ui-break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ui-scrollbar-stable {
+  scrollbar-gutter: stable;
+}
+
+.ui-safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.ui-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.ui-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.08) 55%,
+    transparent 100%
+  );
+  animation: insight-ui-skeleton 1.35s ease-in-out infinite;
+}
+
+@keyframes insight-ui-skeleton {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background-attachment: scroll !important;
+  }
+
+  .glass-panel,
+  .glass-card,
+  .glass-surface {
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+  }
+
+  .glass-card:hover {
+    transform: none;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .glass-card:hover,
+  .glow-hover:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .ui-skeleton::after {
+    display: none;
+  }
+
+  .glass-card:hover,
+  .glass-card:active {
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel,
+  .glass-card,
+  .glass-surface {
+    background: hsl(var(--card));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass-panel,
+  .glass-card,
+  .glass-surface {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+
+  :where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}

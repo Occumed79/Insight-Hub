@@ -13,31 +13,32 @@ const {
   resolveManualProviders,
 } = await import("../providerRunner");
 
-test("manual Fetch Intelligence defaults to Tango plus browser discovery without broadcasting federal APIs", () => {
-  assert.deepEqual(resolveManualProviders(), ["tango", "aiDiscovery"]);
-  assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), [
-    "samGov",
-    "tango",
-  ]);
+test("manual Fetch Intelligence defaults to both federal sources plus browser discovery", () => {
+  assert.deepEqual(resolveManualProviders(), ["samGov", "tango", "aiDiscovery"]);
+  assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), ["samGov", "tango"]);
   assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), [
     "samGov",
     "tango",
     "aiDiscovery",
+    "emailNotifications",
+    "rssAggregator",
   ]);
 });
 
-test("selecting a federal source keeps only that source in the run plan", () => {
-  assert.deepEqual(resolveManualProviders(["sam_gov"]), ["samGov"]);
-  assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
+test("selecting either federal source keeps the complete structured federal ensemble", () => {
+  assert.deepEqual(resolveManualProviders(["sam_gov"]), ["samGov", "tango"]);
+  assert.deepEqual(resolveManualProviders(["tango_api"]), ["samGov", "tango"]);
 });
 
-test("selecting both federal sources retains the first and uses the other only as fallback", () => {
+test("selecting both federal sources never collapses one into fallback", () => {
   assert.deepEqual(resolveManualProviders(["tango", "samGov", "aiDiscovery"]), [
+    "samGov",
     "tango",
     "aiDiscovery",
   ]);
   assert.deepEqual(resolveManualProviders(["samGov", "tango", "aiDiscovery"]), [
     "samGov",
+    "tango",
     "aiDiscovery",
   ]);
 });
@@ -61,7 +62,7 @@ test("blank searches still enforce the Occu-Med service profile", () => {
   );
 });
 
-test("legacy portal selections collapse into one AI discovery provider without adding a second federal source", () => {
+test("legacy portal selections collapse into browser discovery while retaining the full federal ensemble", () => {
   assert.deepEqual(
     resolveManualProviders([
       "sam_gov",
@@ -69,7 +70,7 @@ test("legacy portal selections collapse into one AI discovery provider without a
       "eunaBonfire",
       "internationalPublicPortals",
     ]),
-    ["samGov", "aiDiscovery"],
+    ["samGov", "tango", "aiDiscovery"],
   );
 });
 
@@ -77,6 +78,10 @@ test("browser discovery can still run alone while crawler providers stay unavail
   assert.deepEqual(resolveManualProviders(["aiDiscovery"]), ["aiDiscovery"]);
   assert.throws(
     () => resolveManualProviders(["firecrawl"]),
+    /Unsupported RFP provider/,
+  );
+  assert.throws(
+    () => resolveManualProviders(["scheduledCrawler"]),
     /Unsupported RFP provider/,
   );
 });

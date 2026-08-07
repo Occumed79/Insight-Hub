@@ -19,7 +19,10 @@ permissions:
 
 concurrency:
   group: crawler-foundation-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Validation is part of the merge gate. Do not cancel a running validation
+  # merely because another hardening commit lands; cancellation hides whether the
+  # crawler/adapter/ingestion suite actually passed.
+  cancel-in-progress: false
 
 jobs:
   validate:

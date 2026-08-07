@@ -1,12 +1,9 @@
 /**
  * Provider Tier Configuration
  *
- * Defines the stability hierarchy of providers to prioritize stable, self-hosted,
- * and direct government sources over external APIs with rate limits and API keys.
- *
- * Tier 1 (Most Stable): Direct government sources, self-hosted services
- * Tier 2 (Moderately Stable): External APIs with good reliability
- * Tier 3 (Fallback): External APIs with rate limits or reliability issues
+ * This registry describes reliability/cost posture only. Runtime ownership is
+ * defined by sourceArchitecture.ts. In particular, self-hosted crawler/search
+ * and legacy portal bundles are disabled for manual opportunity discovery.
  */
 
 import type { ProviderName } from "./providerConfig";
@@ -19,444 +16,453 @@ export interface ProviderTierConfig {
   requiresApiKey: boolean;
   requiresSelfHosted: boolean;
   description: string;
-  priority: number; // Lower number = higher priority within tier
+  priority: number;
 }
 
-/**
- * Provider tier definitions
- * 
- * Tier 1: No API keys required, self-hosted or direct government sources
- * Tier 2: External APIs with good reliability but require API keys
- * Tier 3: External APIs with rate limits or reliability issues
- * Disabled: Providers that should not be used in production
- */
+function config(
+  name: ProviderName,
+  tier: ProviderTier,
+  requiresApiKey: boolean,
+  requiresSelfHosted: boolean,
+  description: string,
+  priority: number,
+): ProviderTierConfig {
+  return {
+    name,
+    tier,
+    requiresApiKey,
+    requiresSelfHosted,
+    description,
+    priority,
+  };
+}
+
 export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
-  // === Tier 1: Most Stable (No API Keys, Self-Hosted or Direct Government) ===
-  samGov: {
-    name: "samGov",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Official federal government procurement portal",
-    priority: 1,
-  },
-  tango: {
-    name: "tango",
-    tier: "tier1",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Federal structured data provider",
-    priority: 2,
-  },
-  texasEsbd: {
-    name: "texasEsbd",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Texas state official procurement portal",
-    priority: 3,
-  },
-  nyScr: {
-    name: "nyScr",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "New York state official procurement portal",
-    priority: 4,
-  },
-  rssAggregator: {
-    name: "rssAggregator",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Aggregates RSS feeds from government portals",
-    priority: 5,
-  },
-  selfHostedCrawler: {
-    name: "selfHostedCrawler",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: true,
-    description: "Self-hosted web crawler (Playwright-based)",
-    priority: 6,
-  },
-  localLlm: {
-    name: "localLlm",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: true,
-    description: "Local LLM (Ollama/LocalAI) for AI extraction",
-    priority: 7,
-  },
-  selfHostedSearch: {
-    name: "selfHostedSearch",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: true,
-    description: "Self-hosted search engine (Meilisearch/Typesense)",
-    priority: 8,
-  },
-  publicPortalProviders: {
-    name: "publicPortalProviders",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Direct integration with public government portals",
-    priority: 9,
-  },
-  grantsGov: {
-    name: "grantsGov",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Official federal grants portal",
-    priority: 10,
-  },
+  // Direct / stable structured sources and explicit intelligence inputs.
+  samGov: config(
+    "samGov",
+    "tier1",
+    false,
+    false,
+    "Official federal government procurement source",
+    1,
+  ),
+  tango: config(
+    "tango",
+    "tier1",
+    true,
+    false,
+    "Structured federal procurement source; paired with SAM in manual fetches",
+    2,
+  ),
+  texasEsbd: config(
+    "texasEsbd",
+    "tier1",
+    false,
+    false,
+    "Texas official procurement source retained for direct-source compatibility",
+    3,
+  ),
+  nyScr: config(
+    "nyScr",
+    "tier1",
+    false,
+    false,
+    "New York official procurement source retained for direct-source compatibility",
+    4,
+  ),
+  rssAggregator: config(
+    "rssAggregator",
+    "tier1",
+    false,
+    false,
+    "Explicit supplemental government RSS intelligence input",
+    5,
+  ),
+  grantsGov: config(
+    "grantsGov",
+    "tier1",
+    false,
+    false,
+    "Federal grants intelligence; not an open-RFP source",
+    6,
+  ),
+  emailNotifications: config(
+    "emailNotifications",
+    "tier1",
+    false,
+    false,
+    "Explicit procurement-alert inbox input",
+    7,
+  ),
 
-  // === Tier 2: Moderately Stable (External APIs with Good Reliability) ===
-  exa: {
-    name: "exa",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Neural search API with good reliability",
-    priority: 1,
-  },
-  parallel: {
-    name: "parallel",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Perplexity AI search API",
-    priority: 2,
-  },
-  linkup: {
-    name: "linkup",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "LinkUp search API",
-    priority: 3,
-  },
-  socrata: {
-    name: "socrata",
-    tier: "tier2",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Open data portal aggregator",
-    priority: 4,
-  },
-  groq: {
-    name: "groq",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Ultra-fast AI inference (has rate limits)",
-    priority: 5,
-  },
-  gemini: {
-    name: "gemini",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Google AI (has daily quota limits)",
-    priority: 6,
-  },
-  openrouter: {
-    name: "openrouter",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Multi-model AI router",
-    priority: 7,
-  },
+  // Browser/search discovery APIs. Durable budget logic decides which limited
+  // providers are actually spent on a given run.
+  langsearch: config(
+    "langsearch",
+    "tier2",
+    true,
+    false,
+    "LLM-oriented web search with three independently budgeted key slots",
+    1,
+  ),
+  exa: config(
+    "exa",
+    "tier2",
+    true,
+    false,
+    "Semantic web discovery API",
+    2,
+  ),
+  parallel: config(
+    "parallel",
+    "tier2",
+    true,
+    false,
+    "Web discovery API",
+    3,
+  ),
+  linkup: config(
+    "linkup",
+    "tier2",
+    true,
+    false,
+    "Domain-aware web discovery API",
+    4,
+  ),
+  socrata: config(
+    "socrata",
+    "tier2",
+    true,
+    false,
+    "Tyler/Socrata public-data procurement discovery",
+    5,
+  ),
+  serper: config(
+    "serper",
+    "tier3",
+    true,
+    false,
+    "Google search API with limited allowance",
+    1,
+  ),
+  you: config(
+    "you",
+    "tier3",
+    true,
+    false,
+    "Web search fallback with limited allowance",
+    2,
+  ),
+  websearch: config(
+    "websearch",
+    "tier3",
+    true,
+    false,
+    "Broad web search fallback",
+    3,
+  ),
 
-  // === Tier 3: Fallback (External APIs with Rate Limits or Reliability Issues) ===
-  serper: {
-    name: "serper",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Google Search API (insufficient credits)",
-    priority: 1,
-  },
-  firecrawl: {
-    name: "firecrawl",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Web scraping API (timeout issues)",
-    priority: 2,
-  },
-  olostep: {
-    name: "olostep",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Web scraping API (timeout issues)",
-    priority: 3,
-  },
-  jina: {
-    name: "jina",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "AI reader/writer API (insufficient balance)",
-    priority: 4,
-  },
-  you: {
-    name: "you",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "You.com search API (403 errors)",
-    priority: 5,
-  },
-  deepseek: {
-    name: "deepseek",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "DeepSeek AI API (insufficient balance)",
-    priority: 6,
-  },
-  cloudflareWorker: {
-    name: "cloudflareWorker",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Cloudflare Workers AI (authentication errors)",
-    priority: 7,
-  },
-  langsearch: {
-    name: "langsearch",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "LangSearch API",
-    priority: 8,
-  },
-  websearch: {
-    name: "websearch",
-    tier: "tier3",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Generic web search API",
-    priority: 9,
-  },
+  // Managed enrichment/extraction services. They enrich URLs discovered by the
+  // search layer; they do not own manual opportunity discovery.
+  jina: config(
+    "jina",
+    "tier2",
+    true,
+    false,
+    "Managed page reader/enrichment service",
+    10,
+  ),
+  olostep: config(
+    "olostep",
+    "tier3",
+    true,
+    false,
+    "Managed difficult-page extraction fallback",
+    10,
+  ),
+  firecrawl: config(
+    "firecrawl",
+    "tier3",
+    true,
+    false,
+    "Managed page extraction fallback when explicitly enabled",
+    11,
+  ),
 
-  // === Tier 2/3: Other AI/Vector Providers ===
-  cerebras: {
-    name: "cerebras",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Cerebras AI inference",
-    priority: 10,
-  },
-  cohere: {
-    name: "cohere",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Cohere AI API",
-    priority: 11,
-  },
-  minimax: {
-    name: "minimax",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "MiniMax AI API",
-    priority: 12,
-  },
-  mistral: {
-    name: "mistral",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Mistral AI API",
-    priority: 13,
-  },
-  nvidia: {
-    name: "nvidia",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "NVIDIA AI API",
-    priority: 14,
-  },
-  huggingFace: {
-    name: "huggingFace",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Hugging Face API",
-    priority: 15,
-  },
-  voyage: {
-    name: "voyage",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Voyage AI embeddings",
-    priority: 16,
-  },
-  pinecone: {
-    name: "pinecone",
-    tier: "tier2",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Pinecone vector database",
-    priority: 17,
-  },
-  qdrant: {
-    name: "qdrant",
-    tier: "tier1",
-    requiresApiKey: false,
-    requiresSelfHosted: true,
-    description: "Qdrant vector database (self-hosted)",
-    priority: 18,
-  },
+  // AI judges / analysis providers.
+  cerebras: config(
+    "cerebras",
+    "tier2",
+    true,
+    false,
+    "Fast procurement relevance judge",
+    20,
+  ),
+  groq: config(
+    "groq",
+    "tier2",
+    true,
+    false,
+    "Fast procurement relevance judge",
+    21,
+  ),
+  mistral: config(
+    "mistral",
+    "tier2",
+    true,
+    false,
+    "Procurement judge fallback",
+    22,
+  ),
+  nvidia: config(
+    "nvidia",
+    "tier2",
+    true,
+    false,
+    "Procurement judge fallback",
+    23,
+  ),
+  openrouter: config(
+    "openrouter",
+    "tier2",
+    true,
+    false,
+    "Model-routing procurement judge fallback",
+    24,
+  ),
+  gemini: config(
+    "gemini",
+    "tier2",
+    true,
+    false,
+    "Query generation and procurement judge fallback",
+    25,
+  ),
+  minimax: config(
+    "minimax",
+    "tier2",
+    true,
+    false,
+    "Procurement judge fallback",
+    26,
+  ),
+  deepseek: config(
+    "deepseek",
+    "tier3",
+    true,
+    false,
+    "Procurement judge fallback",
+    27,
+  ),
+  clod: config(
+    "clod",
+    "tier3",
+    true,
+    false,
+    "Experimental procurement judge fallback",
+    28,
+  ),
+  cohere: config(
+    "cohere",
+    "tier2",
+    true,
+    false,
+    "Semantic reranking / analysis",
+    29,
+  ),
+  localLlm: config(
+    "localLlm",
+    "disabled",
+    false,
+    true,
+    "Local/self-hosted model path is not part of the hardened manual workflow",
+    0,
+  ),
 
-  // === Disabled: Not Recommended for Production ===
-  bidnet: {
-    name: "bidnet",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "BidNet marketplace (limited coverage)",
-    priority: 0,
-  },
-  browseAi: {
-    name: "browseAi",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "BrowseAI (deprecated)",
-    priority: 0,
-  },
-  browserUse: {
-    name: "browserUse",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "BrowserUse (deprecated)",
-    priority: 0,
-  },
-  clod: {
-    name: "clod",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "CLōD (experimental)",
-    priority: 0,
-  },
-  eunaBonfire: {
-    name: "eunaBonfire",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "EUNA Bonfire (limited coverage)",
-    priority: 0,
-  },
-  internationalPublicPortals: {
-    name: "internationalPublicPortals",
-    tier: "disabled",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "International portals (limited coverage)",
-    priority: 0,
-  },
-  fal: {
-    name: "fal",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "Fal AI (experimental)",
-    priority: 0,
-  },
-  mongoDb: {
-    name: "mongoDb",
-    tier: "disabled",
-    requiresApiKey: true,
-    requiresSelfHosted: false,
-    description: "MongoDB (not recommended)",
-    priority: 0,
-  },
-  usaSpending: {
-    name: "usaSpending",
-    tier: "disabled",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "USA Spending (historical data only)",
-    priority: 0,
-  },
-  federalRegister: {
-    name: "federalRegister",
-    tier: "disabled",
-    requiresApiKey: false,
-    requiresSelfHosted: false,
-    description: "Federal Register (not for opportunities)",
-    priority: 0,
-  },
+  // Retrieval/vector infrastructure.
+  pinecone: config(
+    "pinecone",
+    "tier2",
+    true,
+    false,
+    "Vector retrieval memory",
+    30,
+  ),
+  qdrant: config(
+    "qdrant",
+    "tier2",
+    true,
+    false,
+    "Vector retrieval memory",
+    31,
+  ),
+  voyage: config(
+    "voyage",
+    "tier2",
+    true,
+    false,
+    "Embedding provider",
+    32,
+  ),
+  huggingFace: config(
+    "huggingFace",
+    "tier2",
+    true,
+    false,
+    "Model/embedding utility provider",
+    33,
+  ),
+
+  // Non-RFP intelligence or unsupported/legacy paths.
+  usaSpending: config(
+    "usaSpending",
+    "disabled",
+    false,
+    false,
+    "Award/history intelligence only; not open-RFP ingestion",
+    0,
+  ),
+  federalRegister: config(
+    "federalRegister",
+    "disabled",
+    false,
+    false,
+    "Policy/rule intelligence only; not opportunity ingestion",
+    0,
+  ),
+  publicPortalProviders: config(
+    "publicPortalProviders",
+    "disabled",
+    false,
+    false,
+    "Legacy portal bundle; manual selections collapse into browser discovery",
+    0,
+  ),
+  eunaBonfire: config(
+    "eunaBonfire",
+    "disabled",
+    false,
+    false,
+    "Legacy Euna/Bonfire discovery alias; not a direct feed",
+    0,
+  ),
+  internationalPublicPortals: config(
+    "internationalPublicPortals",
+    "disabled",
+    false,
+    false,
+    "Legacy international portal discovery alias",
+    0,
+  ),
+  selfHostedCrawler: config(
+    "selfHostedCrawler",
+    "disabled",
+    false,
+    true,
+    "Self-hosted crawler disabled for hardened manual opportunity discovery",
+    0,
+  ),
+  selfHostedSearch: config(
+    "selfHostedSearch",
+    "disabled",
+    false,
+    true,
+    "Self-hosted search disabled for hardened manual opportunity discovery",
+    0,
+  ),
+  bidnet: config(
+    "bidnet",
+    "disabled",
+    true,
+    false,
+    "BidNet direct endpoint is not implemented",
+    0,
+  ),
+  browseAi: config(
+    "browseAi",
+    "disabled",
+    true,
+    false,
+    "Browser automation path disabled",
+    0,
+  ),
+  browserUse: config(
+    "browserUse",
+    "disabled",
+    true,
+    false,
+    "Browser automation path disabled",
+    0,
+  ),
+  cloudflareWorker: config(
+    "cloudflareWorker",
+    "disabled",
+    true,
+    false,
+    "Cloudflare Worker extraction path disabled after authentication failures",
+    0,
+  ),
+  mongoDb: config(
+    "mongoDb",
+    "disabled",
+    true,
+    false,
+    "Unused alternate database integration",
+    0,
+  ),
+  fal: config(
+    "fal",
+    "disabled",
+    true,
+    false,
+    "Media/model utility; not procurement discovery",
+    0,
+  ),
 };
 
-/**
- * Get providers by tier
- */
 export function getProvidersByTier(tier: ProviderTier): ProviderName[] {
   return Object.entries(PROVIDER_TIERS)
-    .filter(([, config]) => config.tier === tier)
-    .sort(([, a], [, b]) => a.priority - b.priority)
+    .filter(([, value]) => value.tier === tier)
+    .sort(([, left], [, right]) => left.priority - right.priority)
     .map(([name]) => name as ProviderName);
 }
 
-/**
- * Get provider tier configuration
- */
 export function getProviderTier(provider: ProviderName): ProviderTierConfig {
   return PROVIDER_TIERS[provider];
 }
 
-/**
- * Check if provider is stable (Tier 1)
- */
 export function isStableProvider(provider: ProviderName): boolean {
   return PROVIDER_TIERS[provider].tier === "tier1";
 }
 
-/**
- * Check if provider requires self-hosted infrastructure
- */
 export function requiresSelfHosted(provider: ProviderName): boolean {
   return PROVIDER_TIERS[provider].requiresSelfHosted;
 }
 
 /**
- * Get recommended providers for a specific use case
+ * Legacy callers receive recommendations that match the hardened ownership
+ * model. Runtime budget selection may further narrow these lists.
  */
-export function getRecommendedProviders(useCase: "discovery" | "enrichment" | "extraction" | "search"): ProviderName[] {
-  const tier1Providers = getProvidersByTier("tier1");
-  
+export function getRecommendedProviders(
+  useCase: "discovery" | "enrichment" | "extraction" | "search",
+): ProviderName[] {
   switch (useCase) {
-    case "discovery": {
-      const candidates: ProviderName[] = ["rssAggregator", "samGov", "publicPortalProviders", "grantsGov", "texasEsbd", "nyScr"];
-      return candidates.filter(p => tier1Providers.includes(p));
-    }
-    case "enrichment": {
-      const candidates: ProviderName[] = ["selfHostedCrawler", "texasEsbd", "nyScr"];
-      return candidates.filter(p => tier1Providers.includes(p));
-    }
-    case "extraction": {
-      const candidates: ProviderName[] = ["localLlm", "gemini", "groq"];
-      return candidates.filter(p => tier1Providers.includes(p) || PROVIDER_TIERS[p as ProviderName].tier === "tier2");
-    }
-    case "search": {
-      const candidates: ProviderName[] = ["selfHostedSearch", "rssAggregator", "exa", "parallel"];
-      return candidates.filter(p => tier1Providers.includes(p) || PROVIDER_TIERS[p as ProviderName].tier === "tier2");
-    }
-    default:
-      return tier1Providers;
+    case "discovery":
+      return [
+        "samGov",
+        "tango",
+        "langsearch",
+        "exa",
+        "parallel",
+        "linkup",
+        "socrata",
+      ];
+    case "enrichment":
+      return ["jina", "olostep", "firecrawl"];
+    case "extraction":
+      return ["cerebras", "groq", "mistral", "nvidia", "openrouter"];
+    case "search":
+      return ["langsearch", "serper", "exa", "parallel", "linkup", "you"];
   }
 }

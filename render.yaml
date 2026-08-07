@@ -107,10 +107,6 @@ services:
         sync: false
       - key: SELF_HOSTED_CRAWLER_URL
         sync: false
-      - key: LOCAL_LLM_ENDPOINT
-        sync: false
-      - key: LOCAL_LLM_MODEL
-        sync: false
       - key: SELF_HOSTED_SEARCH_ENDPOINT
         sync: false
       - key: SELF_HOSTED_SEARCH_API_KEY

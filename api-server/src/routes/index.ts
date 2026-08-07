@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
+import apiHardeningRouter from "../middleware/api-hardening";
+import apiRequestValidationRouter from "../middleware/api-request-validation";
 import healthRouter from "./health";
 import databaseStatusRouter from "./database-status";
+import hardeningDiagnosticsRouter from "./hardening-diagnostics";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
@@ -10,10 +13,12 @@ import prospectLocationsRouter from "./prospect-locations";
 import prospectContactsRouter from "./prospect-contacts";
 import clientsRouter from "./clients";
 import clientContactsRouter from "./client-contacts";
+import forecastPolicyBoundaryRouter from "./forecast-policy-boundary";
 import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
+import govconForecastEnsembleRouter from "./govcon-forecast-ensemble";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
@@ -31,12 +36,13 @@ router.use((_req, res, next) => {
   next();
 });
 
+router.use(apiHardeningRouter);
+router.use(apiRequestValidationRouter);
+
 router.use(healthRouter);
 router.use(databaseStatusRouter);
+router.use(hardeningDiagnosticsRouter);
 
-// Keep the always-on read API small. RFP ingestion, provider inventories, and
-// the portal catalogue pull in hundreds of adapter modules and are loaded only
-// when a matching endpoint is actually requested.
 router.use(
   lazyRouter(
     (req) => /^\/opportunities\/[^/]+\/summary\/?$/.test(req.path),
@@ -80,6 +86,7 @@ router.use(
     () => import("./rfp-sources"),
   ),
 );
+router.use(govconForecastEnsembleRouter);
 router.use(govconRouter);
 router.use(relevantNewsRouter);
 router.use(competitorsRouter);
@@ -88,6 +95,7 @@ router.use(prospectLocationsRouter);
 router.use(prospectContactsRouter);
 router.use(clientsRouter);
 router.use(clientContactsRouter);
+router.use(forecastPolicyBoundaryRouter);
 router.use(federalIntelRouter);
 router.use(stateAgenciesRouter);
 router.use(intelligenceFeedRouter);

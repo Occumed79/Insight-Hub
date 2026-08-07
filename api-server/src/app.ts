@@ -8,6 +8,7 @@ import { intelDb, runWithDbContext } from "@workspace/db";
 import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
+import apiHardeningRouter from "./middleware/api-hardening";
 import { logger } from "./lib/logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,18 +29,55 @@ const INTEL_API_PREFIXES = [
 ];
 
 function logicalDatabaseForPath(pathname: string): LogicalDatabase {
-  return INTEL_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return INTEL_API_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  )
     ? "intel"
     : "rfp";
 }
 
-(globalThis as any).safeDate = (value: string | number | Date | null | undefined): Date | null => {
+function configuredCorsOrigins(): Set<string> {
+  const origins = new Set<string>();
+  for (const raw of (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "").split(",")) {
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      origins.add(new URL(value).origin);
+    } catch {
+      // Invalid allowlist entries are ignored rather than broadening access.
+    }
+  }
+  return origins;
+}
+
+function corsOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+  try {
+    const normalizedOrigin = new URL(origin).origin;
+    if (configuredCorsOrigins().has(normalizedOrigin)) return true;
+    if (process.env.NODE_ENV !== "production") {
+      const url = new URL(normalizedOrigin);
+      return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+(globalThis as any).safeDate = (
+  value: string | number | Date | null | undefined,
+): Date | null => {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
 const app: Express = express();
+// Render terminates TLS in front of the Node process. Trust exactly the first
+// proxy hop so req.protocol reflects HTTPS and req.ip reflects the client rather
+// than collapsing all rate limits onto the proxy address.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
@@ -60,9 +98,17 @@ app.use(
     },
   }),
 );
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      callback(null, corsOriginAllowed(origin));
+    },
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    maxAge: 600,
+  }),
+);
+app.use(express.json({ limit: "512kb" }));
+app.use(express.urlencoded({ extended: true, limit: "512kb" }));
 
 app.use((req, _res, next) => {
   runWithDbContext(logicalDatabaseForPath(req.path), () => next());
@@ -75,6 +121,11 @@ app.get("/api/health", (_req, res) => {
 app.head("/api/health", (_req, res) => {
   res.status(200).end();
 });
+
+// These two source-monitor write endpoints are mounted directly on the Express
+// app for legacy routing compatibility, so explicitly place the same write
+// hardening boundary in front of the /api/source-monitor namespace.
+app.use("/api/source-monitor", apiHardeningRouter);
 
 app.post("/api/source-monitor/items/:id/protect", async (req, res) => {
   const { id } = req.params;
@@ -176,7 +227,9 @@ app.post("/api/source-monitor/cleanup-junk", async (_req, res) => {
       SELECT COUNT(*)::int AS deleted_count FROM deleted
     `);
 
-    const deletedCount = Number(result?.rows?.[0]?.deleted_count ?? result?.[0]?.deleted_count ?? 0);
+    const deletedCount = Number(
+      result?.rows?.[0]?.deleted_count ?? result?.[0]?.deleted_count ?? 0,
+    );
     return res.json({ deletedCount });
   } catch (err: any) {
     logger.error({ err }, "Failed to clean source monitor junk items");
