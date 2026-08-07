@@ -125,17 +125,12 @@ export function forecastSearchHitCurrent(
   if (hit.date) {
     const parsed = Date.parse(hit.date);
     if (Number.isFinite(parsed)) {
-      // Search engines sometimes surface archived forecast pages. A dated hit
-      // older than eighteen months is not safe enough for the live Forecast UI.
       return parsed >= now - 550 * 86_400_000 && parsed <= now + 90 * 86_400_000;
     }
   }
 
   const currentYear = new Date(now).getUTCFullYear();
   const combined = `${hit.title} ${hit.text}`;
-  // Do not require a word boundary before the year: official forecast titles
-  // commonly use FY2026/FY27-style prefixes where the preceding Y is itself a
-  // word character. Numeric lookarounds avoid accidentally reading longer IDs.
   const years = Array.from(combined.matchAll(/(?<!\d)(20\d{2})(?!\d)/g))
     .map((match) => Number(match[1]))
     .filter(Number.isFinite);
@@ -182,7 +177,7 @@ function normalizeHit(hit: SearchHit): AgencyForecastLead | null {
 }
 
 function queries(focus?: string): string[] {
-  const year = new Date().getFullYear();
+  const year = new Date().getUTCFullYear();
   const scope = focus?.trim()
     ? focus.trim().slice(0, 120)
     : "occupational health medical examinations drug testing medical surveillance";
@@ -293,7 +288,6 @@ export async function fetchAgencyForecastLeads(
         await recordProviderSuccess(provider, records.length);
         return { records, errors: run.errors };
       } catch (error) {
-        // The all-query-failed branch already recorded the failure above.
         if (!(error instanceof Error) || !/query \d+:/.test(error.message)) {
           await recordProviderFailure(provider, error);
         }
