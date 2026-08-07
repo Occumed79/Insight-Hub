@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { rfpDb, rfpPool, settingsTable } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import type { FeedbackGrade } from "./feedbackModel";
@@ -190,6 +190,31 @@ async function load(context: string): Promise<ContextSignalState> {
   }
 }
 
+async function loadContexts(
+  contexts: Map<string, string>,
+): Promise<Map<string, ContextSignalState>> {
+  const states = new Map<string, ContextSignalState>();
+  const entries = Array.from(contexts.entries());
+  if (entries.length === 0) return states;
+
+  const keys = entries.map(([hash]) => `${PREFIX}${hash}`);
+  try {
+    const rows = await rfpDb
+      .select({ key: settingsTable.key, value: settingsTable.value })
+      .from(settingsTable)
+      .where(inArray(settingsTable.key, keys));
+    const values = new Map(rows.map((row) => [row.key, row.value] as const));
+    for (const [hash, context] of entries) {
+      states.set(hash, parseState(context, values.get(`${PREFIX}${hash}`)));
+    }
+  } catch {
+    // Ranking remains available if contextual learning storage is temporarily
+    // unavailable. One failed batch read must not explode into N retries.
+    for (const [hash, context] of entries) states.set(hash, blank(context));
+  }
+  return states;
+}
+
 function add(map: Record<string, number>, key: unknown, weight: number): void {
   const normalized = String(key ?? "").trim().toLowerCase();
   if (!normalized) return;
@@ -315,12 +340,7 @@ export async function contextualAdjustments(
     const context = deriveOpportunityContext(opportunity, explicitContext);
     contexts.set(contextHash(context), context);
   }
-  const states = new Map<string, ContextSignalState>();
-  await Promise.all(
-    Array.from(contexts.entries()).map(async ([hash, context]) => {
-      states.set(hash, await load(context));
-    }),
-  );
+  const states = await loadContexts(contexts);
 
   const result = new Map<
     string,
