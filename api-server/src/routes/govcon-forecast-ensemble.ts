@@ -22,10 +22,41 @@ const DAY_MS = 86_400_000;
 
 type JsonRecord = Record<string, unknown>;
 type ForecastRecord = ReturnType<typeof normalizeGovConForecast>;
-type ForecastPayload = Record<string, unknown> & { records: unknown[] };
+type ForecastDataset = {
+  records: any[];
+  sourcePageRecords: number;
+  deduplicatedRecords: number;
+  semanticRejectedCount: number;
+  suppressedCount: number;
+  lowRelevanceCount: number;
+  filtersApplied: Record<string, string | undefined>;
+  semanticProvider: "gemini" | "deterministic";
+  source: "govcon+official-fco";
+  sourceBreakdown: {
+    govcon: number;
+    officialAgencyForecasts: number;
+    agencyDiscoveryProviders: string[];
+    recoveredErrors: string[];
+  };
+  fetchedAt: string;
+};
 
-const cache = new Map<string, { expiresAt: number; payload: ForecastPayload }>();
-const inFlight = new Map<string, Promise<ForecastPayload>>();
+type ForecastPayload = Omit<ForecastDataset, "records"> & {
+  records: any[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    hasNext: boolean;
+  };
+  cached: boolean;
+};
+
+const cache = new Map<
+  string,
+  { expiresAt: number; dataset: ForecastDataset }
+>();
+const inFlight = new Map<string, Promise<ForecastDataset>>();
 
 function stringQuery(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -261,7 +292,6 @@ function dedupeForecasts(records: any[]): any[] {
       byKey.set(key, record);
       continue;
     }
-    // Prefer the record with explicit forecast timing, then richer content.
     const existingTiming = Number(
       Boolean(
         existing.estimatedSolicitationDate ||
@@ -291,7 +321,11 @@ function dedupeForecasts(records: any[]): any[] {
 async function fetchGovConForecastPool(
   focus?: string,
   filters: Record<string, string | undefined> = {},
-): Promise<{ records: ForecastRecord[]; rawCount: number; error: string | null }> {
+): Promise<{
+  records: ForecastRecord[];
+  rawCount: number;
+  error: string | null;
+}> {
   const budgetName = "govcon:forecast";
   if (!(await providerBudgetAvailable(budgetName))) {
     return {
@@ -396,13 +430,11 @@ function matchesFilters(
   return true;
 }
 
-async function buildForecastPayload(
-  limit: number,
-  offset: number,
+async function buildForecastDataset(
   fitOnly: boolean,
   focus: string | undefined,
   filters: Record<string, string | undefined>,
-): Promise<ForecastPayload> {
+): Promise<ForecastDataset> {
   const [govcon, agency] = await Promise.all([
     fetchGovConForecastPool(focus, filters),
     fetchAgencyForecastLeads(focus),
@@ -412,11 +444,18 @@ async function buildForecastPayload(
   );
   const beforeDedupe = [...govcon.records, ...agencyFiltered];
   const combined = dedupeForecasts(beforeDedupe);
-  if (combined.length === 0 && govcon.error && agency.errors.length) {
-    throw Object.assign(new Error("No forecast source could return usable records."), {
-      statusCode: 502,
-      diagnostics: [govcon.error, ...agency.errors].slice(0, 6),
-    });
+
+  // GovCon is the primary structured forecast source. If it failed and the
+  // supplemental source produced nothing, return a real failure rather than a
+  // misleading successful empty list.
+  if (combined.length === 0 && govcon.error) {
+    throw Object.assign(
+      new Error("No forecast source could return usable records."),
+      {
+        statusCode: 502,
+        diagnostics: [govcon.error, ...agency.errors].slice(0, 6),
+      },
+    );
   }
 
   const suppressions = await loadGovConSuppressions("forecast").catch(() => ({
@@ -427,19 +466,12 @@ async function buildForecastPayload(
     (record) => !isGovConRecordSuppressed(suppressions, record),
   );
   const ranked = await rankGovConRecords(unsuppressed, "forecast", focus);
-  const filtered = fitOnly
+  const records = fitOnly
     ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
     : ranked;
-  const records = filtered.slice(offset, offset + limit);
 
   return {
     records,
-    pagination: {
-      limit,
-      offset,
-      total: filtered.length,
-      hasNext: offset + limit < filtered.length,
-    },
     sourcePageRecords: beforeDedupe.length,
     deduplicatedRecords: Math.max(0, beforeDedupe.length - combined.length),
     semanticRejectedCount: Math.max(
@@ -461,15 +493,33 @@ async function buildForecastPayload(
       govcon: govcon.records.length,
       officialAgencyForecasts: agencyFiltered.length,
       agencyDiscoveryProviders: agency.providers,
-      recoveredErrors: [govcon.error, ...agency.errors].filter(Boolean),
+      recoveredErrors: [govcon.error, ...agency.errors]
+        .filter((value): value is string => Boolean(value)),
     },
     fetchedAt: new Date().toISOString(),
-    cached: false,
+  };
+}
+
+function paginateForecastDataset(
+  dataset: ForecastDataset,
+  limit: number,
+  offset: number,
+  cached: boolean,
+): ForecastPayload {
+  return {
+    ...dataset,
+    records: dataset.records.slice(offset, offset + limit),
+    pagination: {
+      limit,
+      offset,
+      total: dataset.records.length,
+      hasNext: offset + limit < dataset.records.length,
+    },
+    cached,
   };
 }
 
 router.get("/govcon/forecasts", async (req, res, next) => {
-  // Recompete Watch stays on the dedicated award/incumbent-verification path.
   if (req.query.recompete === "true") return next();
 
   const limit = boundedInteger(req.query.limit, 50, 1, 100);
@@ -483,26 +533,32 @@ router.get("/govcon/forecasts", async (req, res, next) => {
     set_aside: stringQuery(req.query.setAside, 40),
     state: stringQuery(req.query.state, 2),
   };
-  const cacheKey = JSON.stringify({ limit, offset, fitOnly, focus, filters });
+
+  // Pagination is intentionally excluded from the upstream dataset cache key.
+  // Page changes reuse the same ranked source result instead of re-spending
+  // GovCon/search-provider allowance for identical filters.
+  const cacheKey = JSON.stringify({ fitOnly, focus, filters });
   pruneCache();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return res.json({ ...cached.payload, cached: true });
+    return res.json(
+      paginateForecastDataset(cached.dataset, limit, offset, true),
+    );
   }
 
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = buildForecastPayload(limit, offset, fitOnly, focus, filters);
+      request = buildForecastDataset(fitOnly, focus, filters);
       inFlight.set(cacheKey, request);
     }
-    const payload = await request;
+    const dataset = await request;
     pruneCache();
     cache.set(cacheKey, {
-      payload,
+      dataset,
       expiresAt: Date.now() + CACHE_TTL_MS,
     });
-    return res.json(payload);
+    return res.json(paginateForecastDataset(dataset, limit, offset, false));
   } catch (error) {
     logger.error({ err: error }, "Forecast ensemble failed");
     const statusCode =
