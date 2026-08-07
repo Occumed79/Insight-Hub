@@ -9,20 +9,12 @@ import retentionLifecycleRouter from "./retention-lifecycle";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
-import competitorsRouter from "./competitors";
-import prospectsRouter from "./prospects";
-import prospectLocationsRouter from "./prospect-locations";
-import prospectContactsRouter from "./prospect-contacts";
-import clientsRouter from "./clients";
-import clientContactsRouter from "./client-contacts";
 import forecastPolicyBoundaryRouter from "./forecast-policy-boundary";
-import federalIntelRouter from "./federal-intel";
-import stateAgenciesRouter from "./state-agencies";
-import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
 import govconForecastEnsembleRouter from "./govcon-forecast-ensemble";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
+import transferredIntelligenceBoundaryRouter from "./transferred-intelligence-boundary";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
@@ -46,6 +38,11 @@ router.use(healthRouter);
 router.use(databaseStatusRouter);
 router.use(hardeningDiagnosticsRouter);
 router.use(retentionLifecycleRouter);
+
+// Non-procurement intelligence workspaces are owned by Insight Hub 2. Keep the
+// old API prefixes explicit so stale clients fail loudly instead of touching the
+// legacy Hub 1 handlers or Intel database.
+router.use(transferredIntelligenceBoundaryRouter);
 
 router.use(
   lazyRouter(
@@ -93,16 +90,7 @@ router.use(
 router.use(govconForecastEnsembleRouter);
 router.use(govconRouter);
 router.use(relevantNewsRouter);
-router.use(competitorsRouter);
-router.use(prospectsRouter);
-router.use(prospectLocationsRouter);
-router.use(prospectContactsRouter);
-router.use(clientsRouter);
-router.use(clientContactsRouter);
 router.use(forecastPolicyBoundaryRouter);
-router.use(federalIntelRouter);
-router.use(stateAgenciesRouter);
-router.use(intelligenceFeedRouter);
 router.use(searchRouter);
 
 export default router;
