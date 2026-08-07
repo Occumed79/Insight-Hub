@@ -861,6 +861,7 @@ async function runProviderWithDeadline(
       controller.abort(error);
       reject(error);
     }, deadlineMs);
+    timeout.unref?.();
   });
   const beat = setInterval(() => {
     void safeHeartbeat(runId, progressMessage, progressProvider);
@@ -899,7 +900,13 @@ async function runProviderWithDeadline(
       controller.signal.reason instanceof ProviderTimeoutError
     )
       throw controller.signal.reason;
-    if (runSignal.aborted) throw new RunCancelledError();
+    if (runSignal.aborted) {
+      const reason = runSignal.reason;
+      if (reason instanceof RunTimeoutError || reason instanceof RunCancelledError) {
+        throw reason;
+      }
+      throw new RunCancelledError();
+    }
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -920,6 +927,7 @@ async function executePersistedRun(
     () => runController.abort(new RunTimeoutError()),
     RUN_DEADLINE_MS,
   );
+  runTimeout.unref?.();
   const runErrors: string[] = [];
   let cancelled = false;
   let timedOut = false;
@@ -993,6 +1001,9 @@ async function executePersistedRun(
             .where(eq(opportunityIngestionRunsTable.id, runId));
         });
         for (const record of result.records) {
+          if (runController.signal.aborted) {
+            throw runController.signal.reason ?? new RunCancelledError();
+          }
           if (await cancellationRequested(runId)) throw new RunCancelledError();
           const counts = await processOneRecord(
             runId,
@@ -1072,7 +1083,7 @@ async function executePersistedRun(
   } finally {
     clearTimeout(runTimeout);
     activeRunControllers.delete(runId);
-    const archived = cancelled
+    const archived = cancelled || timedOut
       ? 0
       : await reconcileExpiredOpportunities().catch(() => 0);
     const latest = await getIngestionRun(runId).catch(() => null);

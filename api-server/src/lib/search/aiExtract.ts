@@ -54,7 +54,11 @@ export interface BatchExtractResult {
 interface AiTextProvider {
   name: string;
   isConfigured(): Promise<boolean>;
-  complete(prompt: string, maxTokens?: number): Promise<string>;
+  complete(
+    prompt: string,
+    maxTokens?: number,
+    signal?: AbortSignal,
+  ): Promise<string>;
 }
 
 /**
@@ -103,6 +107,7 @@ const CONTENT_CHARS = 2_200;
 const MAX_OUTPUT_TOKENS = 3_000;
 const REVIEW_OUTPUT_TOKENS = 1_800;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
+export const MAX_EXTRACTION_CACHE_ENTRIES = 256;
 const DEFAULT_AI_CANDIDATE_LIMIT = 240;
 
 interface CacheEntry {
@@ -111,6 +116,14 @@ interface CacheEntry {
 }
 
 const extractionCache = new Map<string, CacheEntry>();
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new Error("AI extraction aborted");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
 
 function cacheKey(input: BatchExtractInput): string {
   return createHash("sha256")
@@ -123,6 +136,17 @@ function cacheKey(input: BatchExtractInput): string {
     .slice(0, 24);
 }
 
+function pruneExtractionCache(now = Date.now()): void {
+  for (const [key, entry] of extractionCache) {
+    if (entry.expires <= now) extractionCache.delete(key);
+  }
+  while (extractionCache.size >= MAX_EXTRACTION_CACHE_ENTRIES) {
+    const oldest = extractionCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    extractionCache.delete(oldest);
+  }
+}
+
 function getCached(input: BatchExtractInput): AiExtraction | undefined {
   const key = cacheKey(input);
   const entry = extractionCache.get(key);
@@ -131,11 +155,17 @@ function getCached(input: BatchExtractInput): AiExtraction | undefined {
     extractionCache.delete(key);
     return undefined;
   }
+  // Refresh insertion order so the bounded cache behaves as a simple LRU.
+  extractionCache.delete(key);
+  extractionCache.set(key, entry);
   return entry.value;
 }
 
 function setCached(input: BatchExtractInput, value: AiExtraction): void {
-  extractionCache.set(cacheKey(input), {
+  pruneExtractionCache();
+  const key = cacheKey(input);
+  extractionCache.delete(key);
+  extractionCache.set(key, {
     value,
     expires: Date.now() + CACHE_TTL_MS,
   });
@@ -287,7 +317,9 @@ async function runProviderChain(
   prompt: string,
   maxTokens: number,
   skipProvider?: string,
+  signal?: AbortSignal,
 ): Promise<ProviderAttemptResult> {
+  throwIfAborted(signal);
   const result = await runLimitedProviderPool(
     "opportunity-ai-extraction",
     providers
@@ -295,15 +327,21 @@ async function runProviderChain(
       .map((provider) => ({
         name: provider.name,
         isConfigured: () => provider.isConfigured(),
-        run: async () =>
-          parseJsonArray(await provider.complete(prompt, maxTokens)),
+        run: async (attemptSignal) =>
+          parseJsonArray(
+            await provider.complete(prompt, maxTokens, attemptSignal),
+          ),
       })),
     (rows) => Array.isArray(rows),
+    { signal },
   );
+  throwIfAborted(signal);
   return {
     rows: result.value,
     scorer: result.provider,
-    rateLimited: result.errors.some((error) => isRateLimit(error)),
+    rateLimited: [...result.errors, ...result.recoveredErrors].some((error) =>
+      isRateLimit(error),
+    ),
   };
 }
 
@@ -335,7 +373,9 @@ function aiCandidateLimit(): number {
 
 export async function extractOpportunitiesBatch(
   inputs: BatchExtractInput[],
+  signal?: AbortSignal,
 ): Promise<BatchExtractResult> {
+  throwIfAborted(signal);
   const extractions: (AiExtraction | null)[] = new Array(inputs.length).fill(
     null,
   );
@@ -349,6 +389,7 @@ export async function extractOpportunitiesBatch(
   let cloudflareAiBudgetDeferred = 0;
   let cloudflareErrors: string[] = [];
 
+  pruneExtractionCache();
   const pending: Array<{ input: BatchExtractInput; index: number }> = [];
   inputs.forEach((input, index) => {
     const cached = getCached(input);
@@ -375,6 +416,7 @@ export async function extractOpportunitiesBatch(
     };
   }
 
+  throwIfAborted(signal);
   let prioritizedPending = pending;
   const semantic = await prioritizeCandidatesWithCloudflare(
     pending.map((entry) => ({
@@ -385,6 +427,7 @@ export async function extractOpportunitiesBatch(
     undefined,
     aiCandidateLimit(),
   );
+  throwIfAborted(signal);
 
   cloudflarePrioritized = semantic.applied;
   cloudflareEmbedded = semantic.embedded;
@@ -414,6 +457,7 @@ export async function extractOpportunitiesBatch(
   const today = new Date().toISOString().split("T")[0] ?? "";
 
   for (const group of chunk(prioritizedPending, CHUNK_SIZE)) {
+    throwIfAborted(signal);
     const primary = await runProviderChain(
       PRIMARY_PROVIDERS,
       buildBatchPrompt(
@@ -421,6 +465,8 @@ export async function extractOpportunitiesBatch(
         today,
       ),
       MAX_OUTPUT_TOKENS,
+      undefined,
+      signal,
     );
     if (primary.rateLimited) rateLimited = true;
     if (!primary.rows || !primary.scorer) continue;
@@ -453,6 +499,7 @@ export async function extractOpportunitiesBatch(
       }));
 
     if (reviewItems.length > 0) {
+      throwIfAborted(signal);
       const reviewers =
         primary.scorer === "cerebras"
           ? CROSS_CHECK_PROVIDERS
@@ -462,6 +509,7 @@ export async function extractOpportunitiesBatch(
         buildCrossCheckPrompt(reviewItems, today),
         REVIEW_OUTPUT_TOKENS,
         primary.scorer,
+        signal,
       );
       if (review.rateLimited) rateLimited = true;
       if (review.rows?.length && review.scorer) {
@@ -496,6 +544,7 @@ export async function extractOpportunitiesBatch(
       }
     }
 
+    throwIfAborted(signal);
     for (const [localIndex, extraction] of provisional) {
       const target = group[localIndex];
       if (!target) continue;
@@ -504,6 +553,7 @@ export async function extractOpportunitiesBatch(
     }
   }
 
+  throwIfAborted(signal);
   return {
     extractions,
     rateLimited,
@@ -520,4 +570,9 @@ export async function extractOpportunitiesBatch(
 
 export function clearExtractionCache(): void {
   extractionCache.clear();
+}
+
+export function extractionCacheSize(): number {
+  pruneExtractionCache();
+  return extractionCache.size;
 }

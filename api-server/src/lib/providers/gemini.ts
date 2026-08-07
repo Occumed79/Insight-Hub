@@ -71,7 +71,12 @@ export const OCCUMED_DEFAULT_QUERIES = [
   `"workplace health" OR "employee wellness" government contract open ${QUERY_YEAR}`,
 ];
 
-async function callGemini(apiKey: string, prompt: string, maxTokens = 512): Promise<string> {
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+  maxTokens = 512,
+  signal?: AbortSignal,
+): Promise<string> {
   const response = await fetch(`${GEMINI_BASE}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -79,6 +84,9 @@ async function callGemini(apiKey: string, prompt: string, maxTokens = 512): Prom
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },
     }),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+      : AbortSignal.timeout(30_000),
   });
 
   if (response.status === 429) {
@@ -121,10 +129,14 @@ export class GeminiProvider implements DataSourceProvider {
    * can participate in the shared round-robin AI runner. Throws
    * "GEMINI_QUOTA_EXCEEDED: ..." on 429 so callers can fail over to another provider.
    */
-  async complete(prompt: string, maxTokens = 512): Promise<string> {
+  async complete(
+    prompt: string,
+    maxTokens = 512,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Gemini API key not configured.");
-    return callGemini(apiKey, prompt, maxTokens);
+    return callGemini(apiKey, prompt, maxTokens, signal);
   }
 
   /**

@@ -30,7 +30,6 @@ import { runLimitedProviderPool } from "../limitedProviderPool";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
-const NOW = new Date();
 const FIRECRAWL_MAX_URLS = 10;
 
 // Result-quantity controls (PR B). Serper/Exa bill per call (not per result for
@@ -215,8 +214,14 @@ function buildWebOpportunity(
 
 function isExpiredDeadline(deadline: Date | undefined | null): boolean {
   if (!deadline) return false;
-  const oneDayAgo = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return deadline < oneDayAgo;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error("Web intelligence discovery aborted");
+  }
 }
 
 function addCandidate(
@@ -253,6 +258,7 @@ export async function webIntelligenceFetch(options: {
   useSelfHostedCrawler?: boolean;
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
+  throwIfAborted(options.signal);
   const errors: string[] = [];
   const stats = {
     serperResults: 0,
@@ -292,8 +298,8 @@ export async function webIntelligenceFetch(options: {
   const useSocrata = options.useSocrata === true;
   const useWebsearch = options.useWebsearch === true;
   const useRssAggregator = options.useRssAggregator !== false; // Default to true for stable provider
-  const useSelfHostedSearch = options.useSelfHostedSearch !== false; // Default to true for stable provider
-  const useSelfHostedCrawler = options.useSelfHostedCrawler !== false; // Default to true for stable provider
+  const useSelfHostedSearch = options.useSelfHostedSearch === true;
+  const useSelfHostedCrawler = options.useSelfHostedCrawler === true;
 
   type SerperQuery = {
     query: string;
@@ -378,10 +384,11 @@ export async function webIntelligenceFetch(options: {
   ).slice(0, 10);
 
   for (const query of discoveryQueries) {
+    throwIfAborted(options.signal);
     const attempts: Array<{
       name: SearchCandidateProvider;
       isConfigured: () => Promise<boolean>;
-      run: () => Promise<Candidate[]>;
+      run: (signal?: AbortSignal) => Promise<Candidate[]>;
     }> = [];
 
     // Prioritize stable sources (Tier 1)
@@ -389,9 +396,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "rssAggregator",
         isConfigured: () => rssAggregatorProvider.isConfigured(),
-        run: async () => {
-          const result = await rssAggregatorProvider.fetch({ limit: 50, signal: options.signal });
-          stats.rssAggregatorResults += result.records.length;
+        run: async (attemptSignal) => {
+          const result = await rssAggregatorProvider.fetch({ limit: 50, signal: attemptSignal ?? options.signal });
           return result.records.map((record) => ({
             title: record.title,
             url: record.sourceUrl || "",
@@ -407,12 +413,12 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "selfHostedSearch",
         isConfigured: () => selfHostedSearchProvider.isConfigured(),
-        run: async () => {
+        run: async (attemptSignal) => {
           const results = await selfHostedSearchProvider.search({
             query,
             limit: 20,
+            signal: attemptSignal ?? options.signal,
           });
-          stats.selfHostedSearchResults += results.length;
           return results.map((result) => ({
             title: result.title,
             url: result.url || "",
@@ -429,10 +435,10 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "serper",
         isConfigured: () => serperProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await serperProvider.search(query, SERPER_RESULTS_PER_QUERY, {
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title,
@@ -447,11 +453,11 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "exa",
         isConfigured: () => exaProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await exaProvider.search(query, {
               numResults: EXA_RESULTS_PER_QUERY,
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title ?? "",
@@ -469,8 +475,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "parallel",
         isConfigured: () => parallelProvider.isConfigured(),
-        run: async () =>
-          (await parallelProvider.search(query, options.signal)).map(
+        run: async (attemptSignal) =>
+          (await parallelProvider.search(query, attemptSignal ?? options.signal)).map(
             (result) => ({
               title: result.title,
               url: result.url,
@@ -485,8 +491,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "linkup",
         isConfigured: () => linkupProvider.isConfigured(),
-        run: async () =>
-          (await linkupProvider.search(query, options.signal)).map(
+        run: async (attemptSignal) =>
+          (await linkupProvider.search(query, attemptSignal ?? options.signal)).map(
             (result) => ({
               title: result.name,
               url: result.url,
@@ -500,8 +506,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "you",
         isConfigured: () => youProvider.isConfigured(),
-        run: async () =>
-          (await youProvider.search(query, options.signal)).map((result) => ({
+        run: async (attemptSignal) =>
+          (await youProvider.search(query, attemptSignal ?? options.signal)).map((result) => ({
             ...result,
             sourceProvider: "you" as const,
           })),
@@ -511,11 +517,11 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "langsearch",
         isConfigured: () => langsearchProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await langsearchProvider.search(query, {
               dateRange: options.keywords ? 365 : 30,
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title,
@@ -530,12 +536,12 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "socrata",
         isConfigured: () => socrataProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await socrataProvider.search(
               options.keywords?.trim() ||
                 "procurement bids solicitations occupational health",
-              options.signal,
+              attemptSignal ?? options.signal,
             )
           ).map((result) => ({
             title: result.title,
@@ -550,10 +556,10 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "websearch",
         isConfigured: () => websearchProvider.isConfigured(),
-        run: async () => {
+        run: async (attemptSignal) => {
           const result = await websearchProvider.fetch({
             keywords: query,
-            signal: options.signal,
+            signal: attemptSignal ?? options.signal,
           });
           if (result.records.length === 0 && result.errors.length > 0) {
             throw new Error(result.errors.join("; "));
@@ -572,6 +578,7 @@ export async function webIntelligenceFetch(options: {
       "opportunity-web-discovery",
       attempts,
       (value) => value.length > 0,
+      { signal: options.signal },
     );
     errors.push(...result.errors);
     if (!result.value || !result.provider) continue;
@@ -626,6 +633,7 @@ export async function webIntelligenceFetch(options: {
     .slice(0, FIRECRAWL_MAX_URLS);
 
   for (const { candidate, index } of toEnrich) {
+    throwIfAborted(options.signal);
     const enrichmentAttempts = [
       // Prioritize self-hosted crawler (Tier 1)
       ...(useSelfHostedCrawler
@@ -633,8 +641,8 @@ export async function webIntelligenceFetch(options: {
             {
               name: "selfHostedCrawler" as const,
               isConfigured: () => selfHostedCrawlerProvider.isConfigured(),
-              run: async () => {
-                const result = await selfHostedCrawlerProvider.getText(candidate.url);
+              run: async (attemptSignal?: AbortSignal) => {
+                const result = await selfHostedCrawlerProvider.getText(candidate.url, { signal: attemptSignal ?? options.signal });
                 return result;
               },
             },
@@ -646,8 +654,8 @@ export async function webIntelligenceFetch(options: {
             {
               name: "firecrawl" as const,
               isConfigured: () => firecrawlProvider.isConfigured(),
-              run: async () =>
-                (await firecrawlProvider.scrape(candidate.url))?.markdown ??
+              run: async (attemptSignal?: AbortSignal) =>
+                (await firecrawlProvider.scrape(candidate.url, attemptSignal ?? options.signal))?.markdown ??
                 null,
             },
           ]
@@ -655,23 +663,24 @@ export async function webIntelligenceFetch(options: {
       {
         name: "jina" as const,
         isConfigured: () => jinaProvider.isConfigured(),
-        run: () => jinaProvider.extractUrl(candidate.url, 5_000),
+        run: (attemptSignal?: AbortSignal) => jinaProvider.extractUrl(candidate.url, 5_000, attemptSignal ?? options.signal),
       },
       {
         name: "olostep" as const,
         isConfigured: () => olostepProvider.isConfigured(),
-        run: () => olostepProvider.getText(candidate.url),
+        run: (attemptSignal?: AbortSignal) => olostepProvider.getText(candidate.url, attemptSignal ?? options.signal),
       },
       {
         name: "cloudflare-worker" as const,
         isConfigured: () => cloudflareWorkerProvider.isConfigured(),
-        run: () => cloudflareWorkerProvider.extractUrl(candidate.url),
+        run: (attemptSignal?: AbortSignal) => cloudflareWorkerProvider.extractUrl(candidate.url, 8_000, attemptSignal ?? options.signal),
       },
     ];
     const enriched = await runLimitedProviderPool(
       "opportunity-page-enrichment",
       enrichmentAttempts,
       (value) => typeof value === "string" && value.length > 200,
+      { signal: options.signal },
     );
     errors.push(...enriched.errors);
     if (!enriched.value || !enriched.provider) continue;
@@ -718,6 +727,7 @@ export async function webIntelligenceFetch(options: {
           url: c.url,
           content: c.content,
         })),
+        options.signal,
       );
     if (rateLimited) stats.geminiRateLimited = true;
     stats.aiCacheHits = cacheHits;
@@ -820,9 +830,13 @@ export async function webIntelligenceFetch(options: {
       stats.heuristicExtracted++;
     });
   } catch (err: any) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? err;
+    }
     errors.push(`Web intelligence error: ${err.message}`);
   }
 
+  throwIfAborted(options.signal);
   return {
     opportunities,
     stats,

@@ -68,6 +68,7 @@ export function isTransientDatabaseError(
 export interface DatabaseRetryOptions {
   attempts?: number;
   delaysMs?: readonly number[];
+  signal?: AbortSignal;
   onRetry?: (details: {
     label: string;
     attempt: number;
@@ -76,13 +77,37 @@ export interface DatabaseRetryOptions {
   }) => void;
 }
 
-function wait(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, delayMs)));
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new Error("Database retry operation aborted");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+function wait(delayMs: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  const boundedDelay = Math.max(0, delayMs);
+  if (boundedDelay === 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, boundedDelay);
+    timer.unref?.();
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal ? abortReason(signal) : new Error("Database retry operation aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /**
  * Retries only failures classified as transient. Programming errors, invalid
  * SQL, constraint violations, and permanent authentication errors fail fast.
+ * A parent cancellation interrupts both future attempts and retry backoff.
  */
 export async function withTransientDatabaseRetry<T>(
   label: string,
@@ -93,13 +118,17 @@ export async function withTransientDatabaseRetry<T>(
   const delaysMs = options.delaysMs ?? [250, 1_000];
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    throwIfAborted(options.signal);
     try {
-      return await operation();
+      const value = await operation();
+      throwIfAborted(options.signal);
+      return value;
     } catch (error) {
+      if (options.signal?.aborted) throw abortReason(options.signal);
       if (attempt >= attempts || !isTransientDatabaseError(error)) throw error;
       const delayMs = delaysMs[Math.min(attempt - 1, delaysMs.length - 1)] ?? 0;
       options.onRetry?.({ label, attempt, delayMs, error });
-      await wait(delayMs);
+      await wait(delayMs, options.signal);
     }
   }
 

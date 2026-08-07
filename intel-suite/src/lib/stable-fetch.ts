@@ -5,9 +5,11 @@ const RETRY_DELAYS_MS = [250, 750];
 const FALLBACK_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHED_BODY_BYTES = 5 * 1024 * 1024;
 export const MAX_STABLE_FETCH_CACHE_ENTRIES = 64;
+export const MAX_STABLE_FETCH_CACHE_BYTES = 24 * 1024 * 1024;
 
 type CachedResponse = {
   body: ArrayBuffer;
+  byteLength: number;
   expiresAt: number;
   headers: [string, string][];
   status: number;
@@ -18,12 +20,31 @@ type StableFetchGlobal = typeof globalThis & {
   [INSTALL_KEY]?: true;
 };
 
-function wait(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
+
+function wait(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortReason(signal));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal ? abortReason(signal) : new DOMException("The operation was aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function resolveRequest(input: RequestInfo | URL, init?: RequestInit): { method: string; url: URL } {
@@ -71,6 +92,7 @@ async function cacheSuccessfulJson(response: Response): Promise<CachedResponse |
     if (body.byteLength > MAX_CACHED_BODY_BYTES) return null;
     return {
       body,
+      byteLength: body.byteLength,
       expiresAt: Date.now() + FALLBACK_TTL_MS,
       headers: Array.from(response.headers.entries()),
       status: response.status,
@@ -81,11 +103,26 @@ async function cacheSuccessfulJson(response: Response): Promise<CachedResponse |
   }
 }
 
-function pruneStableCache(cache: Map<string, CachedResponse>, now = Date.now()): void {
+function cacheBytes(cache: Map<string, CachedResponse>): number {
+  let total = 0;
+  for (const entry of cache.values()) total += entry.byteLength;
+  return total;
+}
+
+function pruneStableCache(
+  cache: Map<string, CachedResponse>,
+  now = Date.now(),
+  incomingBytes = 0,
+): void {
   for (const [key, entry] of cache) {
     if (entry.expiresAt <= now) cache.delete(key);
   }
-  while (cache.size >= MAX_STABLE_FETCH_CACHE_ENTRIES) {
+
+  let retainedBytes = cacheBytes(cache);
+  while (
+    cache.size >= MAX_STABLE_FETCH_CACHE_ENTRIES ||
+    retainedBytes + incomingBytes > MAX_STABLE_FETCH_CACHE_BYTES
+  ) {
     let oldestKey: string | null = null;
     let oldestExpiry = Number.POSITIVE_INFINITY;
     for (const [key, entry] of cache) {
@@ -95,7 +132,9 @@ function pruneStableCache(cache: Map<string, CachedResponse>, now = Date.now()):
       }
     }
     if (!oldestKey) break;
+    const removed = cache.get(oldestKey);
     cache.delete(oldestKey);
+    retainedBytes -= removed?.byteLength ?? 0;
   }
 }
 
@@ -127,6 +166,7 @@ export function installStableFetch(): void {
     let lastError: unknown = new Error(`GET ${url.pathname} failed`);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (init?.signal?.aborted) throw abortReason(init.signal);
       try {
         const headers = new Headers(
           typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
@@ -147,9 +187,11 @@ export function installStableFetch(): void {
         if (response.ok) {
           const cached = await cacheSuccessfulJson(response);
           if (cached) {
-            pruneStableCache(lastKnownGood);
             lastKnownGood.delete(cacheKey);
-            lastKnownGood.set(cacheKey, cached);
+            pruneStableCache(lastKnownGood, Date.now(), cached.byteLength);
+            if (cached.byteLength <= MAX_STABLE_FETCH_CACHE_BYTES) {
+              lastKnownGood.set(cacheKey, cached);
+            }
           }
           return response;
         }
@@ -166,7 +208,9 @@ export function installStableFetch(): void {
         lastError = error;
       }
 
-      if (attempt < RETRY_DELAYS_MS.length) await wait(RETRY_DELAYS_MS[attempt]);
+      if (attempt < RETRY_DELAYS_MS.length) {
+        await wait(RETRY_DELAYS_MS[attempt], init?.signal ?? undefined);
+      }
     }
 
     pruneStableCache(lastKnownGood);

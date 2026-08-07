@@ -65,6 +65,29 @@ test("retries transient database work but not permanent failures", async () => {
   assert.equal(permanentAttempts, 1);
 });
 
+test("database retry cancellation interrupts backoff and prevents another attempt", async () => {
+  const controller = new AbortController();
+  let attempts = 0;
+  const pending = withTransientDatabaseRetry(
+    "cancelled heartbeat",
+    async () => {
+      attempts += 1;
+      throw Object.assign(new Error("connect ETIMEDOUT"), {
+        code: "ETIMEDOUT",
+      });
+    },
+    {
+      attempts: 5,
+      delaysMs: [5_000],
+      signal: controller.signal,
+    },
+  );
+
+  setTimeout(() => controller.abort(new Error("run cancelled")), 10);
+  await assert.rejects(pending, /run cancelled/);
+  assert.equal(attempts, 1);
+});
+
 test("formats source-level adapter progress for the ingestion modal", () => {
   assert.deepEqual(
     formatProviderProgress({

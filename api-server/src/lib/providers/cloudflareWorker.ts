@@ -41,7 +41,11 @@ export class CloudflareWorkerProvider implements DataSourceProvider {
     }
   }
 
-  async extractUrl(url: string, maxLength = 8000): Promise<string | null> {
+  async extractUrl(
+    url: string,
+    maxLength = 8000,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const endpoint = await this.getEndpoint();
     if (!endpoint) return null;
 
@@ -50,7 +54,9 @@ export class CloudflareWorkerProvider implements DataSourceProvider {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, maxLength }),
-        signal: AbortSignal.timeout(20000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
+          : AbortSignal.timeout(20_000),
       });
       if (!response.ok) return null;
       const json = (await response.json()) as { content?: string; text?: string; markdown?: string };

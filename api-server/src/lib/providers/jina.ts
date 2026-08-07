@@ -53,7 +53,11 @@ export class JinaProvider implements DataSourceProvider {
    * Extract clean text content from a URL using Jina Reader.
    * Returns markdown string or null on failure.
    */
-  async extractUrl(url: string, maxLength = 8000): Promise<string | null> {
+  async extractUrl(
+    url: string,
+    maxLength = 8000,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return null;
 
@@ -66,7 +70,9 @@ export class JinaProvider implements DataSourceProvider {
           "X-Return-Format": "markdown",
           "X-Timeout": "10",
         },
-        signal: AbortSignal.timeout(15000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+          : AbortSignal.timeout(15_000),
       });
 
       if (!response.ok) return null;

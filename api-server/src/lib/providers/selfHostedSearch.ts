@@ -42,6 +42,7 @@ export interface SearchOptions {
   filters?: string;
   sort?: string[];
   timeout?: number;
+  signal?: AbortSignal;
 }
 
 export class SelfHostedSearchProvider implements DataSourceProvider {
@@ -120,7 +121,9 @@ export class SelfHostedSearchProvider implements DataSourceProvider {
         filter: options.filters,
         sort: options.sort,
       }),
-      signal: AbortSignal.timeout(timeout),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout)])
+        : AbortSignal.timeout(timeout),
     });
 
     if (!response.ok) {

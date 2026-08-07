@@ -128,6 +128,75 @@ test("limited provider pools stop waiting on a slow provider and continue", asyn
   );
 });
 
+test("per-attempt timeouts abort cooperative provider work before fallback", async () => {
+  clearLimitedProviderPoolState();
+  let slowAborted = false;
+  const result = await runLimitedProviderPool(
+    "abort-timeout-test",
+    [
+      {
+        name: "slow",
+        isConfigured: async () => true,
+        run: async (signal) =>
+          new Promise<string[]>((_resolve, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                slowAborted = true;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      },
+      {
+        name: "fallback",
+        isConfigured: async () => true,
+        run: async () => ["ok"],
+      },
+    ],
+    (value) => value.length > 0,
+    { attemptTimeoutMs: 20, budgetMs: 100 },
+  );
+
+  assert.equal(slowAborted, true);
+  assert.equal(result.provider, "fallback");
+  assert.match(result.recoveredErrors.join(" "), /timed out after 20ms/);
+});
+
+test("parent cancellation aborts work without poisoning provider cooldown state", async () => {
+  clearLimitedProviderPoolState();
+  const controller = new AbortController();
+  let providerSawAbort = false;
+  const pending = runLimitedProviderPool(
+    "parent-cancel-test",
+    [
+      {
+        name: "cooperative",
+        isConfigured: async () => true,
+        run: async (signal) =>
+          new Promise<string[]>((_resolve, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                providerSawAbort = true;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      },
+    ],
+    (value) => value.length > 0,
+    { signal: controller.signal, attemptTimeoutMs: 5_000 },
+  );
+
+  setTimeout(() => controller.abort(new Error("manual ingestion cancelled")), 10);
+  await assert.rejects(pending, /manual ingestion cancelled/);
+  assert.equal(providerSawAbort, true);
+  assert.deepEqual(limitedProviderPoolSnapshot(), []);
+});
+
 test("limited provider pools enforce a shared call ceiling across repeated run steps", async () => {
   clearLimitedProviderPoolState();
   let calls = 0;

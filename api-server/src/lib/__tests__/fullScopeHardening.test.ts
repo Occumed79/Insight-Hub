@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 process.env.RFP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/rfp_core";
@@ -10,9 +12,12 @@ const architecture = await import("../sourceArchitecture");
 const { MANUAL_RFP_PROVIDERS } = await import("../ingestion/providerRunner");
 const { PROVIDER_DEFINITIONS } = await import("../config/providerConfig");
 const { PROVIDER_TIERS } = await import("../config/providerTiers");
-const { providerBudgetPolicy, sanitizeProviderErrorMessage } = await import(
-  "../providerBudget"
-);
+const {
+  isOrchestrationCancellation,
+  providerBudgetPolicy,
+  sanitizeProviderErrorMessage,
+  selectBudgetedProviders,
+} = await import("../providerBudget");
 const { deriveOpportunityContext, normalizeQueryContext } = await import(
   "../learning/contextualFeedback"
 );
@@ -109,6 +114,26 @@ test("provider budget policy enforces configured daily monthly and reserve ceili
   }
 });
 
+test("orchestration cancellation never poisons provider reliability budgets", async () => {
+  assert.equal(
+    isOrchestrationCancellation(
+      new Error("Ingestion run cancellation requested"),
+    ),
+    true,
+  );
+  assert.equal(
+    isOrchestrationCancellation(
+      new Error("Ingestion run exceeded 1200000ms maximum duration"),
+    ),
+    true,
+  );
+  assert.equal(
+    isOrchestrationCancellation(new Error("HTTP 429 quota exhausted")),
+    false,
+  );
+  assert.deepEqual(await selectBudgetedProviders([], 0), []);
+});
+
 test("provider telemetry redacts common secret-bearing error formats", () => {
   const sanitized = sanitizeProviderErrorMessage(
     "HTTP 401 Authorization: Bearer super-secret-token https://api.example.test/search?api_key=abc123&token=xyz789 sk-proj-1234567890abcdef",
@@ -118,6 +143,45 @@ test("provider telemetry redacts common secret-bearing error formats", () => {
     /super-secret-token|abc123|xyz789|sk-proj-1234567890abcdef/,
   );
   assert.match(sanitized, /redacted/i);
+});
+
+test("startup migrations serialize DDL and backfills under one transaction-scoped lock", async () => {
+  const source = await readFile(
+    path.resolve(process.cwd(), "src/lib/rfp-startup-migrate.ts"),
+    "utf8",
+  );
+  assert.match(source, /db\.transaction\(async \(tx\) =>/);
+  assert.match(source, /pg_advisory_xact_lock/);
+  assert.match(source, /insight-hub-rfp-startup-migrations/);
+  assert.equal(source.includes("await db.execute(sql`"), false);
+});
+
+test("run deadlines stay timeouts and do not launch post-timeout reconciliation", async () => {
+  const source = await readFile(
+    path.resolve(process.cwd(), "src/lib/ingestion/manualIngestion.ts"),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /reason instanceof RunTimeoutError \|\| reason instanceof RunCancelledError/,
+  );
+  assert.match(source, /if \(runController\.signal\.aborted\)/);
+  assert.match(source, /runTimeout\.unref\?\.\(\)/);
+  assert.match(source, /const archived = cancelled \|\| timedOut/);
+});
+
+test("web discovery binds parent and per-attempt cancellation without reviving retired defaults", async () => {
+  const source = await readFile(
+    path.resolve(process.cwd(), "src/lib/search/webIntelligence.ts"),
+    "utf8",
+  );
+  assert.match(source, /useSelfHostedSearch = options\.useSelfHostedSearch === true/);
+  assert.match(source, /useSelfHostedCrawler = options\.useSelfHostedCrawler === true/);
+  assert.doesNotMatch(source, /throwIfAborted\(attemptSignal \?\? options\.signal\);\n\s*const attempts/);
+  assert.match(source, /run: \(signal\?: AbortSignal\) => Promise<Candidate\[\]>/);
+  assert.match(source, /attemptSignal \?\? options\.signal/);
+  assert.match(source, /\{ signal: options\.signal \}/);
+  assert.match(source, /extractOpportunitiesBatch\([\s\S]*options\.signal/);
 });
 
 test("query contexts remain distinct and service scope fallback is stable", () => {

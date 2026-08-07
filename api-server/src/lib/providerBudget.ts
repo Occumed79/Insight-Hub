@@ -50,6 +50,8 @@ const KEY_PREFIX = "provider-budget:v2:";
 const memory = new Map<string, MemoryBudgetEntry>();
 const writeQueues = new Map<string, Promise<void>>();
 const MEMORY_TTL_MS = 5_000;
+const MEMORY_RETENTION_MS = 60_000;
+const MAX_MEMORY_ENTRIES = 128;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
@@ -110,8 +112,22 @@ function parseState(provider: string, raw: string | undefined): ProviderBudgetSt
   }
 }
 
+function pruneMemory(now = Date.now()): void {
+  for (const [provider, entry] of memory) {
+    if (now - entry.loadedAt > MEMORY_RETENTION_MS) memory.delete(provider);
+  }
+  while (memory.size > MAX_MEMORY_ENTRIES) {
+    const oldest = memory.keys().next().value as string | undefined;
+    if (!oldest) break;
+    memory.delete(oldest);
+  }
+}
+
 function cacheState(state: ProviderBudgetState): void {
+  pruneMemory();
+  memory.delete(state.provider);
   memory.set(state.provider, { state, loadedAt: Date.now() });
+  pruneMemory();
 }
 
 function envToken(provider: string): string {
@@ -169,10 +185,12 @@ export function providerBudgetPolicy(provider: string): ProviderBudgetPolicy {
 }
 
 export async function getProviderBudget(provider: string): Promise<ProviderBudgetState> {
+  pruneMemory();
   const cached = memory.get(provider);
   if (cached && Date.now() - cached.loadedAt < MEMORY_TTL_MS) {
     const normalized = normalizeWindow(cached.state);
-    memory.set(provider, { ...cached, state: normalized });
+    memory.delete(provider);
+    memory.set(provider, { ...cached, state: normalized, loadedAt: Date.now() });
     return normalized;
   }
 
@@ -254,6 +272,13 @@ export function sanitizeProviderErrorMessage(message: string): string {
     .slice(0, 300);
 }
 
+export function isOrchestrationCancellation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ingestion run cancellation requested|manual ingestion cancelled|ingestion run exceeded .*maximum duration|provider pool operation aborted|AI extraction aborted/i.test(
+    message,
+  );
+}
+
 function classifyFailure(error: unknown): {
   outcome: ProviderBudgetOutcome;
   cooldownMs: number;
@@ -325,6 +350,10 @@ export async function recordProviderFailure(
   provider: string,
   error: unknown,
 ): Promise<void> {
+  // User/run cancellation and a parent run deadline are orchestration outcomes,
+  // not provider reliability failures. Do not consume budget or create cooldowns.
+  if (isOrchestrationCancellation(error)) return;
+
   const failure = classifyFailure(error);
   await recordBudgetMutation(provider, (state, now) => ({
     ...state,
@@ -411,6 +440,7 @@ export async function selectBudgetedProviders(
   providers: string[],
   maxProviders: number,
 ): Promise<string[]> {
+  if (maxProviders <= 0) return [];
   const rows = await Promise.all(
     providers.map(async (provider, index) => ({
       provider,
@@ -426,7 +456,7 @@ export async function selectBudgetedProviders(
       if (rightScore !== leftScore) return rightScore - leftScore;
       return left.index - right.index;
     })
-    .slice(0, Math.max(1, maxProviders))
+    .slice(0, maxProviders)
     .map(({ provider }) => provider);
 }
 

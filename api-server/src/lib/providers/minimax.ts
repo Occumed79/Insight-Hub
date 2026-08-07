@@ -35,7 +35,11 @@ export class MinimaxProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  async complete(prompt: string, maxTokens = 512): Promise<string> {
+  async complete(
+    prompt: string,
+    maxTokens = 512,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const apiKey = await this.getApiKey();
     if (!apiKey) throw new Error("Minimax API key not configured.");
 
@@ -51,6 +55,9 @@ export class MinimaxProvider implements DataSourceProvider {
         max_tokens: maxTokens,
         temperature: 0.2,
       }),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
