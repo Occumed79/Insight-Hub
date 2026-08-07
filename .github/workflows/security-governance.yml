@@ -1,0 +1,52 @@
+name: Security governance
+
+on:
+  pull_request:
+    paths:
+      - "**/package.json"
+      - "pnpm-lock.yaml"
+      - "render.yaml"
+      - "scripts/secret-hygiene-audit.mjs"
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "**/package.json"
+      - "pnpm-lock.yaml"
+      - "render.yaml"
+      - "scripts/secret-hygiene-audit.mjs"
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Secret hygiene audit
+        run: node scripts/secret-hygiene-audit.mjs
+
+      - name: High and critical production dependency audit
+        run: pnpm audit --prod --audit-level high
