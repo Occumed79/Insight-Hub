@@ -32,6 +32,57 @@ let notRelevant = false;
 const future = new Date(Date.now() + 30 * 86_400_000).toISOString();
 const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
 
+function forecastRecord(recompete) {
+  return {
+    id: recompete ? "recompete-browser-001" : "forecast-browser-001",
+    source: "govconapi",
+    sourceId: recompete ? "REC-001" : "FCO-001",
+    title: recompete
+      ? "Occupational Health Services Recompete"
+      : "Planned Occupational Health Medical Services",
+    agency: "Department of Example",
+    subAgency: "Workforce Health Office",
+    description: recompete
+      ? "Forecasted recompete for occupational health examinations, medical surveillance, and testing services."
+      : "Forward acquisition forecast for occupational health examinations, audiometry, spirometry, and workforce medical services.",
+    naics: "621111",
+    setAside: "Small Business",
+    state: "VA",
+    valueRangeText: "$1M-$5M",
+    valueLow: 1_000_000,
+    valueHigh: 5_000_000,
+    estimatedSolicitationDate: future,
+    estimatedAwardFiscalYear: new Date().getUTCFullYear() + 1,
+    estimatedAwardQuarter: "Q2",
+    status: "forecast",
+    isRecompete: recompete,
+    incumbentName: recompete ? "Example Incumbent LLC" : null,
+    incumbentAward: recompete
+      ? {
+          recipientName: "Example Incumbent LLC",
+          currentValue: 2_750_000,
+          expires: future,
+          awardingAgency: "Department of Example",
+          latestActionDate: recent,
+        }
+      : null,
+    pointOfContact: {
+      name: "Contracting Officer",
+      email: "co@example.gov",
+      phone: null,
+    },
+    sourceUrl: "https://example.gov/forecast/occupational-health",
+    lastUpdatedDate: recent,
+    relevance: {
+      score: 95,
+      classification: "strong",
+      semanticSimilarity: 0.94,
+      provider: "deterministic",
+      reasons: ["Core occupational-health scope"],
+    },
+  };
+}
+
 await page.route("**/api/**", async (route) => {
   const request = route.request();
   const url = new URL(request.url());
@@ -117,7 +168,8 @@ await page.route("**/api/**", async (route) => {
     request.method() === "POST" &&
     /^\/api\/opportunities\/[^/]+\/feedback$/.test(path)
   ) {
-    const body = request.postDataJSON?.() ?? JSON.parse(request.postData() || "{}");
+    const body =
+      request.postDataJSON?.() ?? JSON.parse(request.postData() || "{}");
     if (body.grade === "spam") notRelevant = true;
     return json({
       success: true,
@@ -127,6 +179,97 @@ await page.route("**/api/**", async (route) => {
         context: "scope:occupational-health",
         contextHash: "browser-smoke",
       },
+    });
+  }
+
+  if (path === "/api/govcon/forecasts" && request.method() === "GET") {
+    const recompete = url.searchParams.get("recompete") === "true";
+    const record = forecastRecord(recompete);
+    return json({
+      records: [record],
+      pagination: { limit: 50, offset: 0, total: 1, hasNext: false },
+      sourcePageRecords: 1,
+      semanticRejectedCount: 0,
+      suppressedCount: 0,
+      lowRelevanceCount: 0,
+      semanticProvider: "deterministic",
+      source: recompete ? "govconapi" : "govcon+official-fco",
+      sourceBreakdown: recompete
+        ? undefined
+        : {
+            govcon: 1,
+            officialAgencyForecasts: 0,
+            agencyDiscoveryProviders: ["langsearch"],
+            recoveredErrors: [],
+          },
+      fetchedAt: new Date().toISOString(),
+      cached: false,
+    });
+  }
+
+  if (path === "/api/govcon/feedback" && request.method() === "POST") {
+    return json({ success: true });
+  }
+
+  if (
+    path === "/api/govcon/recompete-verify" &&
+    request.method() === "POST"
+  ) {
+    return json({
+      confidence: "verified",
+      confidenceScore: 94,
+      summary: "Official award evidence confirms the incumbent position.",
+      evidence: [
+        {
+          source: "USAspending",
+          awardId: "CONT_AWD_BROWSER001",
+          recipientName: "Example Incumbent LLC",
+          agency: "Department of Example",
+          description: "Occupational health services",
+          amount: 2_750_000,
+          startDate: recent,
+          endDate: future,
+          naics: "621111",
+          sourceUrl: "https://usaspending.gov/award/browser001",
+          matchScore: 96,
+        },
+      ],
+      sourcesChecked: [
+        { source: "USAspending", status: "matched" },
+        { source: "SAM Contract Awards", status: "matched" },
+      ],
+      verifiedAt: new Date().toISOString(),
+      cached: false,
+    });
+  }
+
+  if (path === "/api/relevant-news" && request.method() === "GET") {
+    return json({
+      articles: [
+        {
+          id: "news-browser-001",
+          title: "Federal Agency Announces New Occupational Health Contract",
+          description:
+            "The agency announced a new acquisition for workforce medical services and occupational health support.",
+          content: null,
+          url: "https://example.com/federal-contract-news",
+          image: null,
+          publishedAt: recent,
+          source: {
+            name: "Federal Contract News",
+            url: "https://example.com",
+            country: "us",
+          },
+          relevanceScore: 92,
+        },
+      ],
+      totalArticles: 1,
+      upstreamArticles: 3,
+      filteredOut: 2,
+      query: "federal contracts occupational health",
+      source: "gnews",
+      fetchedAt: new Date().toISOString(),
+      cached: false,
     });
   }
 
@@ -148,7 +291,10 @@ try {
   await page.getByRole("button", { name: "Bid-ready & Verified" }).waitFor();
   await page.getByRole("button", { name: "Fetch Intelligence" }).waitFor();
 
-  const card = page.locator("article").filter({ hasText: opportunityTitle }).first();
+  const card = page
+    .locator("article")
+    .filter({ hasText: opportunityTitle })
+    .first();
   await card.waitFor();
   await card.getByTitle("Excellent fit").waitFor();
   await card.getByTitle("Good fit").waitFor();
@@ -176,6 +322,47 @@ try {
     timeout: 10_000,
   });
 
+  await page.goto(`${baseUrl}/portal/forecasts`, {
+    waitUntil: "networkidle",
+    timeout: 30_000,
+  });
+  await page.getByRole("heading", { name: "Forecasts" }).waitFor();
+  await page
+    .getByText("Planned Occupational Health Medical Services", { exact: true })
+    .waitFor();
+  await page.getByText("95% fit", { exact: true }).waitFor();
+  await page.getByTitle("Hide as not relevant").waitFor();
+
+  await page.goto(`${baseUrl}/portal/recompete-watch`, {
+    waitUntil: "networkidle",
+    timeout: 30_000,
+  });
+  await page.getByRole("heading", { name: "Recompete Watch" }).waitFor();
+  await page
+    .getByText("Occupational Health Services Recompete", { exact: true })
+    .waitFor();
+  await page.getByText("Incumbent position", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Verify official awards" }).click();
+  await page
+    .getByText("Official award evidence confirms the incumbent position.", {
+      exact: true,
+    })
+    .waitFor();
+  await page.getByText("USAspending", { exact: true }).waitFor();
+
+  await page.goto(`${baseUrl}/portal/relevant-news`, {
+    waitUntil: "networkidle",
+    timeout: 30_000,
+  });
+  await page.getByRole("heading", { name: "Relevant News" }).waitFor();
+  await page
+    .getByText("Federal Agency Announces New Occupational Health Contract", {
+      exact: true,
+    })
+    .waitFor();
+  await page.getByText("relevance 92", { exact: true }).waitFor();
+  await page.getByRole("link", { name: "Read Article" }).waitFor();
+
   assert.deepEqual(
     pageErrors,
     [],
@@ -183,15 +370,23 @@ try {
   );
   console.log(
     JSON.stringify({
-      event: "opportunities_browser_acceptance_passed",
-      route: "/portal/opportunities",
+      event: "insight_hub_browser_acceptance_passed",
+      routes: [
+        "/portal/opportunities",
+        "/portal/forecasts",
+        "/portal/recompete-watch",
+        "/portal/relevant-news",
+      ],
       verified: [
-        "page-render",
+        "opportunity-page-render",
         "quality-tabs",
         "card-feedback-before-brief",
         "federal-ensemble-dialog",
         "browser-discovery-selector",
         "not-relevant-refetch-suppression",
+        "forecast-page-and-ranked-record",
+        "recompete-page-and-official-award-verification",
+        "relevant-news-page-and-article-link",
       ],
     }),
   );
