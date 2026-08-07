@@ -67,7 +67,7 @@ jobs:
         run: |
           psql "$RFP_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO opportunities (
-            id, notice_id, title, agency, type, status, description,
+            id, notice_id, title, agency, type, status, posted_date, description,
             source, provider_name, provider_key
           ) VALUES (
             '00000000-0000-4000-8000-000000000001',
@@ -76,6 +76,7 @@ jobs:
             'CI Test Agency',
             'Solicitation',
             'active',
+            '2026-08-07 00:00:00+00',
             'Disposable backup and restore verification record.',
             'manual',
             'manual',
