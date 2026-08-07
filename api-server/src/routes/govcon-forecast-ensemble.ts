@@ -371,7 +371,10 @@ async function fetchGovConForecastPool(
     }
     const payload = asRecord(await response.json());
     const raw = Array.isArray(payload.data) ? payload.data : [];
-    const records = raw.map(normalizeGovConForecast).filter(isForwardForecast);
+    const now = Date.now();
+    const records = raw
+      .map(normalizeGovConForecast)
+      .filter((record) => isForwardForecast(record, now));
     await recordProviderSuccess(budgetName, records.length);
     return { records, rawCount: raw.length, error: null };
   } catch (error) {
@@ -445,9 +448,6 @@ async function buildForecastDataset(
   const beforeDedupe = [...govcon.records, ...agencyFiltered];
   const combined = dedupeForecasts(beforeDedupe);
 
-  // GovCon is the primary structured forecast source. If it failed and the
-  // supplemental source produced nothing, return a real failure rather than a
-  // misleading successful empty list.
   if (combined.length === 0 && govcon.error) {
     throw Object.assign(
       new Error("No forecast source could return usable records."),
@@ -534,9 +534,6 @@ router.get("/govcon/forecasts", async (req, res, next) => {
     state: stringQuery(req.query.state, 2),
   };
 
-  // Pagination is intentionally excluded from the upstream dataset cache key.
-  // Page changes reuse the same ranked source result instead of re-spending
-  // GovCon/search-provider allowance for identical filters.
   const cacheKey = JSON.stringify({ fitOnly, focus, filters });
   pruneCache();
   const cached = cache.get(cacheKey);
