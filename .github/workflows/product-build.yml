@@ -93,7 +93,7 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @workspace/api-server exec playwright install --with-deps chromium
 
-      - name: Browser acceptance - intelligence workspaces
+      - name: Browser acceptance - intelligence workspaces and UI hardening
         shell: bash
         run: |
           set -euo pipefail
@@ -101,3 +101,4 @@ jobs:
           PREVIEW_PID=$!
           trap 'kill "$PREVIEW_PID" 2>/dev/null || true; cat /tmp/insight-hub-preview.log || true' EXIT
           INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173 node api-server/scripts/opportunities-browser-smoke.mjs
+          INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173 node api-server/scripts/ui-hardening-browser-smoke.mjs
