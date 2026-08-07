@@ -5,8 +5,6 @@ on:
     paths:
       - "lib/db/**"
       - "api-server/src/lib/rfp-startup-migrate.ts"
-      - "api-server/scripts/critical-rfp-schema-audit.mjs"
-      - "api-server/scripts/backup-restore-audit.mjs"
       - ".github/workflows/database-resilience.yml"
   workflow_dispatch:
 
@@ -63,7 +61,7 @@ jobs:
         run: pnpm --filter @workspace/api-server exec node --import tsx -e "import('./src/lib/rfp-startup-migrate.ts').then((m) => m.runRfpStartupMigrations())"
 
       - name: Verify critical schema contract
-        run: node api-server/scripts/critical-rfp-schema-audit.mjs
+        run: pnpm --filter @workspace/db exec node ./scripts/critical-rfp-schema-audit.mjs
 
       - name: Seed disaster-recovery fixtures
         run: |
@@ -111,12 +109,12 @@ jobs:
       - name: Re-verify restored schema
         env:
           RFP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_restore
-        run: node api-server/scripts/critical-rfp-schema-audit.mjs
+        run: pnpm --filter @workspace/db exec node ./scripts/critical-rfp-schema-audit.mjs
 
       - name: Verify restored data fingerprints
         env:
           RFP_RESTORE_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_restore
-        run: node api-server/scripts/backup-restore-audit.mjs
+        run: pnpm --filter @workspace/db exec node ./scripts/backup-restore-audit.mjs
 
       - name: Upload disposable backup artifact for inspection
         uses: actions/upload-artifact@v4
