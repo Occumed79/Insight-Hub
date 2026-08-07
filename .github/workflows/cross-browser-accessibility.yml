@@ -1,0 +1,64 @@
+name: Cross-browser accessibility
+
+on:
+  pull_request:
+    paths:
+      - "intel-suite/**"
+      - "api-server/scripts/ui-hardening-browser-smoke.mjs"
+      - "api-server/scripts/settings-accessibility-browser-smoke.mjs"
+      - ".github/workflows/cross-browser-accessibility.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RFP_DATABASE_URL: postgresql://test:test@localhost:5432/rfp_core
+      INTEL_DATABASE_URL: postgresql://test:test@localhost:5432/intel
+      AUTH_DATABASE_URL: postgresql://test:test@localhost:5432/auth
+      APP_DATABASE_URL: postgresql://test:test@localhost:5432/app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production applications
+        run: pnpm run build:prod
+
+      - name: Install Playwright ${{ matrix.browser }}
+        run: pnpm --filter @workspace/api-server exec playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Browser accessibility acceptance
+        shell: bash
+        env:
+          INSIGHT_E2E_BROWSER: ${{ matrix.browser }}
+        run: |
+          set -euo pipefail
+          PORT=4173 NODE_ENV=production pnpm --filter @workspace/intel-suite run serve >/tmp/insight-hub-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true; cat /tmp/insight-hub-preview.log || true' EXIT
+          export INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173
+          node api-server/scripts/ui-hardening-browser-smoke.mjs
+          node api-server/scripts/settings-accessibility-browser-smoke.mjs

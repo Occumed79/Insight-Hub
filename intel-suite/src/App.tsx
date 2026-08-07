@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SkipFocusBridge } from "@/components/skip-focus-bridge";
 import { installStableFetch } from "@/lib/stable-fetch";
 import "@/ui-hardening.css";
 
@@ -87,6 +88,7 @@ function App() {
         <TooltipProvider>
           <ErrorBoundary>
             <div className="dark min-h-dvh">
+              <SkipFocusBridge />
               <WouterRouter>
                 <Router />
               </WouterRouter>
