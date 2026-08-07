@@ -6,11 +6,6 @@ interface DurableRateEntry {
   count: number;
 }
 
-interface DurableRateBucket {
-  version: 1;
-  entries: Record<string, DurableRateEntry>;
-}
-
 export interface DurableRateResult {
   allowed: boolean;
   retryAfterSeconds: number;
@@ -18,45 +13,64 @@ export interface DurableRateResult {
   limit: number;
 }
 
-const PREFIX = "api-rate:v1:";
-const MAX_CLIENTS_PER_BUCKET = 2_000;
+const PREFIX = "api-rate:v2:";
+const SWEEP_INTERVAL_MS = 5 * 60_000;
+const lastSweepByBucket = new Map<string, number>();
 
 function clientHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
 
-function parseBucket(raw: string | undefined): DurableRateBucket {
-  if (!raw) return { version: 1, entries: {} };
+function parseEntry(raw: string | undefined): DurableRateEntry | null {
+  if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<DurableRateBucket>;
+    const parsed = JSON.parse(raw) as Partial<DurableRateEntry>;
+    if (
+      typeof parsed.startedAt !== "number" ||
+      !Number.isFinite(parsed.startedAt) ||
+      typeof parsed.count !== "number" ||
+      !Number.isFinite(parsed.count)
+    ) {
+      return null;
+    }
     return {
-      version: 1,
-      entries:
-        parsed.entries && typeof parsed.entries === "object"
-          ? parsed.entries
-          : {},
+      startedAt: Math.max(0, Math.floor(parsed.startedAt)),
+      count: Math.max(0, Math.floor(parsed.count)),
     };
   } catch {
-    return { version: 1, entries: {} };
+    return null;
   }
 }
 
-function prune(
-  bucket: DurableRateBucket,
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+async function sweepExpired(
+  bucketName: string,
   now: number,
   windowMs: number,
-): DurableRateBucket {
-  const entries = Object.entries(bucket.entries)
-    .filter(([, entry]) => now - entry.startedAt < windowMs)
-    .sort((left, right) => right[1].startedAt - left[1].startedAt)
-    .slice(0, MAX_CLIENTS_PER_BUCKET);
-  return { version: 1, entries: Object.fromEntries(entries) };
+): Promise<void> {
+  const previous = lastSweepByBucket.get(bucketName) ?? 0;
+  if (now - previous < SWEEP_INTERVAL_MS) return;
+  lastSweepByBucket.set(bucketName, now);
+
+  const prefix = `${PREFIX}${bucketName}:`;
+  const cutoff = now - windowMs;
+  await rfpPool.query(
+    `DELETE FROM settings
+     WHERE key LIKE $1 ESCAPE '\\'
+       AND value ~ '^\\{'
+       AND COALESCE((value::jsonb ->> 'startedAt')::bigint, 0) < $2`,
+    [`${escapeLike(prefix)}%`, cutoff],
+  );
 }
 
 /**
- * Consume one request from a shared limiter bucket. The entire client map for a
- * route bucket is stored under one existing settings KV key, so the limiter is
- * shared across API instances without creating unbounded per-IP database rows.
+ * Consume one request from a durable per-client limiter entry. Each bucket/client
+ * pair has its own settings row and advisory lock, so unrelated clients do not
+ * serialize behind one large shared JSON document. The existing settings KV
+ * table keeps the state shared across API instances without a schema migration.
  */
 export async function consumeDurableRateLimit(
   bucketName: string,
@@ -66,8 +80,8 @@ export async function consumeDurableRateLimit(
   now = Date.now(),
 ): Promise<DurableRateResult> {
   const client = await rfpPool.connect();
-  const key = `${PREFIX}${bucketName}`;
   const hash = clientHash(clientIdentity);
+  const key = `${PREFIX}${bucketName}:${hash}`;
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
@@ -75,8 +89,7 @@ export async function consumeDurableRateLimit(
       "SELECT value FROM settings WHERE key = $1 FOR UPDATE",
       [key],
     );
-    const bucket = prune(parseBucket(result.rows[0]?.value), now, windowMs);
-    const existing = bucket.entries[hash];
+    const existing = parseEntry(result.rows[0]?.value);
     const current =
       !existing || now - existing.startedAt >= windowMs
         ? { startedAt: now, count: 0 }
@@ -88,6 +101,7 @@ export async function consumeDurableRateLimit(
         windowMs - (now - current.startedAt),
       );
       await client.query("COMMIT");
+      void sweepExpired(bucketName, now, windowMs).catch(() => undefined);
       return {
         allowed: false,
         retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
@@ -97,14 +111,14 @@ export async function consumeDurableRateLimit(
     }
 
     current.count += 1;
-    bucket.entries[hash] = current;
     await client.query(
       `INSERT INTO settings (key, value)
        VALUES ($1, $2)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-      [key, JSON.stringify(bucket)],
+      [key, JSON.stringify(current)],
     );
     await client.query("COMMIT");
+    void sweepExpired(bucketName, now, windowMs).catch(() => undefined);
     return {
       allowed: true,
       retryAfterSeconds: 0,
