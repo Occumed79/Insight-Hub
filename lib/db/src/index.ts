@@ -19,35 +19,61 @@ type DatabaseRoleProbe = {
 
 const dbContext = new AsyncLocalStorage<LogicalDatabase>();
 
-function requiredConnectionString(envName: ConnectionEnvName): string {
-  const value = process.env[envName];
-
+function requiredConnectionString(envName: "RFP_DATABASE_URL"): string {
+  const value = process.env[envName]?.trim();
   if (!value) {
-    throw new Error(`${envName} must be set. Insight Hub no longer falls back to DATABASE_URL for siloed database routing.`);
+    throw new Error(
+      `${envName} must be set. Insight Hub procurement runtime requires its RFP database.`,
+    );
   }
-
   return value;
 }
 
+function optionalConnectionString(envName: "INTEL_DATABASE_URL"): string | null {
+  return process.env[envName]?.trim() || null;
+}
+
+const rfpConnectionString = requiredConnectionString("RFP_DATABASE_URL");
+const intelConnectionString = optionalConnectionString("INTEL_DATABASE_URL");
+
 function safeConnectionSummary(envName: ConnectionEnvName) {
   const logicalDatabase = envName === "RFP_DATABASE_URL" ? "rfp" : "intel";
-  const raw = requiredConnectionString(envName);
+  const raw =
+    envName === "RFP_DATABASE_URL" ? rfpConnectionString : intelConnectionString;
+
+  if (!raw) {
+    return {
+      logicalDatabase,
+      source: envName,
+      configured: false,
+      host: null,
+      database: null,
+      owner: "Insight-Hub2.0",
+    };
+  }
 
   try {
     const url = new URL(raw);
     return {
       logicalDatabase,
       source: envName,
+      configured: true,
       host: url.hostname,
       database: url.pathname.replace(/^\//, "") || "neondb",
     };
   } catch {
-    return { logicalDatabase, source: envName, host: "invalid-url", database: "unknown" };
+    return {
+      logicalDatabase,
+      source: envName,
+      configured: true,
+      host: "invalid-url",
+      database: "unknown",
+    };
   }
 }
 
-function connectionTarget(envName: ConnectionEnvName): string {
-  const url = new URL(requiredConnectionString(envName));
+function connectionTarget(connectionString: string): string {
+  const url = new URL(connectionString);
   return `${url.hostname}${url.pathname}`;
 }
 
@@ -64,10 +90,10 @@ function boundedIntegerEnv(
 
 function createPool(
   logicalDatabase: LogicalDatabase,
-  envName: ConnectionEnvName,
+  connectionString: string,
 ): pg.Pool {
   const pool = new Pool({
-    connectionString: requiredConnectionString(envName),
+    connectionString,
     max: boundedIntegerEnv("DATABASE_POOL_MAX", 3, 1, 8),
     min: 0,
     idleTimeoutMillis: boundedIntegerEnv(
@@ -104,6 +130,39 @@ function createPool(
   return pool;
 }
 
+function intelUnavailableError(): Error {
+  return new Error(
+    "INTEL_DATABASE_URL is not configured in Insight Hub. Transferred intelligence data is owned by Insight Hub 2.",
+  );
+}
+
+function createUnavailableIntelPool(): pg.Pool {
+  let poolLike: pg.Pool;
+  const target = {
+    query: async () => {
+      throw intelUnavailableError();
+    },
+    connect: async () => {
+      throw intelUnavailableError();
+    },
+    end: async () => undefined,
+    on: () => poolLike,
+  } as unknown as pg.Pool;
+  poolLike = target;
+  return target;
+}
+
+function createUnavailableIntelDb<T>(): T {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw intelUnavailableError();
+      },
+    },
+  ) as T;
+}
+
 async function probeDatabaseRole(pool: pg.Pool): Promise<DatabaseRoleProbe> {
   const result = await pool.query<{
     opportunities: string | null;
@@ -130,7 +189,10 @@ async function probeDatabaseRole(pool: pg.Pool): Promise<DatabaseRoleProbe> {
   };
 }
 
-export function runWithDbContext<T>(logicalDatabase: LogicalDatabase, callback: () => T): T {
+export function runWithDbContext<T>(
+  logicalDatabase: LogicalDatabase,
+  callback: () => T,
+): T {
   return dbContext.run(logicalDatabase, callback);
 }
 
@@ -138,19 +200,34 @@ export function getActiveLogicalDatabase(): LogicalDatabase {
   return dbContext.getStore() ?? "rfp";
 }
 
-export const rfpPool = createPool("rfp", "RFP_DATABASE_URL");
-export const intelPool = createPool("intel", "INTEL_DATABASE_URL");
+export function isIntelDatabaseConfigured(): boolean {
+  return Boolean(intelConnectionString);
+}
+
+export const rfpPool = createPool("rfp", rfpConnectionString);
+export const intelPool = intelConnectionString
+  ? createPool("intel", intelConnectionString)
+  : createUnavailableIntelPool();
 
 export const rfpDb = drizzle(rfpPool, { schema: rfpSchema });
-export const intelDb = drizzle(intelPool, { schema: intelSchema });
+const configuredIntelDb = intelConnectionString
+  ? drizzle(intelPool, { schema: intelSchema })
+  : null;
+export const intelDb = (configuredIntelDb ??
+  createUnavailableIntelDb<NonNullable<typeof configuredIntelDb>>()) as NonNullable<
+  typeof configuredIntelDb
+>;
 
-const dynamicDb = new Proxy({}, {
-  get(_target, property) {
-    const activeDb = getActiveLogicalDatabase() === "intel" ? intelDb : rfpDb;
-    const value = (activeDb as any)[property];
-    return typeof value === "function" ? value.bind(activeDb) : value;
+const dynamicDb = new Proxy(
+  {},
+  {
+    get(_target, property) {
+      const activeDb = getActiveLogicalDatabase() === "intel" ? intelDb : rfpDb;
+      const value = (activeDb as any)[property];
+      return typeof value === "function" ? value.bind(activeDb) : value;
+    },
   },
-});
+);
 
 export const db = dynamicDb as typeof rfpDb & typeof intelDb;
 export const pool = rfpPool;
@@ -162,9 +239,31 @@ export function getDatabaseConfigSummary() {
   };
 }
 
+export async function verifyRfpDatabase() {
+  const rfp = await probeDatabaseRole(rfpPool);
+  if (!rfp.hasOpportunities) {
+    throw new Error(
+      "RFP_DATABASE_URL does not contain the required public.opportunities table.",
+    );
+  }
+  return {
+    config: { rfp: safeConnectionSummary("RFP_DATABASE_URL") },
+    roles: { rfp },
+  };
+}
+
+/**
+ * Legacy cross-database verifier retained for tools that intentionally inspect
+ * both databases. Procurement startup/readiness does not call this anymore.
+ */
 export async function verifyDatabaseRouting() {
-  if (connectionTarget("RFP_DATABASE_URL") === connectionTarget("INTEL_DATABASE_URL")) {
-    throw new Error("RFP_DATABASE_URL and INTEL_DATABASE_URL resolve to the same database target.");
+  if (!intelConnectionString) {
+    throw intelUnavailableError();
+  }
+  if (connectionTarget(rfpConnectionString) === connectionTarget(intelConnectionString)) {
+    throw new Error(
+      "RFP_DATABASE_URL and INTEL_DATABASE_URL resolve to the same database target.",
+    );
   }
 
   const [rfp, intel] = await Promise.all([
@@ -173,7 +272,9 @@ export async function verifyDatabaseRouting() {
   ]);
 
   if (!rfp.hasOpportunities) {
-    throw new Error("RFP_DATABASE_URL does not contain the required public.opportunities table.");
+    throw new Error(
+      "RFP_DATABASE_URL does not contain the required public.opportunities table.",
+    );
   }
 
   const missingIntelTables = [
