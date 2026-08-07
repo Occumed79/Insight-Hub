@@ -12,6 +12,7 @@ import prospectLocationsRouter from "./prospect-locations";
 import prospectContactsRouter from "./prospect-contacts";
 import clientsRouter from "./clients";
 import clientContactsRouter from "./client-contacts";
+import forecastPolicyBoundaryRouter from "./forecast-policy-boundary";
 import federalIntelRouter from "./federal-intel";
 import stateAgenciesRouter from "./state-agencies";
 import intelligenceFeedRouter from "./intelligence-feed";
@@ -83,8 +84,6 @@ router.use(
     () => import("./rfp-sources"),
   ),
 );
-// Forecasts use GovCon + official governmentwide/agency FCO discovery. The
-// dedicated recompete path falls through to govconRouter unchanged.
 router.use(govconForecastEnsembleRouter);
 router.use(govconRouter);
 router.use(relevantNewsRouter);
@@ -94,6 +93,9 @@ router.use(prospectLocationsRouter);
 router.use(prospectContactsRouter);
 router.use(clientsRouter);
 router.use(clientContactsRouter);
+// Prevent the legacy forecast bucket from reappearing and route FAR/DFARS to
+// Policy Radar before the generic federal-intel implementation can handle them.
+router.use(forecastPolicyBoundaryRouter);
 router.use(federalIntelRouter);
 router.use(stateAgenciesRouter);
 router.use(intelligenceFeedRouter);
