@@ -384,7 +384,7 @@ export async function webIntelligenceFetch(options: {
   ).slice(0, 10);
 
   for (const query of discoveryQueries) {
-    throwIfAborted(attemptSignal ?? options.signal);
+    throwIfAborted(options.signal);
     const attempts: Array<{
       name: SearchCandidateProvider;
       isConfigured: () => Promise<boolean>;
@@ -398,7 +398,6 @@ export async function webIntelligenceFetch(options: {
         isConfigured: () => rssAggregatorProvider.isConfigured(),
         run: async (attemptSignal) => {
           const result = await rssAggregatorProvider.fetch({ limit: 50, signal: attemptSignal ?? options.signal });
-          stats.rssAggregatorResults += result.records.length;
           return result.records.map((record) => ({
             title: record.title,
             url: record.sourceUrl || "",
@@ -418,8 +417,8 @@ export async function webIntelligenceFetch(options: {
           const results = await selfHostedSearchProvider.search({
             query,
             limit: 20,
+            signal: attemptSignal ?? options.signal,
           });
-          stats.selfHostedSearchResults += results.length;
           return results.map((result) => ({
             title: result.title,
             url: result.url || "",
@@ -642,7 +641,7 @@ export async function webIntelligenceFetch(options: {
             {
               name: "selfHostedCrawler" as const,
               isConfigured: () => selfHostedCrawlerProvider.isConfigured(),
-              run: async (attemptSignal) => {
+              run: async (attemptSignal?: AbortSignal) => {
                 const result = await selfHostedCrawlerProvider.getText(candidate.url, { signal: attemptSignal ?? options.signal });
                 return result;
               },
@@ -655,7 +654,7 @@ export async function webIntelligenceFetch(options: {
             {
               name: "firecrawl" as const,
               isConfigured: () => firecrawlProvider.isConfigured(),
-              run: async (attemptSignal) =>
+              run: async (attemptSignal?: AbortSignal) =>
                 (await firecrawlProvider.scrape(candidate.url, attemptSignal ?? options.signal))?.markdown ??
                 null,
             },
@@ -664,17 +663,17 @@ export async function webIntelligenceFetch(options: {
       {
         name: "jina" as const,
         isConfigured: () => jinaProvider.isConfigured(),
-        run: (attemptSignal) => jinaProvider.extractUrl(candidate.url, 5_000, attemptSignal ?? options.signal),
+        run: (attemptSignal?: AbortSignal) => jinaProvider.extractUrl(candidate.url, 5_000, attemptSignal ?? options.signal),
       },
       {
         name: "olostep" as const,
         isConfigured: () => olostepProvider.isConfigured(),
-        run: (attemptSignal) => olostepProvider.getText(candidate.url, attemptSignal ?? options.signal),
+        run: (attemptSignal?: AbortSignal) => olostepProvider.getText(candidate.url, attemptSignal ?? options.signal),
       },
       {
         name: "cloudflare-worker" as const,
         isConfigured: () => cloudflareWorkerProvider.isConfigured(),
-        run: (attemptSignal) => cloudflareWorkerProvider.extractUrl(candidate.url, 8_000, attemptSignal ?? options.signal),
+        run: (attemptSignal?: AbortSignal) => cloudflareWorkerProvider.extractUrl(candidate.url, 8_000, attemptSignal ?? options.signal),
       },
     ];
     const enriched = await runLimitedProviderPool(
