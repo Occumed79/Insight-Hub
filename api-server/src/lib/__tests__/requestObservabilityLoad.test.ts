@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import express from "express";
+import type { Server } from "node:http";
 import requestObservability from "../../middleware/request-observability";
 import {
   resetRuntimeTelemetryForTests,
@@ -13,7 +14,7 @@ test("request observability remains bounded under concurrent API load", async ()
   app.use(requestObservability);
   app.get("/api/ping", (_req, res) => res.json({ ok: true }));
 
-  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+  const server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
   });
 
@@ -23,8 +24,8 @@ test("request observability remains bounded under concurrent API load", async ()
     const baseUrl = `http://127.0.0.1:${address.port}`;
     const total = 200;
     const concurrency = 25;
-    const latencies = [];
-    const requestIds = new Set();
+    const latencies: number[] = [];
+    const requestIds = new Set<string>();
 
     for (let offset = 0; offset < total; offset += concurrency) {
       const batch = Array.from(
@@ -45,19 +46,26 @@ test("request observability remains bounded under concurrent API load", async ()
 
     latencies.sort((a, b) => a - b);
     const p95 = latencies[Math.ceil(latencies.length * 0.95) - 1] ?? 0;
-    assert.equal(requestIds.size, total, "each independent request should receive a distinct ID");
-    assert.ok(p95 < 1_000, `synthetic API p95 ${p95.toFixed(1)}ms exceeds 1000ms`);
+    assert.equal(
+      requestIds.size,
+      total,
+      "each independent request should receive a distinct ID",
+    );
+    assert.ok(
+      p95 < 1_000,
+      `synthetic API p95 ${p95.toFixed(1)}ms exceeds 1000ms`,
+    );
 
     const metric = runtimeTelemetrySnapshot().routes.find(
       (route) => route.key === "GET /api/ping",
     );
     assert.ok(metric);
-    assert.equal(metric?.count, total);
-    assert.equal(metric?.errorCount, 0);
-    assert.ok((metric?.p95Ms ?? 0) < 1_000);
+    assert.equal(metric.count, total);
+    assert.equal(metric.errorCount, 0);
+    assert.ok(metric.p95Ms < 1_000);
   } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
     });
   }
 });
