@@ -1,0 +1,125 @@
+name: Database resilience
+
+on:
+  pull_request:
+    paths:
+      - "lib/db/**"
+      - "api-server/src/lib/rfp-startup-migrate.ts"
+      - ".github/workflows/database-resilience.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema-and-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: rfp_core
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d rfp_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RFP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      INTEL_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      AUTH_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      APP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_core
+      PGPASSWORD: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply declared RFP schema to disposable Postgres
+        run: pnpm --filter @workspace/db exec drizzle-kit push --config ./drizzle.config.ts --force
+
+      - name: Run idempotent startup migrations
+        run: pnpm --filter @workspace/api-server exec node --import tsx -e "import('./src/lib/rfp-startup-migrate.ts').then((m) => m.runRfpStartupMigrations())"
+
+      - name: Verify critical schema contract
+        run: pnpm --filter @workspace/db exec node ./scripts/critical-rfp-schema-audit.mjs
+
+      - name: Seed disaster-recovery fixtures
+        run: |
+          psql "$RFP_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO opportunities (
+            id, notice_id, title, agency, type, status, posted_date, description,
+            source, provider_name, provider_key
+          ) VALUES (
+            '00000000-0000-4000-8000-000000000001',
+            'DR-RESTORE-001',
+            'Disaster Recovery Occupational Health Fixture',
+            'CI Test Agency',
+            'Solicitation',
+            'active',
+            '2026-08-07 00:00:00+00',
+            'Disposable backup and restore verification record.',
+            'manual',
+            'manual',
+            'manual'
+          );
+
+          INSERT INTO opportunity_feedback (
+            id, opportunity_id, grade, agency, provider_name, title, description
+          ) VALUES (
+            'dr-feedback-001',
+            '00000000-0000-4000-8000-000000000001',
+            'excellent',
+            'CI Test Agency',
+            'manual',
+            'Disaster Recovery Occupational Health Fixture',
+            'Disposable backup and restore verification record.'
+          );
+
+          INSERT INTO settings (key, value)
+          VALUES ('dr_restore_marker', 'backup-restore-ok');
+          SQL
+
+      - name: Create logical backup
+        run: pg_dump --format=custom --no-owner --no-privileges --dbname="$RFP_DATABASE_URL" --file=/tmp/rfp-core.dump
+
+      - name: Restore into a second disposable database
+        run: |
+          psql -h 127.0.0.1 -U test -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE rfp_restore'
+          pg_restore --no-owner --no-privileges --exit-on-error --dbname=postgresql://test:test@127.0.0.1:5432/rfp_restore /tmp/rfp-core.dump
+
+      - name: Re-verify restored schema
+        env:
+          RFP_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_restore
+        run: pnpm --filter @workspace/db exec node ./scripts/critical-rfp-schema-audit.mjs
+
+      - name: Verify restored data fingerprints
+        env:
+          RFP_RESTORE_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/rfp_restore
+        run: pnpm --filter @workspace/db exec node ./scripts/backup-restore-audit.mjs
+
+      - name: Upload disposable backup artifact for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: rfp-disaster-recovery-fixture-${{ github.run_id }}
+          path: /tmp/rfp-core.dump
+          retention-days: 1
