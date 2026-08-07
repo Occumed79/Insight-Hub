@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   installStableFetch,
+  MAX_STABLE_FETCH_CACHE_BYTES,
   MAX_STABLE_FETCH_CACHE_ENTRIES,
 } from "../stable-fetch";
 
-test("stable fetch bounds last-known-good cache and preserves one request ID across retries", async () => {
+test("stable fetch bounds fallback memory, preserves request IDs, and cancels retry backoff", async () => {
   const originalFetch = globalThis.fetch;
   let failing = false;
   const requestIds = new Map<string, string[]>();
@@ -38,6 +39,8 @@ test("stable fetch bounds last-known-good cache and preserves one request ID acr
   }) as typeof fetch;
 
   try {
+    assert.ok(MAX_STABLE_FETCH_CACHE_ENTRIES <= 64);
+    assert.ok(MAX_STABLE_FETCH_CACHE_BYTES <= 24 * 1024 * 1024);
     installStableFetch();
 
     for (let index = 0; index <= MAX_STABLE_FETCH_CACHE_ENTRIES; index += 1) {
@@ -70,6 +73,24 @@ test("stable fetch bounds last-known-good cache and preserves one request ID acr
       new Set(failedAttemptIds).size,
       1,
       "all retries for one logical request must carry the same request ID",
+    );
+
+    const controller = new AbortController();
+    const cancelled = fetch("/api/cancel-backoff", {
+      signal: controller.signal,
+    });
+    setTimeout(
+      () =>
+        controller.abort(
+          new DOMException("navigation cancelled request", "AbortError"),
+        ),
+      10,
+    );
+    await assert.rejects(cancelled, /navigation cancelled request/);
+    assert.equal(
+      requestIds.get("/api/cancel-backoff")?.length,
+      1,
+      "aborting during retry backoff must prevent a second network attempt",
     );
   } finally {
     globalThis.fetch = originalFetch;
