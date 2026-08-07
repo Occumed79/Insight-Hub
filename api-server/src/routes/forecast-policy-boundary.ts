@@ -22,7 +22,9 @@ function decode(value: string): string {
 }
 
 function tag(block: string, name: string): string | null {
-  const match = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i"));
+  const match = block.match(
+    new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i"),
+  );
   return match?.[1] ? decode(match[1]) : null;
 }
 
@@ -38,6 +40,12 @@ function parseFeed(xml: string, limit = 30) {
         pubDate: tag(block, "pubDate"),
       };
     });
+}
+
+export function policyFeedDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function scorePolicy(text: string): number {
@@ -67,11 +75,18 @@ router.post("/federal-intel/forecast/refresh", (_req, res) =>
 router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
   const now = new Date();
   const items: any[] = [];
-  const sources: Array<{ source: string; count: number; ok: boolean; error?: string }> = [];
+  const sources: Array<{
+    source: string;
+    count: number;
+    ok: boolean;
+    error?: string;
+  }> = [];
 
   for (const feed of FEEDS) {
     try {
-      const response = await fetch(feed.url, { signal: AbortSignal.timeout(10_000) });
+      const response = await fetch(feed.url, {
+        signal: AbortSignal.timeout(10_000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const parsed = parseFeed(await response.text());
       let count = 0;
@@ -89,6 +104,7 @@ router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
           hash.slice(16, 20),
           hash.slice(20, 32),
         ].join("-");
+        const datePosted = policyFeedDate(entry.pubDate);
         const rows = await db
           .insert(federalIntelItemsTable)
           .values({
@@ -99,7 +115,7 @@ router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
             component: feed.name,
             title: entry.title,
             summary: entry.description?.slice(0, 1000) ?? null,
-            datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
+            datePosted,
             status: "published",
             relatedRef: feed.name,
             occuMedScore: score,
@@ -115,7 +131,7 @@ router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
             set: {
               title: entry.title,
               summary: entry.description?.slice(0, 1000) ?? null,
-              datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
+              datePosted,
               occuMedScore: score,
               sourceUrl: entry.link,
               rawJson: JSON.stringify(entry),
