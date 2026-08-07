@@ -30,7 +30,6 @@ import { runLimitedProviderPool } from "../limitedProviderPool";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
-const NOW = new Date();
 const FIRECRAWL_MAX_URLS = 10;
 
 // Result-quantity controls (PR B). Serper/Exa bill per call (not per result for
@@ -215,8 +214,14 @@ function buildWebOpportunity(
 
 function isExpiredDeadline(deadline: Date | undefined | null): boolean {
   if (!deadline) return false;
-  const oneDayAgo = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return deadline < oneDayAgo;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error("Web intelligence discovery aborted");
+  }
 }
 
 function addCandidate(
@@ -253,6 +258,7 @@ export async function webIntelligenceFetch(options: {
   useSelfHostedCrawler?: boolean;
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
+  throwIfAborted(options.signal);
   const errors: string[] = [];
   const stats = {
     serperResults: 0,
@@ -292,8 +298,8 @@ export async function webIntelligenceFetch(options: {
   const useSocrata = options.useSocrata === true;
   const useWebsearch = options.useWebsearch === true;
   const useRssAggregator = options.useRssAggregator !== false; // Default to true for stable provider
-  const useSelfHostedSearch = options.useSelfHostedSearch !== false; // Default to true for stable provider
-  const useSelfHostedCrawler = options.useSelfHostedCrawler !== false; // Default to true for stable provider
+  const useSelfHostedSearch = options.useSelfHostedSearch === true;
+  const useSelfHostedCrawler = options.useSelfHostedCrawler === true;
 
   type SerperQuery = {
     query: string;
@@ -378,6 +384,7 @@ export async function webIntelligenceFetch(options: {
   ).slice(0, 10);
 
   for (const query of discoveryQueries) {
+    throwIfAborted(options.signal);
     const attempts: Array<{
       name: SearchCandidateProvider;
       isConfigured: () => Promise<boolean>;
@@ -572,6 +579,7 @@ export async function webIntelligenceFetch(options: {
       "opportunity-web-discovery",
       attempts,
       (value) => value.length > 0,
+      { signal: options.signal },
     );
     errors.push(...result.errors);
     if (!result.value || !result.provider) continue;
@@ -626,6 +634,7 @@ export async function webIntelligenceFetch(options: {
     .slice(0, FIRECRAWL_MAX_URLS);
 
   for (const { candidate, index } of toEnrich) {
+    throwIfAborted(options.signal);
     const enrichmentAttempts = [
       // Prioritize self-hosted crawler (Tier 1)
       ...(useSelfHostedCrawler
@@ -672,6 +681,7 @@ export async function webIntelligenceFetch(options: {
       "opportunity-page-enrichment",
       enrichmentAttempts,
       (value) => typeof value === "string" && value.length > 200,
+      { signal: options.signal },
     );
     errors.push(...enriched.errors);
     if (!enriched.value || !enriched.provider) continue;
@@ -718,6 +728,7 @@ export async function webIntelligenceFetch(options: {
           url: c.url,
           content: c.content,
         })),
+        options.signal,
       );
     if (rateLimited) stats.geminiRateLimited = true;
     stats.aiCacheHits = cacheHits;
@@ -820,9 +831,13 @@ export async function webIntelligenceFetch(options: {
       stats.heuristicExtracted++;
     });
   } catch (err: any) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? err;
+    }
     errors.push(`Web intelligence error: ${err.message}`);
   }
 
+  throwIfAborted(options.signal);
   return {
     opportunities,
     stats,

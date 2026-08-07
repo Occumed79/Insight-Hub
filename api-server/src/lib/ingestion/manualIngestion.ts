@@ -899,7 +899,13 @@ async function runProviderWithDeadline(
       controller.signal.reason instanceof ProviderTimeoutError
     )
       throw controller.signal.reason;
-    if (runSignal.aborted) throw new RunCancelledError();
+    if (runSignal.aborted) {
+      const reason = runSignal.reason;
+      if (reason instanceof RunTimeoutError || reason instanceof RunCancelledError) {
+        throw reason;
+      }
+      throw new RunCancelledError();
+    }
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -920,6 +926,7 @@ async function executePersistedRun(
     () => runController.abort(new RunTimeoutError()),
     RUN_DEADLINE_MS,
   );
+  runTimeout.unref?.();
   const runErrors: string[] = [];
   let cancelled = false;
   let timedOut = false;
@@ -993,6 +1000,9 @@ async function executePersistedRun(
             .where(eq(opportunityIngestionRunsTable.id, runId));
         });
         for (const record of result.records) {
+          if (runController.signal.aborted) {
+            throw runController.signal.reason ?? new RunCancelledError();
+          }
           if (await cancellationRequested(runId)) throw new RunCancelledError();
           const counts = await processOneRecord(
             runId,

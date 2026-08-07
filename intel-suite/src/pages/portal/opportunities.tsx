@@ -224,6 +224,10 @@ export default function OpportunitiesDashboard() {
   const [lastStartedRunId, setLastStartedRunId] = useState<string | null>(null);
   const activeRunIds = useRef(new Set<string>());
   const notifiedRunIds = useRef(new Set<string>());
+  const summaryRequestRef = useRef<{
+    opportunityId: string;
+    controller: AbortController;
+  } | null>(null);
 
   const [fetchQuery, setFetchQuery] = useState("");
   const [fetchDays, setFetchDays] = useState("30");
@@ -318,6 +322,7 @@ export default function OpportunitiesDashboard() {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
     const poll = async () => {
       try {
         const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -326,6 +331,7 @@ export default function OpportunitiesDashboard() {
           {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
+            signal: controller.signal,
           },
         );
         if (response.ok) {
@@ -373,6 +379,7 @@ export default function OpportunitiesDashboard() {
     void poll();
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
   }, [queryClient, toast, currentRun?.id, currentRun?.status]);
@@ -593,6 +600,10 @@ export default function OpportunitiesDashboard() {
   };
 
   const handleOpenSummary = async (opp: any) => {
+    summaryRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    summaryRequestRef.current = { opportunityId: opp.id, controller };
+
     setSelectedOpportunity(opp);
     setSummaryOpen(true);
     setSummaryLoading(true);
@@ -603,17 +614,24 @@ export default function OpportunitiesDashboard() {
       const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
       const resp = await fetch(
         `${baseUrl}/api/opportunities/${opp.id}/summary`,
-        { method: "POST" },
+        { method: "POST", signal: controller.signal },
       );
       const data = await resp.json();
       if (!resp.ok) {
         throw new Error(data.reason || data.error || "Summary failed");
       }
-      setSummaryData(data);
+      if (summaryRequestRef.current?.opportunityId === opp.id) {
+        setSummaryData(data);
+      }
     } catch (err: any) {
-      setSummaryError(err.message || "Summary failed");
+      if (!controller.signal.aborted && summaryRequestRef.current?.opportunityId === opp.id) {
+        setSummaryError(err.message || "Summary failed");
+      }
     } finally {
-      setSummaryLoading(false);
+      if (summaryRequestRef.current?.opportunityId === opp.id) {
+        setSummaryLoading(false);
+        summaryRequestRef.current = null;
+      }
     }
   };
 
