@@ -3,14 +3,11 @@ import app from "./app";
 import { isTransientDatabaseError } from "./lib/databaseReliability";
 import { logger } from "./lib/logger";
 import { markRuntimeReady, markRuntimeShuttingDown } from "./lib/runtimeHealth";
-import { runStartupMigrations } from "./lib/startup-migrate";
 import { runRfpStartupMigrations } from "./lib/rfp-startup-migrate";
 import {
   getDatabaseConfigSummary,
-  intelPool,
   rfpPool,
-  runWithDbContext,
-  verifyDatabaseRouting,
+  verifyRfpDatabase,
 } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
@@ -120,18 +117,7 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
 
   try {
     await closeHttpServer();
-    const poolResults = await Promise.allSettled([rfpPool.end(), intelPool.end()]);
-    for (const [index, result] of poolResults.entries()) {
-      if (result.status === "rejected") {
-        logger.error(
-          {
-            error: result.reason,
-            logicalDatabase: index === 0 ? "rfp" : "intel",
-          },
-          "Database pool shutdown failed",
-        );
-      }
-    }
+    await rfpPool.end();
     logger.info({ signal }, "Graceful shutdown complete");
   } catch (error) {
     logger.error({ error, signal }, "Graceful shutdown failed");
@@ -165,20 +151,15 @@ process.on("uncaughtException", (error) => {
 
 async function bootstrap(): Promise<void> {
   const routing = await withDeadline(
-    "Database routing validation",
-    () => verifyDatabaseRouting(),
+    "RFP database validation",
+    () => verifyRfpDatabase(),
     DATABASE_VALIDATION_TIMEOUT_MS,
   );
-  logger.info(routing, "Database routing verified");
+  logger.info(routing, "Procurement database verified");
 
   await withDeadline(
-    "Intel database migrations",
-    () => runWithDbContext("intel", () => runStartupMigrations()),
-    MIGRATION_TIMEOUT_MS,
-  );
-  await withDeadline(
     "RFP database migrations",
-    () => runWithDbContext("rfp", () => runRfpStartupMigrations()),
+    () => runRfpStartupMigrations(),
     MIGRATION_TIMEOUT_MS,
   );
 
