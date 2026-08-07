@@ -204,6 +204,22 @@ async function applyStructuredFederalDecision(
   };
 }
 
+async function recordStructuredProviderOutcome(
+  provider: StructuredFederalProvider,
+  rawRecordCount: number,
+  upstreamErrors: string[],
+  usefulRecordCount: number,
+): Promise<void> {
+  if (rawRecordCount === 0 && upstreamErrors.length > 0) {
+    await recordProviderFailure(
+      provider,
+      new Error(upstreamErrors.join("; ")),
+    );
+    return;
+  }
+  await recordProviderSuccess(provider, usefulRecordCount);
+}
+
 async function fetchStructuredFederalProvider(
   provider: StructuredFederalProvider,
   options: ProviderRunnerOptions,
@@ -224,13 +240,19 @@ async function fetchStructuredFederalProvider(
         limit: 100,
         signal: options.signal,
       });
+      const upstreamErrors = result.errors ?? [];
       const decided = await applyStructuredFederalDecision(
         provider,
         result.records,
-        result.errors ?? [],
+        upstreamErrors,
         options,
       );
-      await recordProviderSuccess(provider, decided.records.length);
+      await recordStructuredProviderOutcome(
+        provider,
+        result.records.length,
+        upstreamErrors,
+        decided.records.length,
+      );
       return decided;
     }
 
@@ -241,13 +263,19 @@ async function fetchStructuredFederalProvider(
       limit: 100,
       signal: options.signal,
     });
+    const upstreamErrors = result.errors ?? [];
     const decided = await applyStructuredFederalDecision(
       provider,
       result.records,
-      result.errors ?? [],
+      upstreamErrors,
       options,
     );
-    await recordProviderSuccess(provider, decided.records.length);
+    await recordStructuredProviderOutcome(
+      provider,
+      result.records.length,
+      upstreamErrors,
+      decided.records.length,
+    );
     return decided;
   } catch (error) {
     await recordProviderFailure(provider, error);
