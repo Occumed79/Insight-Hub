@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as rfpSchema from "./schema/rfp";
 import * as intelSchema from "./schema/intel";
+import { instrumentPoolQueries } from "./queryTelemetry";
 
 const { Pool } = pg;
 
@@ -127,7 +128,7 @@ function createPool(
     );
   });
 
-  return pool;
+  return instrumentPoolQueries(pool, logicalDatabase);
 }
 
 function intelUnavailableError(): Error {
@@ -297,4 +298,9 @@ export async function verifyDatabaseRouting() {
 }
 
 export * from "./schema";
+export {
+  databaseQueryTelemetrySnapshot,
+  describeSqlQuery,
+  resetDatabaseQueryTelemetryForTests,
+} from "./queryTelemetry";
 export { rfpSchema, intelSchema };
