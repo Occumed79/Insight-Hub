@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import apiHardeningRouter from "../middleware/api-hardening";
 import apiRequestValidationRouter from "../middleware/api-request-validation";
+import requestObservability from "../middleware/request-observability";
 import healthRouter from "./health";
 import databaseStatusRouter from "./database-status";
 import hardeningDiagnosticsRouter from "./hardening-diagnostics";
@@ -29,6 +30,7 @@ import { lazyRouter } from "./lazy-router";
 
 const router: IRouter = Router();
 
+router.use(requestObservability);
 router.use((_req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
