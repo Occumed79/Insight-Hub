@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, it } from "node:test";
 import {
   AI_EXTRACTION_PROVIDER_ORDER,
@@ -61,6 +63,31 @@ describe("coordinated AI search intelligence stack", () => {
       extractOpportunitiesBatch([], controller.signal),
       /manual ingestion cancelled/,
     );
+  });
+
+  it("propagates cancellation into every AI extraction transport", async () => {
+    const providerFiles = [
+      "groq.ts",
+      "gemini.ts",
+      "openrouter.ts",
+      "openAiCompatible.ts",
+      "minimax.ts",
+      "clod.ts",
+    ];
+    for (const file of providerFiles) {
+      const source = await readFile(
+        path.resolve(process.cwd(), `src/lib/providers/${file}`),
+        "utf8",
+      );
+      assert.match(source, /signal\??:\s*AbortSignal/);
+      assert.match(source, /AbortSignal\.(?:any|timeout)/);
+    }
+
+    const extractionSource = await readFile(
+      path.resolve(process.cwd(), "src/lib/search/aiExtract.ts"),
+      "utf8",
+    );
+    assert.match(extractionSource, /provider\.complete\(prompt, maxTokens, attemptSignal\)/);
   });
 
   it("cross-checks only ambiguous accepted records", () => {
