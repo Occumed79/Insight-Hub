@@ -1,8 +1,10 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "framer-motion";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { installStableFetch } from "@/lib/stable-fetch";
+import "@/ui-hardening.css";
 
 import Home from "@/pages/home";
 import OpportunitiesDashboard from "@/pages/portal/opportunities";
@@ -77,16 +79,18 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ErrorBoundary>
-          <div className="dark">
-            <WouterRouter>
-              <Router />
-            </WouterRouter>
-            <Toaster />
-          </div>
-        </ErrorBoundary>
-      </TooltipProvider>
+      <MotionConfig reducedMotion="user">
+        <TooltipProvider>
+          <ErrorBoundary>
+            <div className="dark min-h-dvh">
+              <WouterRouter>
+                <Router />
+              </WouterRouter>
+              <Toaster />
+            </div>
+          </ErrorBoundary>
+        </TooltipProvider>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }
