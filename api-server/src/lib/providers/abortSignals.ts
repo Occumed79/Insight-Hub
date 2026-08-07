@@ -8,11 +8,14 @@ export function composeAbortSignal(
       new DOMException(`Request timed out after ${timeoutMs}ms`, "TimeoutError"),
     );
   }, timeoutMs);
+  timeout.unref?.();
 
   const abortFromParent = () => {
-    controller.abort(
-      parentSignal?.reason ?? new DOMException("Request cancelled", "AbortError"),
-    );
+    if (!controller.signal.aborted) {
+      controller.abort(
+        parentSignal?.reason ?? new DOMException("Request cancelled", "AbortError"),
+      );
+    }
   };
 
   if (parentSignal?.aborted) abortFromParent();
