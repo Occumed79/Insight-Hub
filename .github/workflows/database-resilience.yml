@@ -118,7 +118,7 @@ jobs:
         run: pnpm --filter @workspace/db exec node ./scripts/backup-restore-audit.mjs
 
       - name: Upload disposable backup artifact for inspection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rfp-disaster-recovery-fixture-${{ github.run_id }}
           path: /tmp/rfp-core.dump

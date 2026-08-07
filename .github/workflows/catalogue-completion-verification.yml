@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload completion audit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: catalogue-completion-audit
           path: artifacts/catalogue-completion-audit
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload live adapter verification
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: catalogue-live-adapter-verification
           path: |
