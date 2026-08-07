@@ -8,6 +8,11 @@ const { isGovConSemanticCandidate } = await import("../govcon");
 
 const DAY_MS = 86_400_000;
 
+function currentFederalFiscalYear(now: number): number {
+  const date = new Date(now);
+  return date.getUTCFullYear() + (date.getUTCMonth() >= 9 ? 1 : 0);
+}
+
 function candidate(now: number, overrides: Record<string, unknown> = {}) {
   return {
     id: "forecast-1",
@@ -24,7 +29,7 @@ function candidate(now: number, overrides: Record<string, unknown> = {}) {
     valueLow: null,
     valueHigh: null,
     estimatedSolicitationDate: new Date(now + 90 * DAY_MS).toISOString(),
-    estimatedAwardFiscalYear: new Date(now).getUTCFullYear() + 1,
+    estimatedAwardFiscalYear: currentFederalFiscalYear(now) + 1,
     estimatedAwardQuarter: "Q2",
     status: "planned",
     isRecompete: false,
@@ -44,6 +49,57 @@ test("forecast mode requires forward-looking forecast semantics", () => {
   assert.equal(
     isGovConSemanticCandidate(candidate(now, { status: "closed" }), "forecast", now),
     false,
+  );
+});
+
+test("stale forecast dates are rejected even when status says planned", () => {
+  const now = Date.now();
+  assert.equal(
+    isGovConSemanticCandidate(
+      candidate(now, {
+        estimatedSolicitationDate: new Date(now - 60 * DAY_MS).toISOString(),
+        estimatedAwardFiscalYear: null,
+        estimatedAwardQuarter: null,
+        status: "planned",
+      }),
+      "forecast",
+      now,
+    ),
+    false,
+  );
+});
+
+test("past award fiscal years are rejected when no future timing exists", () => {
+  const now = Date.now();
+  assert.equal(
+    isGovConSemanticCandidate(
+      candidate(now, {
+        estimatedSolicitationDate: null,
+        estimatedAwardFiscalYear: currentFederalFiscalYear(now) - 1,
+        estimatedAwardQuarter: "Q4",
+        status: "forecast",
+      }),
+      "forecast",
+      now,
+    ),
+    false,
+  );
+});
+
+test("status fallback is used only when timing fields are absent", () => {
+  const now = Date.now();
+  assert.equal(
+    isGovConSemanticCandidate(
+      candidate(now, {
+        estimatedSolicitationDate: null,
+        estimatedAwardFiscalYear: null,
+        estimatedAwardQuarter: null,
+        status: "anticipated",
+      }),
+      "forecast",
+      now,
+    ),
+    true,
   );
 });
 
