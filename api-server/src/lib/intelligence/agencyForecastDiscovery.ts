@@ -41,6 +41,11 @@ type SearchHit = {
   date?: string;
 };
 
+type ProviderSearchRun = {
+  hits: SearchHit[];
+  errors: string[];
+};
+
 const OFFICIAL_HOSTS = [
   "acquisitiongateway.gov",
   "gsa.gov",
@@ -76,22 +81,69 @@ function hostAllowed(url: string): boolean {
 
 function inferAgency(text: string): string {
   const agencies: Array<[RegExp, string]> = [
-    [/department of homeland security|\bdhs\b/i, "Department of Homeland Security"],
-    [/department of health and human services|\bhhs\b/i, "Department of Health and Human Services"],
-    [/department of veterans affairs|\bva\b/i, "Department of Veterans Affairs"],
+    [
+      /department of homeland security|\bdhs\b/i,
+      "Department of Homeland Security",
+    ],
+    [
+      /department of health and human services|\bhhs\b/i,
+      "Department of Health and Human Services",
+    ],
+    [
+      /department of veterans affairs|\bva\b/i,
+      "Department of Veterans Affairs",
+    ],
     [/department of state/i, "Department of State"],
     [/department of defense|\bdod\b/i, "Department of Defense"],
-    [/general services administration|\bgsa\b/i, "General Services Administration"],
-    [/department of the army|\bu\.s\. army\b|\barmy\b/i, "Department of the Army"],
-    [/department of the navy|\bu\.s\. navy\b|\bnavy\b/i, "Department of the Navy"],
-    [/department of the air force|\bu\.s\. air force\b|\bair force\b/i, "Department of the Air Force"],
+    [
+      /general services administration|\bgsa\b/i,
+      "General Services Administration",
+    ],
+    [
+      /department of the army|\bu\.s\. army\b|\barmy\b/i,
+      "Department of the Army",
+    ],
+    [
+      /department of the navy|\bu\.s\. navy\b|\bnavy\b/i,
+      "Department of the Navy",
+    ],
+    [
+      /department of the air force|\bu\.s\. air force\b|\bair force\b/i,
+      "Department of the Air Force",
+    ],
   ];
-  for (const [pattern, agency] of agencies) if (pattern.test(text)) return agency;
+  for (const [pattern, agency] of agencies) {
+    if (pattern.test(text)) return agency;
+  }
   return "Federal Agency Forecast";
 }
 
+export function forecastSearchHitCurrent(
+  hit: Pick<SearchHit, "title" | "text" | "date">,
+  now = Date.now(),
+): boolean {
+  if (hit.date) {
+    const parsed = Date.parse(hit.date);
+    if (Number.isFinite(parsed)) {
+      // Search engines sometimes surface archived forecast pages. A dated hit
+      // older than eighteen months is not safe enough for the live Forecast UI.
+      return parsed >= now - 550 * 86_400_000 && parsed <= now + 90 * 86_400_000;
+    }
+  }
+
+  const currentYear = new Date(now).getUTCFullYear();
+  const combined = `${hit.title} ${hit.text}`;
+  const years = Array.from(combined.matchAll(/\b(20\d{2})\b/g))
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  if (years.length === 0) return true;
+  return Math.max(...years) >= currentYear;
+}
+
 function normalizeHit(hit: SearchHit): AgencyForecastLead | null {
-  if (!hit.url || !hostAllowed(hit.url)) return null;
+  if (!hit.url || !hostAllowed(hit.url) || !forecastSearchHitCurrent(hit)) {
+    return null;
+  }
   const combined = `${hit.title} ${hit.text}`.replace(/\s+/g, " ").trim();
   if (!FORECAST_RE.test(combined) || !OCCUMED_RE.test(combined)) return null;
   const hash = createHash("sha256")
@@ -140,66 +192,127 @@ function queries(focus?: string): string[] {
 
 async function configuredProviders(): Promise<string[]> {
   const rows = await Promise.all([
-    serperProvider.isConfigured().then((configured) => ({ provider: "serper", configured })).catch(() => ({ provider: "serper", configured: false })),
-    langsearchProvider.isConfigured().then((configured) => ({ provider: "langsearch", configured })).catch(() => ({ provider: "langsearch", configured: false })),
+    serperProvider
+      .isConfigured()
+      .then((configured) => ({ provider: "serper", configured }))
+      .catch(() => ({ provider: "serper", configured: false })),
+    langsearchProvider
+      .isConfigured()
+      .then((configured) => ({ provider: "langsearch", configured }))
+      .catch(() => ({ provider: "langsearch", configured: false })),
   ]);
   return rows.filter((row) => row.configured).map((row) => row.provider);
 }
 
-async function runProvider(provider: string, focus?: string): Promise<SearchHit[]> {
+async function runProvider(
+  provider: string,
+  focus?: string,
+): Promise<ProviderSearchRun> {
   const searchQueries = queries(focus);
   if (provider === "serper") {
     const hits = await serperProvider.searchMultiple(searchQueries, 8);
-    return hits.map((hit) => ({
-      title: hit.title,
-      url: hit.link,
-      text: hit.snippet ?? "",
-      date: hit.date,
-    }));
+    return {
+      hits: hits.map((hit) => ({
+        title: hit.title,
+        url: hit.link,
+        text: hit.snippet ?? "",
+        date: hit.date,
+      })),
+      errors: [],
+    };
   }
-  const batches = await Promise.all(
+
+  const batches = await Promise.allSettled(
     searchQueries.map((query) =>
-      langsearchProvider.search(query, { dateRange: 365 }).catch(() => []),
+      langsearchProvider.search(query, { dateRange: 365 }),
     ),
   );
-  return batches.flat().map((hit) => ({
-    title: hit.title,
-    url: hit.url,
-    text: hit.content,
-    date: hit.dateRaw,
-  }));
+  const hits: SearchHit[] = [];
+  const errors: string[] = [];
+  batches.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      hits.push(
+        ...result.value.map((hit) => ({
+          title: hit.title,
+          url: hit.url,
+          text: hit.content,
+          date: hit.dateRaw,
+        })),
+      );
+      return;
+    }
+    errors.push(
+      `query ${index + 1}: ${
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason)
+      }`,
+    );
+  });
+  return { hits, errors };
 }
 
 export async function fetchAgencyForecastLeads(
   focus?: string,
-): Promise<{ records: AgencyForecastLead[]; providers: string[]; errors: string[] }> {
+): Promise<{
+  records: AgencyForecastLead[];
+  providers: string[];
+  errors: string[];
+}> {
   const configured = await configuredProviders();
   const selected = await selectBudgetedProviders(configured, 2);
   const errors: string[] = [];
   const all: AgencyForecastLead[] = [];
 
+  if (selected.length === 0) {
+    errors.push(
+      configured.length === 0
+        ? "No official forecast discovery search provider is configured."
+        : "All configured official forecast discovery providers are in budget cooldown.",
+    );
+    return { records: [], providers: [], errors };
+  }
+
   const settled = await Promise.allSettled(
     selected.map(async (provider) => {
       try {
-        const hits = await runProvider(provider, focus);
-        const records = hits
+        const run = await runProvider(provider, focus);
+        const records = run.hits
           .map(normalizeHit)
           .filter((record): record is AgencyForecastLead => Boolean(record));
+
+        if (run.hits.length === 0 && run.errors.length > 0) {
+          const failure = new Error(run.errors.join("; "));
+          await recordProviderFailure(provider, failure);
+          throw failure;
+        }
+
         await recordProviderSuccess(provider, records.length);
-        return records;
+        return { records, errors: run.errors };
       } catch (error) {
-        await recordProviderFailure(provider, error);
+        // The all-query-failed branch already recorded the failure above.
+        if (!(error instanceof Error) || !/query \d+:/.test(error.message)) {
+          await recordProviderFailure(provider, error);
+        }
         throw error;
       }
     }),
   );
 
   settled.forEach((result, index) => {
-    if (result.status === "fulfilled") all.push(...result.value);
-    else {
-      const provider = selected[index] ?? "unknown";
+    const provider = selected[index] ?? "unknown";
+    if (result.status === "fulfilled") {
+      all.push(...result.value.records);
       errors.push(
-        `${provider}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        ...result.value.errors.map((message) => `${provider}: ${message}`),
+      );
+    } else {
+      errors.push(
+        `${provider}: ${
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason)
+        }`,
       );
     }
   });
