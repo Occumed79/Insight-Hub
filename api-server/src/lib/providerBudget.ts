@@ -8,7 +8,14 @@ export type ProviderBudgetOutcome =
   | "quota"
   | "auth"
   | "timeout"
+  | "budget_exhausted"
   | "error";
+
+export interface ProviderBudgetPolicy {
+  dailyLimit: number | null;
+  monthlyLimit: number | null;
+  reserve: number;
+}
 
 export interface ProviderBudgetState {
   provider: string;
@@ -27,12 +34,19 @@ export interface ProviderBudgetState {
   lastSuccessAt?: string;
 }
 
+export interface ProviderBudgetSnapshot extends ProviderBudgetState {
+  policy: ProviderBudgetPolicy;
+  remainingToday: number | null;
+  remainingThisMonth: number | null;
+  available: boolean;
+}
+
 interface MemoryBudgetEntry {
   state: ProviderBudgetState;
   loadedAt: number;
 }
 
-const KEY_PREFIX = "provider-budget:v1:";
+const KEY_PREFIX = "provider-budget:v2:";
 const memory = new Map<string, MemoryBudgetEntry>();
 const writeQueues = new Map<string, Promise<void>>();
 const MEMORY_TTL_MS = 5_000;
@@ -82,10 +96,7 @@ function normalizeWindow(
   };
 }
 
-function parseState(
-  provider: string,
-  raw: string | undefined,
-): ProviderBudgetState {
+function parseState(provider: string, raw: string | undefined): ProviderBudgetState {
   if (!raw) return blankState(provider);
   try {
     const parsed = JSON.parse(raw) as Partial<ProviderBudgetState>;
@@ -103,9 +114,61 @@ function cacheState(state: ProviderBudgetState): void {
   memory.set(state.provider, { state, loadedAt: Date.now() });
 }
 
-export async function getProviderBudget(
-  provider: string,
-): Promise<ProviderBudgetState> {
+function envToken(provider: string): string {
+  return provider.replace(/[^a-z0-9]+/gi, "_").toUpperCase();
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function policyMap(): Record<string, Partial<ProviderBudgetPolicy>> {
+  const raw = process.env.INSIGHT_PROVIDER_BUDGETS_JSON?.trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, Partial<ProviderBudgetPolicy>>)
+      : {};
+  } catch {
+    console.warn(
+      JSON.stringify({
+        event: "provider_budget_policy_parse_failed",
+        variable: "INSIGHT_PROVIDER_BUDGETS_JSON",
+      }),
+    );
+    return {};
+  }
+}
+
+/**
+ * Exact free/trial allowances are configuration, never guessed in source code.
+ * Examples:
+ *   INSIGHT_BUDGET_LANGSEARCH_PRIMARY_DAILY=100
+ *   INSIGHT_BUDGET_SERPER_MONTHLY=2500
+ *   INSIGHT_PROVIDER_BUDGETS_JSON={"exa":{"monthlyLimit":1000,"reserve":25}}
+ */
+export function providerBudgetPolicy(provider: string): ProviderBudgetPolicy {
+  const token = envToken(provider);
+  const mapped = policyMap()[provider] ?? {};
+  const dailyLimit =
+    nonNegativeInteger(process.env[`INSIGHT_BUDGET_${token}_DAILY`]) ??
+    nonNegativeInteger(mapped.dailyLimit);
+  const monthlyLimit =
+    nonNegativeInteger(process.env[`INSIGHT_BUDGET_${token}_MONTHLY`]) ??
+    nonNegativeInteger(mapped.monthlyLimit);
+  const reserve = Math.max(
+    0,
+    nonNegativeInteger(process.env[`INSIGHT_BUDGET_${token}_RESERVE`]) ??
+      nonNegativeInteger(mapped.reserve) ??
+      0,
+  );
+  return { dailyLimit, monthlyLimit, reserve };
+}
+
+export async function getProviderBudget(provider: string): Promise<ProviderBudgetState> {
   const cached = memory.get(provider);
   if (cached && Date.now() - cached.loadedAt < MEMORY_TTL_MS) {
     const normalized = normalizeWindow(cached.state);
@@ -123,9 +186,6 @@ export async function getProviderBudget(
     cacheState(state);
     return state;
   } catch {
-    // Never make a failed durable read sticky. Another instance may already
-    // have persisted a quota cooldown that this process must observe as soon
-    // as the database is reachable again.
     return cached ? normalizeWindow(cached.state) : blankState(provider);
   }
 }
@@ -146,18 +206,12 @@ async function withProviderWriteQueue(
 
 async function mutateDurableProviderBudget(
   provider: string,
-  mutate: (
-    state: ProviderBudgetState,
-    now: Date,
-  ) => ProviderBudgetState,
+  mutate: (state: ProviderBudgetState, now: Date) => ProviderBudgetState,
 ): Promise<ProviderBudgetState> {
   const client = await rfpPool.connect();
   const key = budgetKey(provider);
   try {
     await client.query("BEGIN");
-    // The transaction-scoped advisory lock serializes the JSON read/modify/write
-    // across concurrent requests and across multiple API instances. The row
-    // lock alone is insufficient before the settings row exists.
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
     const result = await client.query<{ value: string }>(
       'SELECT value FROM settings WHERE key = $1 FOR UPDATE',
@@ -189,29 +243,19 @@ function classifyFailure(error: unknown): {
   message: string;
 } {
   const message = error instanceof Error ? error.message : String(error);
-  if (
-    /quota|credit|balance|billing|monthly|daily limit|resource exhausted/i.test(
-      message,
-    )
-  ) {
-    // Trial allowances are often daily or monthly. A full-day durable cooldown
-    // is deliberately conservative: it prevents redeploys from repeatedly
-    // burning a known-exhausted key while still allowing automatic recovery.
+  if (/budget exhausted/i.test(message)) {
+    return { outcome: "budget_exhausted", cooldownMs: HOUR, message };
+  }
+  if (/quota|credit|balance|billing|monthly|daily limit|resource exhausted/i.test(message)) {
     return { outcome: "quota", cooldownMs: 24 * HOUR, message };
   }
   if (/\b429\b|rate.?limit|too many requests|throttl/i.test(message)) {
     return { outcome: "rate_limited", cooldownMs: 15 * MINUTE, message };
   }
-  if (
-    /\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api.?key/i.test(message)
-  ) {
+  if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api.?key/i.test(message)) {
     return { outcome: "auth", cooldownMs: 24 * HOUR, message };
   }
-  if (
-    /timeout|timed out|abort|ECONNRESET|ECONNREFUSED|\b5\d\d\b/i.test(
-      message,
-    )
-  ) {
+  if (/timeout|timed out|abort|ECONNRESET|ECONNREFUSED|\b5\d\d\b/i.test(message)) {
     return { outcome: "timeout", cooldownMs: 2 * MINUTE, message };
   }
   return { outcome: "error", cooldownMs: MINUTE, message };
@@ -219,18 +263,12 @@ function classifyFailure(error: unknown): {
 
 async function recordBudgetMutation(
   provider: string,
-  mutate: (
-    state: ProviderBudgetState,
-    now: Date,
-  ) => ProviderBudgetState,
+  mutate: (state: ProviderBudgetState, now: Date) => ProviderBudgetState,
 ): Promise<void> {
   await withProviderWriteQueue(provider, async () => {
     try {
       await mutateDurableProviderBudget(provider, mutate);
     } catch (error) {
-      // Budget telemetry must not turn an otherwise successful provider call
-      // into a failed user operation. Preserve same-process ordering in memory
-      // while the database is unavailable, but do not pretend it was durable.
       const now = new Date();
       const current = normalizeWindow(await getProviderBudget(provider), now);
       cacheState(mutate(current, now));
@@ -256,15 +294,11 @@ export async function recordProviderSuccess(
     successes: state.successes + 1,
     usefulResults: state.usefulResults + Math.max(0, usefulResults),
     emptyResults: state.emptyResults + (usefulResults > 0 ? 0 : 1),
-    // A success that completes after another concurrent request established a
-    // cooldown must not erase that newer failure signal.
-    cooldownUntil:
-      state.cooldownUntil > now.getTime() ? state.cooldownUntil : 0,
+    cooldownUntil: state.cooldownUntil > now.getTime() ? state.cooldownUntil : 0,
     lastOutcome: usefulResults > 0 ? "success" : "empty",
     lastError: undefined,
     lastAttemptAt: now.toISOString(),
-    lastSuccessAt:
-      usefulResults > 0 ? now.toISOString() : state.lastSuccessAt,
+    lastSuccessAt: usefulResults > 0 ? now.toISOString() : state.lastSuccessAt,
   }));
 }
 
@@ -288,30 +322,72 @@ export async function recordProviderFailure(
   }));
 }
 
-export async function providerBudgetAvailable(
-  provider: string,
-): Promise<boolean> {
-  const state = await getProviderBudget(provider);
-  return state.cooldownUntil <= Date.now();
+function remaining(
+  limit: number | null,
+  used: number,
+  reserve: number,
+): number | null {
+  return limit == null ? null : Math.max(0, limit - reserve - used);
 }
 
-function usefulness(state: ProviderBudgetState): number {
-  const attempts = Math.max(1, state.successes + state.failures);
-  const successRate = state.successes / attempts;
+export async function getProviderBudgetSnapshot(
+  provider: string,
+): Promise<ProviderBudgetSnapshot> {
+  const state = await getProviderBudget(provider);
+  const policy = providerBudgetPolicy(provider);
+  const remainingToday = remaining(
+    policy.dailyLimit,
+    state.requestsToday,
+    policy.reserve,
+  );
+  const remainingThisMonth = remaining(
+    policy.monthlyLimit,
+    state.requestsThisMonth,
+    policy.reserve,
+  );
+  return {
+    ...state,
+    policy,
+    remainingToday,
+    remainingThisMonth,
+    available:
+      state.cooldownUntil <= Date.now() &&
+      (remainingToday == null || remainingToday > 0) &&
+      (remainingThisMonth == null || remainingThisMonth > 0),
+  };
+}
+
+export async function providerBudgetAvailable(provider: string): Promise<boolean> {
+  return (await getProviderBudgetSnapshot(provider)).available;
+}
+
+function usefulness(snapshot: ProviderBudgetSnapshot): number {
+  const attempts = Math.max(1, snapshot.successes + snapshot.failures);
+  const successRate = snapshot.successes / attempts;
   const yieldPerSuccess =
-    state.successes > 0 ? state.usefulResults / state.successes : 0;
+    snapshot.successes > 0 ? snapshot.usefulResults / snapshot.successes : 0;
   const quotaPenalty =
-    state.lastOutcome === "quota" || state.lastOutcome === "rate_limited"
+    snapshot.lastOutcome === "quota" ||
+    snapshot.lastOutcome === "rate_limited" ||
+    snapshot.lastOutcome === "budget_exhausted"
       ? 100
       : 0;
-  return successRate * 40 + Math.min(40, yieldPerSuccess) - quotaPenalty;
+  const dailyRatio =
+    snapshot.policy.dailyLimit && snapshot.remainingToday != null
+      ? snapshot.remainingToday / snapshot.policy.dailyLimit
+      : 1;
+  const monthlyRatio =
+    snapshot.policy.monthlyLimit && snapshot.remainingThisMonth != null
+      ? snapshot.remainingThisMonth / snapshot.policy.monthlyLimit
+      : 1;
+  return (
+    successRate * 40 +
+    Math.min(40, yieldPerSuccess) +
+    Math.min(dailyRatio, monthlyRatio) * 20 -
+    quotaPenalty
+  );
 }
 
-/**
- * Order configured limited providers by durable availability and observed yield.
- * Stable ordering is preserved until enough observations exist to justify moving
- * a source up or down, so trial allowances are not burned by random rotation.
- */
 export async function selectBudgetedProviders(
   providers: string[],
   maxProviders: number,
@@ -320,14 +396,14 @@ export async function selectBudgetedProviders(
     providers.map(async (provider, index) => ({
       provider,
       index,
-      state: await getProviderBudget(provider),
+      snapshot: await getProviderBudgetSnapshot(provider),
     })),
   );
   return rows
-    .filter(({ state }) => state.cooldownUntil <= Date.now())
+    .filter(({ snapshot }) => snapshot.available)
     .sort((left, right) => {
-      const rightScore = usefulness(right.state);
-      const leftScore = usefulness(left.state);
+      const rightScore = usefulness(right.snapshot);
+      const leftScore = usefulness(left.snapshot);
       if (rightScore !== leftScore) return rightScore - leftScore;
       return left.index - right.index;
     })
@@ -337,6 +413,10 @@ export async function selectBudgetedProviders(
 
 export async function providerBudgetSnapshot(
   providers: string[],
-): Promise<ProviderBudgetState[]> {
-  return Promise.all(providers.map((provider) => getProviderBudget(provider)));
+): Promise<ProviderBudgetSnapshot[]> {
+  return Promise.all(providers.map((provider) => getProviderBudgetSnapshot(provider)));
+}
+
+export function clearProviderBudgetMemory(): void {
+  memory.clear();
 }
