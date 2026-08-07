@@ -156,6 +156,34 @@ test("startup migrations serialize DDL and backfills under one transaction-scope
   assert.equal(source.includes("await db.execute(sql`"), false);
 });
 
+test("run deadlines stay timeouts and do not launch post-timeout reconciliation", async () => {
+  const source = await readFile(
+    path.resolve(process.cwd(), "src/lib/ingestion/manualIngestion.ts"),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /reason instanceof RunTimeoutError \|\| reason instanceof RunCancelledError/,
+  );
+  assert.match(source, /if \(runController\.signal\.aborted\)/);
+  assert.match(source, /runTimeout\.unref\?\.\(\)/);
+  assert.match(source, /const archived = cancelled \|\| timedOut/);
+});
+
+test("web discovery binds parent and per-attempt cancellation without reviving retired defaults", async () => {
+  const source = await readFile(
+    path.resolve(process.cwd(), "src/lib/search/webIntelligence.ts"),
+    "utf8",
+  );
+  assert.match(source, /useSelfHostedSearch = options\.useSelfHostedSearch === true/);
+  assert.match(source, /useSelfHostedCrawler = options\.useSelfHostedCrawler === true/);
+  assert.doesNotMatch(source, /throwIfAborted\(attemptSignal \?\? options\.signal\);\n\s*const attempts/);
+  assert.match(source, /run: \(signal\?: AbortSignal\) => Promise<Candidate\[\]>/);
+  assert.match(source, /attemptSignal \?\? options\.signal/);
+  assert.match(source, /\{ signal: options\.signal \}/);
+  assert.match(source, /extractOpportunitiesBatch\([\s\S]*options\.signal/);
+});
+
 test("query contexts remain distinct and service scope fallback is stable", () => {
   assert.equal(
     normalizeQueryContext("  Audiometric testing, HEARING conservation!! "),
