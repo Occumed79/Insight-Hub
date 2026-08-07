@@ -13,7 +13,7 @@ const {
   resolveManualProviders,
 } = await import("../providerRunner");
 
-test("manual Fetch Intelligence defaults to Tango plus browser discovery without broadcasting federal APIs", () => {
+test("manual Fetch Intelligence defaults to Tango plus browser discovery while optional manual channels remain explicit", () => {
   assert.deepEqual(resolveManualProviders(), ["tango", "aiDiscovery"]);
   assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), [
     "samGov",
@@ -23,6 +23,9 @@ test("manual Fetch Intelligence defaults to Tango plus browser discovery without
     "samGov",
     "tango",
     "aiDiscovery",
+    "emailNotifications",
+    "rssAggregator",
+    "scheduledCrawler",
   ]);
 });
 
@@ -73,7 +76,7 @@ test("legacy portal selections collapse into one AI discovery provider without a
   );
 });
 
-test("browser discovery can still run alone while crawler providers stay unavailable", () => {
+test("browser discovery can still run alone while unsupported extraction providers stay unavailable", () => {
   assert.deepEqual(resolveManualProviders(["aiDiscovery"]), ["aiDiscovery"]);
   assert.throws(
     () => resolveManualProviders(["firecrawl"]),
