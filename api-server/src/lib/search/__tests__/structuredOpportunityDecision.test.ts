@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { NormalizedOpportunity } from "../../providers/types";
 import {
+  distinctProviderVotes,
   isDeterministicallyActionable,
+  panelResolved,
   structuredReviewCandidateLimit,
+  type ReviewVote,
 } from "../structuredOpportunityDecision";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -25,6 +28,19 @@ function record(
     sourceUrl: "https://example.gov/procurement/rfp-26-1",
     source: "samGov",
     ...overrides,
+  };
+}
+
+function vote(
+  index: number,
+  isOpportunity = true,
+  relevanceScore = 90,
+): ReviewVote {
+  return {
+    index,
+    isOpportunity,
+    relevanceScore,
+    reason: "test vote",
   };
 }
 
@@ -82,4 +98,37 @@ test("structured AI review stays within a small trial-key budget", () => {
       process.env.STRUCTURED_RFP_REVIEW_CANDIDATE_LIMIT = original;
     }
   }
+});
+
+test("one judge cannot satisfy a multi-record response by repeating an index", () => {
+  assert.deepEqual(
+    distinctProviderVotes([vote(0), vote(0), vote(0)], 3).map(
+      (entry) => entry.index,
+    ),
+    [0],
+  );
+});
+
+test("panel consensus counts distinct providers rather than duplicate rows", () => {
+  const duplicateSingleJudge = new Map([
+    [
+      0,
+      [
+        { provider: "judge-a", vote: vote(0) },
+        { provider: "judge-a", vote: vote(0) },
+      ],
+    ],
+  ]);
+  assert.equal(panelResolved(duplicateSingleJudge, 1), false);
+
+  const twoIndependentJudges = new Map([
+    [
+      0,
+      [
+        { provider: "judge-a", vote: vote(0) },
+        { provider: "judge-b", vote: vote(0) },
+      ],
+    ],
+  ]);
+  assert.equal(panelResolved(twoIndependentJudges, 1), true);
 });
