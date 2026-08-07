@@ -14,12 +14,7 @@ export interface InsightSourceDefinition {
   purpose: string;
 }
 
-/**
- * Authoritative runtime ownership map. Every provider represented by the tier
- * registry belongs to one primary role here; this prevents the same integration
- * from silently acting as a crawler, search engine, judge, and direct source in
- * different code paths without an explicit ownership decision.
- */
+/** One authoritative ownership decision for every configured integration. */
 export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "samGov", role: "direct_source", active: true, purpose: "Official structured U.S. federal opportunities" },
   { name: "tango", role: "direct_source", active: true, purpose: "Structured federal opportunity pool" },
@@ -78,8 +73,67 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "fal", role: "legacy_disabled", active: false, purpose: "Media/model utility; not procurement discovery" },
 ];
 
+const SOURCE_BY_NAME = new Map(
+  INSIGHT_SOURCE_ARCHITECTURE.map((source) => [source.name, source] as const),
+);
+
+export function sourceDefinition(name: string): InsightSourceDefinition | null {
+  return SOURCE_BY_NAME.get(name) ?? null;
+}
+
 export function activeSourcesForRole(role: InsightSourceRole): string[] {
   return INSIGHT_SOURCE_ARCHITECTURE.filter(
     (source) => source.active && source.role === role,
   ).map((source) => source.name);
+}
+
+export function sourceAllowedForRoles(
+  name: string,
+  allowedRoles: readonly InsightSourceRole[],
+): boolean {
+  const source = sourceDefinition(name);
+  return Boolean(
+    source && source.active && allowedRoles.includes(source.role),
+  );
+}
+
+export function assertSourceAllowedForRoles(
+  name: string,
+  allowedRoles: readonly InsightSourceRole[],
+): InsightSourceDefinition {
+  const source = sourceDefinition(name);
+  if (!source) {
+    throw new Error(`Source ${name} is not registered in the Insight Hub source architecture.`);
+  }
+  if (!source.active || source.role === "legacy_disabled") {
+    throw new Error(`Source ${name} is disabled by the Insight Hub source architecture.`);
+  }
+  if (!allowedRoles.includes(source.role)) {
+    throw new Error(
+      `Source ${name} is owned by role ${source.role}; allowed roles are ${allowedRoles.join(", ")}.`,
+    );
+  }
+  return source;
+}
+
+/**
+ * A CI/runtime invariant: one source name must never have conflicting primary
+ * ownership definitions.
+ */
+export function validateSourceArchitecture(): string[] {
+  const errors: string[] = [];
+  const seen = new Map<string, InsightSourceDefinition>();
+  for (const source of INSIGHT_SOURCE_ARCHITECTURE) {
+    const previous = seen.get(source.name);
+    if (previous) {
+      errors.push(
+        `Duplicate source ownership for ${source.name}: ${previous.role} and ${source.role}`,
+      );
+    }
+    seen.set(source.name, source);
+    if (source.role === "legacy_disabled" && source.active) {
+      errors.push(`Legacy-disabled source ${source.name} cannot be active.`);
+    }
+  }
+  return errors;
 }
