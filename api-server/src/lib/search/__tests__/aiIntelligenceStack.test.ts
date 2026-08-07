@@ -32,8 +32,9 @@ function accepted(overrides: Partial<AiExtraction> = {}): AiExtraction {
 }
 
 describe("coordinated AI search intelligence stack", () => {
-  it("keeps every configured trial AI available in the extraction fallback pool", () => {
+  it("matches the extraction fallback pool inherited from current main", () => {
     assert.deepEqual(AI_EXTRACTION_PROVIDER_ORDER, [
+      "local-llm",
       "cloudflare-workers-ai",
       "cerebras",
       "groq",
