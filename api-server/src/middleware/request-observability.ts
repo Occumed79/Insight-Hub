@@ -19,7 +19,8 @@ export function requestObservability(
 ): void {
   const started = process.hrtime.bigint();
   const requestId = requestIdFrom(req);
-  (req as Request & { id?: string }).id = requestId;
+  // Keep correlation transport-neutral: pino-http owns its own request-id field,
+  // while this middleware guarantees an explicit API correlation header/log key.
   res.setHeader("X-Request-Id", requestId);
 
   res.once("finish", () => {
