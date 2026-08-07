@@ -228,7 +228,7 @@ export function validateMutationPayload(
   req: Pick<Request, "method" | "path" | "body">,
 ): ValidationResult {
   const method = req.method.toUpperCase();
-  const path = req.path;
+  const path = req.path.length > 1 ? req.path.replace(/\/+$/, "") : req.path;
   if (method === "POST" && path === "/opportunities/fetch") {
     return validateFetch(req.body ?? {});
   }
@@ -240,7 +240,7 @@ export function validateMutationPayload(
   }
   if (
     method === "POST" &&
-    /^\/source-monitor\/items\/[^/]+\/protect\/?$/.test(path)
+    /^\/source-monitor\/items\/[^/]+\/protect$/.test(path)
   ) {
     return validateSourceProtect(req.body ?? {});
   }
