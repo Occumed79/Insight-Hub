@@ -1,9 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { Router, type Request } from "express";
+import { consumeDurableRateLimit } from "./durable-rate-limit";
 
 const router = Router();
 
-interface RatePolicy {
+export interface RatePolicy {
   bucket: string;
   limit: number;
   windowMs: number;
@@ -14,8 +15,9 @@ interface RateWindow {
   count: number;
 }
 
-const windows = new Map<string, RateWindow>();
+export type WriteCapability = "read" | "user_write" | "admin_write";
 
+const fallbackWindows = new Map<string, RateWindow>();
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const MAX_RATE_WINDOWS = 5_000;
 const RATE_WINDOW_RETENTION_MS = 15 * 60_000;
@@ -28,7 +30,7 @@ function configuredOrigins(): Set<string> {
     try {
       origins.add(new URL(value).origin);
     } catch {
-      // Invalid allowlist entries are ignored rather than broadening access.
+      // Invalid allowlist entries never broaden access.
     }
   }
   return origins;
@@ -52,10 +54,7 @@ export function mutationOriginAllowed(req: Request): boolean {
   }
 }
 
-function writeTokenAllowed(req: Request): boolean {
-  const required = process.env.INSIGHT_HUB_WRITE_TOKEN?.trim();
-  if (!required || !MUTATING_METHODS.has(req.method.toUpperCase())) return true;
-  const supplied = req.get("x-insight-hub-write-token") ?? "";
+function safeTokenMatch(required: string, supplied: string): boolean {
   const requiredBuffer = Buffer.from(required);
   const suppliedBuffer = Buffer.from(supplied);
   return (
@@ -64,7 +63,53 @@ function writeTokenAllowed(req: Request): boolean {
   );
 }
 
-export function expensiveRoutePolicy(req: Pick<Request, "method" | "path">): RatePolicy | null {
+/**
+ * Separate ordinary interactive writes from administrative capabilities. The
+ * app does not currently have a user/session identity layer, so tokens are
+ * deployment capabilities rather than pretend user authentication.
+ */
+export function writeCapability(
+  req: Pick<Request, "method" | "path">,
+): WriteCapability {
+  const method = req.method.toUpperCase();
+  if (!MUTATING_METHODS.has(method)) return "read";
+  const path = req.path;
+
+  const admin =
+    path === "/opportunities/feedback/rescore" ||
+    path === "/opportunities/import" ||
+    path === "/opportunities/enrich" ||
+    path === "/opportunities/reconcile-expired" ||
+    /^\/opportunities\/[^/]+$/.test(path) && method === "DELETE" ||
+    path.startsWith("/source-monitor/") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/rfp-sources/crawler") ||
+    path.startsWith("/rfp-sources/import") ||
+    /\/federal-intel\/[^/]+\/refresh\/?$/.test(path);
+
+  return admin ? "admin_write" : "user_write";
+}
+
+function writeTokenAllowed(req: Request, capability: WriteCapability): boolean {
+  if (capability === "read") return true;
+
+  const adminRequired = process.env.INSIGHT_HUB_ADMIN_TOKEN?.trim();
+  const writeRequired = process.env.INSIGHT_HUB_WRITE_TOKEN?.trim();
+  const requireAllWrites = process.env.INSIGHT_HUB_REQUIRE_WRITE_TOKEN === "true";
+  const supplied = req.get("x-insight-hub-write-token") ?? "";
+
+  if (capability === "admin_write" && adminRequired) {
+    return safeTokenMatch(adminRequired, supplied);
+  }
+  if (writeRequired && (capability === "admin_write" || requireAllWrites)) {
+    return safeTokenMatch(writeRequired, supplied);
+  }
+  return true;
+}
+
+export function expensiveRoutePolicy(
+  req: Pick<Request, "method" | "path">,
+): RatePolicy | null {
   const method = req.method.toUpperCase();
   const path = req.path;
   if (method !== "POST" && method !== "PATCH" && method !== "DELETE") return null;
@@ -90,66 +135,111 @@ export function expensiveRoutePolicy(req: Pick<Request, "method" | "path">): Rat
   if (method === "POST" && /^\/opportunities\/[^/]+\/feedback\/?$/.test(path)) {
     return { bucket: "opportunity-feedback", limit: 120, windowMs: 60_000 };
   }
+  if (method === "POST" && path === "/govcon/feedback") {
+    return { bucket: "govcon-feedback", limit: 120, windowMs: 60_000 };
+  }
   return null;
 }
 
-function pruneWindows(now: number): void {
-  if (windows.size >= 500) {
-    for (const [key, value] of windows) {
-      if (now - value.startedAt > RATE_WINDOW_RETENTION_MS) windows.delete(key);
+function pruneFallbackWindows(now: number): void {
+  if (fallbackWindows.size >= 500) {
+    for (const [key, value] of fallbackWindows) {
+      if (now - value.startedAt > RATE_WINDOW_RETENTION_MS) {
+        fallbackWindows.delete(key);
+      }
     }
   }
-
-  // A burst of unique client addresses must not turn the in-memory limiter into
-  // its own memory-exhaustion vector on the small production instance.
-  while (windows.size >= MAX_RATE_WINDOWS) {
-    const oldestKey = windows.keys().next().value as string | undefined;
+  while (fallbackWindows.size >= MAX_RATE_WINDOWS) {
+    const oldestKey = fallbackWindows.keys().next().value as string | undefined;
     if (!oldestKey) break;
-    windows.delete(oldestKey);
+    fallbackWindows.delete(oldestKey);
   }
 }
 
-router.use((req, res, next) => {
+function consumeFallback(
+  client: string,
+  policy: RatePolicy,
+  now: number,
+): { allowed: boolean; retryAfterSeconds: number } {
+  pruneFallbackWindows(now);
+  const key = `${client}:${policy.bucket}`;
+  const existing = fallbackWindows.get(key);
+  const current =
+    !existing || now - existing.startedAt >= policy.windowMs
+      ? { startedAt: now, count: 0 }
+      : existing;
+  if (current.count >= policy.limit) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.ceil(
+        Math.max(1, policy.windowMs - (now - current.startedAt)) / 1000,
+      ),
+    };
+  }
+  current.count += 1;
+  fallbackWindows.set(key, current);
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+router.use(async (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
   if (!mutationOriginAllowed(req)) {
     return res.status(403).json({ error: "Cross-origin write request rejected." });
   }
-  if (!writeTokenAllowed(req)) {
-    return res.status(401).json({ error: "Write authorization token is required." });
+
+  const capability = writeCapability(req);
+  if (!writeTokenAllowed(req, capability)) {
+    return res.status(401).json({
+      error:
+        capability === "admin_write"
+          ? "Administrative write authorization is required."
+          : "Write authorization token is required.",
+    });
   }
 
   const policy = expensiveRoutePolicy(req);
   if (!policy) return next();
 
-  const now = Date.now();
-  pruneWindows(now);
   const client = req.ip || req.socket.remoteAddress || "unknown";
-  const key = `${client}:${policy.bucket}`;
-  const existing = windows.get(key);
-  const current =
-    !existing || now - existing.startedAt >= policy.windowMs
-      ? { startedAt: now, count: 0 }
-      : existing;
-
-  if (current.count >= policy.limit) {
-    const retryAfterMs = Math.max(1, policy.windowMs - (now - current.startedAt));
-    res.setHeader("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
-    return res.status(429).json({
-      error: "Request rate limit reached for this expensive operation.",
-      retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
-    });
+  try {
+    const result = await consumeDurableRateLimit(
+      policy.bucket,
+      client,
+      policy.limit,
+      policy.windowMs,
+    );
+    if (!result.allowed) {
+      res.setHeader("Retry-After", String(result.retryAfterSeconds));
+      return res.status(429).json({
+        error: "Request rate limit reached for this expensive operation.",
+        retryAfterSeconds: result.retryAfterSeconds,
+        limiter: "shared",
+      });
+    }
+    return next();
+  } catch (error) {
+    // Database telemetry must not take the app down. A bounded local limiter is
+    // the degraded fallback; logs make the loss of shared enforcement visible.
+    req.log?.warn?.(error, "shared rate limiter unavailable; using local fallback");
+    const fallback = consumeFallback(client, policy, Date.now());
+    if (!fallback.allowed) {
+      res.setHeader("Retry-After", String(fallback.retryAfterSeconds));
+      return res.status(429).json({
+        error: "Request rate limit reached for this expensive operation.",
+        retryAfterSeconds: fallback.retryAfterSeconds,
+        limiter: "local-fallback",
+      });
+    }
+    return next();
   }
-
-  current.count += 1;
-  windows.set(key, current);
-  return next();
 });
 
 export function clearApiHardeningRateWindows(): void {
-  windows.clear();
+  fallbackWindows.clear();
 }
 
 export default router;
