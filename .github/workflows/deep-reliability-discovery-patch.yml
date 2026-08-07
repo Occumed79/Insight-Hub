@@ -109,8 +109,8 @@ jobs:
           )
           replace_once(
               worker,
-              '''        signal: AbortSignal.timeout(20000),''',
-              '''        signal: signal\n          ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])\n          : AbortSignal.timeout(20_000),''',
+              '''        body: JSON.stringify({ url, maxLength }),\n        signal: AbortSignal.timeout(20000),''',
+              '''        body: JSON.stringify({ url, maxLength }),\n        signal: signal\n          ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])\n          : AbortSignal.timeout(20_000),''',
           )
 
           Path(".github/workflows/deep-reliability-discovery-patch.yml").unlink()
