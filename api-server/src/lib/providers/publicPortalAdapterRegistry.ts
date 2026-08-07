@@ -17,6 +17,7 @@ import {
 import {
   civicEngageTenantProvider,
   CIVICENGAGE_PORTAL_IDS,
+  CIVICENGAGE_TENANT_BY_PORTAL_ID,
 } from "./civicEngageBids";
 import { CAL_EPROCURE_SOURCE, calEprocureProvider } from "./calEprocure";
 import { deepRecoveryProviders } from "./deepRecoveryProviders";
@@ -41,6 +42,17 @@ const statewideProviders = new Map<string, DataSourceProvider>(
       new StatewideProcurementProvider(config),
     ]),
 );
+
+// Orange County, NY moved its official county website from orangecountygov.com
+// to orangecountyny.gov on 2026-08-07. The old host now redirects to the new
+// government domain, which intentionally trips CivicEngage's same-origin guard.
+// Update this one tenant to the new official origin rather than weakening the
+// redirect/origin policy for every portal.
+const orangeCountyNyTenant = CIVICENGAGE_TENANT_BY_PORTAL_ID.get("ny-orange-county");
+if (orangeCountyNyTenant) {
+  orangeCountyNyTenant.listingUrl = "https://www.orangecountyny.gov/Bids.aspx";
+  orangeCountyNyTenant.origin = "https://www.orangecountyny.gov";
+}
 
 const STATIC_ADAPTER_IDS = new Set<string>([
   "tx-esbd",
