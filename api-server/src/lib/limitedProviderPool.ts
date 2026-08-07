@@ -1,7 +1,7 @@
 export interface LimitedProviderAttempt<T> {
   name: string;
   isConfigured: () => Promise<boolean>;
-  run: () => Promise<T>;
+  run: (signal?: AbortSignal) => Promise<T>;
 }
 
 export interface LimitedProviderPoolResult<T> {
@@ -39,9 +39,43 @@ const poolWindows = new Map<string, PoolWindow>();
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const POOL_WINDOW_IDLE_RESET_MS = 30_000;
+const POOL_WINDOW_RETENTION_MS = 5 * MINUTE;
+const MAX_COOLDOWN_ENTRIES = 512;
+const MAX_POOL_RUNTIME_KEYS = 128;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new Error("Provider pool operation aborted");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+function trimOldest<K, V>(map: Map<K, V>, maximum: number): void {
+  while (map.size > maximum) {
+    const oldest = map.keys().next().value as K | undefined;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+function pruneRuntimeState(now = Date.now()): void {
+  for (const [key, cooldown] of cooldowns) {
+    if (cooldown.until <= now) cooldowns.delete(key);
+  }
+  for (const [key, window] of poolWindows) {
+    if (now - window.lastUsedAt > POOL_WINDOW_RETENTION_MS) {
+      poolWindows.delete(key);
+      cursors.delete(key);
+    }
+  }
+  trimOldest(cooldowns, MAX_COOLDOWN_ENTRIES);
+  trimOldest(poolWindows, MAX_POOL_RUNTIME_KEYS);
+  trimOldest(cursors, MAX_POOL_RUNTIME_KEYS);
 }
 
 function cooldownMs(error: unknown): number {
@@ -81,34 +115,31 @@ function rotated<T>(items: T[], start: number): T[] {
 
 function runtimePolicy(poolId: string): PoolRuntimePolicy {
   if (poolId === "opportunity-web-discovery") {
-    // Prioritize stable sources: RSS feeds, direct portals, self-hosted crawler
-    // Fallback to external APIs only when stable sources fail
     return { budgetMs: 45_000, attemptTimeoutMs: 10_000, maxAttempts: 6 };
   }
   if (poolId === "opportunity-page-enrichment") {
-    // Prioritize self-hosted crawler over external scraping APIs
     return { budgetMs: 20_000, attemptTimeoutMs: 15_000, maxAttempts: 10 };
   }
   if (poolId === "opportunity-ai-extraction") {
-    // Prioritize local LLM over external AI APIs
     return { budgetMs: 35_000, attemptTimeoutMs: 12_000, maxAttempts: 8 };
   }
   if (poolId === "opportunity-structured-review") {
-    // Prioritize direct federal sources (SAM.gov, Tango) over external APIs
     return { budgetMs: 30_000, attemptTimeoutMs: 15_000, maxAttempts: 5 };
   }
   if (poolId === "opportunity-structured-federal") {
-    // Federal structured sources are already stable, give them more time
     return { budgetMs: 70_000, attemptTimeoutMs: 35_000 };
   }
   return {};
 }
 
 function currentPoolWindow(poolId: string, now: number): PoolWindow {
+  pruneRuntimeState(now);
   const existing = poolWindows.get(poolId);
   if (!existing || now - existing.lastUsedAt > POOL_WINDOW_IDLE_RESET_MS) {
     const created = { startedAt: now, lastUsedAt: now, attempts: 0 };
+    poolWindows.delete(poolId);
     poolWindows.set(poolId, created);
+    trimOldest(poolWindows, MAX_POOL_RUNTIME_KEYS);
     return created;
   }
   existing.lastUsedAt = now;
@@ -116,26 +147,55 @@ function currentPoolWindow(poolId: string, now: number): PoolWindow {
 }
 
 async function withAttemptTimeout<T>(
-  promise: Promise<T>,
+  run: (signal?: AbortSignal) => Promise<T>,
   timeoutMs: number | undefined,
   label: string,
+  parentSignal?: AbortSignal,
 ): Promise<T> {
-  if (!timeoutMs || timeoutMs <= 0) return promise;
+  throwIfAborted(parentSignal);
 
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
-      timeoutMs,
-    );
-    timer.unref?.();
-  });
+  let parentReject: ((reason?: unknown) => void) | undefined;
+  const abortFromParent = () => {
+    if (!parentSignal) return;
+    const reason = abortReason(parentSignal);
+    if (!controller.signal.aborted) controller.abort(reason);
+    parentReject?.(reason);
+  };
 
-  promise.catch(() => undefined);
+  const parentAbort = parentSignal
+    ? new Promise<never>((_resolve, reject) => {
+        parentReject = reject;
+        parentSignal.addEventListener("abort", abortFromParent, { once: true });
+      })
+    : undefined;
+
+  const timeout =
+    timeoutMs && timeoutMs > 0
+      ? new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            const error = new Error(`${label} timed out after ${timeoutMs}ms`);
+            if (!controller.signal.aborted) controller.abort(error);
+            reject(error);
+          }, timeoutMs);
+          timer.unref?.();
+        })
+      : undefined;
+
+  const providerPromise = Promise.resolve().then(() => run(controller.signal));
+  providerPromise.catch(() => undefined);
+
   try {
-    return await Promise.race([promise, timeout]);
+    const racers: Promise<T>[] = [providerPromise];
+    if (timeout) racers.push(timeout as Promise<T>);
+    if (parentAbort) racers.push(parentAbort as Promise<T>);
+    return await Promise.race(racers);
   } finally {
     if (timer) clearTimeout(timer);
+    if (parentSignal) {
+      parentSignal.removeEventListener("abort", abortFromParent);
+    }
   }
 }
 
@@ -181,6 +241,7 @@ function logBudgetReached(
  *
  * Opportunity pools also enforce a shared call ceiling across the active run
  * window. Reaching that ceiling is normal partial completion, not an error.
+ * Parent cancellation is never converted into provider failure/cooldown state.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -191,8 +252,12 @@ export async function runLimitedProviderPool<T>(
     budgetMs?: number;
     attemptTimeoutMs?: number;
     maxAttempts?: number;
+    signal?: AbortSignal;
   } = {},
 ): Promise<LimitedProviderPoolResult<T>> {
+  pruneRuntimeState();
+  throwIfAborted(options.signal);
+
   const configured: LimitedProviderAttempt<T>[] = [];
   const encounteredErrors: string[] = [];
   const defaults = runtimePolicy(poolId);
@@ -201,14 +266,17 @@ export async function runLimitedProviderPool<T>(
     attemptTimeoutMs: options.attemptTimeoutMs ?? defaults.attemptTimeoutMs,
     maxAttempts: options.maxAttempts ?? defaults.maxAttempts,
   };
-  const window = policy.budgetMs || policy.maxAttempts
-    ? currentPoolWindow(poolId, Date.now())
-    : undefined;
+  const window =
+    policy.budgetMs || policy.maxAttempts
+      ? currentPoolWindow(poolId, Date.now())
+      : undefined;
 
   for (const attempt of attempts) {
+    throwIfAborted(options.signal);
     try {
       if (await attempt.isConfigured()) configured.push(attempt);
     } catch (error) {
+      throwIfAborted(options.signal);
       encounteredErrors.push(
         `${attempt.name} configuration check failed: ${errorText(error)}`,
       );
@@ -220,10 +288,11 @@ export async function runLimitedProviderPool<T>(
   const ordered = rotated(configured, start);
   const attempted: string[] = [];
   const skippedCooldown: string[] = [];
-  const now = Date.now();
   let budgetReached = false;
 
   for (const attempt of ordered) {
+    throwIfAborted(options.signal);
+    const now = Date.now();
     const key = poolProviderKey(poolId, attempt.name);
     const cooldown = cooldowns.get(key);
     if (cooldown && cooldown.until > now) {
@@ -260,10 +329,12 @@ export async function runLimitedProviderPool<T>(
 
     try {
       const value = await withAttemptTimeout(
-        attempt.run(),
+        attempt.run,
         effectiveTimeoutMs,
         `${attempt.name} provider`,
+        options.signal,
       );
+      throwIfAborted(options.signal);
       if (!isUseful(value)) {
         encounteredErrors.push(`${attempt.name} returned no usable result`);
         continue;
@@ -273,10 +344,12 @@ export async function runLimitedProviderPool<T>(
         (candidate) => candidate.name === attempt.name,
       );
       if (rotateProviders) {
+        cursors.delete(poolId);
         cursors.set(
           poolId,
           configured.length > 0 ? (configuredIndex + 1) % configured.length : 0,
         );
+        trimOldest(cursors, MAX_POOL_RUNTIME_KEYS);
       }
 
       logRecoveredErrors(
@@ -294,17 +367,23 @@ export async function runLimitedProviderPool<T>(
         recoveredErrors: [...encounteredErrors],
       };
     } catch (error) {
+      if (options.signal?.aborted) throw abortReason(options.signal);
       const message = errorText(error);
+      cooldowns.delete(key);
       cooldowns.set(key, {
         until: Date.now() + cooldownMs(error),
         reason: message,
       });
+      trimOldest(cooldowns, MAX_COOLDOWN_ENTRIES);
       encounteredErrors.push(`${attempt.name}: ${message}`);
     }
   }
 
+  throwIfAborted(options.signal);
   if (rotateProviders && configured.length > 0) {
+    cursors.delete(poolId);
     cursors.set(poolId, (start + 1) % configured.length);
+    trimOldest(cursors, MAX_POOL_RUNTIME_KEYS);
   }
   return {
     value: null,
@@ -327,6 +406,7 @@ export function limitedProviderPoolSnapshot(): Array<{
   until: number;
   reason: string;
 }> {
+  pruneRuntimeState();
   return [...cooldowns.entries()].map(([poolProvider, value]) => ({
     poolProvider,
     ...value,
