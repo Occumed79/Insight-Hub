@@ -1,0 +1,36 @@
+name: Production acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployed Insight Hub base URL, for example https://insight-hub.onrender.com"
+        required: true
+        type: string
+      expected_commit:
+        description: "Expected deployed git commit SHA (recommended)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSIGHT_PRODUCTION_URL: ${{ inputs.base_url }}
+      EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit }}
+      ACCEPTANCE_TIMEOUT_MS: "12000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Read-only deployed acceptance
+        run: node api-server/scripts/production-acceptance.mjs
