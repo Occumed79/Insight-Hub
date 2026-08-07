@@ -1,0 +1,149 @@
+name: Deep reliability provider patch
+
+on:
+  push:
+    branches:
+      - hardening/deep-reliability-beast-pass
+    paths:
+      - .github/workflows/deep-reliability-provider-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-provider-http:
+    if: ${{ !contains(github.event.head_commit.message, 'Propagate AI cancellation to provider HTTP') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening/deep-reliability-beast-pass
+          fetch-depth: 0
+
+      - name: Patch provider cancellation paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          ai = "api-server/src/lib/search/aiExtract.ts"
+          replace_once(
+              ai,
+              '''  complete(prompt: string, maxTokens?: number): Promise<string>;''',
+              '''  complete(\n    prompt: string,\n    maxTokens?: number,\n    signal?: AbortSignal,\n  ): Promise<string>;''',
+          )
+          replace_once(
+              ai,
+              '''        run: async () =>\n          parseJsonArray(await provider.complete(prompt, maxTokens)),''',
+              '''        run: async (attemptSignal) =>\n          parseJsonArray(\n            await provider.complete(prompt, maxTokens, attemptSignal),\n          ),''',
+          )
+
+          groq = "api-server/src/lib/providers/groq.ts"
+          replace_once(
+              groq,
+              '''  async complete(prompt: string, maxTokens = 512): Promise<string> {''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    signal?: AbortSignal,\n  ): Promise<string> {''',
+          )
+          replace_once(
+              groq,
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n    });''',
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n      signal: signal\n        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])\n        : AbortSignal.timeout(30_000),\n    });''',
+          )
+
+          openrouter = "api-server/src/lib/providers/openrouter.ts"
+          replace_once(
+              openrouter,
+              '''  async complete(prompt: string, maxTokens = 512): Promise<string> {''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    signal?: AbortSignal,\n  ): Promise<string> {''',
+          )
+          replace_once(
+              openrouter,
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n    });''',
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n      signal: signal\n        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])\n        : AbortSignal.timeout(30_000),\n    });''',
+          )
+
+          minimax = "api-server/src/lib/providers/minimax.ts"
+          replace_once(
+              minimax,
+              '''  async complete(prompt: string, maxTokens = 512): Promise<string> {''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    signal?: AbortSignal,\n  ): Promise<string> {''',
+          )
+          replace_once(
+              minimax,
+              '''      body: JSON.stringify({\n        model: DEFAULT_MODEL,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n    });''',
+              '''      body: JSON.stringify({\n        model: DEFAULT_MODEL,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n      signal: signal\n        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])\n        : AbortSignal.timeout(30_000),\n    });''',
+          )
+
+          clod = "api-server/src/lib/providers/clod.ts"
+          replace_once(
+              clod,
+              '''  async complete(prompt: string, maxTokens = 512): Promise<string> {''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    signal?: AbortSignal,\n  ): Promise<string> {''',
+          )
+          replace_once(
+              clod,
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n    });''',
+              '''      body: JSON.stringify({\n        model,\n        messages: [{ role: "user", content: prompt }],\n        max_tokens: maxTokens,\n        temperature: 0.2,\n      }),\n      signal: signal\n        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])\n        : AbortSignal.timeout(30_000),\n    });''',
+          )
+
+          gemini = "api-server/src/lib/providers/gemini.ts"
+          replace_once(
+              gemini,
+              '''async function callGemini(apiKey: string, prompt: string, maxTokens = 512): Promise<string> {''',
+              '''async function callGemini(\n  apiKey: string,\n  prompt: string,\n  maxTokens = 512,\n  signal?: AbortSignal,\n): Promise<string> {''',
+          )
+          replace_once(
+              gemini,
+              '''    body: JSON.stringify({\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },\n    }),\n  });''',
+              '''    body: JSON.stringify({\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },\n    }),\n    signal: signal\n      ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])\n      : AbortSignal.timeout(30_000),\n  });''',
+          )
+          replace_once(
+              gemini,
+              '''  async complete(prompt: string, maxTokens = 512): Promise<string> {\n    const apiKey = await this.getApiKey();\n    if (!apiKey) throw new Error("Gemini API key not configured.");\n    return callGemini(apiKey, prompt, maxTokens);\n  }''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    signal?: AbortSignal,\n  ): Promise<string> {\n    const apiKey = await this.getApiKey();\n    if (!apiKey) throw new Error("Gemini API key not configured.");\n    return callGemini(apiKey, prompt, maxTokens, signal);\n  }''',
+          )
+
+          compat = "api-server/src/lib/providers/openAiCompatible.ts"
+          replace_once(
+              compat,
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    modelOverride?: string,\n  ): Promise<string> {\n    const apiKey = await this.getApiKey();\n    if (!apiKey) throw new Error(`${this.displayName} API key not configured.`);\n    const model = modelOverride ?? (await this.getModel());''',
+              '''  async complete(\n    prompt: string,\n    maxTokens = 512,\n    modelOverrideOrSignal?: string | AbortSignal,\n    signal?: AbortSignal,\n  ): Promise<string> {\n    const apiKey = await this.getApiKey();\n    if (!apiKey) throw new Error(`${this.displayName} API key not configured.`);\n    const modelOverride =\n      typeof modelOverrideOrSignal === "string" ? modelOverrideOrSignal : undefined;\n    const parentSignal =\n      modelOverrideOrSignal instanceof AbortSignal\n        ? modelOverrideOrSignal\n        : signal;\n    const model = modelOverride ?? (await this.getModel());''',
+          )
+          replace_once(
+              compat,
+              '''      signal: AbortSignal.timeout(30_000),''',
+              '''      signal: parentSignal\n        ? AbortSignal.any([parentSignal, AbortSignal.timeout(30_000)])\n        : AbortSignal.timeout(30_000),''',
+          )
+
+          manual = "api-server/src/lib/ingestion/manualIngestion.ts"
+          replace_once(
+              manual,
+              '''    }, deadlineMs);\n  });\n  const beat = setInterval(() => {''',
+              '''    }, deadlineMs);\n    timeout.unref?.();\n  });\n  const beat = setInterval(() => {''',
+          )
+          replace_once(
+              manual,
+              '''    const archived = cancelled\n      ? 0\n      : await reconcileExpiredOpportunities().catch(() => 0);''',
+              '''    const archived = cancelled || timedOut\n      ? 0\n      : await reconcileExpiredOpportunities().catch(() => 0);''',
+          )
+
+          Path(".github/workflows/deep-reliability-provider-patch.yml").unlink()
+          PY
+
+      - name: Commit provider cancellation fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Propagate AI cancellation to provider HTTP"
+          git push origin HEAD:hardening/deep-reliability-beast-pass
