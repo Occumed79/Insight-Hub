@@ -44,7 +44,10 @@ export class FirecrawlProvider implements DataSourceProvider {
    * Scrape a single URL and return clean markdown content.
    * Returns null if the provider is not configured or the scrape fails.
    */
-  async scrape(url: string): Promise<FirecrawlScrapeResult | null> {
+  async scrape(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<FirecrawlScrapeResult | null> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return null;
 
@@ -60,6 +63,9 @@ export class FirecrawlProvider implements DataSourceProvider {
         onlyMainContent: true,
         timeout: 20000,
       }),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(25_000)])
+        : AbortSignal.timeout(25_000),
     });
 
     if (!response.ok) {

@@ -384,11 +384,11 @@ export async function webIntelligenceFetch(options: {
   ).slice(0, 10);
 
   for (const query of discoveryQueries) {
-    throwIfAborted(options.signal);
+    throwIfAborted(attemptSignal ?? options.signal);
     const attempts: Array<{
       name: SearchCandidateProvider;
       isConfigured: () => Promise<boolean>;
-      run: () => Promise<Candidate[]>;
+      run: (signal?: AbortSignal) => Promise<Candidate[]>;
     }> = [];
 
     // Prioritize stable sources (Tier 1)
@@ -396,8 +396,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "rssAggregator",
         isConfigured: () => rssAggregatorProvider.isConfigured(),
-        run: async () => {
-          const result = await rssAggregatorProvider.fetch({ limit: 50, signal: options.signal });
+        run: async (attemptSignal) => {
+          const result = await rssAggregatorProvider.fetch({ limit: 50, signal: attemptSignal ?? options.signal });
           stats.rssAggregatorResults += result.records.length;
           return result.records.map((record) => ({
             title: record.title,
@@ -414,7 +414,7 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "selfHostedSearch",
         isConfigured: () => selfHostedSearchProvider.isConfigured(),
-        run: async () => {
+        run: async (attemptSignal) => {
           const results = await selfHostedSearchProvider.search({
             query,
             limit: 20,
@@ -436,10 +436,10 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "serper",
         isConfigured: () => serperProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await serperProvider.search(query, SERPER_RESULTS_PER_QUERY, {
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title,
@@ -454,11 +454,11 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "exa",
         isConfigured: () => exaProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await exaProvider.search(query, {
               numResults: EXA_RESULTS_PER_QUERY,
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title ?? "",
@@ -476,8 +476,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "parallel",
         isConfigured: () => parallelProvider.isConfigured(),
-        run: async () =>
-          (await parallelProvider.search(query, options.signal)).map(
+        run: async (attemptSignal) =>
+          (await parallelProvider.search(query, attemptSignal ?? options.signal)).map(
             (result) => ({
               title: result.title,
               url: result.url,
@@ -492,8 +492,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "linkup",
         isConfigured: () => linkupProvider.isConfigured(),
-        run: async () =>
-          (await linkupProvider.search(query, options.signal)).map(
+        run: async (attemptSignal) =>
+          (await linkupProvider.search(query, attemptSignal ?? options.signal)).map(
             (result) => ({
               title: result.name,
               url: result.url,
@@ -507,8 +507,8 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "you",
         isConfigured: () => youProvider.isConfigured(),
-        run: async () =>
-          (await youProvider.search(query, options.signal)).map((result) => ({
+        run: async (attemptSignal) =>
+          (await youProvider.search(query, attemptSignal ?? options.signal)).map((result) => ({
             ...result,
             sourceProvider: "you" as const,
           })),
@@ -518,11 +518,11 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "langsearch",
         isConfigured: () => langsearchProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await langsearchProvider.search(query, {
               dateRange: options.keywords ? 365 : 30,
-              signal: options.signal,
+              signal: attemptSignal ?? options.signal,
             })
           ).map((result) => ({
             title: result.title,
@@ -537,12 +537,12 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "socrata",
         isConfigured: () => socrataProvider.isConfigured(),
-        run: async () =>
+        run: async (attemptSignal) =>
           (
             await socrataProvider.search(
               options.keywords?.trim() ||
                 "procurement bids solicitations occupational health",
-              options.signal,
+              attemptSignal ?? options.signal,
             )
           ).map((result) => ({
             title: result.title,
@@ -557,10 +557,10 @@ export async function webIntelligenceFetch(options: {
       attempts.push({
         name: "websearch",
         isConfigured: () => websearchProvider.isConfigured(),
-        run: async () => {
+        run: async (attemptSignal) => {
           const result = await websearchProvider.fetch({
             keywords: query,
-            signal: options.signal,
+            signal: attemptSignal ?? options.signal,
           });
           if (result.records.length === 0 && result.errors.length > 0) {
             throw new Error(result.errors.join("; "));
@@ -642,8 +642,8 @@ export async function webIntelligenceFetch(options: {
             {
               name: "selfHostedCrawler" as const,
               isConfigured: () => selfHostedCrawlerProvider.isConfigured(),
-              run: async () => {
-                const result = await selfHostedCrawlerProvider.getText(candidate.url);
+              run: async (attemptSignal) => {
+                const result = await selfHostedCrawlerProvider.getText(candidate.url, { signal: attemptSignal ?? options.signal });
                 return result;
               },
             },
@@ -655,8 +655,8 @@ export async function webIntelligenceFetch(options: {
             {
               name: "firecrawl" as const,
               isConfigured: () => firecrawlProvider.isConfigured(),
-              run: async () =>
-                (await firecrawlProvider.scrape(candidate.url))?.markdown ??
+              run: async (attemptSignal) =>
+                (await firecrawlProvider.scrape(candidate.url, attemptSignal ?? options.signal))?.markdown ??
                 null,
             },
           ]
@@ -664,17 +664,17 @@ export async function webIntelligenceFetch(options: {
       {
         name: "jina" as const,
         isConfigured: () => jinaProvider.isConfigured(),
-        run: () => jinaProvider.extractUrl(candidate.url, 5_000),
+        run: (attemptSignal) => jinaProvider.extractUrl(candidate.url, 5_000, attemptSignal ?? options.signal),
       },
       {
         name: "olostep" as const,
         isConfigured: () => olostepProvider.isConfigured(),
-        run: () => olostepProvider.getText(candidate.url),
+        run: (attemptSignal) => olostepProvider.getText(candidate.url, attemptSignal ?? options.signal),
       },
       {
         name: "cloudflare-worker" as const,
         isConfigured: () => cloudflareWorkerProvider.isConfigured(),
-        run: () => cloudflareWorkerProvider.extractUrl(candidate.url),
+        run: (attemptSignal) => cloudflareWorkerProvider.extractUrl(candidate.url, 8_000, attemptSignal ?? options.signal),
       },
     ];
     const enriched = await runLimitedProviderPool(
