@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { rfpDb } from "@workspace/db";
+import { databaseQueryTelemetrySnapshot, rfpDb } from "@workspace/db";
 import {
   opportunityIngestionRunsTable,
   opportunityIngestionRunSourcesTable,
@@ -130,6 +130,7 @@ router.get("/hardening/diagnostics", async (req, res) => {
       lastSuccessAt: budget.lastSuccessAt ?? null,
     })),
     runtime: runtimeTelemetrySnapshot(),
+    databaseQueries: databaseQueryTelemetrySnapshot(),
     pipeline,
   });
 });
