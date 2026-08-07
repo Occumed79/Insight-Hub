@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema/rfp";
 import { INSIGHT_SOURCE_ARCHITECTURE } from "../lib/sourceArchitecture";
 import { providerBudgetSnapshot } from "../lib/providerBudget";
+import { runtimeTelemetrySnapshot } from "../lib/runtimeTelemetry";
 import { adminReadAllowed } from "../middleware/api-hardening";
 
 const router = Router();
@@ -128,6 +129,7 @@ router.get("/hardening/diagnostics", async (req, res) => {
       lastAttemptAt: budget.lastAttemptAt ?? null,
       lastSuccessAt: budget.lastSuccessAt ?? null,
     })),
+    runtime: runtimeTelemetrySnapshot(),
     pipeline,
   });
 });
