@@ -64,6 +64,18 @@ function safeTokenMatch(required: string, supplied: string): boolean {
 }
 
 /**
+ * Sensitive read-only diagnostics are protected whenever an administrative
+ * deployment capability is configured. Leaving the token unset preserves the
+ * current single-user/local behavior instead of silently locking operators out.
+ */
+export function adminReadAllowed(req: Request): boolean {
+  const required = process.env.INSIGHT_HUB_ADMIN_TOKEN?.trim();
+  if (!required) return true;
+  const supplied = req.get("x-insight-hub-write-token") ?? "";
+  return safeTokenMatch(required, supplied);
+}
+
+/**
  * Separate ordinary interactive writes from administrative capabilities. The
  * app does not currently have a user/session identity layer, so tokens are
  * deployment capabilities rather than pretend user authentication.
@@ -80,7 +92,7 @@ export function writeCapability(
     path === "/opportunities/import" ||
     path === "/opportunities/enrich" ||
     path === "/opportunities/reconcile-expired" ||
-    /^\/opportunities\/[^/]+$/.test(path) && method === "DELETE" ||
+    (/^\/opportunities\/[^/]+$/.test(path) && method === "DELETE") ||
     path.startsWith("/source-monitor/") ||
     path.startsWith("/settings") ||
     path.startsWith("/rfp-sources/crawler") ||
