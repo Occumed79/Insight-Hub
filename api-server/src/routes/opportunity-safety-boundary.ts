@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, gt, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { classifyResult } from "../lib/search/relevance";
@@ -28,6 +28,8 @@ const VIEW_MODES = new Set<OpportunityViewMode>([
   "all",
 ]);
 const FEEDBACK_RANK_WEIGHT = 15;
+const MAX_RANKING_CANDIDATES = 2_000;
+const MIN_RANKING_CANDIDATES = 500;
 
 function parseTags(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -79,11 +81,6 @@ function sourceAuthority(provider: unknown): {
   return { label: "other", bonus: 0 };
 }
 
-/**
- * Collapse cross-provider copies by solicitation identity first. URL is the
- * fallback because SAM/Tango/search engines frequently expose different URLs
- * for the same solicitation.
- */
 function crossSourceKey(row: Record<string, any>): string {
   const solicitation = String(row.solicitationNumber ?? row.noticeId ?? "")
     .replace(/[^a-z0-9]/gi, "")
@@ -243,19 +240,26 @@ router.get("/opportunities", async (req, res) => {
         sql`coalesce(${opportunitiesTable.tags}, '') not ilike '%stale%'`,
       );
     }
-    // "Not relevant" is a durable suppression in every normal view. Audit: All
-    // Records intentionally remains the escape hatch for reviewing/restoring it.
     if (view !== "all") {
       conditions.push(
         sql`coalesce(${opportunitiesTable.userGrade}, '') <> 'spam'`,
       );
     }
 
+    const candidateCap = Math.min(
+      MAX_RANKING_CANDIDATES,
+      Math.max(MIN_RANKING_CANDIDATES, page * limit * 10),
+    );
     const rows = await db
       .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
       .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(asc(opportunitiesTable.id));
+      .orderBy(
+        desc(opportunitiesTable.postedDate),
+        desc(opportunitiesTable.relevanceScore),
+        asc(opportunitiesTable.id),
+      )
+      .limit(candidateCap);
 
     const context = await contextualAdjustments(rows, search || undefined);
     const best = new Map<
@@ -356,6 +360,8 @@ router.get("/opportunities", async (req, res) => {
       ranking: {
         mode: "cross-source-v2",
         candidates: rows.length,
+        candidateCap,
+        truncated: rows.length >= candidateCap,
         canonicalRecords: total,
         queryContext: search || null,
       },
@@ -369,7 +375,6 @@ router.get("/opportunities", async (req, res) => {
   }
 });
 
-// Bulk deletion contradicts the raw -> staging -> canonical audit contract.
 router.post("/opportunities/purge-junk", (_req, res) =>
   res.status(410).json({
     error: "Purge Junk is disabled.",
