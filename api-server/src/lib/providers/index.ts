@@ -40,7 +40,6 @@ export * from "./cloudflareWorker";
 export * from "./configOnly";
 export * from "./selfHostedCrawler";
 export * from "./rssAggregator";
-export * from "./localLlm";
 export * from "./selfHostedSearch";
 export * from "./emailNotifications";
 
@@ -86,10 +85,13 @@ import { huggingFaceProvider } from "./huggingFace";
 import { qdrantProvider } from "./qdrant";
 import { pineconeProvider } from "./pinecone";
 import { cloudflareWorkerProvider } from "./cloudflareWorker";
-import { falProvider, mongoDbProvider } from "./configOnly";
+import {
+  falProvider,
+  mongoDbProvider,
+  retiredLocalLlmProvider,
+} from "./configOnly";
 import { selfHostedCrawlerProvider } from "./selfHostedCrawler";
 import { rssAggregatorProvider } from "./rssAggregator";
-import { localLlmProvider } from "./localLlm";
 import { selfHostedSearchProvider } from "./selfHostedSearch";
 import { emailNotificationProvider } from "./emailNotifications";
 import type { DataSourceProvider } from "./types";
@@ -139,7 +141,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   huggingFace: huggingFaceProvider,
   selfHostedCrawler: selfHostedCrawlerProvider,
   rssAggregator: rssAggregatorProvider,
-  localLlm: localLlmProvider,
+  localLlm: retiredLocalLlmProvider,
   selfHostedSearch: selfHostedSearchProvider,
   emailNotifications: emailNotificationProvider,
 };
