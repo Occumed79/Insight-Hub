@@ -22,6 +22,21 @@ test("manual fetch payload is bounded and strict", () => {
   assert.equal(invalid.ok, false);
 });
 
+test("trailing slashes cannot bypass mutation validation", () => {
+  for (const path of [
+    "/opportunities/fetch/",
+    "/govcon/feedback/",
+    "/govcon/recompete-verify/",
+  ]) {
+    const result = validateMutationPayload({
+      method: "POST",
+      path,
+      body: { surprise: true },
+    } as any);
+    assert.equal(result.ok, false, `${path} must still be validated`);
+  }
+});
+
 test("recompete verification requires bounded identity fields", () => {
   assert.equal(
     validateMutationPayload({
