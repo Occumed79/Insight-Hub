@@ -18,7 +18,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       RFP_DATABASE_URL: postgresql://test:test@localhost:5432/rfp_core
       INTEL_DATABASE_URL: postgresql://test:test@localhost:5432/intel
@@ -48,6 +48,9 @@ jobs:
       - name: Hardening regressions
         run: pnpm --filter @workspace/api-server run test:hardening
 
+      - name: Full-scope acceptance benchmark
+        run: pnpm --filter @workspace/api-server run test:acceptance
+
       - name: Opportunity ingestion regressions
         run: pnpm --filter @workspace/api-server run test:ingestion
 
@@ -59,3 +62,15 @@ jobs:
 
       - name: Build production applications
         run: pnpm run build:prod
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @workspace/api-server exec playwright install --with-deps chromium
+
+      - name: Browser acceptance - Opportunities
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=4173 NODE_ENV=production pnpm --filter @workspace/intel-suite run serve >/tmp/insight-hub-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true; cat /tmp/insight-hub-preview.log || true' EXIT
+          INSIGHT_E2E_BASE_URL=http://127.0.0.1:4173 node api-server/scripts/opportunities-browser-smoke.mjs
