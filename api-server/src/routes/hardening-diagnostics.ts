@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema/rfp";
 import { INSIGHT_SOURCE_ARCHITECTURE } from "../lib/sourceArchitecture";
 import { providerBudgetSnapshot } from "../lib/providerBudget";
+import { adminReadAllowed } from "../middleware/api-hardening";
 
 const router = Router();
 
@@ -80,6 +81,12 @@ async function ingestionPipeline(runId: string | undefined) {
 }
 
 router.get("/hardening/diagnostics", async (req, res) => {
+  if (!adminReadAllowed(req)) {
+    return res.status(401).json({
+      error: "Administrative read authorization is required.",
+    });
+  }
+
   const budgetNames = Array.from(
     new Set([
       ...BASE_BUDGET_NAMES,
