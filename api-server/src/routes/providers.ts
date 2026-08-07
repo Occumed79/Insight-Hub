@@ -11,16 +11,28 @@ import {
 
 const router = Router();
 
-const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>(["texasEsbd", "nyScr"]);
-const PROVIDER_NAMES = (Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]).filter(
-  (name) => !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name),
+const INTERNAL_PUBLIC_PORTAL_ADAPTERS = new Set<RfpProviderName>([
+  "texasEsbd",
+  "nyScr",
+]);
+const RETIRED_PROVIDER_NAMES = new Set<RfpProviderName>(["localLlm"]);
+const PROVIDER_NAMES = (
+  Object.keys(PROVIDER_DEFINITIONS) as RfpProviderName[]
+).filter(
+  (name) =>
+    !INTERNAL_PUBLIC_PORTAL_ADAPTERS.has(name) &&
+    !RETIRED_PROVIDER_NAMES.has(name),
 );
-const RFP_INGESTION_PROVIDER_SET = new Set<string>(RFP_INGESTION_PROVIDER_NAMES);
+const RFP_INGESTION_PROVIDER_SET = new Set<string>(
+  RFP_INGESTION_PROVIDER_NAMES,
+);
 
 function ingestionMode(name: RfpProviderName) {
   if (name === "bidnet") return "stub" as const;
   if (name === "publicPortalProviders") return "hybrid" as const;
-  if (PROVIDER_DEFINITIONS[name].useCase === "web_discovery") return "discovery" as const;
+  if (PROVIDER_DEFINITIONS[name].useCase === "web_discovery") {
+    return "discovery" as const;
+  }
   return "direct" as const;
 }
 
@@ -30,6 +42,8 @@ function ingestionMode(name: RfpProviderName) {
  *
  * USAspending and Federal Register are intentionally excluded here because they
  * feed Federal Agencies intelligence windows instead of the RFP provider list.
+ * Retired providers are intentionally omitted so Settings cannot imply a legacy
+ * runtime is still supported merely because its historical definition remains.
  */
 router.get("/providers", async (req, res) => {
   try {
@@ -89,8 +103,22 @@ router.get("/providers", async (req, res) => {
             docsUrl: def.docsUrl,
             signupUrl: def.signupUrl,
             notes: def.notes,
-            requiredFields: def.requiredFields.map((f) => ({ key: f.key, label: f.label, type: f.type, placeholder: f.placeholder, description: f.description, dbKey: f.dbKey })),
-            optionalFields: def.optionalFields.map((f) => ({ key: f.key, label: f.label, type: f.type, placeholder: f.placeholder, description: f.description, dbKey: f.dbKey })),
+            requiredFields: def.requiredFields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.type,
+              placeholder: f.placeholder,
+              description: f.description,
+              dbKey: f.dbKey,
+            })),
+            optionalFields: def.optionalFields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.type,
+              placeholder: f.placeholder,
+              description: f.description,
+              dbKey: f.dbKey,
+            })),
             status: {
               configured: false,
               healthy: false,
@@ -98,7 +126,7 @@ router.get("/providers", async (req, res) => {
             },
           };
         }
-      })
+      }),
     );
     return res.json({ providers: statuses });
   } catch (err) {
@@ -131,6 +159,11 @@ router.put("/providers/:name", async (req, res) => {
     if (!def) {
       return res.status(404).json({ error: `Unknown RFP provider: ${name}` });
     }
+    if (RETIRED_PROVIDER_NAMES.has(providerName)) {
+      return res.status(410).json({
+        error: `${def.displayName} is retired and cannot accept new runtime configuration.`,
+      });
+    }
 
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
       return res.status(400).json({ error: "Invalid request body" });
@@ -138,10 +171,11 @@ router.put("/providers/:name", async (req, res) => {
 
     const body = req.body as Record<string, unknown>;
 
-    // Build the explicit removal set from the optional `remove` array.
     const explicitRemove = new Set<string>(
       Array.isArray(body.remove)
-        ? (body.remove as unknown[]).filter((v): v is string => typeof v === "string")
+        ? (body.remove as unknown[]).filter(
+            (value): value is string => typeof value === "string",
+          )
         : [],
     );
 
@@ -152,23 +186,24 @@ router.put("/providers/:name", async (req, res) => {
     for (const field of allFields) {
       const shouldRemove =
         explicitRemove.has(field.dbKey) ||
-        (field.dbKey in body && (body[field.dbKey] === null || body[field.dbKey] === ""));
+        (field.dbKey in body &&
+          (body[field.dbKey] === null || body[field.dbKey] === ""));
 
       if (shouldRemove) {
-        // Delete the stored DB override. Env-variable credentials are unaffected.
         await db.delete(settingsTable).where(eq(settingsTable.key, field.dbKey));
         removedKeys.push(field.dbKey);
         continue;
       }
 
-      // Field absent from body → preserve current value (no-op).
       if (!(field.dbKey in body) || body[field.dbKey] === undefined) {
         continue;
       }
 
       const rawValue = body[field.dbKey];
       if (typeof rawValue === "object" && rawValue !== null) {
-        return res.status(400).json({ error: `Invalid value for ${field.dbKey}` });
+        return res
+          .status(400)
+          .json({ error: `Invalid value for ${field.dbKey}` });
       }
 
       const normalized = String(rawValue).trim();
@@ -176,26 +211,33 @@ router.put("/providers/:name", async (req, res) => {
         await db
           .insert(settingsTable)
           .values({ key: field.dbKey, value: normalized })
-          .onConflictDoUpdate({ target: settingsTable.key, set: { value: normalized } });
+          .onConflictDoUpdate({
+            target: settingsTable.key,
+            set: { value: normalized },
+          });
         savedKeys.push(field.dbKey);
       }
     }
 
-    // Return updated status — wrap in try/catch so a failing status check
-    // doesn't prevent the save/remove from being reported successfully.
     const provider = providerRegistry[providerName];
     let status: Awaited<ReturnType<typeof provider.getStatus>>;
     try {
       status = await provider.getStatus();
     } catch {
-      status = { name: providerName, configured: false, healthy: false, errorMessage: "Status check unavailable" };
+      status = {
+        name: providerName,
+        configured: false,
+        healthy: false,
+        errorMessage: "Status check unavailable",
+      };
     }
     return res.json({
       name,
       status,
       ...(removedKeys.length > 0 && {
         removed: removedKeys,
-        removedNote: "The stored database override was removed for the listed keys. Any matching Render environment variable is unaffected and will continue to be used.",
+        removedNote:
+          "The stored database override was removed for the listed keys. Any matching environment variable is unaffected and will continue to be used.",
       }),
       ...(savedKeys.length > 0 && { saved: savedKeys }),
     });
@@ -209,6 +251,9 @@ router.put("/providers/:name", async (req, res) => {
  * DELETE /api/providers/:name/credential/:dbKey
  * Explicitly remove a single stored database credential override.
  * The corresponding environment variable (if any) is unaffected.
+ *
+ * Cleanup remains available for retired providers so stale historical DB
+ * overrides can be removed even though new configuration is blocked.
  */
 router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
   try {
@@ -220,9 +265,11 @@ router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
     }
 
     const allFields = [...def.requiredFields, ...def.optionalFields];
-    const fieldDef = allFields.find((f) => f.dbKey === dbKey);
+    const fieldDef = allFields.find((field) => field.dbKey === dbKey);
     if (!fieldDef) {
-      return res.status(404).json({ error: `Unknown credential field: ${dbKey}` });
+      return res
+        .status(404)
+        .json({ error: `Unknown credential field: ${dbKey}` });
     }
 
     await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));
@@ -231,7 +278,8 @@ router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
       name,
       dbKey,
       removed: true,
-      note: "The stored database override was removed. Any matching Render environment variable is unaffected and will continue to be used.",
+      note:
+        "The stored database override was removed. Any matching environment variable is unaffected and will continue to be used.",
     });
   } catch (err) {
     req.log.error(err);
