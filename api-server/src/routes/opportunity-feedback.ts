@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { z } from "zod/v4";
 import {
   submitGrade,
   getFeedbackForOpportunity,
@@ -13,35 +12,86 @@ import {
 } from "../lib/learning/contextualFeedback";
 
 const router = Router();
+const FEEDBACK_GRADES = new Set<FeedbackGrade>([
+  "excellent",
+  "good",
+  "poor",
+  "spam",
+]);
 
-const feedbackBodySchema = z.object({
-  grade: z.enum(["excellent", "good", "poor", "spam"]),
-  notes: z.string().max(2_000).optional(),
-  queryContext: z.string().max(240).optional(),
-});
+function parseFeedbackBody(value: unknown):
+  | {
+      success: true;
+      data: {
+        grade: FeedbackGrade;
+        notes?: string;
+        queryContext?: string;
+      };
+    }
+  | {
+      success: false;
+      issues: Array<{ path: string; message: string }>;
+    } {
+  const body =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const issues: Array<{ path: string; message: string }> = [];
+
+  const grade = typeof body.grade === "string" ? body.grade : "";
+  if (!FEEDBACK_GRADES.has(grade as FeedbackGrade)) {
+    issues.push({
+      path: "grade",
+      message: "grade must be excellent, good, poor, or spam",
+    });
+  }
+
+  const notes = body.notes;
+  if (notes !== undefined && typeof notes !== "string") {
+    issues.push({ path: "notes", message: "notes must be a string" });
+  } else if (typeof notes === "string" && notes.length > 2_000) {
+    issues.push({ path: "notes", message: "notes must be 2000 characters or fewer" });
+  }
+
+  const queryContext = body.queryContext;
+  if (queryContext !== undefined && typeof queryContext !== "string") {
+    issues.push({
+      path: "queryContext",
+      message: "queryContext must be a string",
+    });
+  } else if (typeof queryContext === "string" && queryContext.length > 240) {
+    issues.push({
+      path: "queryContext",
+      message: "queryContext must be 240 characters or fewer",
+    });
+  }
+
+  if (issues.length > 0) return { success: false, issues };
+  return {
+    success: true,
+    data: {
+      grade: grade as FeedbackGrade,
+      ...(typeof notes === "string" ? { notes } : {}),
+      ...(typeof queryContext === "string" ? { queryContext } : {}),
+    },
+  };
+}
 
 /** Submit/update feedback and persist both the global and contextual model. */
 router.post("/opportunities/:id/feedback", async (req, res) => {
   try {
-    const parsed = feedbackBodySchema.safeParse(req.body ?? {});
+    const parsed = parseFeedbackBody(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
         error: "Invalid feedback payload.",
-        issues: parsed.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
+        issues: parsed.issues,
       });
     }
 
     const { id } = req.params;
     const { grade, notes, queryContext } = parsed.data;
-    await submitGrade(id, grade as FeedbackGrade, notes);
-    const context = await recordContextFeedback(
-      id,
-      grade as FeedbackGrade,
-      queryContext,
-    );
+    await submitGrade(id, grade, notes);
+    const context = await recordContextFeedback(id, grade, queryContext);
     return res.json({
       success: true,
       opportunityId: id,
