@@ -8,6 +8,7 @@ import { intelDb, runWithDbContext } from "@workspace/db";
 import { sourceMonitorItemsTable } from "@workspace/db/schema";
 import router from "./routes";
 import sourceMonitorRouter from "./routes/source-monitor";
+import apiHardeningRouter from "./middleware/api-hardening";
 import { logger } from "./lib/logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,6 +111,11 @@ app.get("/api/health", (_req, res) => {
 app.head("/api/health", (_req, res) => {
   res.status(200).end();
 });
+
+// These two source-monitor write endpoints are mounted directly on the Express
+// app for legacy routing compatibility, so explicitly place the same write
+// hardening boundary in front of the /api/source-monitor namespace.
+app.use("/api/source-monitor", apiHardeningRouter);
 
 app.post("/api/source-monitor/items/:id/protect", async (req, res) => {
   const { id } = req.params;
