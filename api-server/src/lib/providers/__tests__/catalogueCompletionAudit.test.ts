@@ -9,6 +9,7 @@ const { runCatalogueCompletionAudit } = await import(
 );
 const {
   PUBLISHED_DIRECT_RFP_PORTALS,
+  PUBLISHED_DIRECT_RFP_PORTAL_BY_ID,
   REMOVED_UNRUNNABLE_DIRECT_RFP_PORTALS,
   validatePublishedDirectRfpCatalogue,
 } = await import("../publishedDirectRfpCatalogue");
@@ -57,6 +58,16 @@ describe("full catalogue completion", () => {
       new Set(PUBLISHED_DIRECT_RFP_PORTALS.map((portal) => portal.id)).size,
       PUBLISHED_DIRECT_RFP_PORTALS.length,
     );
+  });
+
+  it("routes Napa County through its current official OpenGov procurement endpoint", () => {
+    const portal = PUBLISHED_DIRECT_RFP_PORTAL_BY_ID.get("ca-napa-county");
+    assert.ok(portal);
+    assert.equal(portal?.domain, "procurement.opengov.com");
+    assert.match(portal?.searchUrl ?? "", /procurement\.opengov\.com\/portal\/countyofnapa/);
+    const adapter = getRegisteredPublicPortalAdapter("ca-napa-county");
+    assert.ok(adapter);
+    assert.equal(adapter?.constructor.name, "OpenGovProvider");
   });
 
   it("contains no disabled, unfinished, manual-only, or unadapted public rows", () => {
