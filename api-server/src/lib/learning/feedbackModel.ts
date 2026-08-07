@@ -47,7 +47,7 @@ export interface OpportunityInput {
   description?: string | null;
 }
 
-interface CandidateSignalRow {
+interface CandidateSignalRow extends Record<string, unknown> {
   id: string;
   agency: string | null;
   naics_code: string | null;
