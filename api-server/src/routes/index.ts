@@ -4,18 +4,10 @@ import databaseStatusRouter from "./database-status";
 import opportunitySafetyBoundaryRouter from "./opportunity-safety-boundary";
 import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
-import competitorsRouter from "./competitors";
-import prospectsRouter from "./prospects";
-import prospectLocationsRouter from "./prospect-locations";
-import prospectContactsRouter from "./prospect-contacts";
-import clientsRouter from "./clients";
-import clientContactsRouter from "./client-contacts";
-import federalIntelRouter from "./federal-intel";
-import stateAgenciesRouter from "./state-agencies";
-import intelligenceFeedRouter from "./intelligence-feed";
 import searchRouter from "./search";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
+import transferredIntelligenceBoundaryRouter from "./transferred-intelligence-boundary";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
 import manualOnlyPortalHealthBoundaryRouter from "../middleware/manual-only-portal-health-boundary";
@@ -33,6 +25,11 @@ router.use((_req, res, next) => {
 
 router.use(healthRouter);
 router.use(databaseStatusRouter);
+
+// The non-procurement intelligence workspaces were transferred to Insight Hub 2.
+// Keep an explicit 410 boundary in front of the procurement API so old clients
+// cannot silently keep writing to or reading from the retired Hub 1 handlers.
+router.use(transferredIntelligenceBoundaryRouter);
 
 // Keep the always-on read API small. RFP ingestion, provider inventories, and
 // the portal catalogue pull in hundreds of adapter modules and are loaded only
@@ -82,15 +79,6 @@ router.use(
 );
 router.use(govconRouter);
 router.use(relevantNewsRouter);
-router.use(competitorsRouter);
-router.use(prospectsRouter);
-router.use(prospectLocationsRouter);
-router.use(prospectContactsRouter);
-router.use(clientsRouter);
-router.use(clientContactsRouter);
-router.use(federalIntelRouter);
-router.use(stateAgenciesRouter);
-router.use(intelligenceFeedRouter);
 router.use(searchRouter);
 
 export default router;
