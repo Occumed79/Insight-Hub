@@ -33,7 +33,8 @@ function forecastRecord(recompete) {
       : "Planned Occupational Health Medical Services",
     agency: "Department of Example",
     subAgency: "Workforce Health Office",
-    description: "Occupational health examinations, audiometry, spirometry, and workforce medical services.",
+    description:
+      "Occupational health examinations, audiometry, spirometry, and workforce medical services.",
     naics: "621111",
     setAside: "Small Business",
     state: "VA",
@@ -55,7 +56,11 @@ function forecastRecord(recompete) {
           latestActionDate: recent,
         }
       : null,
-    pointOfContact: { name: "Contracting Officer", email: "co@example.gov", phone: null },
+    pointOfContact: {
+      name: "Contracting Officer",
+      email: "co@example.gov",
+      phone: null,
+    },
     sourceUrl: "https://example.gov/forecast/occupational-health",
     lastUpdatedDate: recent,
     relevance: {
@@ -81,9 +86,14 @@ await page.route("**/api/**", async (route) => {
   const url = new URL(request.url());
   const path = url.pathname;
   const json = (body, status = 200) =>
-    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    route.fulfill({
+      status,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
 
-  if (path === "/api/opportunities/ingestion-runs/current") return json({ run: null });
+  if (path === "/api/opportunities/ingestion-runs/current")
+    return json({ run: null });
   if (path === "/api/settings") return json({});
   if (path === "/api/providers") return json({ providers: [] });
 
@@ -99,7 +109,8 @@ await page.route("**/api/**", async (route) => {
           status: "active",
           postedDate: recent,
           responseDeadline: future,
-          description: "Occupational health examinations, audiometry, spirometry, and medical surveillance.",
+          description:
+            "Occupational health examinations, audiometry, spirometry, and medical surveillance.",
           solicitationNumber: "UI-TEST-001",
           samUrl: "https://sam.gov/opp/ui-test-001/view",
           providerName: "samGov",
@@ -135,7 +146,12 @@ await page.route("**/api/**", async (route) => {
       page: 1,
       limit: 50,
       view: url.searchParams.get("view") ?? "actionable",
-      ranking: { mode: "cross-source-v2", candidates: 1, canonicalRecords: 1, queryContext: null },
+      ranking: {
+        mode: "cross-source-v2",
+        candidates: 1,
+        canonicalRecords: 1,
+        queryContext: null,
+      },
     });
   }
 
@@ -159,12 +175,17 @@ await page.route("**/api/**", async (route) => {
         {
           id: "ui-news-001",
           title: "Federal Agency Announces Occupational Health Contract",
-          description: "A federal acquisition for workforce medical services and occupational health support.",
+          description:
+            "A federal acquisition for workforce medical services and occupational health support.",
           content: null,
           url: "https://example.com/federal-contract-news",
           image: null,
           publishedAt: recent,
-          source: { name: "Federal Contract News", url: "https://example.com", country: "us" },
+          source: {
+            name: "Federal Contract News",
+            url: "https://example.com",
+            country: "us",
+          },
           relevanceScore: 92,
         },
       ],
@@ -181,48 +202,126 @@ await page.route("**/api/**", async (route) => {
   return json({});
 });
 
+async function viewportMetrics() {
+  return page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+    scrollHeight: document.documentElement.scrollHeight,
+    clientHeight: document.documentElement.clientHeight,
+  }));
+}
+
+async function assertNoDocumentOverflow(label) {
+  const metrics = await viewportMetrics();
+  assert.ok(
+    metrics.scrollWidth <= metrics.clientWidth + 1,
+    `${label} horizontally overflows viewport: ${metrics.scrollWidth} > ${metrics.clientWidth}`,
+  );
+  return metrics;
+}
+
+async function assertLandingPage() {
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.getByRole("heading", { name: "Insight Hub", level: 1 }).waitFor();
+  const metrics = await assertNoDocumentOverflow("landing page");
+  assert.ok(
+    metrics.scrollHeight > metrics.clientHeight,
+    "landing page must remain vertically scrollable when its cards exceed the viewport",
+  );
+
+  const firstInternalCard = page.locator('a[href="/portal/opportunities"]');
+  await firstInternalCard.waitFor();
+  const firstCardBox = await firstInternalCard.boundingBox();
+  assert.ok(firstCardBox && firstCardBox.width > 0, "landing Opportunity Intelligence card must remain visible");
+
+  const homeOrbAnimation = await page
+    .locator(".home-orb")
+    .first()
+    .evaluate((node) => getComputedStyle(node).animationName);
+  assert.equal(
+    homeOrbAnimation,
+    "none",
+    "landing decorative orbs must stop under reduced motion",
+  );
+}
+
 async function assertPortalChrome(path, activeLabel) {
-  await page.goto(`${baseUrl}${path}`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto(`${baseUrl}${path}`, {
+    waitUntil: "networkidle",
+    timeout: 30_000,
+  });
   await page.getByRole("main").waitFor();
 
-  const nav = page.getByRole("navigation", { name: "Intelligence workspaces" });
+  const nav = page.getByRole("navigation", {
+    name: "Intelligence workspaces",
+  });
   await nav.waitFor();
   const active = nav.getByRole("link", { name: activeLabel });
-  assert.equal(await active.getAttribute("aria-current"), "page", `${path} must expose its active workspace`);
+  assert.equal(
+    await active.getAttribute("aria-current"),
+    "page",
+    `${path} must expose its active workspace`,
+  );
 
   const skipLink = page.getByRole("link", { name: "Skip to content" });
   await skipLink.waitFor();
 
-  const viewportMetrics = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-    mainId: document.querySelector("main")?.id ?? null,
-  }));
-  assert.ok(
-    viewportMetrics.scrollWidth <= viewportMetrics.clientWidth + 1,
-    `${path} horizontally overflows mobile viewport: ${viewportMetrics.scrollWidth} > ${viewportMetrics.clientWidth}`,
+  const metrics = await assertNoDocumentOverflow(path);
+  const mainId = await page.locator("main").getAttribute("id");
+  assert.equal(
+    mainId,
+    "portal-main-content",
+    `${path} must preserve the keyboard skip target`,
   );
-  assert.equal(viewportMetrics.mainId, "portal-main-content", `${path} must preserve the keyboard skip target`);
+  assert.ok(metrics.scrollHeight >= metrics.clientHeight, `${path} must fill the viewport`);
 
   const activeBox = await active.boundingBox();
-  assert.ok(activeBox && activeBox.height >= 44, `${path} active nav target must be at least 44px high`);
+  assert.ok(
+    activeBox && activeBox.height >= 44,
+    `${path} active nav target must be at least 44px high`,
+  );
 
-  const orbAnimation = await page.locator(".portal-orb").first().evaluate((node) => getComputedStyle(node).animationName);
-  assert.equal(orbAnimation, "none", `${path} must stop decorative orb animation under reduced motion`);
+  const orbAnimation = await page
+    .locator(".portal-orb")
+    .first()
+    .evaluate((node) => getComputedStyle(node).animationName);
+  assert.equal(
+    orbAnimation,
+    "none",
+    `${path} must stop decorative orb animation under reduced motion`,
+  );
 }
 
-try {
+async function assertFetchDialogContained(viewportWidth, viewportHeight) {
+  await page.setViewportSize({ width: viewportWidth, height: viewportHeight });
   await assertPortalChrome("/portal/opportunities", "Opportunities");
   await page.getByRole("button", { name: "Fetch Intelligence" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
   const dialogBox = await dialog.boundingBox();
   assert.ok(dialogBox, "Fetch Intelligence dialog must have a bounding box");
-  assert.ok(dialogBox.x >= 0 && dialogBox.y >= 0, "Dialog must remain inside the top/left viewport bounds");
-  assert.ok(dialogBox.x + dialogBox.width <= 390.5, "Dialog must remain inside the mobile viewport width");
-  assert.ok(dialogBox.y + dialogBox.height <= 844.5, "Dialog must remain inside the mobile viewport height");
+  assert.ok(
+    dialogBox.x >= -0.5 && dialogBox.y >= -0.5,
+    `Dialog must remain inside the top/left viewport bounds at ${viewportWidth}x${viewportHeight}`,
+  );
+  assert.ok(
+    dialogBox.x + dialogBox.width <= viewportWidth + 0.5,
+    `Dialog must remain inside the ${viewportWidth}px viewport width`,
+  );
+  assert.ok(
+    dialogBox.y + dialogBox.height <= viewportHeight + 0.5,
+    `Dialog must remain inside the ${viewportHeight}px viewport height`,
+  );
   await page.keyboard.press("Escape");
+}
 
+try {
+  await assertLandingPage();
+
+  await assertFetchDialogContained(390, 844);
+  await assertFetchDialogContained(320, 700);
+
+  await page.setViewportSize({ width: 390, height: 844 });
   await assertPortalChrome("/portal/forecasts", "Forecasts");
   await page.getByRole("heading", { name: "Forecasts" }).waitFor();
 
@@ -234,24 +333,37 @@ try {
   const articleLink = page.getByRole("link", { name: "Read Article" });
   await articleLink.waitFor();
   const articleLinkBox = await articleLink.boundingBox();
-  assert.ok(articleLinkBox && articleLinkBox.height >= 44, "Relevant News outbound action must preserve a mobile touch target");
+  assert.ok(
+    articleLinkBox && articleLinkBox.height >= 44,
+    "Relevant News outbound action must preserve a mobile touch target",
+  );
 
-  assert.deepEqual(pageErrors, [], `browser emitted UI page errors: ${pageErrors.join(" | ")}`);
-  console.log(JSON.stringify({
-    event: "insight_hub_ui_hardening_passed",
-    viewport: "390x844",
-    reducedMotion: true,
-    verified: [
-      "portal-navigation-active-state",
-      "keyboard-skip-target",
-      "mobile-horizontal-overflow",
-      "44px-workspace-touch-targets",
-      "reduced-motion-background-guard",
-      "mobile-dialog-viewport-containment",
-      "accessible-relevant-news-search",
-      "news-outbound-touch-target",
-    ],
-  }));
+  assert.deepEqual(
+    pageErrors,
+    [],
+    `browser emitted UI page errors: ${pageErrors.join(" | ")}`,
+  );
+  console.log(
+    JSON.stringify({
+      event: "insight_hub_ui_hardening_passed",
+      viewports: ["390x844", "320x700"],
+      reducedMotion: true,
+      verified: [
+        "landing-page-mobile-containment",
+        "landing-page-vertical-scroll",
+        "landing-page-reduced-motion",
+        "portal-navigation-active-state",
+        "keyboard-skip-target",
+        "mobile-horizontal-overflow",
+        "44px-workspace-touch-targets",
+        "reduced-motion-background-guard",
+        "mobile-dialog-viewport-containment-390",
+        "mobile-dialog-viewport-containment-320",
+        "accessible-relevant-news-search",
+        "news-outbound-touch-target",
+      ],
+    }),
+  );
 } finally {
   await browser.close();
 }
