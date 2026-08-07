@@ -1,0 +1,88 @@
+name: Deep reliability discovery fixup
+
+on:
+  push:
+    branches:
+      - hardening/deep-reliability-beast-pass
+    paths:
+      - .github/workflows/deep-reliability-discovery-fixup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fixup:
+    if: ${{ !contains(github.event.head_commit.message, 'Fix discovery attempt signal invariants') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening/deep-reliability-beast-pass
+          fetch-depth: 0
+      - name: Apply fixup
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"ambiguous replacement in {path}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          web = "api-server/src/lib/search/webIntelligence.ts"
+          replace_once(
+              web,
+              "  for (const query of discoveryQueries) {\n    throwIfAborted(attemptSignal ?? options.signal);",
+              "  for (const query of discoveryQueries) {\n    throwIfAborted(options.signal);",
+          )
+          replace_once(
+              web,
+              "          stats.rssAggregatorResults += result.records.length;\n",
+              "",
+          )
+          replace_once(
+              web,
+              "          stats.selfHostedSearchResults += results.length;\n",
+              "",
+          )
+          p = Path(web)
+          text = p.read_text()
+          start = text.index("  for (const { candidate, index } of toEnrich) {")
+          stop = text.index("    const enriched = await runLimitedProviderPool(", start)
+          segment = text[start:stop]
+          segment = segment.replace("run: async (attemptSignal) =>", "run: async (attemptSignal?: AbortSignal) =>")
+          segment = segment.replace("run: (attemptSignal) =>", "run: (attemptSignal?: AbortSignal) =>")
+          text = text[:start] + segment + text[stop:]
+          p.write_text(text)
+
+          search = "api-server/src/lib/providers/selfHostedSearch.ts"
+          replace_once(
+              search,
+              "  timeout?: number;\n}",
+              "  timeout?: number;\n  signal?: AbortSignal;\n}",
+          )
+          replace_once(
+              search,
+              "      signal: AbortSignal.timeout(timeout),",
+              "      signal: options.signal\n        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout)])\n        : AbortSignal.timeout(timeout),",
+          )
+          replace_once(
+              web,
+              "          const results = await selfHostedSearchProvider.search({\n            query,\n            limit: 20,\n          });",
+              "          const results = await selfHostedSearchProvider.search({\n            query,\n            limit: 20,\n            signal: attemptSignal ?? options.signal,\n          });",
+          )
+
+          Path(".github/workflows/deep-reliability-discovery-fixup.yml").unlink()
+          PY
+      - name: Commit fixup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Fix discovery attempt signal invariants"
+          git push origin HEAD:hardening/deep-reliability-beast-pass
