@@ -33,7 +33,7 @@ export interface StructuredOpportunityDecisionResult {
   diagnostics: string[];
 }
 
-interface ReviewVote {
+export interface ReviewVote {
   index: number;
   isOpportunity: boolean;
   relevanceScore: number;
@@ -205,6 +205,23 @@ function parseReviewVotes(text: string): ReviewVote[] | null {
   });
 }
 
+/**
+ * A judge can contribute at most one vote to each record. Invalid or repeated
+ * indexes are dropped so malformed model output cannot manufacture consensus.
+ */
+export function distinctProviderVotes(
+  votes: ReviewVote[] | null,
+  recordCount: number,
+): ReviewVote[] {
+  if (!votes || recordCount <= 0) return [];
+  const unique = new Map<number, ReviewVote>();
+  for (const vote of votes) {
+    if (vote.index < 0 || vote.index >= recordCount) continue;
+    if (!unique.has(vote.index)) unique.set(vote.index, vote);
+  }
+  return [...unique.values()];
+}
+
 function buildReviewPrompt(records: NormalizedOpportunity[]): string {
   const items = records
     .map(
@@ -241,15 +258,23 @@ ITEMS:
 ${items}`;
 }
 
-function panelResolved(
+export function panelResolved(
   votesByIndex: Map<number, Array<{ provider: string; vote: ReviewVote }>>,
   recordCount: number,
 ): boolean {
   if (recordCount === 0) return true;
   for (let index = 0; index < recordCount; index += 1) {
     const rows = votesByIndex.get(index) ?? [];
-    const yes = rows.filter((row) => row.vote.isOpportunity).length;
-    const no = rows.length - yes;
+    const yes = new Set(
+      rows
+        .filter((row) => row.vote.isOpportunity)
+        .map((row) => row.provider),
+    ).size;
+    const no = new Set(
+      rows
+        .filter((row) => !row.vote.isOpportunity)
+        .map((row) => row.provider),
+    ).size;
     if (yes < PANEL_CONSENSUS && no < PANEL_CONSENSUS) return false;
   }
   return true;
@@ -288,6 +313,14 @@ async function reviewAmbiguous(
 
   const diagnostics: string[] = [];
   const reviewers: string[] = [];
+  if (selected.length === 0) {
+    diagnostics.push(
+      configured.length === 0
+        ? "No review provider is configured."
+        : `All ${configured.length} configured review providers are in budget cooldown.`,
+    );
+  }
+
   const votesByIndex = new Map<
     number,
     Array<{ provider: string; vote: ReviewVote }>
@@ -297,18 +330,18 @@ async function reviewAmbiguous(
   for (const provider of selected) {
     const budgetName = `judge:${provider.name}`;
     try {
-      const votes = parseReviewVotes(
+      const parsedVotes = parseReviewVotes(
         await provider.complete(prompt, REVIEW_OUTPUT_TOKENS),
       );
-      if (!votes || votes.length !== records.length) {
+      const votes = distinctProviderVotes(parsedVotes, records.length);
+      if (!parsedVotes || votes.length !== records.length) {
         throw new Error(
-          `${provider.name} returned ${votes?.length ?? 0}/${records.length} valid panel votes`,
+          `${provider.name} returned ${votes.length}/${records.length} distinct valid panel votes`,
         );
       }
       reviewers.push(provider.name);
       await recordProviderSuccess(budgetName, votes.length);
       for (const vote of votes) {
-        if (vote.index < 0 || vote.index >= records.length) continue;
         const rows = votesByIndex.get(vote.index) ?? [];
         rows.push({ provider: provider.name, vote });
         votesByIndex.set(vote.index, rows);
@@ -326,8 +359,12 @@ async function reviewAmbiguous(
   for (let index = 0; index < records.length; index += 1) {
     const rows = votesByIndex.get(index) ?? [];
     if (rows.length === 0) continue;
-    const positive = rows.filter((row) => row.vote.isOpportunity);
-    const negative = rows.filter((row) => !row.vote.isOpportunity);
+    const byProvider = new Map(
+      rows.map((row) => [row.provider, row] as const),
+    );
+    const distinctRows = [...byProvider.values()];
+    const positive = distinctRows.filter((row) => row.vote.isOpportunity);
+    const negative = distinctRows.filter((row) => !row.vote.isOpportunity);
 
     if (positive.length >= PANEL_CONSENSUS) {
       const score = Math.round(
@@ -350,7 +387,7 @@ async function reviewAmbiguous(
     // stronger score than a panel decision. One weak model can never outvote a
     // second negative judge.
     if (
-      rows.length === 1 &&
+      distinctRows.length === 1 &&
       positive.length === 1 &&
       negative.length === 0 &&
       positive[0]!.vote.relevanceScore >= SINGLE_JUDGE_ACCEPT_SCORE
