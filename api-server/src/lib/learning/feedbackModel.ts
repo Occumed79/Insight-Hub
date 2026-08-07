@@ -47,6 +47,17 @@ export interface OpportunityInput {
   description?: string | null;
 }
 
+interface CandidateSignalRow {
+  id: string;
+  agency: string | null;
+  naics_code: string | null;
+  provider_name: string | null;
+  tags: string | null;
+  title: string | null;
+  description: string | null;
+  user_grade: string | null;
+}
+
 const MAX_KEYWORDS_PER_ROW = 50;
 const MAX_BOUNDED_CANDIDATES = 500;
 const TOP_KEYWORD_SIGNALS = 5;
@@ -252,6 +263,40 @@ export async function submitGrade(
   }
 }
 
+/**
+ * Pure candidate-boundary check used after the SQL prefilter. Keeping this
+ * explicit prevents a broad storage predicate from silently turning provider
+ * feedback into a global rescore.
+ */
+export function candidateSharesFeedbackSignal(
+  graded: OpportunityInput & { id: string },
+  row: CandidateSignalRow,
+): boolean {
+  if (row.id === graded.id) return true;
+  if (row.user_grade) return false;
+  if (graded.agency && row.agency === graded.agency) return true;
+  if (graded.naicsCode && row.naics_code === graded.naicsCode) return true;
+
+  const gradedTagSet = new Set(
+    parseTags(graded.tags).map((tag) => tag.toLowerCase()),
+  );
+  if (gradedTagSet.size > 0) {
+    const rowTags = parseTags(row.tags).map((tag) => tag.toLowerCase());
+    if (rowTags.some((tag) => gradedTagSet.has(tag))) return true;
+  }
+
+  const titleKeywords = extractKeywords(graded.title).slice(
+    0,
+    TOP_KEYWORD_SIGNALS,
+  );
+  if (titleKeywords.length > 0) {
+    const rowTitle = (row.title ?? "").toLowerCase();
+    if (titleKeywords.some((keyword) => rowTitle.includes(keyword))) return true;
+  }
+
+  return false;
+}
+
 // Re-score ungraded opportunities sharing a meaningful buyer/scope/content
 // signal. Provider identity is intentionally NOT a candidate-expansion signal.
 async function reScoreCandidates(
@@ -263,23 +308,24 @@ async function reScoreCandidates(
   const gradedTags = parseTags(graded.tags).map((tag) => tag.toLowerCase());
   const titleKeywords = extractKeywords(graded.title).slice(0, TOP_KEYWORD_SIGNALS);
 
-  const candidateRows = await db.execute<{
-    id: string;
-    agency: string | null;
-    naics_code: string | null;
-    provider_name: string | null;
-    tags: string | null;
-    title: string | null;
-    description: string | null;
-  }>(sql`
-    SELECT id, agency, naics_code, provider_name, tags, title, description
+  const candidateRows = await db.execute<CandidateSignalRow>(sql`
+    SELECT id, agency, naics_code, provider_name, tags, title, description, user_grade
     FROM opportunities
     WHERE (
       user_grade IS NULL
       AND (
         ${graded.agency ? sql`agency = ${graded.agency}` : sql`FALSE`}
         OR ${graded.naicsCode ? sql`naics_code = ${graded.naicsCode}` : sql`FALSE`}
-        ${gradedTags.length > 0 ? sql`OR tags IS NOT NULL` : sql``}
+        ${
+          gradedTags.length > 0
+            ? sql`OR (tags IS NOT NULL AND (${sql.join(
+                gradedTags.map(
+                  (tag) => sql`lower(tags) LIKE ${`%"${tag}"%`}`,
+                ),
+                sql` OR `,
+              )}))`
+            : sql``
+        }
         ${
           titleKeywords.length > 0
             ? sql`OR (title IS NOT NULL AND (${sql.join(
@@ -297,16 +343,9 @@ async function reScoreCandidates(
   `);
 
   const rows = candidateRows.rows ?? (candidateRows as any);
-  const gradedTagSet = new Set(gradedTags);
-  const candidates = (Array.isArray(rows) ? rows : []).filter((row: any) => {
-    if (row.id === graded.id) return true;
-    if (row.user_grade) return false;
-    if (gradedTagSet.size > 0) {
-      const rowTags = parseTags(row.tags).map((tag: string) => tag.toLowerCase());
-      if (rowTags.some((tag: string) => gradedTagSet.has(tag))) return true;
-    }
-    return true;
-  });
+  const candidates = (Array.isArray(rows) ? rows : []).filter(
+    (row: CandidateSignalRow) => candidateSharesFeedbackSignal(graded, row),
+  );
 
   let updated = 0;
   for (const candidate of candidates) {
