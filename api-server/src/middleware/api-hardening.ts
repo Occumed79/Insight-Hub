@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { Router, type Request } from "express";
 
 const router = Router();
@@ -16,14 +17,21 @@ interface RateWindow {
 const windows = new Map<string, RateWindow>();
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const MAX_RATE_WINDOWS = 5_000;
+const RATE_WINDOW_RETENTION_MS = 15 * 60_000;
 
 function configuredOrigins(): Set<string> {
-  return new Set(
-    (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
+  const origins = new Set<string>();
+  for (const raw of (process.env.INSIGHT_HUB_ALLOWED_ORIGINS ?? "").split(",")) {
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      origins.add(new URL(value).origin);
+    } catch {
+      // Invalid allowlist entries are ignored rather than broadening access.
+    }
+  }
+  return origins;
 }
 
 export function mutationOriginAllowed(req: Request): boolean {
@@ -33,7 +41,11 @@ export function mutationOriginAllowed(req: Request): boolean {
 
   try {
     const parsed = new URL(origin);
-    if (parsed.host === req.get("host")) return true;
+    const host = req.get("host");
+    if (host) {
+      const requestOrigin = `${req.protocol}://${host}`;
+      if (parsed.origin === requestOrigin) return true;
+    }
     return configuredOrigins().has(parsed.origin);
   } catch {
     return false;
@@ -43,7 +55,13 @@ export function mutationOriginAllowed(req: Request): boolean {
 function writeTokenAllowed(req: Request): boolean {
   const required = process.env.INSIGHT_HUB_WRITE_TOKEN?.trim();
   if (!required || !MUTATING_METHODS.has(req.method.toUpperCase())) return true;
-  return req.get("x-insight-hub-write-token") === required;
+  const supplied = req.get("x-insight-hub-write-token") ?? "";
+  const requiredBuffer = Buffer.from(required);
+  const suppliedBuffer = Buffer.from(supplied);
+  return (
+    requiredBuffer.length === suppliedBuffer.length &&
+    timingSafeEqual(requiredBuffer, suppliedBuffer)
+  );
 }
 
 export function expensiveRoutePolicy(req: Pick<Request, "method" | "path">): RatePolicy | null {
@@ -76,9 +94,18 @@ export function expensiveRoutePolicy(req: Pick<Request, "method" | "path">): Rat
 }
 
 function pruneWindows(now: number): void {
-  if (windows.size < 500) return;
-  for (const [key, value] of windows) {
-    if (now - value.startedAt > 15 * 60_000) windows.delete(key);
+  if (windows.size >= 500) {
+    for (const [key, value] of windows) {
+      if (now - value.startedAt > RATE_WINDOW_RETENTION_MS) windows.delete(key);
+    }
+  }
+
+  // A burst of unique client addresses must not turn the in-memory limiter into
+  // its own memory-exhaustion vector on the small production instance.
+  while (windows.size >= MAX_RATE_WINDOWS) {
+    const oldestKey = windows.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    windows.delete(oldestKey);
   }
 }
 
