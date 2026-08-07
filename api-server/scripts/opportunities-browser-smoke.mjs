@@ -123,7 +123,10 @@ await page.route("**/api/**", async (route) => {
       success: true,
       opportunityId: path.split("/")[3],
       grade: body.grade,
-      learningContext: { context: "scope:occupational-health", contextHash: "browser-smoke" },
+      learningContext: {
+        context: "scope:occupational-health",
+        contextHash: "browser-smoke",
+      },
     });
   }
 
@@ -131,29 +134,42 @@ await page.route("**/api/**", async (route) => {
 });
 
 try {
+  const opportunityTitle =
+    "Occupational Health and Medical Surveillance Services";
   await page.goto(`${baseUrl}/portal/opportunities`, {
     waitUntil: "networkidle",
     timeout: 30_000,
   });
 
-  await page.getByRole("heading", { name: "Opportunity Intelligence" }).waitFor();
-  await page.getByText("Occupational Health and Medical Surveillance Services", { exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "Opportunity Intelligence" })
+    .waitFor();
+  await page.getByText(opportunityTitle, { exact: true }).waitFor();
   await page.getByRole("button", { name: "Bid-ready & Verified" }).waitFor();
   await page.getByRole("button", { name: "Fetch Intelligence" }).waitFor();
-  await page.getByTitle("Excellent fit").waitFor();
-  await page.getByTitle("Good fit").waitFor();
-  await page.getByTitle("Poor fit").waitFor();
-  await page.getByTitle("Mark not relevant before opening or generating an AI brief").waitFor();
+
+  const card = page.locator("article").filter({ hasText: opportunityTitle }).first();
+  await card.waitFor();
+  await card.getByTitle("Excellent fit").waitFor();
+  await card.getByTitle("Good fit").waitFor();
+  await card.getByTitle("Poor fit").waitFor();
+  await card
+    .getByTitle("Mark not relevant before opening or generating an AI brief")
+    .waitFor();
 
   await page.getByRole("button", { name: "Fetch Intelligence" }).click();
   await page.getByRole("dialog").waitFor();
   await page.getByText("Federal Structured Ensemble", { exact: true }).waitFor();
   await page.getByText("SAM.gov Official API", { exact: true }).waitFor();
-  await page.getByText("Tango Federal Opportunities", { exact: true }).waitFor();
-  await page.getByText("State, Local & Private Search", { exact: true }).waitFor();
+  await page
+    .getByText("Tango Federal Opportunities", { exact: true })
+    .waitFor();
+  await page
+    .getByText("State, Local & Private Search", { exact: true })
+    .waitFor();
   await page.getByRole("button", { name: "Cancel" }).click();
 
-  await page
+  await card
     .getByTitle("Mark not relevant before opening or generating an AI brief")
     .click();
   await page.getByText("No opportunities found", { exact: true }).waitFor({
