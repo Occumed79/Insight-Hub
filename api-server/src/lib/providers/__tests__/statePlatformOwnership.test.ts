@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PEOPLE_SOFT_SOURCES,
+  PEOPLESOFT_TENANTS,
   peopleSoftPublicProviders,
 } from "../peopleSoftPublic";
 import {
@@ -30,9 +31,21 @@ test("Kansas has exactly one runtime owner and cannot be overridden by the retir
   const publishedSource = STATE_PLATFORM_ADAPTER_SOURCES.find(
     (source) => source.id === "ks-esupplier",
   );
+  const kansasTenant = PEOPLESOFT_TENANTS.find(
+    (tenant) => tenant.portalId === "ks-esupplier",
+  );
   assert.ok(canonicalSource);
   assert.ok(publishedSource);
+  assert.ok(kansasTenant);
   assert.equal(publishedSource.sourceUrl, canonicalSource.sourceUrl);
   assert.doesNotMatch(publishedSource.sourceUrl, /\.GBL2(?:\?|$)/i);
   assert.match(publishedSource.sourceUrl, /SCP_PUB_BID_CMP_FL\.GBL\?/i);
+
+  const recoveryRoutes = kansasTenant.alternateListingUrls ?? [];
+  assert.equal(
+    recoveryRoutes.some((url) => /\.GBL2(?:\?|$)/i.test(url)),
+    false,
+  );
+  assert.equal(recoveryRoutes.some((url) => /\.GBL7\?/i.test(url)), true);
+  assert.equal(recoveryRoutes.some((url) => /\.GBL9\?/i.test(url)), true);
 });
