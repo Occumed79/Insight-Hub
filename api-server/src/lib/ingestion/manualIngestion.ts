@@ -41,6 +41,9 @@ import {
 import {
   classifyIdentityMatch,
   failedProvidersForRetry,
+  finalIngestionStatus,
+  mergeSourceRefresh,
+  opportunityIdentityLockKeys,
   protectedLineageKeys,
   shouldProtectCanonicalFromRefresh,
   STALE_INGESTION_RUN_AFTER_MS,
@@ -193,7 +196,7 @@ async function createPersistedRun(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended('manual-rfp-ingestion-active-run', 0))`,
     );
-    const staleBefore = new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS);
+    const staleBefore = new Date(now.getTime() - STALE_RUN_RECOVERY_ERROR.length * 0 - STALE_INGESTION_RUN_AFTER_MS);
     const staleRuns = await tx
       .update(opportunityIngestionRunsTable)
       .set({
@@ -481,10 +484,15 @@ async function processOneRecord(
       };
     }
 
-    const lockKey = keys[0]?.value ?? `${provider}:${providerNativeId}`;
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+    const lockKeys = opportunityIdentityLockKeys(
+      keys,
+      `${provider}:${providerNativeId}`,
     );
+    for (const lockKey of lockKeys) {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+    }
     const existing = await findExistingOpportunity(
       tx,
       { ...record, externalId: providerNativeId },
@@ -557,28 +565,28 @@ async function processOneRecord(
       ...record,
       externalId: providerNativeId,
     });
-    if (existing) {
-      const {
-        userGrade: _userGrade,
-        userConfidence: _userConfidence,
-        notes: _notes,
-        ...sourceFields
-      } = normalized as typeof normalized & {
-        userGrade?: unknown;
-        userConfidence?: unknown;
-        notes?: unknown;
-      };
-      await tx
-        .update(opportunitiesTable)
-        .set({
-          ...sourceFields,
+    if (existing && existingCanonical) {
+      const merged = mergeSourceRefresh(
+        existingCanonical as unknown as Record<string, unknown>,
+        {
+          ...normalized,
           noticeId: providerNativeId,
           providerKey: providerKeyForOpportunity(record),
           samUrl:
-            canonicalizeOpportunityUrl(record.sourceUrl) ?? sourceFields.samUrl,
+            canonicalizeOpportunityUrl(record.sourceUrl) ?? normalized.samUrl,
           lastSeenAt: now,
           updatedAt: now,
-        })
+        } as unknown as Record<string, unknown>,
+      ) as typeof existingCanonical;
+      const {
+        id: _id,
+        createdAt: _createdAt,
+        firstSeenAt: _firstSeenAt,
+        ...refreshFields
+      } = merged;
+      await tx
+        .update(opportunitiesTable)
+        .set(refreshFields)
         .where(eq(opportunitiesTable.id, opportunityId));
       updated = 1;
     } else {
@@ -1093,15 +1101,18 @@ async function executePersistedRun(
     const timedOutSources =
       latest?.sources.filter((source) => source.status === "timed_out").length ??
       timeoutCount;
-    const finalStatus = cancelled
-      ? "cancelled"
-      : timedOut
-        ? "completed_with_errors"
-        : failedSources + timedOutSources === run.sources.length
-          ? "failed"
-          : failedSources + timedOutSources > 0
-            ? "completed_with_errors"
-            : "completed";
+    const warningSources =
+      latest?.sources.filter(
+        (source) => source.status === "completed" && Boolean(source.error),
+      ).length ?? 0;
+    const finalStatus = finalIngestionStatus({
+      cancelled,
+      timedOut,
+      totalSources: run.sources.length,
+      failedSources,
+      timedOutSources,
+      warningSources,
+    });
     const completedAt = new Date();
     console.info(
       JSON.stringify({
