@@ -6,7 +6,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import { positiveIntegerEnv } from "./officialPortalHttp";
-import { OfficialPlatformSession } from "./officialPlatformSession";
+import { OfficialPlatformSession, type PlatformResponse } from "./officialPlatformSession";
 import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import {
   parseStatewidePlatformListings,
@@ -29,6 +29,8 @@ export interface PeopleSoftPublicTenant {
   listingUrl: string;
   sourceBadge: string;
   alternateListingUrls?: readonly string[];
+  /** Public same-origin pages that can establish a PeopleSoft routing/session cookie. */
+  bootstrapUrls?: readonly string[];
   fallbackUrls?: readonly string[];
   fallbackProvider?: DataSourceProvider;
   maxPages?: number;
@@ -127,6 +129,7 @@ function asStatewideConfig(tenant: PeopleSoftPublicTenant): StatewidePortalConfi
   const allowedOrigins = unique([
     listingOrigin,
     ...(tenant.alternateListingUrls ?? []).map((value) => new URL(value).origin),
+    ...(tenant.bootstrapUrls ?? []).map((value) => new URL(value).origin),
     ...(tenant.fallbackUrls ?? []).map((value) => new URL(value).origin),
   ]).filter((value) => value !== listingOrigin);
   return {
@@ -189,6 +192,50 @@ function requestBody(form: PeopleSoftForm, action: string): string {
   if (!values.has("ICResubmit")) values.set("ICResubmit", "0");
   if (!values.has("ICChanged")) values.set("ICChanged", "-1");
   return values.toString();
+}
+
+async function requestPeopleSoftPublicPage(
+  session: OfficialPlatformSession,
+  tenant: PeopleSoftPublicTenant,
+  seed: string,
+  options: FetchOptions,
+  timeoutMs: number,
+  maxRetries: number,
+): Promise<{ page: PlatformResponse; cookieRecoveryAttempted: boolean }> {
+  const request = () =>
+    session.requestText(seed, {
+      timeoutMs,
+      maxRetries,
+      signal: options.signal,
+    });
+
+  let page = await request();
+  if (!COOKIE_ERROR.test(page.body)) {
+    return { page, cookieRecoveryAttempted: false };
+  }
+
+  // A PeopleSoft cookie-check redirect often sets the routing/session cookie it
+  // expects on the next request. Replaying the exact public URL in the same
+  // stateful session is therefore the cheapest and least invasive recovery.
+  page = await request();
+  if (!COOKIE_ERROR.test(page.body)) {
+    return { page, cookieRecoveryAttempted: true };
+  }
+
+  // Some tenants require one visit to a public landing component before the bid
+  // list accepts the session cookie. These URLs are explicit per tenant so this
+  // never turns into generic login/browser automation.
+  for (const bootstrapUrl of tenant.bootstrapUrls ?? []) {
+    await session.requestText(bootstrapUrl, {
+      timeoutMs,
+      maxRetries,
+      signal: options.signal,
+    });
+    page = await request();
+    if (!COOKIE_ERROR.test(page.body)) break;
+  }
+
+  return { page, cookieRecoveryAttempted: true };
 }
 
 export class PeopleSoftPublicProvider implements DataSourceProvider {
@@ -268,20 +315,28 @@ export class PeopleSoftPublicProvider implements DataSourceProvider {
 
     for (const seed of [this.tenant.listingUrl, ...(this.tenant.alternateListingUrls ?? [])]) {
       if (listings.size >= targetCount) break;
-      let page;
+      let page: PlatformResponse;
+      let cookieRecoveryAttempted = false;
       try {
-        page = await session.requestText(seed, {
+        const result = await requestPeopleSoftPublicPage(
+          session,
+          this.tenant,
+          seed,
+          options,
           timeoutMs,
           maxRetries,
-          signal: options.signal,
-        });
+        );
+        page = result.page;
+        cookieRecoveryAttempted = result.cookieRecoveryAttempted;
       } catch (error) {
         errors.push(`${this.tenant.portalId}: ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
 
       if (COOKIE_ERROR.test(page.body)) {
-        errors.push(`${this.tenant.portalId}: PeopleSoft cookie-check redirect persisted after stateful session initialization`);
+        errors.push(
+          `${this.tenant.portalId}: PeopleSoft cookie-check redirect persisted after ${cookieRecoveryAttempted ? "bounded cookie/session recovery" : "stateful session initialization"}`,
+        );
         blocked = true;
         continue;
       }
@@ -436,6 +491,9 @@ export const PEOPLESOFT_TENANTS: readonly PeopleSoftPublicTenant[] = [
     listingUrl: "https://supplier.sok.ks.gov/psc/sokfsprdsup_1/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL",
     alternateListingUrls: [
       "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL?PAGE=SCP_PUB_BIDLIST_FL",
+    ],
+    bootstrapUrls: [
+      "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/NUI_FRAMEWORK.PT_LANDINGPAGE.GBL",
     ],
     sourceBadge: "Kansas eSupplier Bid Opportunities",
     maxPages: 6,
