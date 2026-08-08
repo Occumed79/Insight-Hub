@@ -11,8 +11,10 @@ import {
 import {
   classifyIdentityMatch,
   failedProvidersForRetry,
+  finalIngestionStatus,
   isStaleIngestionRun,
   mergeSourceRefresh,
+  opportunityIdentityLockKeys,
   protectedLineageKeys,
   shouldArchiveForDeadline,
   shouldProtectCanonicalFromRefresh,
@@ -161,6 +163,74 @@ describe("raw, staging, persistent identity, and refresh rules", () => {
     assert.equal(refreshed.firstSeenAt, "preserved");
   });
 
+  it("keeps SAM canonical ownership when an equal-evidence Tango copy arrives", () => {
+    const existing = {
+      id: "one",
+      providerKey: "samGov",
+      providerName: "samGov",
+      source: "sam_gov",
+      title: "Official SAM title",
+      description: "Rich official description",
+      agency: "Department of Defense",
+      tags: JSON.stringify(["evidence:direct-structured", "sam"]),
+      sourceConfidence: "high",
+      createdAt: "created",
+      firstSeenAt: "first",
+      notes: "preserved notes",
+      userGrade: "excellent",
+      userConfidence: 95,
+    };
+    const incoming = {
+      providerKey: "tango",
+      providerName: "tango",
+      source: "manual",
+      title: "Tango copy",
+      description: null,
+      agency: "Department of Defense",
+      estimatedValue: "120000",
+      tags: JSON.stringify(["evidence:direct-structured", "tango"]),
+      sourceConfidence: "medium",
+    };
+    const merged = mergeSourceRefresh(existing, incoming as any);
+    assert.equal(merged.providerKey, "samGov");
+    assert.equal(merged.title, "Official SAM title");
+    assert.equal(merged.description, "Rich official description");
+    assert.equal(merged.estimatedValue, "120000");
+    assert.equal(merged.sourceConfidence, "high");
+    assert.match(String(merged.tags), /sam/);
+    assert.match(String(merged.tags), /tango/);
+    assert.equal(merged.userGrade, "excellent");
+  });
+
+  it("lets higher-authority SAM replace Tango canonical source fields", () => {
+    const existing = {
+      id: "one",
+      providerKey: "tango",
+      providerName: "tango",
+      source: "manual",
+      title: "Tango title",
+      createdAt: "created",
+      firstSeenAt: "first",
+      notes: "note",
+    };
+    const merged = mergeSourceRefresh(existing, {
+      providerKey: "samGov",
+      providerName: "samGov",
+      source: "sam_gov",
+      title: "Official SAM amendment",
+    } as any);
+    assert.equal(merged.providerKey, "samGov");
+    assert.equal(merged.title, "Official SAM amendment");
+  });
+
+  it("locks every dedupe identity in deterministic order", () => {
+    const keys = calculateOpportunityDedupeKeys(fixture());
+    const locks = opportunityIdentityLockKeys(keys.slice().reverse(), "fallback");
+    assert.deepEqual(locks, [...locks].sort());
+    assert.equal(new Set(locks).size, locks.length);
+    assert.ok(locks.some((key) => key.startsWith("solicitation:")));
+  });
+
   it("keeps only the matched weak lineage key for a cross-provider duplicate", () => {
     const pipeline = new InMemoryPipeline();
     pipeline.ingest(fixture({ solicitationNumber: undefined }));
@@ -270,6 +340,31 @@ describe("run retry and deadline rules", () => {
     }
   });
 
+  it("marks recovered provider warnings as completed_with_errors", () => {
+    assert.equal(
+      finalIngestionStatus({
+        cancelled: false,
+        timedOut: false,
+        totalSources: 3,
+        failedSources: 0,
+        timedOutSources: 0,
+        warningSources: 1,
+      }),
+      "completed_with_errors",
+    );
+    assert.equal(
+      finalIngestionStatus({
+        cancelled: false,
+        timedOut: false,
+        totalSources: 3,
+        failedSources: 0,
+        timedOutSources: 0,
+        warningSources: 0,
+      }),
+      "completed",
+    );
+  });
+
   it("selects only failed providers for retry", () => {
     assert.deepEqual(
       failedProvidersForRetry([
@@ -327,6 +422,9 @@ describe("run retry and deadline rules", () => {
       "rfp_run_finalized",
       "completed_with_errors",
       "cancelled",
+      "opportunityIdentityLockKeys",
+      "mergeSourceRefresh",
+      "warningSources",
     ])
       assert.ok(
         source.includes(required),
@@ -346,6 +444,23 @@ describe("run retry and deadline rules", () => {
     assert.ok(runner.includes("signal?: AbortSignal"));
     assert.ok(runner.includes("signal: options.signal"));
     assert.ok(sam.includes("fetch(`${baseUrl}?${params}`, { signal })"));
+  });
+
+  it("propagates the requested date range through browser discovery", async () => {
+    const runner = await readFile(
+      path.resolve(process.cwd(), "src/lib/ingestion/providerRunner.ts"),
+      "utf8",
+    );
+    const web = await readFile(
+      path.resolve(process.cwd(), "src/lib/search/webIntelligence.ts"),
+      "utf8",
+    );
+    assert.ok(runner.includes("dateRange: options.dateRange"));
+    assert.ok(web.includes("dateRangeDays"));
+    assert.ok(web.includes("startPublishedDate: publishedAfterIso"));
+    assert.ok(web.includes("dateRange: dateRangeDays"));
+    assert.ok(web.includes("requestedSerperRecency"));
+    assert.equal(web.includes("options.keywords ? 365 : 30"), false);
   });
 
   it("bounds public portal sub-runs below the manual provider deadline", async () => {
