@@ -1,0 +1,154 @@
+name: Relevant News review fix
+
+on:
+  push:
+    branches:
+      - hotfix/relevant-news-federal-filter
+    paths:
+      - .github/workflows/relevant-news-review-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'Tighten Relevant News federal token matching') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/relevant-news-federal-filter
+          fetch-depth: 0
+      - name: Apply review fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('api-server/src/routes/relevant-news.ts')
+          text = p.read_text()
+          start = text.index('const FEDERAL_CONTEXT_TERMS = [')
+          end = text.index('export function relevantNewsScore', start)
+          replacement = '''const FEDERAL_CONTEXT_PATTERNS = [
+  /\\bu\\.?s\\.?\\s+(?:federal\\s+)?government\\b/i,
+  /\\bunited states\\s+(?:federal\\s+)?government\\b/i,
+  /\\bdepartment of defense\\b/i,
+  /\\bdefense department\\b/i,
+  /\\bpentagon\\b/i,
+  /\\bu\\.?s\\.?\\s+army\\b/i,
+  /\\bunited states army\\b/i,
+  /\\bu\\.?s\\.?\\s+navy\\b/i,
+  /\\bunited states navy\\b/i,
+  /\\bu\\.?s\\.?\\s+air force\\b/i,
+  /\\bunited states air force\\b/i,
+  /\\bu\\.?s\\.?\\s+space force\\b/i,
+  /\\bunited states space force\\b/i,
+  /\\bu\\.?s\\.?\\s+marine corps\\b/i,
+  /\\bunited states marine corps\\b/i,
+  /\\bdepartment of homeland security\\b/i,
+  /\\bhomeland security\\b/i,
+  /\\bcustoms and border protection\\b/i,
+  /\\bborder patrol\\b/i,
+  /\\bdepartment of veterans affairs\\b/i,
+  /\\bgeneral services administration\\b/i,
+  /\\bdepartment of health and human services\\b/i,
+  /\\bdepartment of energy\\b/i,
+  /\\bdepartment of labor\\b/i,
+  /\\bdod\\b/i,
+  /\\bdhs\\b/i,
+  /\\bgsa\\b/i,
+  /\\bhhs\\b/i,
+  /\\bcbp\\b/i,
+  /\\bfema\\b/i,
+  /\\btsa\\b/i,
+  /\\bnih\\b/i,
+  /\\bcdc\\b/i,
+];
+
+const PROCUREMENT_CONTEXT_PATTERNS = [
+  /\\bcontracts?\\b/i,
+  /\\bawards?\\b/i,
+  /\\bprocure(?:ment|ments|s|d|ing)?\\b/i,
+  /\\bacquisition(?:s)?\\b/i,
+  /\\bsolicit(?:ation|ations|s|ed|ing)?\\b/i,
+  /\\brecompete(?:s|d|ing)?\\b/i,
+  /\\brequest for proposals?\\b/i,
+  /\\brfps?\\b/i,
+  /\\bbids?\\b/i,
+];
+
+function matchesAny(haystack: string, patterns: readonly RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(haystack));
+}
+
+'''
+          text = text[:start] + replacement + text[end:]
+
+          old_haystack = '''  const source = asRecord(article.source);\n  const haystack = [article.title, article.description, article.content, source.name]\n    .map((value) => asString(value) ?? "")\n    .join(" ")\n    .toLowerCase();'''
+          new_haystack = '''  const haystack = [article.title, article.description, article.content]\n    .map((value) => asString(value) ?? "")\n    .join(" ")\n    .toLowerCase();'''
+          if text.count(old_haystack) != 1:
+              raise SystemExit('haystack anchor mismatch')
+          text = text.replace(old_haystack, new_haystack, 1)
+          text = text.replace('''    !containsAny(haystack, FEDERAL_CONTEXT_TERMS) ||\n    !containsAny(haystack, PROCUREMENT_CONTEXT_TERMS)''', '''    !matchesAny(haystack, FEDERAL_CONTEXT_PATTERNS) ||\n    !matchesAny(haystack, PROCUREMENT_CONTEXT_PATTERNS)''', 1)
+
+          wt_start = text.index('  const weightedTerms: Array<[string, number]> = [')
+          wt_end = text.index('  return weightedTerms.reduce', wt_start)
+          weighted = '''  const weightedTerms: Array<[RegExp, number]> = [
+    [/\\bfederal contractors?\\b/i, 10],
+    [/\\bgovernment contractors?\\b/i, 10],
+    [/\\bdefense contractors?\\b/i, 9],
+    [/\\bfederal contracts?\\b/i, 8],
+    [/\\bgovernment contracts?\\b/i, 8],
+    [/\\bcontract awards?\\b/i, 8],
+    [/\\brecompete(?:s|d|ing)?\\b/i, 8],
+    [/\\bfederal procurement\\b/i, 7],
+    [/\\bgovernment procurement\\b/i, 7],
+    [/\\bfederal acquisitions?\\b/i, 6],
+    [/\\bgovernment acquisitions?\\b/i, 6],
+    [/\\bsolicit(?:ation|ations|s|ed|ing)?\\b/i, 5],
+    [/\\bdepartment of defense\\b/i, 4],
+    [/\\bhomeland security\\b/i, 4],
+    [/\\bgeneral services administration\\b/i, 4],
+    [/\\bveterans affairs\\b/i, 4],
+    [/\\bdod\\b/i, 3],
+    [/\\bdhs\\b/i, 3],
+    [/\\bgsa\\b/i, 3],
+    [/\\bhhs\\b/i, 3],
+    [/\\bcontracting\\b/i, 2],
+    [/\\bawards?\\b/i, 2],
+    [/\\bcontractors?\\b/i, 2],
+    [/\\bcontracts?\\b/i, 3],
+    [/\\bu\\.?s\\.?\\s+army\\b/i, 4],
+    [/\\bunited states army\\b/i, 4],
+    [/\\bu\\.?s\\.?\\s+navy\\b/i, 4],
+    [/\\bunited states navy\\b/i, 4],
+    [/\\bu\\.?s\\.?\\s+air force\\b/i, 4],
+    [/\\bunited states air force\\b/i, 4],
+    [/\\bu\\.?s\\.?\\s+space force\\b/i, 4],
+    [/\\bunited states space force\\b/i, 4],
+    [/\\bu\\.?s\\.?\\s+marine corps\\b/i, 4],
+    [/\\bunited states marine corps\\b/i, 4],
+    [/\\bpentagon\\b/i, 4],
+  ];
+
+'''
+          text = text[:wt_start] + weighted + text[wt_end:]
+          text = text.replace('''  return weightedTerms.reduce((score, [term, weight]) => score + (haystack.includes(term) ? weight : 0), 0);''', '''  return weightedTerms.reduce((score, [pattern, weight]) => score + (pattern.test(haystack) ? weight : 0), 0);''', 1)
+          p.write_text(text)
+
+          test = Path('api-server/src/routes/__tests__/relevantNews.test.ts')
+          content = test.read_text()
+          content += '''\n\ntest("rejects non-U.S. military contract coverage", () => {\n  assert.equal(relevantNewsScore({\n    title: "British Army contract award announced",\n    description: "The UK Ministry of Defence awarded the programme.",\n    source: { name: "Defence publication", country: "gb" },\n  }), 0);\n});\n\ntest("does not treat substrings such as Dodge as DoD", () => {\n  assert.equal(relevantNewsScore({\n    title: "Dodge contract award expands supplier programme",\n    description: "A private automotive supplier contract.",\n    source: { name: "Auto News", country: "us" },\n  }), 0);\n});\n\ntest("publisher name alone cannot provide federal context", () => {\n  assert.equal(relevantNewsScore({\n    title: "Honda contract award",\n    description: "Private vehicle-development agreement.",\n    source: { name: "Federal News", country: "us" },\n  }), 0);\n});\n\ntest("accepts explicit U.S. government contract coverage", () => {\n  assert.ok(relevantNewsScore({\n    title: "U.S. government contract awarded for medical services",\n    description: "United States government procurement supports employee health examinations.",\n    source: { name: "Public Sector News", country: "us" },\n  }) >= 6);\n});\n'''
+          test.write_text(content)
+
+          Path('.github/workflows/relevant-news-review-fix.yml').unlink()
+          PY
+      - name: Commit review fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Tighten Relevant News federal token matching"
+          git push origin HEAD:hotfix/relevant-news-federal-filter
