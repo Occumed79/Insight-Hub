@@ -115,7 +115,7 @@ export function canonicalProviderAuthority(value: unknown): number {
 }
 
 function ownerIdentity(value: Record<string, unknown>): string {
-  return String(value.providerKey ?? value.providerName ?? value.source ?? "")
+  return String(value.providerName ?? value.providerKey ?? value.source ?? "")
     .trim()
     .toLowerCase();
 }
