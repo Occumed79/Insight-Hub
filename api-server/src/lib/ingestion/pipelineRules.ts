@@ -62,10 +62,15 @@ export function isStaleIngestionRun(
 }
 
 export function failedProvidersForRetry(
-  sources: Array<{ provider: string; status: string }>,
+  sources: Array<{ provider: string; status: string; error?: unknown }>,
 ): string[] {
   return sources
-    .filter((source) => source.status === "failed")
+    .filter(
+      (source) =>
+        source.status === "failed" ||
+        source.status === "timed_out" ||
+        (source.status === "completed" && Boolean(source.error)),
+    )
     .map((source) => source.provider);
 }
 
@@ -87,11 +92,6 @@ export function shouldProtectCanonicalFromRefresh(
   return fallback || matchType === "url" || matchType === "fingerprint";
 }
 
-/**
- * A protected duplicate may update lineage timestamps for the identity that
- * actually matched, but it must not attach stronger provider/solicitation keys
- * that would promote the duplicate into a canonical refresh on a later run.
- */
 export function protectedLineageKeys(
   keys: OpportunityDedupeKey[],
   matchType: OpportunityDedupeKey["type"],
@@ -99,11 +99,6 @@ export function protectedLineageKeys(
   return keys.filter((key) => key.type === matchType);
 }
 
-/**
- * Lock every identity that could collapse to the same canonical row. Sorting
- * makes concurrent cross-provider acquisitions deterministic and avoids two
- * processes taking provider/solicitation locks in opposite orders.
- */
 export function opportunityIdentityLockKeys(
   keys: OpportunityDedupeKey[],
   fallbackKey: string,
@@ -161,13 +156,6 @@ function strongerConfidence(existing: unknown, incoming: unknown): unknown {
     : existing;
 }
 
-/**
- * Merge a canonical refresh without allowing a lower-authority source to erase
- * richer fields or steal canonical source ownership. Same-provider amendments
- * and higher-authority sources may replace populated source fields; lower or
- * equal authority cross-provider records may only fill gaps. User fields and
- * canonical creation identity are always preserved.
- */
 export function mergeSourceRefresh<T extends Record<string, unknown>>(
   existing: T,
   sourceFields: T,
