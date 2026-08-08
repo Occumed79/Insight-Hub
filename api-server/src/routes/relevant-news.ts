@@ -76,107 +76,117 @@ function sanitizedSearch(value: unknown): string | null {
   return normalized ? normalized.slice(0, 45) : null;
 }
 
-const FEDERAL_CONTEXT_TERMS = [
-  "federal",
-  "department of defense",
-  "defense department",
-  "pentagon",
-  "u.s. army",
-  "us army",
-  "army",
-  "u.s. navy",
-  "us navy",
-  "navy",
-  "air force",
-  "space force",
-  "marine corps",
-  "homeland security",
-  "customs and border protection",
-  "border patrol",
-  "department of veterans affairs",
-  "veterans affairs",
-  "general services administration",
-  "department of health and human services",
-  "department of energy",
-  "department of labor",
-  "dod",
-  "dhs",
-  "gsa",
-  "hhs",
-  "cbp",
-  "fema",
-  "tsa",
-  "nih",
-  "cdc",
+const FEDERAL_CONTEXT_PATTERNS = [
+  /\bu\.?s\.?\s+(?:federal\s+)?government\b/i,
+  /\bunited states\s+(?:federal\s+)?government\b/i,
+  /\bdepartment of defense\b/i,
+  /\bdefense department\b/i,
+  /\bpentagon\b/i,
+  /\bu\.?s\.?\s+army\b/i,
+  /\bunited states army\b/i,
+  /\bu\.?s\.?\s+navy\b/i,
+  /\bunited states navy\b/i,
+  /\bu\.?s\.?\s+air force\b/i,
+  /\bunited states air force\b/i,
+  /\bu\.?s\.?\s+space force\b/i,
+  /\bunited states space force\b/i,
+  /\bu\.?s\.?\s+marine corps\b/i,
+  /\bunited states marine corps\b/i,
+  /\bdepartment of homeland security\b/i,
+  /\bhomeland security\b/i,
+  /\bcustoms and border protection\b/i,
+  /\bborder patrol\b/i,
+  /\bdepartment of veterans affairs\b/i,
+  /\bgeneral services administration\b/i,
+  /\bdepartment of health and human services\b/i,
+  /\bdepartment of energy\b/i,
+  /\bdepartment of labor\b/i,
+  /\bdod\b/i,
+  /\bdhs\b/i,
+  /\bgsa\b/i,
+  /\bhhs\b/i,
+  /\bcbp\b/i,
+  /\bfema\b/i,
+  /\btsa\b/i,
+  /\bnih\b/i,
+  /\bcdc\b/i,
 ];
 
-const PROCUREMENT_CONTEXT_TERMS = [
-  "contract",
-  "award",
-  "procurement",
-  "acquisition",
-  "solicitation",
-  "recompete",
-  "request for proposal",
-  "rfp",
-  "bid",
+const PROCUREMENT_CONTEXT_PATTERNS = [
+  /\bcontracts?\b/i,
+  /\bawards?\b/i,
+  /\bprocure(?:ment|ments|s|d|ing)?\b/i,
+  /\bacquisition(?:s)?\b/i,
+  /\bsolicit(?:ation|ations|s|ed|ing)?\b/i,
+  /\brecompete(?:s|d|ing)?\b/i,
+  /\brequest for proposals?\b/i,
+  /\brfps?\b/i,
+  /\bbids?\b/i,
 ];
 
-function containsAny(haystack: string, terms: readonly string[]): boolean {
-  return terms.some((term) => haystack.includes(term));
+function matchesAny(haystack: string, patterns: readonly RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(haystack));
 }
 
 export function relevantNewsScore(article: JsonRecord): number {
-  const source = asRecord(article.source);
-  const haystack = [article.title, article.description, article.content, source.name]
+  const haystack = [article.title, article.description, article.content]
     .map((value) => asString(value) ?? "")
     .join(" ")
     .toLowerCase();
 
   // Generic corporate stories about a "contract award" are not federal
-  // contractor intelligence. Require both U.S. federal context and a real
-  // procurement/contract signal before weighted scoring can admit an article.
+  // contractor intelligence. Require both explicit U.S.-federal context and a
+  // procurement/contract signal from the article text itself. Publisher names
+  // never satisfy the federal-context gate.
   if (
-    !containsAny(haystack, FEDERAL_CONTEXT_TERMS) ||
-    !containsAny(haystack, PROCUREMENT_CONTEXT_TERMS)
+    !matchesAny(haystack, FEDERAL_CONTEXT_PATTERNS) ||
+    !matchesAny(haystack, PROCUREMENT_CONTEXT_PATTERNS)
   ) {
     return 0;
   }
 
-  const weightedTerms: Array<[string, number]> = [
-    ["federal contractor", 10],
-    ["government contractor", 10],
-    ["defense contractor", 9],
-    ["federal contract", 8],
-    ["government contract", 8],
-    ["contract award", 8],
-    ["recompete", 8],
-    ["federal procurement", 7],
-    ["government procurement", 7],
-    ["federal acquisition", 6],
-    ["government acquisition", 6],
-    ["solicitation", 5],
-    ["department of defense", 4],
-    ["homeland security", 4],
-    ["general services administration", 4],
-    ["veterans affairs", 4],
-    ["dod", 3],
-    ["dhs", 3],
-    ["gsa", 3],
-    ["hhs", 3],
-    ["contracting", 2],
-    ["award", 2],
-    ["contractor", 2],
-    ["contract", 3],
-    ["army", 4],
-    ["navy", 4],
-    ["air force", 4],
-    ["space force", 4],
-    ["marine corps", 4],
-    ["pentagon", 4],
+  const weightedTerms: Array<[RegExp, number]> = [
+    [/\bfederal contractors?\b/i, 10],
+    [/\bgovernment contractors?\b/i, 10],
+    [/\bdefense contractors?\b/i, 9],
+    [/\bfederal contracts?\b/i, 8],
+    [/\bgovernment contracts?\b/i, 8],
+    [/\bcontract awards?\b/i, 8],
+    [/\brecompete(?:s|d|ing)?\b/i, 8],
+    [/\bfederal procurement\b/i, 7],
+    [/\bgovernment procurement\b/i, 7],
+    [/\bfederal acquisitions?\b/i, 6],
+    [/\bgovernment acquisitions?\b/i, 6],
+    [/\bsolicit(?:ation|ations|s|ed|ing)?\b/i, 5],
+    [/\bdepartment of defense\b/i, 4],
+    [/\bhomeland security\b/i, 4],
+    [/\bgeneral services administration\b/i, 4],
+    [/\bveterans affairs\b/i, 4],
+    [/\bdod\b/i, 3],
+    [/\bdhs\b/i, 3],
+    [/\bgsa\b/i, 3],
+    [/\bhhs\b/i, 3],
+    [/\bcontracting\b/i, 2],
+    [/\bawards?\b/i, 2],
+    [/\bcontractors?\b/i, 2],
+    [/\bcontracts?\b/i, 3],
+    [/\bu\.?s\.?\s+army\b/i, 4],
+    [/\bunited states army\b/i, 4],
+    [/\bu\.?s\.?\s+navy\b/i, 4],
+    [/\bunited states navy\b/i, 4],
+    [/\bu\.?s\.?\s+air force\b/i, 4],
+    [/\bunited states air force\b/i, 4],
+    [/\bu\.?s\.?\s+space force\b/i, 4],
+    [/\bunited states space force\b/i, 4],
+    [/\bu\.?s\.?\s+marine corps\b/i, 4],
+    [/\bunited states marine corps\b/i, 4],
+    [/\bpentagon\b/i, 4],
   ];
 
-  return weightedTerms.reduce((score, [term, weight]) => score + (haystack.includes(term) ? weight : 0), 0);
+  return weightedTerms.reduce(
+    (score, [pattern, weight]) => score + (pattern.test(haystack) ? weight : 0),
+    0,
+  );
 }
 
 function normalizeArticle(rawValue: unknown): NewsArticle | null {
