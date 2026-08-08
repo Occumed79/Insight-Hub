@@ -880,6 +880,7 @@ router.post("/opportunities/enrich", async (req, res) => {
         await db.update(opportunitiesTable).set({ agency: agencyHint, updatedAt: new Date() }).where(eq(opportunitiesTable.id, rec.id));
         stats.agencyUpdated++;
         updatedIds.add(rec.id);
+        rec.agency = agencyHint;
       }
     }
 
