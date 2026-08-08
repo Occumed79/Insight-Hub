@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Deployed Insight Hub base URL, for example https://insight-hub.onrender.com"
-        required: true
+        description: "Deployed Insight Hub base URL"
+        required: false
         type: string
       expected_commit:
         description: "Expected deployed git commit SHA (recommended)"
@@ -23,11 +23,11 @@ jobs:
   read-only-production-smoke:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && vars.INSIGHT_PRODUCTION_URL != '')
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      INSIGHT_PRODUCTION_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || vars.INSIGHT_PRODUCTION_URL }}
+      INSIGHT_PRODUCTION_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || vars.INSIGHT_PRODUCTION_URL || 'https://insight-hub-eyza.onrender.com' }}
       EXPECTED_COMMIT_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.event.workflow_run.head_sha }}
       ACCEPTANCE_TIMEOUT_MS: "12000"
 
