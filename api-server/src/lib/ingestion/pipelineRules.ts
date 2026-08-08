@@ -207,6 +207,27 @@ export function mergeSourceRefresh<T extends Record<string, unknown>>(
   return merged as T;
 }
 
+export function finalIngestionStatus(input: {
+  cancelled: boolean;
+  timedOut: boolean;
+  totalSources: number;
+  failedSources: number;
+  timedOutSources: number;
+  warningSources: number;
+}): "completed" | "completed_with_errors" | "cancelled" | "failed" {
+  if (input.cancelled) return "cancelled";
+  if (input.timedOut) return "completed_with_errors";
+  if (
+    input.totalSources > 0 &&
+    input.failedSources + input.timedOutSources >= input.totalSources
+  ) {
+    return "failed";
+  }
+  return input.failedSources + input.timedOutSources + input.warningSources > 0
+    ? "completed_with_errors"
+    : "completed";
+}
+
 export function shouldArchiveForDeadline(
   responseDeadline: Date | null | undefined,
   now: Date,
