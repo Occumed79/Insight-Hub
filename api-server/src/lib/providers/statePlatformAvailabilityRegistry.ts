@@ -5,7 +5,6 @@ import type { StatewideListingRecord } from "./statewideProcurementParser";
 import {
   OfficialAvailabilityProvider,
   availabilitySource,
-  kansasGbl2Provider,
 } from "./statePlatformAvailabilityAdapters";
 import { peopleSoftPublicProviders } from "./peopleSoftPublic";
 import { periscopePublicProviders } from "./periscopePublic";
@@ -117,33 +116,18 @@ const WEST_VIRGINIA_AVAILABILITY = {
   parser: westVirginiaParser,
 } as const;
 
+/**
+ * These availability wrappers intentionally augment an existing primary owner.
+ * Kansas is not listed here: its canonical PeopleSoft provider owns ks-esupplier
+ * directly, preventing the retired .GBL2 experiment from overriding it.
+ */
 export const stateAvailabilityProviders: Record<string, DataSourceProvider> = {
-  "ks-esupplier": kansasGbl2Provider,
   "wi-vendornet": new OfficialAvailabilityProvider(WISCONSIN_AVAILABILITY),
   "or-oregonbuys": new OfficialAvailabilityProvider(OREGON_AVAILABILITY),
   "wv-oasis": new OfficialAvailabilityProvider(WEST_VIRGINIA_AVAILABILITY),
 };
 
-const kansasSource: PublicPortalSource = {
-  id: "ks-esupplier",
-  agencyName: "State of Kansas",
-  agencyType: "state",
-  state: "KS",
-  sourceUrl: "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL2",
-  searchUrl: "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL2",
-  domain: "supplier.sok.ks.gov",
-  portalPlatform: "PeopleSoft public supplier portal",
-  sourceLevel: "state",
-  level: "state",
-  accessMode: "portal",
-  scraperType: "existing_parser",
-  enabled: true,
-  verificationStatus: "verified",
-  notes: "Shared PeopleSoft adapter using Kansas's public GBL2 bidding-event route.",
-};
-
 export const stateAvailabilitySources: PublicPortalSource[] = [
-  kansasSource,
   availabilitySource(WISCONSIN_AVAILABILITY),
   availabilitySource(OREGON_AVAILABILITY),
   availabilitySource(WEST_VIRGINIA_AVAILABILITY),
