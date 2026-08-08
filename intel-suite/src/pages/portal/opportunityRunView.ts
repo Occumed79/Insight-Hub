@@ -96,13 +96,13 @@ export function opportunityRunMetrics(run: {
   const coreMetrics = [
     ["Fetched", run.fetched],
     ["Staged", run.staged],
-    ["Accepted", run.accepted],
+    ["Promoted", run.accepted],
     ["Rejected", run.rejected],
     ["Duplicates", run.duplicates],
     ["Created", run.created],
     ["Updated", run.updated],
     ["Archived", run.archived],
-    ["Errors", run.providerErrors?.length ?? 0],
+    ["Warnings / Errors", run.providerErrors?.length ?? 0],
     ["Timeouts", run.providersTimedOut ?? 0],
   ] as Array<readonly [string, string | number]>;
   const rejectionMetrics = (run.rejectionDiagnostics?.reasons ?? [])
