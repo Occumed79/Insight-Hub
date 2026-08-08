@@ -76,12 +76,72 @@ function sanitizedSearch(value: unknown): string | null {
   return normalized ? normalized.slice(0, 45) : null;
 }
 
-function relevanceScore(article: JsonRecord): number {
+const FEDERAL_CONTEXT_TERMS = [
+  "federal",
+  "department of defense",
+  "defense department",
+  "pentagon",
+  "u.s. army",
+  "us army",
+  "army",
+  "u.s. navy",
+  "us navy",
+  "navy",
+  "air force",
+  "space force",
+  "marine corps",
+  "homeland security",
+  "customs and border protection",
+  "border patrol",
+  "department of veterans affairs",
+  "veterans affairs",
+  "general services administration",
+  "department of health and human services",
+  "department of energy",
+  "department of labor",
+  "dod",
+  "dhs",
+  "gsa",
+  "hhs",
+  "cbp",
+  "fema",
+  "tsa",
+  "nih",
+  "cdc",
+];
+
+const PROCUREMENT_CONTEXT_TERMS = [
+  "contract",
+  "award",
+  "procurement",
+  "acquisition",
+  "solicitation",
+  "recompete",
+  "request for proposal",
+  "rfp",
+  "bid",
+];
+
+function containsAny(haystack: string, terms: readonly string[]): boolean {
+  return terms.some((term) => haystack.includes(term));
+}
+
+export function relevantNewsScore(article: JsonRecord): number {
   const source = asRecord(article.source);
   const haystack = [article.title, article.description, article.content, source.name]
     .map((value) => asString(value) ?? "")
     .join(" ")
     .toLowerCase();
+
+  // Generic corporate stories about a "contract award" are not federal
+  // contractor intelligence. Require both U.S. federal context and a real
+  // procurement/contract signal before weighted scoring can admit an article.
+  if (
+    !containsAny(haystack, FEDERAL_CONTEXT_TERMS) ||
+    !containsAny(haystack, PROCUREMENT_CONTEXT_TERMS)
+  ) {
+    return 0;
+  }
 
   const weightedTerms: Array<[string, number]> = [
     ["federal contractor", 10],
@@ -107,6 +167,13 @@ function relevanceScore(article: JsonRecord): number {
     ["contracting", 2],
     ["award", 2],
     ["contractor", 2],
+    ["contract", 3],
+    ["army", 4],
+    ["navy", 4],
+    ["air force", 4],
+    ["space force", 4],
+    ["marine corps", 4],
+    ["pentagon", 4],
   ];
 
   return weightedTerms.reduce((score, [term, weight]) => score + (haystack.includes(term) ? weight : 0), 0);
@@ -132,7 +199,7 @@ function normalizeArticle(rawValue: unknown): NewsArticle | null {
       url: asString(source.url),
       country: asString(source.country),
     },
-    relevanceScore: relevanceScore(raw),
+    relevanceScore: relevantNewsScore(raw),
   };
 }
 
@@ -203,7 +270,7 @@ async function fetchRelevantNews(query: string, max: number, page: number, allow
   const normalized = rawArticles
     .map(normalizeArticle)
     .filter((article): article is NewsArticle => article !== null)
-    .filter((article) => article.relevanceScore >= 2)
+    .filter((article) => article.relevanceScore >= 6)
     .sort((left, right) => {
       const dateDifference = Date.parse(right.publishedAt ?? "") - Date.parse(left.publishedAt ?? "");
       if (Number.isFinite(dateDifference) && dateDifference !== 0) return dateDifference;
