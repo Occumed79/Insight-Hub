@@ -93,6 +93,9 @@ export function opportunityRunMetrics(run: {
     }>;
   };
 }) {
+  // The persisted `accepted` counter means the record was promoted into the
+  // canonical store. The stricter read-time quality classifier may still place
+  // it in Needs Verification rather than the Actionable view.
   const coreMetrics = [
     ["Fetched", run.fetched],
     ["Staged", run.staged],
