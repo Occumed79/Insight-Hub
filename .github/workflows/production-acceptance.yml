@@ -1,6 +1,10 @@
 name: Production acceptance
 
 on:
+  workflow_run:
+    workflows: ["Product build"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       base_url:
@@ -17,20 +21,46 @@ permissions:
 
 jobs:
   read-only-production-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && vars.INSIGHT_PRODUCTION_URL != '')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
-      INSIGHT_PRODUCTION_URL: ${{ inputs.base_url }}
-      EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit }}
+      INSIGHT_PRODUCTION_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || vars.INSIGHT_PRODUCTION_URL }}
+      EXPECTED_COMMIT_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.event.workflow_run.head_sha }}
       ACCEPTANCE_TIMEOUT_MS: "12000"
+
     steps:
-      - name: Checkout
+      - name: Checkout deployed candidate source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Read-only deployed acceptance
-        run: node api-server/scripts/production-acceptance.mjs
+      - name: Read-only deployed acceptance with deploy convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          attempts=20
+          delay_seconds=30
+
+          for attempt in $(seq 1 "$attempts"); do
+            echo "Production acceptance attempt ${attempt}/${attempts} for ${EXPECTED_COMMIT_SHA:-current deployment}"
+
+            if node api-server/scripts/production-acceptance.mjs; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq "$attempts" ]; then
+              echo "Production acceptance did not converge to a healthy expected deployment after ${attempts} attempts." >&2
+              exit 1
+            fi
+
+            sleep "$delay_seconds"
+          done
