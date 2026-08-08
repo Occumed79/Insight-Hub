@@ -848,8 +848,9 @@ router.post("/opportunities/:id/summary", async (req, res) => {
 
 router.post("/opportunities/enrich", async (req, res) => {
   const BATCH_SIZE = 5;
-  const MAX_RECORDS = 100;
-  const stats = { enriched: 0, agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };
+  const MAX_RECORDS = 30;
+  const stats = { agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };
+  const updatedIds = new Set<string>();
 
   try {
     const records = await db
@@ -870,6 +871,7 @@ router.post("/opportunities/enrich", async (req, res) => {
           eq(opportunitiesTable.agency, "Unknown")
         )
       )
+      .orderBy(asc(opportunitiesTable.updatedAt), asc(opportunitiesTable.id))
       .limit(MAX_RECORDS);
 
     for (const rec of records) {
@@ -877,6 +879,8 @@ router.post("/opportunities/enrich", async (req, res) => {
       if (agencyHint && rec.agency === "Unknown") {
         await db.update(opportunitiesTable).set({ agency: agencyHint, updatedAt: new Date() }).where(eq(opportunitiesTable.id, rec.id));
         stats.agencyUpdated++;
+        updatedIds.add(rec.id);
+        rec.agency = agencyHint;
       }
     }
 
@@ -910,11 +914,14 @@ router.post("/opportunities/enrich", async (req, res) => {
             updates.estimatedValue = String(estimatedValue);
             stats.valueUpdated++;
           }
-          if (rec.agency === "Unknown" && agencyHint) updates.agency = agencyHint;
+          if (rec.agency === "Unknown" && agencyHint) {
+            updates.agency = agencyHint;
+            stats.agencyUpdated++;
+          }
 
           if (Object.keys(updates).length > 1) {
             await db.update(opportunitiesTable).set(updates).where(eq(opportunitiesTable.id, rec.id));
-            stats.enriched++;
+            updatedIds.add(rec.id);
           }
         }
 
@@ -923,7 +930,7 @@ router.post("/opportunities/enrich", async (req, res) => {
     }
 
     return res.json({
-      enriched: stats.enriched,
+      enriched: updatedIds.size,
       agencyUpdated: stats.agencyUpdated,
       deadlineUpdated: stats.deadlineUpdated,
       valueUpdated: stats.valueUpdated,

@@ -178,4 +178,23 @@ describe("opportunity quality classifier", () => {
     assert.equal(classifyOpportunityQuality({ ...base, title: "Occupational Health Services (RFP) - Township of Wayne Bid & RFP - Due Jun 17, 2026 | Starbridge", providerName: "serper", samUrl: "https://starbridge.ai/rfp/occupational-health-services-rfp-10", status: "archived", responseDeadline: new Date("2026-06-17") }, now).classification, "archived");
     assert.equal(classifyOpportunityQuality({ ...base, title: "Q--Presolicitation Notice for OST HRP - SAM.gov", agency: "occupational health", responseDeadline: null, samUrl: "https://sam.gov/workspace/contract/opp/9aec430f1de94cd7bf7687f515b55ed8/view" }, now).classification, "needs-verification");
   });
+  it("keeps every active browser discovery provider out of verified-open", () => {
+    for (const providerName of ["parallel", "linkup", "socrata", "aiDiscovery", "rssAggregator"]) {
+      const quality = classifyOpportunityQuality({
+        title: "Occupational Health Services RFP",
+        agency: "U.S. Department of Labor",
+        type: "Solicitation",
+        status: "active",
+        providerName,
+        sourceConfidence: "high",
+        responseDeadline: "2027-01-15T17:00:00Z",
+        samUrl: "https://example.gov/opportunity/123",
+        description: "Request for proposal for occupational health examinations and drug testing.",
+        tags: JSON.stringify(["evidence:direct-structured", "complete-direct-evidence"]),
+      }, new Date("2026-08-08T00:00:00Z"));
+      assert.notEqual(quality.classification, "verified-open", providerName);
+      assert.equal(quality.sourceType, "search-discovery", providerName);
+    }
+  });
+
 });

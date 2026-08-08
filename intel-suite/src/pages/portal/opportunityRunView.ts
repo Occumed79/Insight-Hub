@@ -93,16 +93,19 @@ export function opportunityRunMetrics(run: {
     }>;
   };
 }) {
+  // The persisted `accepted` counter means the record was promoted into the
+  // canonical store. The stricter read-time quality classifier may still place
+  // it in Needs Verification rather than the Actionable view.
   const coreMetrics = [
     ["Fetched", run.fetched],
     ["Staged", run.staged],
-    ["Accepted", run.accepted],
+    ["Promoted", run.accepted],
     ["Rejected", run.rejected],
     ["Duplicates", run.duplicates],
     ["Created", run.created],
     ["Updated", run.updated],
     ["Archived", run.archived],
-    ["Errors", run.providerErrors?.length ?? 0],
+    ["Warnings / Errors", run.providerErrors?.length ?? 0],
     ["Timeouts", run.providersTimedOut ?? 0],
   ] as Array<readonly [string, string | number]>;
   const rejectionMetrics = (run.rejectionDiagnostics?.reasons ?? [])

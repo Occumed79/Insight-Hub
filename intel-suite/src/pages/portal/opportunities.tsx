@@ -1234,6 +1234,12 @@ export default function OpportunitiesDashboard() {
           </AnimatePresence>
         )}
 
+        {Boolean((oppsData as any)?.ranking?.truncated) && (
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-100">
+            Ranking reached its bounded candidate window. Refine the search or filters for an exact total.
+          </div>
+        )}
+
         {oppsData && oppsData.total > 0 && (
           <div className="mt-4 pt-4 border-t border-white/10 flex flex-col sm:flex-row justify-between gap-3 sm:items-center text-sm text-muted-foreground">
             <span>
@@ -1386,7 +1392,7 @@ export default function OpportunitiesDashboard() {
                 {(currentRun.providerErrors?.length ?? 0) > 0 && (
                   <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
                     <div className="text-[10px] uppercase tracking-wider text-amber-300">
-                      Provider errors
+                      Provider warnings / errors
                     </div>
                     {currentRun.providerErrors!.map((item) => (
                       <p
@@ -1573,7 +1579,7 @@ export default function OpportunitiesDashboard() {
                         {isRetryingFetch && (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         )}
-                        Retry Failed Providers
+                        Retry Problem Sources
                       </Button>
                     )}
                   {!isOpportunityRunActive(currentRun.status) && (

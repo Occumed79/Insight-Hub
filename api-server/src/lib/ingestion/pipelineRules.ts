@@ -3,6 +3,52 @@ import type { OpportunityDedupeKey } from "./opportunityIdentity";
 export const ACTIVE_INGESTION_STATUSES = new Set(["queued", "running"]);
 export const STALE_INGESTION_RUN_AFTER_MS = 30 * 60 * 1000;
 
+const SOURCE_CONFIDENCE_RANK: Record<string, number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
+const CANONICAL_PROVIDER_AUTHORITY: Record<string, number> = {
+  samgov: 100,
+  sam_gov: 100,
+  tango: 90,
+  texasesbd: 80,
+  nyscr: 80,
+  eunabonfire: 80,
+  publicportalproviders: 70,
+  stateportals: 70,
+  internationalpublicportals: 65,
+  langsearch: 30,
+  serper: 30,
+  exa: 30,
+  parallel: 30,
+  linkup: 30,
+  you: 30,
+  socrata: 30,
+  websearch: 30,
+  aidiscovery: 25,
+  rssaggregator: 20,
+  manual: 10,
+};
+
+const CANONICAL_OWNER_FIELDS = new Set([
+  "noticeId",
+  "providerKey",
+  "providerName",
+  "source",
+  "samUrl",
+]);
+
+const PRESERVED_FIELDS = new Set([
+  "id",
+  "createdAt",
+  "firstSeenAt",
+  "notes",
+  "userGrade",
+  "userConfidence",
+]);
+
 export function isActiveIngestionStatus(status: string): boolean {
   return ACTIVE_INGESTION_STATUSES.has(status);
 }
@@ -16,10 +62,15 @@ export function isStaleIngestionRun(
 }
 
 export function failedProvidersForRetry(
-  sources: Array<{ provider: string; status: string }>,
+  sources: Array<{ provider: string; status: string; error?: unknown }>,
 ): string[] {
   return sources
-    .filter((source) => source.status === "failed")
+    .filter(
+      (source) =>
+        source.status === "failed" ||
+        source.status === "timed_out" ||
+        (source.status === "completed" && Boolean(source.error)),
+    )
     .map((source) => source.provider);
 }
 
@@ -41,11 +92,6 @@ export function shouldProtectCanonicalFromRefresh(
   return fallback || matchType === "url" || matchType === "fingerprint";
 }
 
-/**
- * A protected duplicate may update lineage timestamps for the identity that
- * actually matched, but it must not attach stronger provider/solicitation keys
- * that would promote the duplicate into a canonical refresh on a later run.
- */
 export function protectedLineageKeys(
   keys: OpportunityDedupeKey[],
   matchType: OpportunityDedupeKey["type"],
@@ -53,20 +99,121 @@ export function protectedLineageKeys(
   return keys.filter((key) => key.type === matchType);
 }
 
+export function opportunityIdentityLockKeys(
+  keys: OpportunityDedupeKey[],
+  fallbackKey: string,
+): string[] {
+  const values = Array.from(new Set(keys.map((key) => key.value).filter(Boolean))).sort();
+  return values.length > 0 ? values : [fallbackKey];
+}
+
+export function canonicalProviderAuthority(value: unknown): number {
+  const normalized = String(value ?? "")
+    .replace(/[^a-z0-9_]/gi, "")
+    .toLowerCase();
+  return CANONICAL_PROVIDER_AUTHORITY[normalized] ?? 0;
+}
+
+function ownerIdentity(value: Record<string, unknown>): string {
+  return String(value.providerName ?? value.providerKey ?? value.source ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function parseTagValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return value
+      .split(/[,;|]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
+function mergeTags(existing: unknown, incoming: unknown): string | unknown {
+  const tags = Array.from(new Set([...parseTagValues(existing), ...parseTagValues(incoming)]));
+  if (tags.length === 0) return hasMeaningfulValue(incoming) ? incoming : existing;
+  return JSON.stringify(tags);
+}
+
+function strongerConfidence(existing: unknown, incoming: unknown): unknown {
+  const current = String(existing ?? "").toLowerCase();
+  const next = String(incoming ?? "").toLowerCase();
+  if (!SOURCE_CONFIDENCE_RANK[next]) return existing;
+  if (!SOURCE_CONFIDENCE_RANK[current]) return incoming;
+  return SOURCE_CONFIDENCE_RANK[next] >= SOURCE_CONFIDENCE_RANK[current]
+    ? incoming
+    : existing;
+}
+
 export function mergeSourceRefresh<T extends Record<string, unknown>>(
   existing: T,
   sourceFields: T,
 ): T {
-  return {
-    ...existing,
-    ...sourceFields,
-    id: existing.id,
-    createdAt: existing.createdAt,
-    firstSeenAt: existing.firstSeenAt,
-    notes: existing.notes,
-    userGrade: existing.userGrade,
-    userConfidence: existing.userConfidence,
-  };
+  const existingOwner = ownerIdentity(existing);
+  const incomingOwner = ownerIdentity(sourceFields);
+  const incomingOwnsCanonical =
+    !existingOwner ||
+    existingOwner === incomingOwner ||
+    canonicalProviderAuthority(incomingOwner) > canonicalProviderAuthority(existingOwner);
+
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, incoming] of Object.entries(sourceFields)) {
+    if (PRESERVED_FIELDS.has(key)) continue;
+    if (key === "tags") {
+      merged.tags = mergeTags(existing.tags, incoming);
+      continue;
+    }
+    if (key === "sourceConfidence") {
+      merged.sourceConfidence = strongerConfidence(existing.sourceConfidence, incoming);
+      continue;
+    }
+    if (!hasMeaningfulValue(incoming)) continue;
+
+    const current = existing[key];
+    const mayReplace = incomingOwnsCanonical || !hasMeaningfulValue(current);
+    if (CANONICAL_OWNER_FIELDS.has(key)) {
+      if (incomingOwnsCanonical || !hasMeaningfulValue(current)) merged[key] = incoming;
+      continue;
+    }
+    if (mayReplace) merged[key] = incoming;
+  }
+
+  for (const field of PRESERVED_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(existing, field)) merged[field] = existing[field];
+  }
+  return merged as T;
+}
+
+export function finalIngestionStatus(input: {
+  cancelled: boolean;
+  timedOut: boolean;
+  totalSources: number;
+  failedSources: number;
+  timedOutSources: number;
+  warningSources: number;
+}): "completed" | "completed_with_errors" | "cancelled" | "failed" {
+  if (input.cancelled) return "cancelled";
+  if (input.timedOut) return "completed_with_errors";
+  if (
+    input.totalSources > 0 &&
+    input.failedSources + input.timedOutSources >= input.totalSources
+  ) {
+    return "failed";
+  }
+  return input.failedSources + input.timedOutSources + input.warningSources > 0
+    ? "completed_with_errors"
+    : "completed";
 }
 
 export function shouldArchiveForDeadline(
