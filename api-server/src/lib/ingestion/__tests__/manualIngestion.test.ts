@@ -369,10 +369,11 @@ describe("run retry and deadline rules", () => {
     assert.deepEqual(
       failedProvidersForRetry([
         { provider: "samGov", status: "completed" },
+        { provider: "tango", status: "timed_out" },
         { provider: "serper", status: "failed" },
-        { provider: "exa", status: "failed" },
+        { provider: "aiDiscovery", status: "completed", error: "exa unavailable" },
       ]),
-      ["serper", "exa"],
+      ["tango", "serper", "aiDiscovery"],
     );
   });
 

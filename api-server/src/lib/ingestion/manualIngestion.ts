@@ -196,7 +196,7 @@ async function createPersistedRun(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended('manual-rfp-ingestion-active-run', 0))`,
     );
-    const staleBefore = new Date(now.getTime() - STALE_RUN_RECOVERY_ERROR.length * 0 - STALE_INGESTION_RUN_AFTER_MS);
+    const staleBefore = new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS);
     const staleRuns = await tx
       .update(opportunityIngestionRunsTable)
       .set({
@@ -1228,17 +1228,17 @@ export async function retryFailedProviders(
       "Only completed runs can be retried.",
     );
   }
-  const failedProviders = failedProvidersForRetry(original.sources);
-  if (failedProviders.length === 0) {
+  const retryProviders = failedProvidersForRetry(original.sources);
+  if (retryProviders.length === 0) {
     throw new IngestionRunNotRetryableError(
-      "This run has no failed providers to retry.",
+      "This run has no failed, timed-out, or warning-producing providers to retry.",
     );
   }
   return startManualIngestion(
     {
       keywords: original.query ?? undefined,
       dateRange: original.dateRange ?? undefined,
-      providers: failedProviders,
+      providers: retryProviders,
       retryOfRunId: original.id,
     },
     providerFetcher,
