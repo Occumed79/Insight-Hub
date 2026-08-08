@@ -9,10 +9,6 @@ import type { PublicPortalSource } from "./publicPortalProviders/catalog";
 import { positiveIntegerEnv } from "./officialPortalHttp";
 import { OfficialPlatformSession } from "./officialPlatformSession";
 import {
-  PeopleSoftPublicProvider,
-  type PeopleSoftPublicTenant,
-} from "./peopleSoftPublic";
-import {
   parseStatewideListingContent,
   statewideMatchesOptions,
   statewideStableHash,
@@ -294,20 +290,6 @@ export class OfficialAvailabilityProvider implements DataSourceProvider {
     };
   }
 }
-
-export const KANSAS_GBL2_TENANT: PeopleSoftPublicTenant = {
-  portalId: "ks-esupplier",
-  buyerName: "State of Kansas",
-  state: "KS",
-  listingUrl: "https://supplier.sok.ks.gov/psc/sokfsprdsup/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL2",
-  alternateListingUrls: [
-    "https://supplier.sok.ks.gov/psc/sokfsprdsup_1/SUPPLIER/ERP/c/SCP_PUBLIC_MENU_FL.SCP_PUB_BID_CMP_FL.GBL2",
-  ],
-  sourceBadge: "Kansas eSupplier Public Bidding Events",
-  maxPages: 6,
-};
-
-export const kansasGbl2Provider = new PeopleSoftPublicProvider(KANSAS_GBL2_TENANT);
 
 export function availabilitySource(
   tenant: OfficialAvailabilityTenant,

@@ -2,6 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { getRegisteredPublicPortalAdapter } from "../../api-server/src/lib/providers/publicPortalAdapterRegistry";
+import {
+  classifyLiveVerificationResult,
+  isFatalLiveVerificationStatus,
+  type LiveVerificationStatus,
+} from "../../api-server/src/lib/providers/liveVerificationClassification";
 import { PUBLISHED_DIRECT_RFP_PORTALS } from "../../api-server/src/lib/providers/publishedDirectRfpCatalogue";
 
 const DEFAULT_CONCURRENCY = 4;
@@ -9,7 +14,15 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_ATTEMPTS = 2;
 const DEFAULT_LIMIT = 10;
 
-type LiveOutcome = "success" | "partial" | "no_results" | "failed";
+type LiveOutcome =
+  | "success"
+  | "partial"
+  | "no_results"
+  | "blocked_challenge"
+  | "request_failure"
+  | "bad_endpoint"
+  | "parser_failure"
+  | "configuration_failure";
 
 interface LiveAdapterResult {
   portalId: string;
@@ -17,6 +30,7 @@ interface LiveAdapterResult {
   jurisdiction: string;
   sourceUrl: string;
   outcome: LiveOutcome;
+  status: LiveVerificationStatus | "CONFIGURATION_FAILURE";
   configured: boolean;
   records: number;
   errors: string[];
@@ -54,6 +68,52 @@ async function withConcurrency<T, R>(
   return results;
 }
 
+function outcomeForStatus(status: LiveVerificationStatus): LiveOutcome {
+  switch (status) {
+    case "PASS":
+      return "success";
+    case "HEALTHY_EMPTY":
+      return "no_results";
+    case "BLOCKED_CHALLENGE":
+      return "blocked_challenge";
+    case "REQUEST_FAILURE":
+      return "request_failure";
+    case "BAD_ENDPOINT":
+      return "bad_endpoint";
+    case "PARSER_FAILURE":
+      return "parser_failure";
+  }
+}
+
+function resultFromFetch(input: {
+  portal: (typeof PUBLISHED_DIRECT_RFP_PORTALS)[number];
+  records: number;
+  errors: string[];
+  attempts: number;
+  startedAt: number;
+}): LiveAdapterResult {
+  const status = classifyLiveVerificationResult({
+    records: Array.from({ length: input.records }, () => ({} as never)),
+    errors: input.errors,
+  });
+  return {
+    portalId: input.portal.id,
+    name: input.portal.name,
+    jurisdiction: input.portal.jurisdiction,
+    sourceUrl: input.portal.searchUrl || input.portal.url,
+    outcome:
+      input.records > 0 && input.errors.length > 0
+        ? "partial"
+        : outcomeForStatus(status),
+    status,
+    configured: true,
+    records: input.records,
+    errors: input.errors,
+    attempts: input.attempts,
+    durationMs: Date.now() - input.startedAt,
+  };
+}
+
 async function verifyPortal(
   portal: (typeof PUBLISHED_DIRECT_RFP_PORTALS)[number],
 ): Promise<LiveAdapterResult> {
@@ -65,7 +125,8 @@ async function verifyPortal(
       name: portal.name,
       jurisdiction: portal.jurisdiction,
       sourceUrl: portal.searchUrl || portal.url,
-      outcome: "failed",
+      outcome: "configuration_failure",
+      status: "CONFIGURATION_FAILURE",
       configured: false,
       records: 0,
       errors: ["Published source has no registered runtime adapter."],
@@ -83,7 +144,8 @@ async function verifyPortal(
       name: portal.name,
       jurisdiction: portal.jurisdiction,
       sourceUrl: portal.searchUrl || portal.url,
-      outcome: "failed",
+      outcome: "configuration_failure",
+      status: "CONFIGURATION_FAILURE",
       configured: false,
       records: 0,
       errors: [error instanceof Error ? error.message : String(error)],
@@ -98,7 +160,8 @@ async function verifyPortal(
       name: portal.name,
       jurisdiction: portal.jurisdiction,
       sourceUrl: portal.searchUrl || portal.url,
-      outcome: "failed",
+      outcome: "configuration_failure",
+      status: "CONFIGURATION_FAILURE",
       configured: false,
       records: 0,
       errors: ["Runtime adapter reported that it is not configured."],
@@ -142,35 +205,30 @@ async function verifyPortal(
       clearTimeout(timeout);
       const records = result.records.length;
       const errors = result.errors.filter(Boolean);
-      if (records > 0) {
-        return {
-          portalId: portal.id,
-          name: portal.name,
-          jurisdiction: portal.jurisdiction,
-          sourceUrl: portal.searchUrl || portal.url,
-          outcome: errors.length > 0 ? "partial" : "success",
-          configured: true,
+      if (records > 0 || errors.length === 0) {
+        return resultFromFetch({
+          portal,
           records,
           errors,
           attempts: attempt,
-          durationMs: Date.now() - startedAt,
-        };
-      }
-      if (errors.length === 0) {
-        return {
-          portalId: portal.id,
-          name: portal.name,
-          jurisdiction: portal.jurisdiction,
-          sourceUrl: portal.searchUrl || portal.url,
-          outcome: "no_results",
-          configured: true,
-          records: 0,
-          errors: [],
-          attempts: attempt,
-          durationMs: Date.now() - startedAt,
-        };
+          startedAt,
+        });
       }
       lastErrors = errors;
+
+      const status = classifyLiveVerificationResult({
+        records: [],
+        errors,
+      });
+      if (status === "BLOCKED_CHALLENGE" || isFatalLiveVerificationStatus(status)) {
+        return resultFromFetch({
+          portal,
+          records: 0,
+          errors,
+          attempts: attempt,
+          startedAt,
+        });
+      }
     } catch (error) {
       clearTimeout(timeout);
       lastErrors = [error instanceof Error ? error.message : String(error)];
@@ -179,18 +237,13 @@ async function verifyPortal(
     }
   }
 
-  return {
-    portalId: portal.id,
-    name: portal.name,
-    jurisdiction: portal.jurisdiction,
-    sourceUrl: portal.searchUrl || portal.url,
-    outcome: "failed",
-    configured: true,
+  return resultFromFetch({
+    portal,
     records: 0,
     errors: lastErrors.length > 0 ? lastErrors : ["Unknown adapter failure."],
     attempts: maxAttempts,
-    durationMs: Date.now() - startedAt,
-  };
+    startedAt,
+  });
 }
 
 const requestedIds = new Set(
@@ -218,12 +271,33 @@ const summary = {
   success: results.filter((result) => result.outcome === "success").length,
   partial: results.filter((result) => result.outcome === "partial").length,
   noResults: results.filter((result) => result.outcome === "no_results").length,
-  failed: results.filter((result) => result.outcome === "failed").length,
+  blockedChallenge: results.filter(
+    (result) => result.outcome === "blocked_challenge",
+  ).length,
+  requestFailure: results.filter(
+    (result) => result.outcome === "request_failure",
+  ).length,
+  badEndpoint: results.filter((result) => result.outcome === "bad_endpoint").length,
+  parserFailure: results.filter(
+    (result) => result.outcome === "parser_failure",
+  ).length,
+  configurationFailure: results.filter(
+    (result) => result.outcome === "configuration_failure",
+  ).length,
   records: results.reduce((total, result) => total + result.records, 0),
 };
+
+const incompleteVerification = results.length !== portals.length;
+const fatalFailures =
+  summary.badEndpoint +
+  summary.parserFailure +
+  summary.configurationFailure +
+  (incompleteVerification ? 1 : 0);
 const report = {
   generatedAt,
-  clean: summary.failed === 0,
+  clean: fatalFailures === 0,
+  incompleteVerification,
+  fatalFailures,
   summary,
   results,
 };
@@ -237,7 +311,13 @@ const markdown = [
   `- Success: ${summary.success}`,
   `- Partial success: ${summary.partial}`,
   `- Valid empty listings: ${summary.noResults}`,
-  `- Failed: ${summary.failed}`,
+  `- Blocked/browser challenges: ${summary.blockedChallenge}`,
+  `- Transient request failures: ${summary.requestFailure}`,
+  `- Bad endpoints: ${summary.badEndpoint}`,
+  `- Parser failures: ${summary.parserFailure}`,
+  `- Configuration failures: ${summary.configurationFailure}`,
+  `- Incomplete verification: ${incompleteVerification ? "yes" : "no"}`,
+  `- Fatal failures: ${fatalFailures}`,
   `- Records returned: ${summary.records}`,
   "",
   "## Results",
@@ -245,6 +325,7 @@ const markdown = [
   ...results.flatMap((result) => [
     `### ${result.outcome.toUpperCase()} · ${result.portalId}`,
     "",
+    `- Status: ${result.status}`,
     `- Buyer: ${result.name}`,
     `- Records: ${result.records}`,
     `- Attempts: ${result.attempts}`,

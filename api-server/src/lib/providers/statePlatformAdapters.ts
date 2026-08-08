@@ -8,6 +8,7 @@ import {
   PEOPLE_SOFT_SOURCES,
   peopleSoftPublicProviders,
 } from "./peopleSoftPublic";
+import { kansasPeopleSoftProvider } from "./kansasPeopleSoftProvider";
 import {
   PERISCOPE_SOURCES,
   periscopePublicProviders,
@@ -34,6 +35,7 @@ export const STATE_PLATFORM_ADAPTER_SOURCES: PublicPortalSource[] = Array.from(s
 
 export const statePlatformAdapterProviders: Record<string, DataSourceProvider> = {
   ...peopleSoftPublicProviders,
+  "ks-esupplier": kansasPeopleSoftProvider,
   ...webProcureIvaluaProviders,
   ...cgiAdvantageStateProviders,
   ...periscopePublicProviders,
