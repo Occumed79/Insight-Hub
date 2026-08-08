@@ -28,3 +28,39 @@ test("accepts federal occupational-health procurement reporting", () => {
   });
   assert.ok(score >= 6);
 });
+
+test("rejects non-U.S. military contract coverage", () => {
+  const score = relevantNewsScore({
+    title: "British Army contract award announced",
+    description: "The UK Ministry of Defence awarded the programme.",
+    source: { name: "Defence publication", country: "gb" },
+  });
+  assert.equal(score, 0);
+});
+
+test("does not treat substrings such as Dodge as DoD", () => {
+  const score = relevantNewsScore({
+    title: "Dodge contract award expands supplier programme",
+    description: "A private automotive supplier contract.",
+    source: { name: "Auto News", country: "us" },
+  });
+  assert.equal(score, 0);
+});
+
+test("publisher name alone cannot provide federal context", () => {
+  const score = relevantNewsScore({
+    title: "Honda contract award",
+    description: "Private vehicle-development agreement.",
+    source: { name: "Federal News", country: "us" },
+  });
+  assert.equal(score, 0);
+});
+
+test("accepts explicit U.S. government contract coverage", () => {
+  const score = relevantNewsScore({
+    title: "U.S. government contract awarded for medical services",
+    description: "United States government procurement supports employee health examinations.",
+    source: { name: "Public Sector News", country: "us" },
+  });
+  assert.ok(score >= 6);
+});
