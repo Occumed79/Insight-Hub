@@ -88,13 +88,13 @@ describe("persisted opportunity run view", () => {
     assert.deepEqual(labels, [
       "Fetched",
       "Staged",
-      "Accepted",
+      "Promoted",
       "Rejected",
       "Duplicates",
       "Created",
       "Updated",
       "Archived",
-      "Errors",
+      "Warnings / Errors",
       "Timeouts",
     ]);
   });
