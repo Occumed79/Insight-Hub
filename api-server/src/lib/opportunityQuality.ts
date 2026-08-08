@@ -48,7 +48,12 @@ const DISCOVERY_PROVIDERS = new Set([
   "tavily",
   "you",
   "langsearch",
+  "parallel",
+  "linkup",
+  "socrata",
   "websearch",
+  "aiDiscovery",
+  "rssAggregator",
 ]);
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
@@ -160,8 +165,6 @@ export function deadlineEndForComparison(value: unknown): Date | null {
       .slice(0, 10)
       .split("-")
       .map(Number);
-    // End of the application calendar day in America/Los_Angeles. Noon UTC
-    // avoids DST boundary ambiguity, then Intl reveals the active PDT/PST offset.
     const noonUtc = new Date(Date.UTC(year, month - 1, day, 12));
     const tzName =
       new Intl.DateTimeFormat("en-US", {
@@ -495,11 +498,6 @@ export function buildOpportunityQualityPage<T extends OpportunityLike>(
   return accumulator.finish();
 }
 
-/**
- * Produces an exact quality-view total and page without retaining every database
- * row. Only a compact best-score entry per canonical key plus the requested
- * ranking window are kept while route batches stream through this accumulator.
- */
 export class OpportunityQualityPageAccumulator<T extends OpportunityLike> {
   private readonly bestScores = new Map<string, number>();
   private readonly top = new Map<
