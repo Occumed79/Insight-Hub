@@ -10,6 +10,7 @@ const {
   FEDERAL_MANUAL_PROVIDERS,
   MANUAL_RFP_PROVIDERS,
   effectiveProviderQuery,
+  mergeDiscoveryRecords,
   resolveManualProviders,
 } = await import("../providerRunner");
 
@@ -84,4 +85,37 @@ test("browser discovery can still run alone while crawler providers stay unavail
     () => resolveManualProviders(["scheduledCrawler"]),
     /Unsupported RFP provider/,
   );
+});
+
+test("browser discovery collapses one solicitation across different result URLs and keeps the richer record", () => {
+  const base = {
+    title: "Occupational Health Services RFP",
+    agency: "County of Fresno",
+    type: "RFP",
+    status: "active" as const,
+    postedDate: new Date("2026-08-01T00:00:00Z"),
+    responseDeadline: new Date("2026-09-01T00:00:00Z"),
+    solicitationNumber: "RFP-26-100",
+    description: "Occupational health examinations and drug testing.",
+  };
+  const merged = mergeDiscoveryRecords([
+    {
+      ...base,
+      externalId: "serper-1",
+      source: "serper",
+      sourceUrl: "https://search.example/one",
+      rawData: { relevanceScore: 72, sourceConfidence: "low" },
+    },
+    {
+      ...base,
+      externalId: "exa-1",
+      source: "exa",
+      sourceUrl: "https://official.example/rfp-26-100",
+      description:
+        "Occupational health examinations, drug testing, audiometry, and medical surveillance.",
+      rawData: { relevanceScore: 86, sourceConfidence: "medium" },
+    },
+  ] as any);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].externalId, "exa-1");
 });
