@@ -8,11 +8,10 @@ This runbook separates application deployment from database/data operations. A r
 2. Record the merge/deploy commit SHA before deployment.
 3. Deploy that revision through the normal Render deployment path.
 4. Confirm `GET /api/healthz` returns the expected deployment revision.
-5. Configure the non-secret GitHub repository variable `INSIGHT_PRODUCTION_URL` with the deployed Insight Hub base URL. After **Product build** succeeds on `main`, the **Production acceptance** workflow automatically checks that exact workflow commit against the deployed revision and retries boundedly while Render converges. If the variable is not configured, the automatic job is skipped rather than guessing a deployment URL.
-6. The same Production acceptance workflow remains manually runnable with:
-   - `base_url`: the deployed Insight Hub base URL.
-   - `expected_commit`: the exact commit SHA intended for production.
-7. Treat the release as accepted only when the workflow passes health, readiness, database status, opportunity read, frontend-shell checks, and—when an expected SHA is supplied—deployed revision identity.
+5. **Product build** runs again on every relevant push to `main`. After it succeeds, **Production acceptance** automatically checks that exact commit against the deployed Render service and retries boundedly while the deployment converges.
+6. The automatic gate uses `https://insight-hub-eyza.onrender.com` as the known Hub 1 production endpoint. A non-secret GitHub repository variable named `INSIGHT_PRODUCTION_URL` may override that hostname if production moves later.
+7. The same Production acceptance workflow remains manually runnable with optional `base_url` and `expected_commit` inputs for explicit release or rollback verification.
+8. Treat the release as accepted only when the workflow passes health, readiness, database status, opportunity read, frontend-shell checks, and—when an expected SHA is supplied—deployed revision identity.
 
 The production acceptance workflow is intentionally read-only. It does not fetch new intelligence, grade opportunities, refresh Forecasts/Recompetes/News, mutate settings, run migrations, or write to production data.
 
@@ -66,7 +65,7 @@ That CI drill is a recovery **procedure test**, not a production backup. Product
 
 - Never place API keys, database credentials, passwords, or tokens directly in `render.yaml` or tracked `.env` files.
 - Keep secret-like Render variables as `sync: false` / dashboard-managed values.
-- `INSIGHT_PRODUCTION_URL` is a non-secret GitHub repository variable; it contains only the public deployment base URL.
+- `INSIGHT_PRODUCTION_URL` is optional and non-secret; it contains only a public deployment base URL and overrides the repository's known Hub 1 production endpoint when set.
 - Do not attach production database dumps to GitHub Actions artifacts.
 - The Database Resilience workflow may upload only its disposable CI fixture dump, with short retention.
 

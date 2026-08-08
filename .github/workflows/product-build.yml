@@ -1,6 +1,17 @@
 name: Product build
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "api-server/**"
+      - "intel-suite/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/product-build.yml"
+      - ".github/workflows/production-acceptance.yml"
   pull_request:
     paths:
       - "api-server/**"
@@ -10,6 +21,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/product-build.yml"
+      - ".github/workflows/production-acceptance.yml"
   workflow_dispatch:
 
 permissions:
