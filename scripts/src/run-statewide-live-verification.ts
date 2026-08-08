@@ -74,18 +74,25 @@ async function diagnoseKansasPeopleSoft(): Promise<void> {
   );
 }
 
-runStatewideLiveVerification().catch(async (error) => {
-  await diagnoseKansasPeopleSoft().catch((diagnosticError) => {
-    console.error(
-      JSON.stringify({
-        event: "kansas_peoplesoft_live_diagnostic_failed",
-        error:
-          diagnosticError instanceof Error
-            ? diagnosticError.message
-            : String(diagnosticError),
-      }),
-    );
+runStatewideLiveVerification()
+  .then(async (results) => {
+    const kansas = results.find((result) => result.portalId === "ks-esupplier");
+    if (kansas?.status === "PARSER_FAILURE" || kansas?.status === "BAD_ENDPOINT") {
+      await diagnoseKansasPeopleSoft();
+    }
+  })
+  .catch(async (error) => {
+    await diagnoseKansasPeopleSoft().catch((diagnosticError) => {
+      console.error(
+        JSON.stringify({
+          event: "kansas_peoplesoft_live_diagnostic_failed",
+          error:
+            diagnosticError instanceof Error
+              ? diagnosticError.message
+              : String(diagnosticError),
+        }),
+      );
+    });
+    console.error(error);
+    process.exitCode = 1;
   });
-  console.error(error);
-  process.exitCode = 1;
-});
