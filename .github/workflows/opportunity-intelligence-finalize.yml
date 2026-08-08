@@ -1,0 +1,109 @@
+name: Opportunity Intelligence finalize
+
+on:
+  push:
+    branches:
+      - hardening/opportunity-intelligence-function
+    paths:
+      - .github/workflows/opportunity-intelligence-finalize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening/opportunity-intelligence-function
+          fetch-depth: 0
+      - name: Apply final focused edits
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "api-server/src/lib/ingestion/manualIngestion.ts",
+              "const staleBefore = new Date(now.getTime() - STALE_RUN_RECOVERY_ERROR.length * 0 - STALE_INGESTION_RUN_AFTER_MS);",
+              "const staleBefore = new Date(now.getTime() - STALE_INGESTION_RUN_AFTER_MS);",
+          )
+          replace_once(
+              "api-server/src/lib/ingestion/manualIngestion.ts",
+              "const failedProviders = failedProvidersForRetry(original.sources);\n  if (failedProviders.length === 0) {\n    throw new IngestionRunNotRetryableError(\n      \"This run has no failed providers to retry.\",\n    );\n  }",
+              "const retryProviders = failedProvidersForRetry(original.sources);\n  if (retryProviders.length === 0) {\n    throw new IngestionRunNotRetryableError(\n      \"This run has no failed, timed-out, or warning-producing providers to retry.\",\n    );\n  }",
+          )
+          replace_once(
+              "api-server/src/lib/ingestion/manualIngestion.ts",
+              "providers: failedProviders,",
+              "providers: retryProviders,",
+          )
+
+          route = "api-server/src/routes/opportunities.ts"
+          replace_once(route, "  const MAX_RECORDS = 100;", "  const MAX_RECORDS = 30;")
+          replace_once(
+              route,
+              "  const stats = { enriched: 0, agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };",
+              "  const stats = { agencyUpdated: 0, deadlineUpdated: 0, valueUpdated: 0, errors: [] as string[] };\n  const updatedIds = new Set<string>();",
+          )
+          replace_once(
+              route,
+              "      )\n      .limit(MAX_RECORDS);",
+              "      )\n      .orderBy(asc(opportunitiesTable.updatedAt), asc(opportunitiesTable.id))\n      .limit(MAX_RECORDS);",
+          )
+          replace_once(
+              route,
+              "        stats.agencyUpdated++;\n      }",
+              "        stats.agencyUpdated++;\n        updatedIds.add(rec.id);\n      }",
+          )
+          replace_once(
+              route,
+              "          if (rec.agency === \"Unknown\" && agencyHint) updates.agency = agencyHint;",
+              "          if (rec.agency === \"Unknown\" && agencyHint) {\n            updates.agency = agencyHint;\n            stats.agencyUpdated++;\n          }",
+          )
+          replace_once(
+              route,
+              "            stats.enriched++;",
+              "            updatedIds.add(rec.id);",
+          )
+          replace_once(
+              route,
+              "      enriched: stats.enriched,",
+              "      enriched: updatedIds.size,",
+          )
+
+          tests = "api-server/src/lib/ingestion/__tests__/manualIngestion.test.ts"
+          replace_once(
+              tests,
+              '''      failedProvidersForRetry([\n        { provider: "samGov", status: "completed" },\n        { provider: "serper", status: "failed" },\n        { provider: "exa", status: "failed" },\n      ]),\n      ["serper", "exa"],''',
+              '''      failedProvidersForRetry([\n        { provider: "samGov", status: "completed" },\n        { provider: "tango", status: "timed_out" },\n        { provider: "serper", status: "failed" },\n        { provider: "aiDiscovery", status: "completed", error: "exa unavailable" },\n      ]),\n      ["tango", "serper", "aiDiscovery"],''',
+          )
+
+          quality_test = Path("api-server/src/lib/__tests__/opportunityQuality.test.ts")
+          if quality_test.exists():
+              text = quality_test.read_text()
+              marker = "\n});\n"
+              if marker in text:
+                  insertion = '''\n  it("keeps every active browser discovery provider out of verified-open", () => {\n    for (const providerName of ["parallel", "linkup", "socrata", "aiDiscovery", "rssAggregator"]) {\n      const quality = classifyOpportunityQuality({\n        title: "Occupational Health Services RFP",\n        agency: "U.S. Department of Labor",\n        type: "Solicitation",\n        status: "active",\n        providerName,\n        sourceConfidence: "high",\n        responseDeadline: "2027-01-15T17:00:00Z",\n        samUrl: "https://example.gov/opportunity/123",\n        description: "Request for proposal for occupational health examinations and drug testing.",\n        tags: JSON.stringify(["evidence:direct-structured", "complete-direct-evidence"]),\n      }, new Date("2026-08-08T00:00:00Z"));\n      assert.notEqual(quality.classification, "verified-open", providerName);\n      assert.equal(quality.sourceType, "search-discovery", providerName);\n    }\n  });\n'''
+                  text = text.rsplit(marker, 1)[0] + insertion + marker
+                  quality_test.write_text(text)
+
+          workflow = Path(".github/workflows/opportunity-intelligence-finalize.yml")
+          workflow.unlink()
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalize Opportunity Intelligence functional hardening"
+          git push origin HEAD:hardening/opportunity-intelligence-function
