@@ -5,6 +5,11 @@ import type {
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 import {
+  calculateCompletenessScore,
+  calculateOpportunityDedupeKeys,
+  calculateSourceConfidence,
+} from "./opportunityIdentity";
+import {
   providerBudgetAvailable,
   recordProviderFailure,
   recordProviderSuccess,
@@ -318,40 +323,45 @@ async function loadDiscoveryRuntime() {
   };
 }
 
-function canonicalOpportunityKey(record: NormalizedOpportunity): string {
-  const rawUrl = record.sourceUrl?.trim();
-  if (rawUrl) {
-    try {
-      const url = new URL(rawUrl);
-      url.hash = "";
-      for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
-        url.searchParams.delete(key);
-      }
-      return `url:${url.toString().replace(/\/$/, "")}`;
-    } catch {
-      return `url:${rawUrl.replace(/\/$/, "")}`;
-    }
+function discoveryIdentityKey(record: NormalizedOpportunity): string {
+  const keys = calculateOpportunityDedupeKeys(record);
+  for (const type of ["solicitation", "url", "fingerprint"] as const) {
+    const match = keys.find((key) => key.type === type);
+    if (match) return match.value;
   }
-  return `id:${record.externalId}`;
+  return keys.find((key) => key.type === "provider")?.value ?? `id:${record.externalId}`;
 }
 
-function recordRelevance(record: NormalizedOpportunity): number {
-  const score = Number(record.rawData?.relevanceScore);
-  return Number.isFinite(score) ? score : 0;
+function discoveryRecordRank(record: NormalizedOpportunity): number {
+  const relevance = Number(record.rawData?.relevanceScore);
+  const relevanceScore = Number.isFinite(relevance) ? relevance : 0;
+  const confidence = calculateSourceConfidence(record);
+  const completeness = calculateCompletenessScore(record);
+  const futureDeadline = Boolean(
+    record.responseDeadline &&
+      !Number.isNaN(record.responseDeadline.getTime()) &&
+      record.responseDeadline.getTime() > Date.now(),
+  );
+  return (
+    relevanceScore * 10_000 +
+    confidence * 100 +
+    completeness * 10 +
+    (futureDeadline ? 250 : 0) +
+    Math.min(200, record.description?.trim().length ?? 0)
+  );
 }
 
-function mergeDiscoveryRecords(
+export function mergeDiscoveryRecords(
   records: NormalizedOpportunity[],
 ): NormalizedOpportunity[] {
-  const best = new Map<string, NormalizedOpportunity>();
+  const best = new Map<string, { record: NormalizedOpportunity; rank: number }>();
   for (const record of records) {
-    const key = canonicalOpportunityKey(record);
+    const key = discoveryIdentityKey(record);
+    const rank = discoveryRecordRank(record);
     const existing = best.get(key);
-    if (!existing || recordRelevance(record) > recordRelevance(existing)) {
-      best.set(key, record);
-    }
+    if (!existing || rank > existing.rank) best.set(key, { record, rank });
   }
-  return [...best.values()];
+  return [...best.values()].map((entry) => entry.record);
 }
 
 function discoveryOptions(provider: DiscoveryProvider) {
@@ -427,6 +437,7 @@ async function fetchConfiguredAiDiscovery(
       try {
         const result = await runtime.webIntelligenceFetch({
           keywords: options.keywords,
+          dateRange: options.dateRange,
           signal: options.signal,
           ...discoveryOptions(provider),
         });
@@ -459,16 +470,21 @@ async function fetchConfiguredAiDiscovery(
       return;
     }
     allRecords.push(...entry.value.result.opportunities);
+    errors.push(
+      ...entry.value.result.errors.map((error) => `${provider}: ${error}`),
+    );
     diagnostics.push({
       provider,
-      status: "ok",
+      status: entry.value.result.errors.length > 0 ? "warning" : "ok",
       candidates: entry.value.result.stats.totalCandidates,
       accepted: entry.value.result.opportunities.length,
       aiScorers: entry.value.result.stats.aiScorers,
+      errors: entry.value.result.errors.length,
     });
   });
 
   const merged = mergeDiscoveryRecords(allRecords);
+  const uniqueErrors = Array.from(new Set(errors)).slice(0, 20);
   console.info(
     JSON.stringify({
       event: "ai_opportunity_discovery_ensemble",
@@ -478,16 +494,13 @@ async function fetchConfiguredAiDiscovery(
       memberRuns: diagnostics,
       acceptedBeforeDedupe: allRecords.length,
       acceptedAfterDedupe: merged.length,
-      failures: errors.length,
+      failures: uniqueErrors.length,
     }),
   );
 
-  // Recovered member failures are diagnostics when another discovery member
-  // produced useful records; only surface them as terminal errors if the whole
-  // ensemble failed to produce anything.
   return {
     records: merged,
-    errors: merged.length > 0 ? [] : errors,
+    errors: uniqueErrors,
   };
 }
 
@@ -527,6 +540,7 @@ export async function fetchOneProvider(
     const { webIntelligenceFetch } = await loadDiscoveryRuntime();
     const result = await webIntelligenceFetch({
       keywords: options.keywords,
+      dateRange: options.dateRange,
       useSerper: provider === "serper",
       useExa: provider === "exa",
       useLangsearch: provider === "langsearch",
