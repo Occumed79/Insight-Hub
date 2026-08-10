@@ -72,6 +72,10 @@ export function normalizedToDbRecord(
   const relevanceReason = rawData.relevanceReason as string | undefined;
   const isFallback = rawData.fallback === true;
   const tagList = Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [];
+  const postedDate = record.postedDate instanceof Date && Number.isFinite(record.postedDate.getTime())
+    ? record.postedDate
+    : new Date();
+  const postedDateUnknown = postedDate !== record.postedDate;
   const providerName =
     typeof rawData.providerName === "string" && rawData.providerName.trim()
       ? rawData.providerName.trim()
@@ -112,7 +116,7 @@ export function normalizedToDbRecord(
     naicsDescription: record.naicsDescription ?? null,
     pscCode: null,
     contractType: null,
-    postedDate: record.postedDate,
+    postedDate,
     responseDeadline: record.responseDeadline ?? null,
     periodOfPerformance: null,
     setAside: record.setAside ?? null,
@@ -135,6 +139,7 @@ export function normalizedToDbRecord(
       Array.from(
         new Set([
           ...tagList.filter((tag) => !tag.startsWith("evidence:")),
+          ...(postedDateUnknown ? ["date-unknown"] : []),
           ...evidence.tags,
         ]),
       ),

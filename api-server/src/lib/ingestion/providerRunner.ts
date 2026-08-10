@@ -225,11 +225,80 @@ async function recordStructuredProviderOutcome(
   await recordProviderSuccess(provider, usefulRecordCount);
 }
 
+export function isSamGovRecoverableApiError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /SAM_API_KEY_NOT_CONFIGURED|SAM\.gov.*(?:429|quota|throttled|900804|nextAccessTime)/i.test(message);
+}
+
+export function isOfficialSamOpportunityUrl(value?: string): boolean {
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "sam.gov" || host.endsWith(".sam.gov");
+  } catch { return false; }
+}
+
+/** Recover official SAM pages through search when the structured API/key is unavailable. */
+async function fetchSamGovPublicSearchFallback(
+  options: ProviderRunnerOptions,
+  structuredError: unknown,
+): Promise<ProviderRunResult | null> {
+  const runtime = await loadDiscoveryRuntime();
+  const result = await runtime.webIntelligenceFetch({
+    keywords: `SAM.gov ${effectiveProviderQuery(options.keywords)}`,
+    dateRange: options.dateRange,
+    useSerper: true,
+    useExa: true,
+    useLangsearch: true,
+    useParallel: true,
+    useLinkup: true,
+    useYou: true,
+    useSocrata: false,
+    useWebsearch: true,
+    useRssAggregator: false,
+    useSelfHostedSearch: false,
+    useSelfHostedCrawler: false,
+    discoveryPoolId: "sam-gov-public-search",
+    signal: options.signal,
+  });
+  const records = result.opportunities
+    .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
+    .map((record) => ({
+      ...record,
+      source: "samGov" as const,
+      rawData: {
+        ...(record.rawData ?? {}),
+        providerName: "samGovPublicSearch",
+        evidenceType: "discovery",
+        samGovKeylessFallback: true,
+      },
+    }));
+  if (records.length === 0) return null;
+  const guarded = applyProviderGuards("samGov", records, [
+    `SAM.gov structured API unavailable; recovered ${records.length} official SAM.gov public pages through keyless web discovery.`,
+    ...result.errors,
+  ], options.keywords);
+  await recordProviderSuccess("samGov", guarded.records.length);
+  console.warn(JSON.stringify({
+    event: "sam_gov_public_search_recovered",
+    records: guarded.records.length,
+    structuredError: structuredError instanceof Error ? structuredError.message : String(structuredError),
+  }));
+  return guarded;
+}
+
 async function fetchStructuredFederalProvider(
   provider: StructuredFederalProvider,
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
   if (!(await providerBudgetAvailable(provider))) {
+    if (provider === "samGov") {
+      const recovered = await fetchSamGovPublicSearchFallback(
+        options,
+        new Error("SAM.gov structured API is cooling down after quota exhaustion"),
+      ).catch(() => null);
+      if (recovered) return recovered;
+    }
     return {
       records: [],
       errors: [`${provider} is temporarily cooling down after an upstream quota or reliability failure.`],
@@ -283,6 +352,10 @@ async function fetchStructuredFederalProvider(
     );
     return decided;
   } catch (error) {
+    if (provider === "samGov" && isSamGovRecoverableApiError(error)) {
+      const recovered = await fetchSamGovPublicSearchFallback(options, error).catch(() => null);
+      if (recovered) return recovered;
+    }
     await recordProviderFailure(provider, error);
     throw error;
   }

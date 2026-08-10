@@ -194,6 +194,18 @@ describe("centralized opportunity evidence normalization", () => {
     );
   });
 
+  it("preserves discovery records with unknown publication dates", () => {
+    const db = normalizedToDbRecord({
+      ...complete,
+      source: "exa",
+      postedDate: null as unknown as Date,
+      rawData: { providerName: "exa", evidenceType: "discovery" },
+    }) as any;
+    assert.ok(db.postedDate instanceof Date);
+    assert.equal(Number.isNaN(db.postedDate.getTime()), false);
+    assert.match(db.tags, /date-unknown/);
+  });
+
   it("maps the required adapter families", () => {
     assert.equal(ADAPTER_EVIDENCE_CLASS.samGov, "direct-structured");
     assert.equal(ADAPTER_EVIDENCE_CLASS.opengov, "direct-structured");

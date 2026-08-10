@@ -518,6 +518,8 @@ export class OpportunityQualityPageAccumulator<T extends OpportunityLike> {
   }
 
   add(row: T): void {
+    // Poor/not-relevant feedback leaves working queues but remains auditable.
+    if (this.view !== "all" && ["poor", "spam"].includes(String(row.userGrade))) return;
     const quality = classifyOpportunityQuality(row, this.now);
     if (!qualityMatchesView(quality, this.view)) return;
     const key = opportunityCollapseKey(row);

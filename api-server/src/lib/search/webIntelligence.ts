@@ -244,6 +244,7 @@ export async function webIntelligenceFetch(options: {
   useRssAggregator?: boolean;
   useSelfHostedSearch?: boolean;
   useSelfHostedCrawler?: boolean;
+  discoveryPoolId?: string;
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   throwIfAborted(options.signal);
@@ -577,7 +578,7 @@ export async function webIntelligenceFetch(options: {
     }
 
     const result = await runLimitedProviderPool(
-      "opportunity-web-discovery",
+      options.discoveryPoolId ?? "opportunity-web-discovery",
       attempts,
       (value) => value.length > 0,
       { signal: options.signal },

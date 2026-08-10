@@ -196,6 +196,7 @@ type IngestionRun = {
   providersTimedOut?: number;
   providersSkipped?: number;
   providerErrors?: Array<{ provider: string; error: string }>;
+  sources?: Array<{ provider: string; created: number }>;
 };
 
 export default function OpportunitiesDashboard() {
@@ -294,6 +295,17 @@ export default function OpportunitiesDashboard() {
           current ? { ...current, userGrade: grade } : current,
         );
       }
+      if (grade === "poor" || grade === "spam") {
+        queryClient.setQueriesData(
+          { queryKey: getListOpportunitiesQueryKey() },
+          (current: any) => {
+            if (!current || !Array.isArray(current.data)) return current;
+            const data = current.data.filter((opportunity: any) => opportunity.id !== opportunityId);
+            if (data.length === current.data.length) return current;
+            return { ...current, data, total: Math.max(0, Number(current.total ?? data.length + 1) - 1) };
+          },
+        );
+      }
       queryClient.invalidateQueries({
         queryKey: getListOpportunitiesQueryKey(),
       });
@@ -352,6 +364,13 @@ export default function OpportunitiesDashboard() {
               queryClient.invalidateQueries({
                 queryKey: getListOpportunitiesQueryKey(),
               });
+              const discoveryCreated = run.sources?.find(
+                (source) => source.provider === "aiDiscovery",
+              )?.created;
+              if (Number(discoveryCreated) > 0) {
+                setQualityView("needs-verification");
+                setPage(1);
+              }
               toast({
                 variant: run.status === "failed" ? "destructive" : "default",
                 title:
