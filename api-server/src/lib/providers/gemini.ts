@@ -8,10 +8,22 @@
  * 4. Summarize and tag opportunities for BD use
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const GEMINI_BASE =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const credentials = new FreeTierCredentialPool("gemini", [
+  { dbKey: "geminiApiKey", envKey: "GEMINI_API_KEY" },
+  { envKey: "GEMINI_KEY_2" },
+  { envKey: "GEMINI_KEY_3" },
+]);
 
 export const OCCUMED_PROFILE = {
   company: "Occu-Med",
@@ -46,14 +58,30 @@ export const OCCUMED_PROFILE = {
   ],
   naicsCodes: ["621111", "621999", "621512", "621310"],
   keywords: [
-    "occupational health", "occupational medicine", "employee health",
-    "pre-employment physical", "pre-employment screening", "drug testing",
-    "drug screening", "DOT physical", "DOT compliance", "medical examiner",
-    "workers compensation", "fit for duty", "hearing conservation",
-    "audiometric testing", "respirator fit test", "workplace health",
-    "occupational injury", "return to work", "employee wellness",
-    "onsite medical", "employer health services", "medical surveillance",
-    "OSHA compliance", "health surveillance",
+    "occupational health",
+    "occupational medicine",
+    "employee health",
+    "pre-employment physical",
+    "pre-employment screening",
+    "drug testing",
+    "drug screening",
+    "DOT physical",
+    "DOT compliance",
+    "medical examiner",
+    "workers compensation",
+    "fit for duty",
+    "hearing conservation",
+    "audiometric testing",
+    "respirator fit test",
+    "workplace health",
+    "occupational injury",
+    "return to work",
+    "employee wellness",
+    "onsite medical",
+    "employer health services",
+    "medical surveillance",
+    "OSHA compliance",
+    "health surveillance",
   ],
 };
 
@@ -90,18 +118,29 @@ async function callGemini(
   });
 
   if (response.status === 429) {
-    const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(`GEMINI_QUOTA_EXCEEDED: ${body?.error?.message ?? "Rate limit reached"}`);
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      `GEMINI_QUOTA_EXCEEDED: ${body?.error?.message ?? "Rate limit reached"}`,
+    );
   }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`Gemini API error ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(
+      `Gemini API error ${response.status}: ${body.slice(0, 200)}`,
+    );
   }
 
-  const json = (await response.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  const json = (await response.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+  };
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  return text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+  return text
+    .replace(/```json\n?/g, "")
+    .replace(/```/g, "")
+    .trim();
 }
 
 export class GeminiProvider implements DataSourceProvider {
@@ -112,7 +151,7 @@ export class GeminiProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return credentials.isConfigured();
   }
 
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
@@ -134,9 +173,9 @@ export class GeminiProvider implements DataSourceProvider {
     maxTokens = 512,
     signal?: AbortSignal,
   ): Promise<string> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("Gemini API key not configured.");
-    return callGemini(apiKey, prompt, maxTokens, signal);
+    return credentials.run((apiKey) =>
+      callGemini(apiKey, prompt, maxTokens, signal),
+    );
   }
 
   /**
@@ -171,7 +210,8 @@ Respond ONLY with a JSON array of 8 query strings with no other text:
     try {
       const text = await callGemini(apiKey, prompt, 600);
       const queries = JSON.parse(text);
-      if (Array.isArray(queries) && queries.length > 0) return queries as string[];
+      if (Array.isArray(queries) && queries.length > 0)
+        return queries as string[];
     } catch (err: any) {
       if (err.message?.startsWith("GEMINI_QUOTA_EXCEEDED")) throw err;
       // fall through to defaults for other errors (parse errors, etc.)
@@ -188,7 +228,7 @@ Respond ONLY with a JSON array of 8 query strings with no other text:
   async extractOpportunityFromWebResult(
     title: string,
     url: string,
-    content: string
+    content: string,
   ): Promise<{
     isOpportunity: boolean;
     title?: string;
@@ -260,7 +300,7 @@ Be precise — only return isOpportunity: true for real, currently open solicita
   async scoreRelevance(
     opportunityTitle: string,
     description: string,
-    orgContext: string
+    orgContext: string,
   ): Promise<{ score: number; explanation: string } | null> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return null;
@@ -289,7 +329,7 @@ Respond ONLY with valid JSON:
    */
   async summarizeOpportunity(
     opportunityTitle: string,
-    description: string
+    description: string,
   ): Promise<{
     summary: string;
     keySignals: string[];

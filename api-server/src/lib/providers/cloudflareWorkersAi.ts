@@ -35,14 +35,23 @@ export function normalizeCloudflareRerankScore(value: unknown): number {
 }
 
 export class CloudflareWorkersAiClient {
-  private authenticationDisabled = false;
+  private tokenIndex = 0;
+  private configuredTokenCount = 0;
 
   private async credentials(): Promise<CloudflareCredentials | null> {
-    if (this.authenticationDisabled) return null;
-    const [accountId, apiToken] = await Promise.all([
+    const [accountId, primaryToken, backupToken] = await Promise.all([
       resolveCredential("cloudflareAccountId", "CLOUDFLARE_ACCOUNT_ID"),
       resolveCredential("cloudflareApiToken", "CLOUDFLARE_API_TOKEN"),
+      resolveCredential(
+        "cloudflareApiTokenBackup",
+        "CLOUDFLARE_API_TOKEN_BACKUP",
+      ),
     ]);
+    const tokens = Array.from(
+      new Set([primaryToken, backupToken].filter(Boolean) as string[]),
+    );
+    this.configuredTokenCount = tokens.length;
+    const apiToken = tokens[this.tokenIndex] ?? null;
     return accountId && apiToken ? { accountId, apiToken } : null;
   }
 
@@ -70,15 +79,23 @@ export class CloudflareWorkersAiClient {
 
   private disableAfterAuthenticationFailure(status: number): void {
     if (status === 401) {
-      this.authenticationDisabled = true;
+      this.tokenIndex += 1;
+      // credentials() determines whether another distinct backup remains.
+      // Only disable permanently after the next lookup proves it does not.
     }
   }
 
-  private errorMessage(operation: string, status: number, body: string): string {
+  private errorMessage(
+    operation: string,
+    status: number,
+    body: string,
+  ): string {
     this.disableAfterAuthenticationFailure(status);
     const suffix =
       status === 401
-        ? " Cloudflare Workers AI has been disabled until the service restarts; fallback providers will be used."
+        ? this.tokenIndex < this.configuredTokenCount
+          ? " The next configured Cloudflare token will be tried before cross-provider fallback."
+          : " Cloudflare Workers AI has been disabled until the service restarts; fallback providers will be used."
         : "";
     return `Cloudflare Workers AI ${operation} error ${status}: ${body.slice(0, 240)}${suffix}`;
   }
@@ -129,7 +146,10 @@ export class CloudflareWorkersAiClient {
    * profile. This is cheaper and more precise than asking a chat model to score
    * every result independently.
    */
-  async rerank(query: string, documents: string[]): Promise<CloudflareRerankScore[] | null> {
+  async rerank(
+    query: string,
+    documents: string[],
+  ): Promise<CloudflareRerankScore[] | null> {
     if (!query.trim() || documents.length === 0) return null;
     const credentials = await this.credentials();
     if (!credentials) return null;
@@ -155,13 +175,15 @@ export class CloudflareWorkersAiClient {
       throw new Error(this.errorMessage("rerank", response.status, body));
     }
     const payload = (await response.json()) as {
-      result?: {
-        response?: Array<Record<string, unknown>>;
-      } | Array<Record<string, unknown>>;
+      result?:
+        | {
+            response?: Array<Record<string, unknown>>;
+          }
+        | Array<Record<string, unknown>>;
     };
     const rows = Array.isArray(payload.result)
       ? payload.result
-      : payload.result?.response ?? [];
+      : (payload.result?.response ?? []);
     const scores = rows
       .map((row, order) => {
         const indexValue = row.index ?? row.id ?? order;

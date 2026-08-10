@@ -24,6 +24,7 @@ interface PoolWindow {
   startedAt: number;
   lastUsedAt: number;
   attempts: number;
+  loggedLimits: Set<"calls" | "runtime">;
 }
 
 interface PoolRuntimePolicy {
@@ -136,7 +137,12 @@ function currentPoolWindow(poolId: string, now: number): PoolWindow {
   pruneRuntimeState(now);
   const existing = poolWindows.get(poolId);
   if (!existing || now - existing.lastUsedAt > POOL_WINDOW_IDLE_RESET_MS) {
-    const created = { startedAt: now, lastUsedAt: now, attempts: 0 };
+    const created = {
+      startedAt: now,
+      lastUsedAt: now,
+      attempts: 0,
+      loggedLimits: new Set<"calls" | "runtime">(),
+    };
     poolWindows.delete(poolId);
     poolWindows.set(poolId, created);
     trimOldest(poolWindows, MAX_POOL_RUNTIME_KEYS);
@@ -221,7 +227,13 @@ function logBudgetReached(
   poolId: string,
   limitType: "calls" | "runtime",
   limit: number,
+  window?: PoolWindow,
 ): void {
+  // Discovery/extraction calls fan out across many candidates. Once their
+  // shared ceiling is exhausted every later candidate observes the same
+  // condition, so emit one diagnostic per window rather than flooding logs.
+  if (window?.loggedLimits.has(limitType)) return;
+  window?.loggedLimits.add(limitType);
   console.info(
     JSON.stringify({
       event: "limited_provider_pool_budget_reached",
@@ -304,7 +316,7 @@ export async function runLimitedProviderPool<T>(
     if (window && policy.maxAttempts != null) {
       window.lastUsedAt = Date.now();
       if (window.attempts >= policy.maxAttempts) {
-        logBudgetReached(poolId, "calls", policy.maxAttempts);
+        logBudgetReached(poolId, "calls", policy.maxAttempts, window);
         budgetReached = true;
         break;
       }
@@ -315,7 +327,7 @@ export async function runLimitedProviderPool<T>(
       window.lastUsedAt = Date.now();
       const remaining = policy.budgetMs - (Date.now() - window.startedAt);
       if (remaining <= 0) {
-        logBudgetReached(poolId, "runtime", policy.budgetMs);
+        logBudgetReached(poolId, "runtime", policy.budgetMs, window);
         budgetReached = true;
         break;
       }
@@ -352,12 +364,7 @@ export async function runLimitedProviderPool<T>(
         trimOldest(cursors, MAX_POOL_RUNTIME_KEYS);
       }
 
-      logRecoveredErrors(
-        poolId,
-        attempt.name,
-        attempted,
-        encounteredErrors,
-      );
+      logRecoveredErrors(poolId, attempt.name, attempted, encounteredErrors);
       return {
         value,
         provider: attempt.name,

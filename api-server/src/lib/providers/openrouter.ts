@@ -8,27 +8,36 @@
  * API docs: https://openrouter.ai/docs
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { OCCUMED_PROFILE, OCCUMED_DEFAULT_QUERIES } from "./gemini";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
+const credentials = new FreeTierCredentialPool("openrouter", [
+  { dbKey: "openrouterApiKey", envKey: "OPENROUTER_API_KEY" },
+  { envKey: "OPENROUTER_KEY_2" },
+]);
 
 export class OpenRouterProvider implements DataSourceProvider {
   readonly name = "openrouter" as const;
 
-  private async getApiKey(): Promise<string | null> {
-    return resolveCredential("openrouterApiKey", "OPENROUTER_API_KEY");
-  }
-
   private async getModel(): Promise<string> {
-    const model = await resolveCredential("openrouterModel", "OPENROUTER_MODEL");
+    const model = await resolveCredential(
+      "openrouterModel",
+      "OPENROUTER_MODEL",
+    );
     return model ?? DEFAULT_MODEL;
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return credentials.isConfigured();
   }
 
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
@@ -48,40 +57,40 @@ export class OpenRouterProvider implements DataSourceProvider {
     maxTokens = 512,
     signal?: AbortSignal,
   ): Promise<string> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("OpenRouter API key not configured.");
-
     const model = await this.getModel();
+    return credentials.run(async (apiKey) => {
+      const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://occu-med.com",
+          "X-Title": "Occu-Med Insight Hub",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: maxTokens,
+          temperature: 0.2,
+        }),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
+      });
 
-    const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://occu-med.com",
-        "X-Title": "Occu-Med Insight Hub",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: maxTokens,
-        temperature: 0.2,
-      }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        : AbortSignal.timeout(30_000),
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `OpenRouter error ${response.status}: ${body.slice(0, 200)}`,
+        );
+      }
+
+      const json = (await response.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+
+      return (json.choices?.[0]?.message?.content ?? "").trim();
     });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`OpenRouter error ${response.status}: ${body.slice(0, 200)}`);
-    }
-
-    const json = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-
-    return (json.choices?.[0]?.message?.content ?? "").trim();
   }
 
   /**
@@ -110,9 +119,13 @@ Respond ONLY with a JSON array of 8 query strings:
 
     try {
       const text = await this.complete(prompt, 600);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       const queries = JSON.parse(cleaned);
-      if (Array.isArray(queries) && queries.length > 0) return queries as string[];
+      if (Array.isArray(queries) && queries.length > 0)
+        return queries as string[];
     } catch {
       // fall through to defaults
     }
@@ -127,7 +140,7 @@ Respond ONLY with a JSON array of 8 query strings:
   async extractOpportunityFromWebResult(
     title: string,
     url: string,
-    content: string
+    content: string,
   ): Promise<{
     isOpportunity: boolean;
     title?: string;
@@ -171,7 +184,10 @@ If NOT a valid opportunity respond ONLY with:
 
     try {
       const text = await this.complete(prompt, 512);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       return JSON.parse(cleaned);
     } catch {
       return null;
@@ -184,7 +200,7 @@ If NOT a valid opportunity respond ONLY with:
   async scoreRelevance(
     opportunityTitle: string,
     description: string,
-    orgContext: string
+    orgContext: string,
   ): Promise<{ score: number; explanation: string } | null> {
     const prompt = `Score the relevance of this opportunity to the organization.
 
@@ -196,7 +212,10 @@ Respond ONLY with JSON: {"score": <0-100>, "explanation": "1-2 sentences"}`;
 
     try {
       const text = await this.complete(prompt, 256);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       return JSON.parse(cleaned);
     } catch {
       return null;
