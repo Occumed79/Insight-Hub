@@ -40,6 +40,11 @@ const KEY_SLOTS = [
     envKey: "LANGSEARCH_API_KEY_3",
     slot: "tertiary",
   },
+  {
+    dbKey: "langsearchApiKey4",
+    envKey: "LANGSEARCH_API_KEY_4",
+    slot: "quaternary",
+  },
 ] as const;
 
 type LangsearchKeySlot = (typeof KEY_SLOTS)[number]["slot"];
@@ -278,8 +283,7 @@ export class LangsearchProvider implements DataSourceProvider {
               title: page.name ?? url,
               url,
               content: page.summary || page.snippet || "",
-              dateRaw:
-                page.datePublished ?? page.dateLastCrawled ?? undefined,
+              dateRaw: page.datePublished ?? page.dateLastCrawled ?? undefined,
               keySlot: result.slot,
             },
           ]
