@@ -191,7 +191,10 @@ test("parent cancellation aborts work without poisoning provider cooldown state"
     { signal: controller.signal, attemptTimeoutMs: 5_000 },
   );
 
-  setTimeout(() => controller.abort(new Error("manual ingestion cancelled")), 10);
+  setTimeout(
+    () => controller.abort(new Error("manual ingestion cancelled")),
+    10,
+  );
   await assert.rejects(pending, /manual ingestion cancelled/);
   assert.equal(providerSawAbort, true);
   assert.deepEqual(limitedProviderPoolSnapshot(), []);
@@ -234,6 +237,42 @@ test("limited provider pools enforce a shared call ceiling across repeated run s
   assert.equal(calls, 2);
   assert.deepEqual(third.errors, []);
   assert.deepEqual(third.recoveredErrors, []);
+});
+
+test("shared pool ceilings emit only one log event per active window", async () => {
+  clearLimitedProviderPoolState();
+  const messages: string[] = [];
+  const originalInfo = console.info;
+  console.info = (...args: unknown[]) =>
+    messages.push(args.map(String).join(" "));
+  try {
+    const provider = {
+      name: "single-call",
+      isConfigured: async () => true,
+      run: async () => ["ok"],
+    };
+    await runLimitedProviderPool("log-budget-test", [provider], undefined, {
+      maxAttempts: 1,
+      budgetMs: 5_000,
+    });
+    await runLimitedProviderPool("log-budget-test", [provider], undefined, {
+      maxAttempts: 1,
+      budgetMs: 5_000,
+    });
+    await runLimitedProviderPool("log-budget-test", [provider], undefined, {
+      maxAttempts: 1,
+      budgetMs: 5_000,
+    });
+  } finally {
+    console.info = originalInfo;
+  }
+
+  assert.equal(
+    messages.filter((message) =>
+      message.includes("limited_provider_pool_budget_reached"),
+    ).length,
+    1,
+  );
 });
 
 test("limited provider pools surface terminal errors when all fallbacks fail", async () => {

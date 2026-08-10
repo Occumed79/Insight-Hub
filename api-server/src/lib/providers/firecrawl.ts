@@ -8,10 +8,21 @@
  * API docs: https://docs.firecrawl.dev/api-reference/endpoint/scrape
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
+const credentials = new FreeTierCredentialPool("firecrawl", [
+  { dbKey: "firecrawlApiKey", envKey: "FIRECRAWL_API_KEY" },
+  { envKey: "FIRECRAWL_API_KEY_2" },
+  { envKey: "FIRECRAWL_API_KEY_3" },
+]);
 
 export interface FirecrawlScrapeResult {
   url: string;
@@ -28,7 +39,7 @@ export class FirecrawlProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return credentials.isConfigured();
   }
 
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
@@ -48,47 +59,53 @@ export class FirecrawlProvider implements DataSourceProvider {
     url: string,
     signal?: AbortSignal,
   ): Promise<FirecrawlScrapeResult | null> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) return null;
+    if (!(await credentials.isConfigured())) return null;
+    return credentials.run(async (apiKey) => {
+      const response = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url,
+          formats: ["markdown"],
+          onlyMainContent: true,
+          timeout: 20000,
+        }),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(25_000)])
+          : AbortSignal.timeout(25_000),
+      });
 
-    const response = await fetch(`${FIRECRAWL_BASE}/scrape`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        timeout: 20000,
-      }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(25_000)])
-        : AbortSignal.timeout(25_000),
-    });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `FireCrawl scrape error ${response.status}: ${body.slice(0, 200)}`,
+        );
+      }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`FireCrawl scrape error ${response.status}: ${body.slice(0, 200)}`);
-    }
-
-    const json = (await response.json()) as {
-      success: boolean;
-      data?: {
-        markdown?: string;
-        metadata?: { title?: string; description?: string; sourceURL?: string };
+      const json = (await response.json()) as {
+        success: boolean;
+        data?: {
+          markdown?: string;
+          metadata?: {
+            title?: string;
+            description?: string;
+            sourceURL?: string;
+          };
+        };
       };
-    };
 
-    if (!json.success || !json.data?.markdown) return null;
+      if (!json.success || !json.data?.markdown) return null;
 
-    return {
-      url: json.data.metadata?.sourceURL ?? url,
-      title: json.data.metadata?.title ?? "",
-      description: json.data.metadata?.description ?? "",
-      markdown: json.data.markdown,
-    };
+      return {
+        url: json.data.metadata?.sourceURL ?? url,
+        title: json.data.metadata?.title ?? "",
+        description: json.data.metadata?.description ?? "",
+        markdown: json.data.markdown,
+      };
+    });
   }
 
   /**
@@ -101,7 +118,9 @@ export class FirecrawlProvider implements DataSourceProvider {
 
     for (let i = 0; i < urls.length; i += CONCURRENCY) {
       const batch = urls.slice(i, i + CONCURRENCY);
-      const settled = await Promise.allSettled(batch.map((u) => this.scrape(u)));
+      const settled = await Promise.allSettled(
+        batch.map((u) => this.scrape(u)),
+      );
       for (const r of settled) {
         if (r.status === "fulfilled" && r.value) results.push(r.value);
       }
@@ -113,7 +132,10 @@ export class FirecrawlProvider implements DataSourceProvider {
   /**
    * Search the web via FireCrawl's built-in search endpoint.
    */
-  async search(query: string, limit: number = 10): Promise<FirecrawlScrapeResult[]> {
+  async search(
+    query: string,
+    limit: number = 10,
+  ): Promise<FirecrawlScrapeResult[]> {
     const apiKey = await this.getApiKey();
     if (!apiKey) return [];
 
@@ -123,14 +145,23 @@ export class FirecrawlProvider implements DataSourceProvider {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ query, limit, scrapeOptions: { formats: ["markdown"], onlyMainContent: true } }),
+      body: JSON.stringify({
+        query,
+        limit,
+        scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
+      }),
     });
 
     if (!response.ok) return [];
 
     const json = (await response.json()) as {
       success: boolean;
-      data?: { url?: string; title?: string; description?: string; markdown?: string }[];
+      data?: {
+        url?: string;
+        title?: string;
+        description?: string;
+        markdown?: string;
+      }[];
     };
 
     if (!json.success || !json.data) return [];

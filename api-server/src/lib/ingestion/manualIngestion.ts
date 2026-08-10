@@ -48,6 +48,7 @@ import {
   shouldProtectCanonicalFromRefresh,
   STALE_INGESTION_RUN_AFTER_MS,
 } from "./pipelineRules";
+import { conciseIngestionError } from "./ingestionError";
 
 const ACTIVE_RUN_STATUSES = ["queued", "running"] as const;
 const RETRYABLE_RUN_STATUSES = new Set([
@@ -109,13 +110,7 @@ function providerDisplayName(provider: string): string {
   return provider;
 }
 
-function conciseError(value: unknown): string {
-  const message = value instanceof Error ? value.message : String(value);
-  return (
-    message.replace(/\s+/g, " ").trim().slice(0, 500) ||
-    "Unknown provider error"
-  );
-}
+const conciseError = conciseIngestionError;
 
 function evidenceFromRecord(
   record: NormalizedOpportunity,
@@ -211,7 +206,10 @@ async function createPersistedRun(
           inArray(opportunityIngestionRunsTable.status, [
             ...ACTIVE_RUN_STATUSES,
           ]),
-          lte(sql`coalesce(${opportunityIngestionRunsTable.heartbeatAt}, ${opportunityIngestionRunsTable.updatedAt})`, staleBefore),
+          lte(
+            sql`coalesce(${opportunityIngestionRunsTable.heartbeatAt}, ${opportunityIngestionRunsTable.updatedAt})`,
+            staleBefore,
+          ),
         ),
       )
       .returning({ id: opportunityIngestionRunsTable.id });
@@ -838,7 +836,8 @@ export function formatProviderProgress(event: ProviderProgressEvent): {
   if (event.phase === "discovery_start") {
     return {
       currentProvider,
-      message: "AI/web discovery is running once for this Fetch Intelligence run",
+      message:
+        "AI/web discovery is running once for this Fetch Intelligence run",
     };
   }
   return {
@@ -910,7 +909,10 @@ async function runProviderWithDeadline(
       throw controller.signal.reason;
     if (runSignal.aborted) {
       const reason = runSignal.reason;
-      if (reason instanceof RunTimeoutError || reason instanceof RunCancelledError) {
+      if (
+        reason instanceof RunTimeoutError ||
+        reason instanceof RunCancelledError
+      ) {
         throw reason;
       }
       throw new RunCancelledError();
@@ -1008,21 +1010,47 @@ async function executePersistedRun(
             })
             .where(eq(opportunityIngestionRunsTable.id, runId));
         });
-        for (const record of result.records) {
+        const recordErrors: string[] = [];
+        for (const [recordIndex, record] of result.records.entries()) {
           if (runController.signal.aborted) {
             throw runController.signal.reason ?? new RunCancelledError();
           }
           if (await cancellationRequested(runId)) throw new RunCancelledError();
-          const counts = await processOneRecord(
-            runId,
-            source.id,
-            source.provider,
-            record,
-          );
-          await incrementProgress(runId, source.id, counts);
+          try {
+            const counts = await processOneRecord(
+              runId,
+              source.id,
+              source.provider,
+              record,
+            );
+            await incrementProgress(runId, source.id, counts);
+          } catch (error) {
+            if (runController.signal.aborted) throw error;
+            const identity =
+              record.solicitationNumber ||
+              record.externalId ||
+              `record ${recordIndex + 1}`;
+            const message = `${identity}: ${conciseError(error)}`;
+            recordErrors.push(message);
+            console.error(
+              JSON.stringify({
+                event: "rfp_record_persistence_failed",
+                runId,
+                provider: source.provider,
+                recordIndex,
+                identity,
+                error: conciseError(error),
+              }),
+            );
+          }
         }
-        if (result.errors.length > 0)
-          sourceError = result.errors.map(conciseError).join(" | ").slice(0, 500);
+        const providerWarnings = [
+          ...result.errors.map(conciseError),
+          ...recordErrors,
+        ];
+        if (providerWarnings.length > 0) {
+          sourceError = providerWarnings.join(" | ").slice(0, 500);
+        }
       } catch (error) {
         if (error instanceof RunCancelledError) {
           cancelled = true;
@@ -1091,16 +1119,17 @@ async function executePersistedRun(
   } finally {
     clearTimeout(runTimeout);
     activeRunControllers.delete(runId);
-    const archived = cancelled || timedOut
-      ? 0
-      : await reconcileExpiredOpportunities().catch(() => 0);
+    const archived =
+      cancelled || timedOut
+        ? 0
+        : await reconcileExpiredOpportunities().catch(() => 0);
     const latest = await getIngestionRun(runId).catch(() => null);
     const failedSources =
       latest?.sources.filter((source) => source.status === "failed").length ??
       failedCount;
     const timedOutSources =
-      latest?.sources.filter((source) => source.status === "timed_out").length ??
-      timeoutCount;
+      latest?.sources.filter((source) => source.status === "timed_out")
+        .length ?? timeoutCount;
     const warningSources =
       latest?.sources.filter(
         (source) => source.status === "completed" && Boolean(source.error),

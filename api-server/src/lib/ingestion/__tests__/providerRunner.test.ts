@@ -10,6 +10,8 @@ const {
   FEDERAL_MANUAL_PROVIDERS,
   MANUAL_RFP_PROVIDERS,
   effectiveProviderQuery,
+  isOfficialSamOpportunityUrl,
+  isSamGovRecoverableApiError,
   mergeDiscoveryRecords,
   resolveManualProviders,
 } = await import("../providerRunner");
@@ -62,6 +64,13 @@ test("blank searches still enforce the Occu-Med service profile", () => {
     effectiveProviderQuery("  medical surveillance  "),
     "medical surveillance",
   );
+});
+
+test("recognizes unavailable SAM API access and only accepts official SAM hosts", () => {
+  assert.equal(isSamGovRecoverableApiError(new Error("SAM.gov API error 429: code 900804 Message throttled out")), true);
+  assert.equal(isSamGovRecoverableApiError(new Error("SAM_API_KEY_NOT_CONFIGURED")), true);
+  assert.equal(isOfficialSamOpportunityUrl("https://sam.gov/opp/example/view"), true);
+  assert.equal(isOfficialSamOpportunityUrl("https://sam.gov.evil.test/opp/example/view"), false);
 });
 
 test("legacy portal selections collapse into browser discovery while retaining the full federal ensemble", () => {

@@ -47,15 +47,27 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_KEY_2
+        sync: false
+      - key: GEMINI_KEY_3
+        sync: false
       - key: SERPER_API_KEY
         sync: false
       - key: FIRECRAWL_API_KEY
         sync: false
+      - key: FIRECRAWL_API_KEY_2
+        sync: false
+      - key: FIRECRAWL_API_KEY_3
+        sync: false
       - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_KEY_2
         sync: false
       - key: OPENROUTER_MODEL
         sync: false
       - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_KEY_2
         sync: false
       - key: GROQ_MODEL
         sync: false
@@ -67,6 +79,16 @@ services:
         sync: false
       - key: BROWSER_USE_API_KEY
         sync: false
+      - key: BROWSERBASE_API_KEY
+        sync: false
+      - key: BROWSERBASE_KEY_2
+        sync: false
+      - key: BROWSERLESS_KEY
+        sync: false
+      - key: APIFY_KEY
+        sync: false
+      - key: OCR_SPACE_KEY
+        sync: false
       - key: OLOSTEP_API_KEY
         sync: false
       - key: CLOD_API_KEY
@@ -76,6 +98,36 @@ services:
       - key: CEREBRAS_API_KEY
         sync: false
       - key: COHERE_API_KEY
+        sync: false
+      - key: COHERE_API_KEY_2
+        sync: false
+      - key: COHERE_API_KEY_3
+        sync: false
+      - key: COHERE_API_KEY_4
+        sync: false
+      - key: LANGSEARCH_API_KEY
+        sync: false
+      - key: LANGSEARCH_API_KEY_2
+        sync: false
+      - key: LANGSEARCH_API_KEY_3
+        sync: false
+      - key: LANGSEARCH_API_KEY_4
+        sync: false
+      - key: LINKUP_API_KEY
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN_BACKUP
+        sync: false
+      - key: CLOUDFLARE_BROWSER_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_BROWSER_DEPLOY_TOKEN
+        sync: false
+      - key: CLOUDFLARE_EMBEDDING_MODEL
+        sync: false
+      - key: CLOUDFLARE_RERANK_MODEL
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false

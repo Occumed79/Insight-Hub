@@ -129,6 +129,12 @@ describe("opportunity quality classifier", () => {
     assert.equal(buildOpportunityQualityPage(rows, "actionable", 1, 10, now).total, 2);
   });
 
+  it("removes poor feedback from working views but retains the audit record", () => {
+    const poor = { ...base, id: "poor", userGrade: "poor" };
+    assert.equal(buildOpportunityQualityPage([poor], "actionable", 1, 10, now).total, 0);
+    assert.equal(buildOpportunityQualityPage([poor], "all", 1, 10, now).total, 1);
+  });
+
   it("keeps date-only deadlines open through the Pacific calendar day", () => {
     const summerEnd = deadlineEndForComparison("2026-07-21")!;
     const winterEnd = deadlineEndForComparison("2026-12-21")!;

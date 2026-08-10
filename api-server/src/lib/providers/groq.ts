@@ -8,19 +8,25 @@
  * API docs: https://console.groq.com/docs/openai
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { OCCUMED_PROFILE, OCCUMED_DEFAULT_QUERIES } from "./gemini";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const GROQ_BASE = "https://api.groq.com/openai/v1";
 const DEFAULT_MODEL = "llama-3.1-8b-instant";
+const credentials = new FreeTierCredentialPool("groq", [
+  { dbKey: "groqApiKey", envKey: "GROQ_API_KEY" },
+  { envKey: "GROQ_KEY_2" },
+]);
 
 export class GroqProvider implements DataSourceProvider {
   readonly name = "groq" as const;
-
-  private async getApiKey(): Promise<string | null> {
-    return resolveCredential("groqApiKey", "GROQ_API_KEY");
-  }
 
   private async getModel(): Promise<string> {
     const model = await resolveCredential("groqModel", "GROQ_MODEL");
@@ -28,7 +34,7 @@ export class GroqProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return credentials.isConfigured();
   }
 
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
@@ -48,43 +54,45 @@ export class GroqProvider implements DataSourceProvider {
     maxTokens = 512,
     signal?: AbortSignal,
   ): Promise<string> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("Groq API key not configured.");
-
     const model = await this.getModel();
+    return credentials.run(async (apiKey) => {
+      const response = await fetch(`${GROQ_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: maxTokens,
+          temperature: 0.2,
+        }),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
+      });
 
-    const response = await fetch(`${GROQ_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: maxTokens,
-        temperature: 0.2,
-      }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        : AbortSignal.timeout(30_000),
+      if (response.status === 429) {
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        throw new Error(
+          `GROQ_RATE_LIMITED: ${body?.error?.message ?? "Rate limit reached"}`,
+        );
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Groq error ${response.status}: ${body.slice(0, 200)}`);
+      }
+
+      const json = (await response.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+
+      return (json.choices?.[0]?.message?.content ?? "").trim();
     });
-
-    if (response.status === 429) {
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-      throw new Error(`GROQ_RATE_LIMITED: ${body?.error?.message ?? "Rate limit reached"}`);
-    }
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Groq error ${response.status}: ${body.slice(0, 200)}`);
-    }
-
-    const json = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-
-    return (json.choices?.[0]?.message?.content ?? "").trim();
   }
 
   /**
@@ -113,9 +121,13 @@ Respond ONLY with a JSON array: ["query1", ..., "query8"]`;
 
     try {
       const text = await this.complete(prompt, 600);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       const queries = JSON.parse(cleaned);
-      if (Array.isArray(queries) && queries.length > 0) return queries as string[];
+      if (Array.isArray(queries) && queries.length > 0)
+        return queries as string[];
     } catch {
       // fall through to defaults
     }
@@ -130,7 +142,7 @@ Respond ONLY with a JSON array: ["query1", ..., "query8"]`;
   async extractOpportunityFromWebResult(
     title: string,
     url: string,
-    content: string
+    content: string,
   ): Promise<{
     isOpportunity: boolean;
     title?: string;
@@ -162,7 +174,10 @@ If NO:
 
     try {
       const text = await this.complete(prompt, 400);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       return JSON.parse(cleaned);
     } catch {
       return null;
@@ -175,7 +190,7 @@ If NO:
   async scoreRelevance(
     opportunityTitle: string,
     description: string,
-    orgContext: string
+    orgContext: string,
   ): Promise<{ score: number; explanation: string } | null> {
     const prompt = `Score relevance 0-100.
 Org: ${orgContext}
@@ -186,7 +201,10 @@ JSON only: {"score":<0-100>,"explanation":"1-2 sentences"}`;
 
     try {
       const text = await this.complete(prompt, 200);
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
       return JSON.parse(cleaned);
     } catch {
       return null;
