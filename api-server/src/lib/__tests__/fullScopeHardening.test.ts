@@ -163,11 +163,11 @@ test("run deadlines stay timeouts and do not launch post-timeout reconciliation"
   );
   assert.match(
     source,
-    /reason instanceof RunTimeoutError \|\| reason instanceof RunCancelledError/,
+    /reason instanceof RunTimeoutError\s*\|\|\s*reason instanceof RunCancelledError/,
   );
   assert.match(source, /if \(runController\.signal\.aborted\)/);
   assert.match(source, /runTimeout\.unref\?\.\(\)/);
-  assert.match(source, /const archived = cancelled \|\| timedOut/);
+  assert.match(source, /const archived\s*=\s*cancelled\s*\|\|\s*timedOut/);
 });
 
 test("web discovery binds parent and per-attempt cancellation without reviving retired defaults", async () => {
