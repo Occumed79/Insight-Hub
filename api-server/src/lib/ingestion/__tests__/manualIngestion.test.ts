@@ -20,6 +20,22 @@ import {
   shouldProtectCanonicalFromRefresh,
   STALE_INGESTION_RUN_AFTER_MS,
 } from "../pipelineRules";
+import { conciseIngestionError } from "../ingestionError";
+
+it("reports the database driver cause instead of dumping generated SQL", () => {
+  const driverError = new Error(
+    'invalid input syntax for type numeric: "not-a-number"',
+  );
+  const queryError = new Error(
+    'Failed query: insert into "opportunities" ("id", "title") values ($1, $2)',
+    { cause: driverError },
+  );
+
+  assert.equal(
+    conciseIngestionError(queryError),
+    'invalid input syntax for type numeric: "not-a-number"',
+  );
+});
 
 function fixture(
   overrides: Partial<NormalizedOpportunity> = {},
@@ -225,7 +241,10 @@ describe("raw, staging, persistent identity, and refresh rules", () => {
 
   it("locks every dedupe identity in deterministic order", () => {
     const keys = calculateOpportunityDedupeKeys(fixture());
-    const locks = opportunityIdentityLockKeys(keys.slice().reverse(), "fallback");
+    const locks = opportunityIdentityLockKeys(
+      keys.slice().reverse(),
+      "fallback",
+    );
     assert.deepEqual(locks, [...locks].sort());
     assert.equal(new Set(locks).size, locks.length);
     assert.ok(locks.some((key) => key.startsWith("solicitation:")));
@@ -371,7 +390,11 @@ describe("run retry and deadline rules", () => {
         { provider: "samGov", status: "completed" },
         { provider: "tango", status: "timed_out" },
         { provider: "serper", status: "failed" },
-        { provider: "aiDiscovery", status: "completed", error: "exa unavailable" },
+        {
+          provider: "aiDiscovery",
+          status: "completed",
+          error: "exa unavailable",
+        },
       ]),
       ["tango", "serper", "aiDiscovery"],
     );
