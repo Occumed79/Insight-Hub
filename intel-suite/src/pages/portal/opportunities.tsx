@@ -196,6 +196,7 @@ type IngestionRun = {
   providersTimedOut?: number;
   providersSkipped?: number;
   providerErrors?: Array<{ provider: string; error: string }>;
+  sources?: Array<{ provider: string; created: number }>;
 };
 
 export default function OpportunitiesDashboard() {
@@ -364,7 +365,7 @@ export default function OpportunitiesDashboard() {
                 queryKey: getListOpportunitiesQueryKey(),
               });
               const discoveryCreated = run.sources?.find(
-                (source: any) => source.provider === "aiDiscovery",
+                (source) => source.provider === "aiDiscovery",
               )?.created;
               if (Number(discoveryCreated) > 0) {
                 setQualityView("needs-verification");
