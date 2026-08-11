@@ -1,0 +1,25 @@
+name: Revert Visualization Preload
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/revert-visual-arsenal.yml
+permissions:
+  contents: write
+env:
+  INSTALL_COMMIT: ""
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Remove visualization preload scaffolding
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Occumed79/Network-Map/main/.github/scripts/revert-visual-arsenal.sh -o /tmp/revert-visual-arsenal.sh
+          bash /tmp/revert-visual-arsenal.sh
