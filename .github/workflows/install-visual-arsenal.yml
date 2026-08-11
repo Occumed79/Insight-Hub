@@ -1,0 +1,28 @@
+name: Install Visual Arsenal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/install-visual-arsenal.yml
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack enable
+      - name: Install visualization arsenal
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Occumed79/Network-Map/main/.github/scripts/install-visual-arsenal.sh -o /tmp/install-visual-arsenal.sh
+          bash /tmp/install-visual-arsenal.sh
