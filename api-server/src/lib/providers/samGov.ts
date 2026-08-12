@@ -112,8 +112,14 @@ export class SamGovProvider implements DataSourceProvider {
 
     const normalized: NormalizedOpportunity[] = [];
     const seen = new Set<string>();
-    for (const title of buildSamGovTitleQueries(options.keywords)) {
-      const matches = await this.runQuery(apiKey, apiKeyCredential, baseUrl, { title }, fromDate, today, limit, options.signal);
+    const titleQueries = buildSamGovTitleQueries(options.keywords);
+    // An omitted title is SAM's broad structured search. Optional focus text
+    // may narrow it, but every run remains a single API request.
+    const searches = titleQueries.length > 0
+      ? [{ title: titleQueries[0] }]
+      : [{}];
+    for (const search of searches) {
+      const matches = await this.runQuery(apiKey, apiKeyCredential, baseUrl, search, fromDate, today, limit, options.signal);
       for (const opportunity of matches) {
         if (seen.has(opportunity.externalId)) continue;
         seen.add(opportunity.externalId);

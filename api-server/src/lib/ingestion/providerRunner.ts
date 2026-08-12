@@ -233,8 +233,10 @@ export function isSamGovRecoverableApiError(error: unknown): boolean {
 export function isOfficialSamOpportunityUrl(value?: string): boolean {
   if (!value) return false;
   try {
-    const host = new URL(value).hostname.toLowerCase();
-    return host === "sam.gov" || host.endsWith(".sam.gov");
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return (host === "sam.gov" || host.endsWith(".sam.gov")) &&
+      /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname);
   } catch { return false; }
 }
 
@@ -244,8 +246,16 @@ async function fetchSamGovPublicSearchFallback(
   structuredError: unknown,
 ): Promise<ProviderRunResult | null> {
   const runtime = await loadDiscoveryRuntime();
+  const focus = options.keywords?.trim();
+  const samSearch = [
+    "site:sam.gov/opp/ inurl:/view",
+    focus ? `(${focus})` : "(occupational OR medical OR health OR testing OR surveillance)",
+    '(solicitation OR "combined synopsis/solicitation")',
+  ].join(" ");
   const result = await runtime.webIntelligenceFetch({
-    keywords: `SAM.gov ${effectiveProviderQuery(options.keywords)}`,
+    keywords: focus,
+    discoveryQueries: [samSearch],
+    candidateUrlFilter: isOfficialSamOpportunityUrl,
     dateRange: options.dateRange,
     useSerper: true,
     useExa: true,
@@ -274,10 +284,10 @@ async function fetchSamGovPublicSearchFallback(
       },
     }));
   if (records.length === 0) return null;
-  const guarded = applyProviderGuards("samGov", records, [
+  const guarded = await applyStructuredFederalDecision("samGov", records, [
     `SAM.gov structured API unavailable; recovered ${records.length} official SAM.gov public pages through keyless web discovery.`,
     ...result.errors,
-  ], options.keywords);
+  ], options);
   await recordProviderSuccess("samGov", guarded.records.length);
   console.warn(JSON.stringify({
     event: "sam_gov_public_search_recovered",
@@ -311,7 +321,7 @@ async function fetchStructuredFederalProvider(
       const result = await samGovProvider.fetch({
         keywords: options.keywords,
         dateRange: options.dateRange,
-        limit: 100,
+        limit: 1000,
         signal: options.signal,
       });
       const upstreamErrors = result.errors ?? [];
