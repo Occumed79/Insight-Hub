@@ -245,6 +245,8 @@ export async function webIntelligenceFetch(options: {
   useSelfHostedSearch?: boolean;
   useSelfHostedCrawler?: boolean;
   discoveryPoolId?: string;
+  discoveryQueries?: string[];
+  candidateUrlFilter?: (url: string) => boolean;
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   throwIfAborted(options.signal);
@@ -367,12 +369,14 @@ export async function webIntelligenceFetch(options: {
 
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
-  const discoveryQueries = Array.from(
-    new Set([
-      ...serperQueries.map((entry) => entry.query),
-      ...exaSearchQueries,
-    ]),
-  ).slice(0, 10);
+  const discoveryQueries = options.discoveryQueries?.length
+    ? Array.from(new Set(options.discoveryQueries.map((query) => query.trim()).filter(Boolean)))
+    : Array.from(
+      new Set([
+        ...serperQueries.map((entry) => entry.query),
+        ...exaSearchQueries,
+      ]),
+    ).slice(0, 10);
   const serperQueryMetadata = new Map(
     serperQueries.map((entry) => [entry.query, entry] as const),
   );
@@ -580,7 +584,9 @@ export async function webIntelligenceFetch(options: {
     const result = await runLimitedProviderPool(
       options.discoveryPoolId ?? "opportunity-web-discovery",
       attempts,
-      (value) => value.length > 0,
+      (value) => value.some((candidate) =>
+        options.candidateUrlFilter?.(candidate.url) ?? true
+      ),
       { signal: options.signal },
     );
     errors.push(...result.errors);
@@ -617,7 +623,10 @@ export async function webIntelligenceFetch(options: {
         stats.websearchResults += result.value.length;
         break;
     }
-    for (const candidate of result.value) addCandidate(candidates, seen, candidate);
+    for (const candidate of result.value) {
+      if (options.candidateUrlFilter && !options.candidateUrlFilter(candidate.url)) continue;
+      addCandidate(candidates, seen, candidate);
+    }
   }
 
   stats.totalCandidates = candidates.length;

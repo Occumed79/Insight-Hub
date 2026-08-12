@@ -29,11 +29,8 @@ describe("SAM.gov bid-ready query policy", () => {
     );
   });
 
-  it("uses a bounded Occu-Med title portfolio when no query is supplied", () => {
-    const queries = buildSamGovTitleQueries();
-    assert.equal(queries.length, 8);
-    assert.ok(queries.includes("medical surveillance"));
-    assert.ok(queries.includes("respirator fit testing"));
+  it("uses one broad structured retrieval when no query is supplied", () => {
+    assert.deepEqual(buildSamGovTitleQueries(), []);
   });
 
   it("accepts only active bid notices with a future response deadline", () => {

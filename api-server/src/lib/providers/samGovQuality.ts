@@ -76,7 +76,9 @@ export function buildSamGovTitleQueries(keywords?: string): string[] {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!normalized) return SAM_TITLE_PROFILES.map((profile) => profile.title);
+  // Blank autonomous runs retrieve broadly once; the Occu-Med ontology then
+  // classifies notices locally instead of spending a call per service title.
+  if (!normalized) return [];
 
   const matched = SAM_TITLE_PROFILES.filter((profile) =>
     profile.aliases.some((alias) => normalized.includes(alias)),
@@ -87,9 +89,7 @@ export function buildSamGovTitleQueries(keywords?: string): string[] {
     .replace(CUSTOM_QUERY_NOISE, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return custom.length >= 3
-    ? [custom.slice(0, 80)]
-    : SAM_TITLE_PROFILES.map((profile) => profile.title);
+  return custom.length >= 3 ? [custom.slice(0, 80)] : [];
 }
 
 export function isBidReadySamOpportunity(
