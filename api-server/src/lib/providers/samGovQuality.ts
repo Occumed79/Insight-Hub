@@ -68,6 +68,7 @@ const SAM_TITLE_PROFILES = [
 const CUSTOM_QUERY_NOISE =
   /\b(?:active|bid|bids|city|contract|contracts|county|due|federal|find|government|open|opportunities|opportunity|procurement|proposal|proposals|request|rfp|rfq|services?|solicitation|state)\b/gi;
 const BID_READY_TYPE_RE = /^(?:solicitation|combined synopsis\/solicitation)$/i;
+const DEFAULT_AUTONOMOUS_SAM_TITLE = "occupational health";
 
 export function buildSamGovTitleQueries(keywords?: string): string[] {
   const normalized = (keywords ?? "")
@@ -76,9 +77,10 @@ export function buildSamGovTitleQueries(keywords?: string): string[] {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  // Blank autonomous runs retrieve broadly once; the Occu-Med ontology then
-  // classifies notices locally instead of spending a call per service title.
-  if (!normalized) return [];
+  // Keep autonomous SAM usage to one API call, but make that call useful.
+  // A broad blank search returns thin metadata for many unrelated notices and
+  // routinely produces zero usable Occu-Med records after local classification.
+  if (!normalized) return [DEFAULT_AUTONOMOUS_SAM_TITLE];
 
   const matched = SAM_TITLE_PROFILES.filter((profile) =>
     profile.aliases.some((alias) => normalized.includes(alias)),
