@@ -20,132 +20,6 @@ const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_RETRIES = 2;
 const MAX_RECORD_LIMIT = 500;
 const MAX_PAGE_SIZE = 100;
-const DEFAULT_TANGO_SEARCH = "occupational health";
-
-// Tango is a useful secondary federal index, but its full opportunity feed is far
-// broader than Occu-Med's addressable scope. These source-specific guards run
-// before the shared structured-opportunity judge so generic federal medical
-// records never consume judge budget or reach persistence.
-const TANGO_STRONG_OCCUMED_SIGNALS = [
-  "occupational health",
-  "occupational medicine",
-  "occupational medical",
-  "medical surveillance",
-  "pre-employment physical",
-  "pre employment physical",
-  "pre-placement physical",
-  "pre placement physical",
-  "fitness for duty",
-  "fit for duty",
-  "return to work physical",
-  "return-to-work physical",
-  "respirator medical evaluation",
-  "respirator medical clearance",
-  "hearing conservation",
-  "dot physical",
-  "dot medical examination",
-  "fmcsa physical",
-  "49 cfr part 40",
-  "dot part 40",
-  "nfpa 1582",
-  "firefighter medical examination",
-  "public safety physical",
-  "deployment medical",
-  "pre-deployment medical",
-  "pre deployment medical",
-  "contractor personnel medical",
-  "periodic health assessment",
-  "employee health services",
-  "workforce health",
-];
-
-const TANGO_CONTEXT_REQUIRED_CLINICAL_SIGNALS = [
-  "drug testing",
-  "drug screening",
-  "alcohol testing",
-  "breath alcohol",
-  "audiogram",
-  "audiometric",
-  "hearing test",
-  "spirometry",
-  "pulmonary function",
-  "fit testing",
-  "respirator fit testing",
-  "vaccination",
-  "immunization",
-  "tb testing",
-  "tuberculosis testing",
-  "medical examination",
-  "medical examinations",
-  "physical examination",
-  "physical examinations",
-  "medical screening",
-  "health screening",
-  "vision testing",
-  "laboratory testing",
-  "lab testing",
-];
-
-const TANGO_WORKFORCE_CONTEXT_SIGNALS = [
-  "employee",
-  "employees",
-  "employer",
-  "workforce",
-  "worker",
-  "workers",
-  "worksite",
-  "work site",
-  "workplace",
-  "occupational",
-  "pre-employment",
-  "pre employment",
-  "pre-placement",
-  "pre placement",
-  "new hire",
-  "new hires",
-  "applicant",
-  "applicants",
-  "fitness for duty",
-  "fit for duty",
-  "return to work",
-  "return-to-work",
-  "return to duty",
-  "safety-sensitive",
-  "safety sensitive",
-  "osha",
-  "hazwoper",
-  "respirator",
-  "respiratory protection",
-  "hearing conservation",
-  "nfpa 1582",
-  "fmcsa",
-  "49 cfr part 40",
-  "dot part 40",
-  "contractor personnel",
-  "contractor employees",
-  "firefighter",
-  "firefighters",
-  "law enforcement",
-  "deployment",
-  "pre-deployment",
-];
-
-const TANGO_NON_OCCUPATIONAL_PATIENT_SIGNALS = [
-  "patient care",
-  "clinic patients",
-  "hospital patients",
-  "community residents",
-  "general public",
-  "community vaccination",
-  "community testing",
-  "student health",
-  "students",
-  "school children",
-  "medicaid members",
-  "medicare beneficiaries",
-  "inmates",
-  "treatment services",
-];
 
 interface TangoOpportunity {
   opportunity_id: string;
@@ -182,66 +56,6 @@ interface TangoListResponse {
   next: string | null;
   previous: string | null;
   results: TangoOpportunity[];
-}
-
-function normalizePrecisionText(value: string): string {
-  return ` ${value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()} `;
-}
-
-function includesPrecisionSignal(text: string, signal: string): boolean {
-  return text.includes(normalizePrecisionText(signal));
-}
-
-/**
- * Tango-only fail-closed relevance gate.
- *
- * Generic clinical services such as vaccinations, TB testing, audiograms,
- * spirometry, medical exams, or drug testing are only accepted when they are
- * explicitly tied to employees/workforce, employment screening, public-safety,
- * deployment, or occupational/regulatory programs.
- */
-export function passesTangoOccumedPrecisionGate(value: string): boolean {
-  const text = normalizePrecisionText(value);
-  const strong = TANGO_STRONG_OCCUMED_SIGNALS.some((signal) =>
-    includesPrecisionSignal(text, signal),
-  );
-  if (strong) return true;
-
-  const clinical = TANGO_CONTEXT_REQUIRED_CLINICAL_SIGNALS.some((signal) =>
-    includesPrecisionSignal(text, signal),
-  );
-  if (!clinical) return false;
-
-  const workforce = TANGO_WORKFORCE_CONTEXT_SIGNALS.some((signal) =>
-    includesPrecisionSignal(text, signal),
-  );
-  if (workforce) return true;
-
-  const patientOnly = TANGO_NON_OCCUPATIONAL_PATIENT_SIGNALS.some((signal) =>
-    includesPrecisionSignal(text, signal),
-  );
-  if (patientOnly) return false;
-
-  // Generic clinical scope with no explicit occupational context fails closed.
-  return false;
-}
-
-function tangoPrecisionText(opportunity: TangoOpportunity): string {
-  return [
-    opportunity.title,
-    opportunity.description,
-    opportunity.office?.agency_name,
-    opportunity.office?.department_name,
-    opportunity.meta?.notice_type?.type,
-    opportunity.naics_code,
-    opportunity.psc_code,
-  ]
-    .filter(Boolean)
-    .join(" ");
 }
 
 function parsedDate(value?: string): Date | undefined {
@@ -338,23 +152,20 @@ export class TangoProvider implements DataSourceProvider {
       providerName: this.name,
       rawData: {
         providerName: "tango",
-        providerFamily: "secondary_procurement_index",
+        providerFamily: "direct_procurement_api",
         providerType: "tango_makegov_api",
         discoveryMethod: "direct_api",
-        evidenceType: "aggregator",
-        sourceConfidence: "medium",
+        sourceConfidence: "high",
         dateUnknown: !postedDate,
         listingPageNumber: pageNumber,
         paginationMode: "bounded_api_next_link",
         tags: [
           "direct-api",
-          "secondary-source",
           "tango",
-          "tango-precision-gated",
           ...(!postedDate ? ["date-unknown"] : []),
         ],
         notes:
-          "Collected from Tango by MakeGov as a secondary federal opportunity index and retained only after the Tango-specific Occu-Med precision gate.",
+          "Collected directly from the configured Tango by MakeGov opportunity API using bounded pagination.",
         tango: opportunity,
       },
     };
@@ -461,7 +272,6 @@ export class TangoProvider implements DataSourceProvider {
       0,
       5,
     );
-    const search = options.keywords?.trim() || DEFAULT_TANGO_SEARCH;
 
     endpoint.searchParams.set(
       "first_notice_date_after",
@@ -494,9 +304,9 @@ export class TangoProvider implements DataSourceProvider {
     endpoint.searchParams.set("limit", String(pageSize));
     endpoint.searchParams.set("page", "1");
     endpoint.searchParams.set("ordering", "-first_notice_date");
-    // Never ask Tango for the unbounded federal firehose. Blank manual searches
-    // use a focused occupational-health seed; custom searches remain supported.
-    endpoint.searchParams.set("search", search);
+    if (options.keywords?.trim()) {
+      endpoint.searchParams.set("search", options.keywords.trim());
+    }
 
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
@@ -505,7 +315,6 @@ export class TangoProvider implements DataSourceProvider {
     let currentUrl: URL | null = endpoint;
     let pageNumber = 0;
     let reportedTotal = 0;
-    let precisionRejected = 0;
 
     while (
       currentUrl &&
@@ -544,10 +353,6 @@ export class TangoProvider implements DataSourceProvider {
         if (!opportunity?.opportunity_id) continue;
         if (seenOpportunityIds.has(opportunity.opportunity_id)) continue;
         seenOpportunityIds.add(opportunity.opportunity_id);
-        if (!passesTangoOccumedPrecisionGate(tangoPrecisionText(opportunity))) {
-          precisionRejected += 1;
-          continue;
-        }
         records.push(this.normalize(opportunity, pageNumber));
         if (records.length >= recordLimit) break;
       }
@@ -564,20 +369,9 @@ export class TangoProvider implements DataSourceProvider {
       );
     }
 
-    console.info(
-      JSON.stringify({
-        event: "tango_occumed_precision_gate",
-        search,
-        upstreamReportedTotal: reportedTotal,
-        pagesScanned: pageNumber,
-        retained: records.length,
-        precisionRejected,
-      }),
-    );
-
     return {
       records,
-      total: records.length,
+      total: reportedTotal || records.length,
       errors,
     };
   }

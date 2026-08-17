@@ -29,8 +29,8 @@ describe("SAM.gov bid-ready query policy", () => {
     );
   });
 
-  it("uses one focused occupational-health title request when no query is supplied", () => {
-    assert.deepEqual(buildSamGovTitleQueries(), ["occupational health"]);
+  it("uses one broad structured retrieval when no query is supplied", () => {
+    assert.deepEqual(buildSamGovTitleQueries(), []);
   });
 
   it("accepts only active bid notices with a future response deadline", () => {
