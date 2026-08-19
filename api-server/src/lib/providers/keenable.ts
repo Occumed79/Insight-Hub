@@ -19,8 +19,17 @@ export class KeenableProvider {
     return process.env.KEENABLE_API_KEY?.trim() || null;
   }
 
+  /** Keenable's REST API is keyless by default; an API key only lifts limits. */
   async isConfigured(): Promise<boolean> {
-    return Boolean(this.getApiKey());
+    return true;
+  }
+
+  private headers(): Record<string, string> {
+    const apiKey = this.getApiKey();
+    return {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    };
   }
 
   async search(
@@ -31,16 +40,11 @@ export class KeenableProvider {
       signal?: AbortSignal;
     } = {},
   ): Promise<KeenableSearchResult[]> {
-    const apiKey = this.getApiKey();
-    if (!apiKey) throw new Error("Keenable API key not configured");
     const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, options.signal);
     try {
       const response = await fetch(`${KEENABLE_BASE}/search`, {
         method: "POST",
-        headers: {
-          "X-API-Key": apiKey,
-          "Content-Type": "application/json",
-        },
+        headers: this.headers(),
         body: JSON.stringify({
           query,
           snippet_max_length: 1_500,
@@ -89,14 +93,12 @@ export class KeenableProvider {
     maxLength = 8_000,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    const apiKey = this.getApiKey();
-    if (!apiKey) return null;
     const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, signal);
     try {
       const endpoint = new URL(`${KEENABLE_BASE}/fetch`);
       endpoint.searchParams.set("url", url);
       const response = await fetch(endpoint, {
-        headers: { "X-API-Key": apiKey },
+        headers: this.headers(),
         signal: requestSignal.signal,
       });
       const body = await response.text();
@@ -110,7 +112,8 @@ export class KeenableProvider {
         description?: string;
         title?: string;
       };
-      const text = json.content?.trim() ||
+      const text =
+        json.content?.trim() ||
         [json.title, json.description].filter(Boolean).join("\n").trim();
       return text ? text.slice(0, maxLength) : null;
     } finally {
