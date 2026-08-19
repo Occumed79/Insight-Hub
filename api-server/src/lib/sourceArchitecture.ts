@@ -21,26 +21,27 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "texasEsbd", role: "direct_source", active: true, purpose: "Texas official procurement compatibility source" },
   { name: "nyScr", role: "direct_source", active: true, purpose: "New York official procurement compatibility source" },
 
-  { name: "langsearch", role: "browser_discovery", active: true, purpose: "State/local/private web opportunity discovery" },
-  { name: "serper", role: "browser_discovery", active: true, purpose: "Search-engine opportunity discovery" },
-  { name: "exa", role: "browser_discovery", active: true, purpose: "Semantic web opportunity discovery" },
+  { name: "you", role: "browser_discovery", active: true, purpose: "Daily-renewing web opportunity discovery with independent account failover" },
+  { name: "browserbase", role: "browser_discovery", active: true, purpose: "Managed web search plus page-fetch fallback with independent account failover" },
+  { name: "keenable", role: "browser_discovery", active: true, purpose: "Managed indexed web search and fetch" },
+  { name: "exa", role: "browser_discovery", active: true, purpose: "Semantic web opportunity discovery with independent account failover" },
+  { name: "langsearch", role: "browser_discovery", active: true, purpose: "Four-account web opportunity discovery pool" },
   { name: "parallel", role: "browser_discovery", active: true, purpose: "Web opportunity discovery fallback" },
+  { name: "firecrawl", role: "browser_discovery", active: true, purpose: "Search fallback plus managed page extraction using a three-account pool" },
   { name: "linkup", role: "browser_discovery", active: true, purpose: "Domain-aware opportunity discovery fallback" },
-  { name: "you", role: "browser_discovery", active: true, purpose: "Web opportunity discovery fallback" },
   { name: "socrata", role: "browser_discovery", active: true, purpose: "Official public-data procurement discovery" },
   { name: "websearch", role: "browser_discovery", active: true, purpose: "Broad web opportunity discovery fallback" },
 
-  { name: "jina", role: "enrichment", active: true, purpose: "Managed page text extraction" },
-  { name: "olostep", role: "enrichment", active: true, purpose: "Managed difficult-page extraction" },
-  { name: "firecrawl", role: "enrichment", active: true, purpose: "Managed page extraction when explicitly enabled" },
+  { name: "jina", role: "enrichment", active: true, purpose: "First-choice renewable/keyless page text extraction; key raises Reader limits" },
+  { name: "microlink", role: "enrichment", active: true, purpose: "Final tiny-daily page extraction fallback" },
   { name: "cohere", role: "enrichment", active: true, purpose: "Semantic reranking and analysis" },
 
   { name: "cerebras", role: "ai_judge", active: true, purpose: "Primary low-cost procurement judge" },
-  { name: "groq", role: "ai_judge", active: true, purpose: "Fast procurement judge" },
+  { name: "groq", role: "ai_judge", active: true, purpose: "Fast procurement judge with independent account failover" },
   { name: "mistral", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
-  { name: "nvidia", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
-  { name: "openrouter", role: "ai_judge", active: true, purpose: "Model-routing judge fallback" },
-  { name: "gemini", role: "ai_judge", active: true, purpose: "Query generation and judge fallback" },
+  { name: "nvidia", role: "ai_judge", active: true, purpose: "Finite hosted inference emergency fallback" },
+  { name: "openrouter", role: "ai_judge", active: true, purpose: "Model-routing judge fallback with independent account failover" },
+  { name: "gemini", role: "ai_judge", active: true, purpose: "Query generation and judge fallback with independent account failover" },
   { name: "deepseek", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
   { name: "minimax", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
   { name: "clod", role: "ai_judge", active: true, purpose: "Procurement judge fallback" },
@@ -56,6 +57,8 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "emailNotifications", role: "intelligence", active: true, purpose: "Explicitly selected procurement-alert inbox" },
   { name: "grantsGov", role: "intelligence", active: true, purpose: "Federal grants intelligence; not open-RFP ingestion" },
 
+  { name: "serper", role: "legacy_disabled", active: false, purpose: "Retired finite signup-credit search provider" },
+  { name: "olostep", role: "legacy_disabled", active: false, purpose: "Retired finite/trial extraction provider" },
   { name: "scheduledCrawler", role: "legacy_disabled", active: false, purpose: "Removed from manual RFP ingestion" },
   { name: "selfHostedCrawler", role: "legacy_disabled", active: false, purpose: "Not used by manual opportunity discovery" },
   { name: "selfHostedSearch", role: "legacy_disabled", active: false, purpose: "Not used by manual opportunity discovery" },
@@ -92,9 +95,7 @@ export function sourceAllowedForRoles(
   allowedRoles: readonly InsightSourceRole[],
 ): boolean {
   const source = sourceDefinition(name);
-  return Boolean(
-    source && source.active && allowedRoles.includes(source.role),
-  );
+  return Boolean(source && source.active && allowedRoles.includes(source.role));
 }
 
 export function assertSourceAllowedForRoles(
@@ -102,34 +103,22 @@ export function assertSourceAllowedForRoles(
   allowedRoles: readonly InsightSourceRole[],
 ): InsightSourceDefinition {
   const source = sourceDefinition(name);
-  if (!source) {
-    throw new Error(`Source ${name} is not registered in the Insight Hub source architecture.`);
-  }
+  if (!source) throw new Error(`Source ${name} is not registered in the Insight Hub source architecture.`);
   if (!source.active || source.role === "legacy_disabled") {
     throw new Error(`Source ${name} is disabled by the Insight Hub source architecture.`);
   }
   if (!allowedRoles.includes(source.role)) {
-    throw new Error(
-      `Source ${name} is owned by role ${source.role}; allowed roles are ${allowedRoles.join(", ")}.`,
-    );
+    throw new Error(`Source ${name} is owned by role ${source.role}; allowed roles are ${allowedRoles.join(", ")}.`);
   }
   return source;
 }
 
-/**
- * A CI/runtime invariant: one source name must never have conflicting primary
- * ownership definitions.
- */
 export function validateSourceArchitecture(): string[] {
   const errors: string[] = [];
   const seen = new Map<string, InsightSourceDefinition>();
   for (const source of INSIGHT_SOURCE_ARCHITECTURE) {
     const previous = seen.get(source.name);
-    if (previous) {
-      errors.push(
-        `Duplicate source ownership for ${source.name}: ${previous.role} and ${source.role}`,
-      );
-    }
+    if (previous) errors.push(`Duplicate source ownership for ${source.name}: ${previous.role} and ${source.role}`);
     seen.set(source.name, source);
     if (source.role === "legacy_disabled" && source.active) {
       errors.push(`Legacy-disabled source ${source.name} cannot be active.`);

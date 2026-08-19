@@ -13,8 +13,11 @@ import {
   providerBudgetAvailable,
   recordProviderFailure,
   recordProviderSuccess,
-  selectBudgetedProviders,
 } from "../providerBudget";
+import {
+  discoveryQuotaPolicy,
+  selectQuotaAwareDiscoveryProviders,
+} from "../discoveryQuotaPolicy";
 
 export const PROVIDER_ALIASES = new Map<string, string>([
   ["sam_gov", "samGov"],
@@ -37,11 +40,7 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["rssAggregator", "rssAggregator"],
 ]);
 
-// Open-opportunity ingestion intentionally uses both structured federal pools.
-// GovCon remains reserved for forecast/incumbent intelligence, where its data is
-// differentiated and its limited allowance is more valuable.
 export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
-
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
   "aiDiscovery",
@@ -49,20 +48,22 @@ export const MANUAL_RFP_PROVIDERS = new Set([
   "rssAggregator",
 ]);
 
-const WEB_DISCOVERY_PROVIDERS = new Set(["serper", "exa", "langsearch"]);
 const DEFAULT_OCCUMED_QUERY = "occupational health services";
 const DEFAULT_MANUAL_PROVIDERS = ["samGov", "tango", "aiDiscovery"] as const;
 const DISCOVERY_PROVIDER_ORDER = [
-  "langsearch",
-  "serper",
-  "exa",
-  "parallel",
-  "linkup",
   "you",
+  "browserbase",
+  "keenable",
+  "exa",
+  "langsearch",
+  "parallel",
+  "firecrawl",
+  "linkup",
   "socrata",
   "websearch",
 ] as const;
-const MAX_DISCOVERY_ENSEMBLE = 3;
+const WEB_DISCOVERY_PROVIDERS = new Set<string>(DISCOVERY_PROVIDER_ORDER);
+const MAX_DISCOVERY_ENSEMBLE = 5;
 
 type StructuredFederalProvider = (typeof FEDERAL_MANUAL_PROVIDERS)[number];
 type DiscoveryProvider = (typeof DISCOVERY_PROVIDER_ORDER)[number];
@@ -80,16 +81,14 @@ export interface ProviderRunnerOptions {
   onProgress?: (event: ProviderProgressEvent) => void | Promise<void>;
 }
 
-function isStructuredFederalProvider(
-  provider: string,
-): provider is StructuredFederalProvider {
+function isStructuredFederalProvider(provider: string): provider is StructuredFederalProvider {
   return provider === "samGov" || provider === "tango";
 }
 
 /**
- * Manual opportunity fetches default to the full search pool. If a user picks
- * either structured federal source, both SAM and Tango are retained so a weak
- * but non-empty response from one source can never suppress the other source.
+ * Defaults still run SAM + Tango + AI Discovery together, but an explicit
+ * source selection is now respected. Selecting SAM no longer forces Tango and
+ * selecting Tango no longer forces SAM.
  */
 export function resolveManualProviders(providers?: string[]): string[] {
   const resolved = Array.from(
@@ -99,18 +98,9 @@ export function resolveManualProviders(providers?: string[]): string[] {
       ),
     ),
   );
-  const unsupported = resolved.filter(
-    (provider) => !MANUAL_RFP_PROVIDERS.has(provider),
-  );
+  const unsupported = resolved.filter((provider) => !MANUAL_RFP_PROVIDERS.has(provider));
   if (unsupported.length > 0) {
     throw new Error(`Unsupported RFP provider(s): ${unsupported.join(", ")}`);
-  }
-
-  if (resolved.some(isStructuredFederalProvider)) {
-    return [
-      ...FEDERAL_MANUAL_PROVIDERS,
-      ...resolved.filter((provider) => !isStructuredFederalProvider(provider)),
-    ];
   }
   return resolved;
 }
@@ -128,34 +118,25 @@ function applyProviderGuards(
   const query = effectiveProviderQuery(keywords);
   const partition = partitionProviderRecordsForQuery(records, query, 0);
   if (partition.rejectedCount > 0) {
-    console.info(
-      JSON.stringify({
-        event: "rfp_provider_query_partitioned",
-        provider,
-        query,
-        returned: partition.rawCount,
-        matched: partition.matchedCount,
-        rejected: partition.rejectedCount,
-      }),
-    );
+    console.info(JSON.stringify({
+      event: "rfp_provider_query_partitioned",
+      provider,
+      query,
+      returned: partition.rawCount,
+      matched: partition.matchedCount,
+      rejected: partition.rejectedCount,
+    }));
   }
-
   const filtered = filterExpiredOpportunities(partition.matched);
   if (filtered.expiredSkipped > 0) {
-    console.info(
-      JSON.stringify({
-        event: "rfp_expired_records_skipped",
-        provider,
-        expiredSkipped: filtered.expiredSkipped,
-        reasons: filtered.reasons,
-      }),
-    );
+    console.info(JSON.stringify({
+      event: "rfp_expired_records_skipped",
+      provider,
+      expiredSkipped: filtered.expiredSkipped,
+      reasons: filtered.reasons,
+    }));
   }
-  return {
-    records: filtered.records,
-    errors,
-    expiredSkipped: filtered.expiredSkipped,
-  };
+  return { records: filtered.records, errors, expiredSkipped: filtered.expiredSkipped };
 }
 
 async function applyStructuredFederalDecision(
@@ -164,44 +145,29 @@ async function applyStructuredFederalDecision(
   errors: string[],
   options: ProviderRunnerOptions,
 ): Promise<ProviderRunResult> {
-  const guarded = applyProviderGuards(
-    provider,
-    records,
-    errors,
-    options.keywords,
-  );
+  const guarded = applyProviderGuards(provider, records, errors, options.keywords);
   if (guarded.records.length === 0) return guarded;
-
-  const { decideStructuredOpportunities } = await import(
-    "../search/structuredOpportunityDecision"
-  );
+  const { decideStructuredOpportunities } = await import("../search/structuredOpportunityDecision");
   const decided = await decideStructuredOpportunities(guarded.records);
-
   if (decided.diagnostics.length > 0) {
-    console.warn(
-      JSON.stringify({
-        event: "rfp_structured_review_recovered",
-        provider,
-        reviewer: decided.reviewer,
-        diagnostics: decided.diagnostics,
-      }),
-    );
-  }
-
-  console.info(
-    JSON.stringify({
-      event: "rfp_structured_decision",
+    console.warn(JSON.stringify({
+      event: "rfp_structured_review_recovered",
       provider,
-      candidates: guarded.records.length,
-      approved: decided.approved.length,
-      deterministicApproved: decided.deterministicApproved,
-      aiApproved: decided.aiApproved,
-      rejected: decided.rejected,
-      reviewHeld: decided.reviewHeld,
       reviewer: decided.reviewer,
-    }),
-  );
-
+      diagnostics: decided.diagnostics,
+    }));
+  }
+  console.info(JSON.stringify({
+    event: "rfp_structured_decision",
+    provider,
+    candidates: guarded.records.length,
+    approved: decided.approved.length,
+    deterministicApproved: decided.deterministicApproved,
+    aiApproved: decided.aiApproved,
+    rejected: decided.rejected,
+    reviewHeld: decided.reviewHeld,
+    reviewer: decided.reviewer,
+  }));
   return {
     records: decided.approved,
     errors: guarded.errors,
@@ -216,10 +182,7 @@ async function recordStructuredProviderOutcome(
   usefulRecordCount: number,
 ): Promise<void> {
   if (rawRecordCount === 0 && upstreamErrors.length > 0) {
-    await recordProviderFailure(
-      provider,
-      new Error(upstreamErrors.join("; ")),
-    );
+    await recordProviderFailure(provider, new Error(upstreamErrors.join("; ")));
     return;
   }
   await recordProviderSuccess(provider, usefulRecordCount);
@@ -235,12 +198,12 @@ export function isOfficialSamOpportunityUrl(value?: string): boolean {
   try {
     const parsed = new URL(value);
     const host = parsed.hostname.toLowerCase();
-    return (host === "sam.gov" || host.endsWith(".sam.gov")) &&
-      /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname);
-  } catch { return false; }
+    return (host === "sam.gov" || host.endsWith(".sam.gov")) && /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
-/** Recover official SAM pages through search when the structured API/key is unavailable. */
 async function fetchSamGovPublicSearchFallback(
   options: ProviderRunnerOptions,
   structuredError: unknown,
@@ -257,12 +220,14 @@ async function fetchSamGovPublicSearchFallback(
     discoveryQueries: [samSearch],
     candidateUrlFilter: isOfficialSamOpportunityUrl,
     dateRange: options.dateRange,
-    useSerper: true,
+    useYou: true,
+    useBrowserbase: true,
+    useKeenable: true,
     useExa: true,
     useLangsearch: true,
     useParallel: true,
+    useFirecrawl: true,
     useLinkup: true,
-    useYou: true,
     useSocrata: false,
     useWebsearch: true,
     useRssAggregator: false,
@@ -285,7 +250,7 @@ async function fetchSamGovPublicSearchFallback(
     }));
   if (records.length === 0) return null;
   const guarded = await applyStructuredFederalDecision("samGov", records, [
-    `SAM.gov structured API unavailable; recovered ${records.length} official SAM.gov public pages through keyless web discovery.`,
+    `SAM.gov structured API unavailable; recovered ${records.length} official SAM.gov public pages through renewable web discovery.`,
     ...result.errors,
   ], options);
   await recordProviderSuccess("samGov", guarded.records.length);
@@ -325,18 +290,8 @@ async function fetchStructuredFederalProvider(
         signal: options.signal,
       });
       const upstreamErrors = result.errors ?? [];
-      const decided = await applyStructuredFederalDecision(
-        provider,
-        result.records,
-        upstreamErrors,
-        options,
-      );
-      await recordStructuredProviderOutcome(
-        provider,
-        result.records.length,
-        upstreamErrors,
-        decided.records.length,
-      );
+      const decided = await applyStructuredFederalDecision(provider, result.records, upstreamErrors, options);
+      await recordStructuredProviderOutcome(provider, result.records.length, upstreamErrors, decided.records.length);
       return decided;
     }
 
@@ -348,18 +303,8 @@ async function fetchStructuredFederalProvider(
       signal: options.signal,
     });
     const upstreamErrors = result.errors ?? [];
-    const decided = await applyStructuredFederalDecision(
-      provider,
-      result.records,
-      upstreamErrors,
-      options,
-    );
-    await recordStructuredProviderOutcome(
-      provider,
-      result.records.length,
-      upstreamErrors,
-      decided.records.length,
-    );
+    const decided = await applyStructuredFederalDecision(provider, result.records, upstreamErrors, options);
+    await recordStructuredProviderOutcome(provider, result.records.length, upstreamErrors, decided.records.length);
     return decided;
   } catch (error) {
     if (provider === "samGov" && isSamGovRecoverableApiError(error)) {
@@ -373,7 +318,6 @@ async function fetchStructuredFederalProvider(
 
 async function loadDiscoveryRuntime() {
   const [
-    serper,
     exa,
     langsearch,
     parallel,
@@ -381,9 +325,11 @@ async function loadDiscoveryRuntime() {
     you,
     socrata,
     websearch,
+    firecrawl,
+    browserbase,
+    keenable,
     intelligence,
   ] = await Promise.all([
-    import("../providers/serper"),
     import("../providers/exa"),
     import("../providers/langsearch"),
     import("../providers/parallel"),
@@ -391,10 +337,12 @@ async function loadDiscoveryRuntime() {
     import("../providers/you"),
     import("../providers/socrata"),
     import("../providers/websearch"),
+    import("../providers/firecrawl"),
+    import("../providers/browserbase"),
+    import("../providers/keenable"),
     import("../search/webIntelligence"),
   ]);
   return {
-    serperProvider: serper.serperProvider,
     exaProvider: exa.exaProvider,
     langsearchProvider: langsearch.langsearchProvider,
     parallelProvider: parallel.parallelProvider,
@@ -402,6 +350,9 @@ async function loadDiscoveryRuntime() {
     youProvider: you.youProvider,
     socrataProvider: socrata.socrataProvider,
     websearchProvider: websearch.websearchProvider,
+    firecrawlProvider: firecrawl.firecrawlProvider,
+    browserbaseProvider: browserbase.browserbaseProvider,
+    keenableProvider: keenable.keenableProvider,
     webIntelligenceFetch: intelligence.webIntelligenceFetch,
   };
 }
@@ -434,9 +385,7 @@ function discoveryRecordRank(record: NormalizedOpportunity): number {
   );
 }
 
-export function mergeDiscoveryRecords(
-  records: NormalizedOpportunity[],
-): NormalizedOpportunity[] {
+export function mergeDiscoveryRecords(records: NormalizedOpportunity[]): NormalizedOpportunity[] {
   const best = new Map<string, { record: NormalizedOpportunity; rank: number }>();
   for (const record of records) {
     const key = discoveryIdentityKey(record);
@@ -449,21 +398,19 @@ export function mergeDiscoveryRecords(
 
 function discoveryOptions(provider: DiscoveryProvider) {
   return {
-    useSerper: provider === "serper",
+    useYou: provider === "you",
+    useBrowserbase: provider === "browserbase",
+    useKeenable: provider === "keenable",
     useExa: provider === "exa",
     useLangsearch: provider === "langsearch",
     useParallel: provider === "parallel",
+    useFirecrawl: provider === "firecrawl",
     useLinkup: provider === "linkup",
-    useYou: provider === "you",
     useSocrata: provider === "socrata",
     useWebsearch: provider === "websearch",
-    // Do not silently re-enable self-hosted crawling/search inside each ensemble
-    // member. Discovery here is API/browser-search based; URL enrichment still
-    // has managed extraction fallbacks inside webIntelligence.
     useRssAggregator: false,
     useSelfHostedSearch: false,
     useSelfHostedCrawler: false,
-    useFirecrawl: false,
   } as const;
 }
 
@@ -472,12 +419,14 @@ async function fetchConfiguredAiDiscovery(
 ): Promise<ProviderRunResult> {
   const runtime = await loadDiscoveryRuntime();
   const configuredChecks: Record<DiscoveryProvider, () => Promise<boolean>> = {
-    langsearch: () => runtime.langsearchProvider.isConfigured(),
-    serper: () => runtime.serperProvider.isConfigured(),
-    exa: () => runtime.exaProvider.isConfigured(),
-    parallel: () => runtime.parallelProvider.isConfigured(),
-    linkup: () => runtime.linkupProvider.isConfigured(),
     you: () => runtime.youProvider.isConfigured(),
+    browserbase: () => runtime.browserbaseProvider.isConfigured(),
+    keenable: () => runtime.keenableProvider.isConfigured(),
+    exa: () => runtime.exaProvider.isConfigured(),
+    langsearch: () => runtime.langsearchProvider.isConfigured(),
+    parallel: () => runtime.parallelProvider.isConfigured(),
+    firecrawl: () => runtime.firecrawlProvider.isConfigured(),
+    linkup: () => runtime.linkupProvider.isConfigured(),
     socrata: () => runtime.socrataProvider.isConfigured(),
     websearch: () => runtime.websearchProvider.isConfigured(),
   };
@@ -489,29 +438,20 @@ async function fetchConfiguredAiDiscovery(
         configured: await configuredChecks[provider]().catch(() => false),
       })),
     )
-  )
-    .filter((row) => row.configured)
-    .map((row) => row.provider);
+  ).filter((row) => row.configured).map((row) => row.provider);
 
   if (configured.length === 0) {
     return {
       records: [],
-      errors: [
-        "AI Opportunity Discovery could not run because no supported browser/search provider is configured.",
-      ],
+      errors: ["AI Opportunity Discovery could not run because no supported browser/search provider is configured."],
     };
   }
 
-  const selected = (await selectBudgetedProviders(
-    configured,
-    MAX_DISCOVERY_ENSEMBLE,
-  )) as DiscoveryProvider[];
+  const selected = (await selectQuotaAwareDiscoveryProviders(configured, MAX_DISCOVERY_ENSEMBLE)) as DiscoveryProvider[];
   if (selected.length === 0) {
     return {
       records: [],
-      errors: [
-        "Configured browser/search providers are temporarily cooling down after quota or upstream failures.",
-      ],
+      errors: ["Configured browser/search providers are temporarily cooling down after quota or upstream failures."],
     };
   }
 
@@ -542,22 +482,18 @@ async function fetchConfiguredAiDiscovery(
   const allRecords: NormalizedOpportunity[] = [];
   const errors: string[] = [];
   const diagnostics: Array<Record<string, unknown>> = [];
-
   settled.forEach((entry, index) => {
     const provider = selected[index]!;
     if (entry.status === "rejected") {
-      errors.push(
-        `${provider}: ${entry.reason instanceof Error ? entry.reason.message : String(entry.reason)}`,
-      );
-      diagnostics.push({ provider, status: "failed" });
+      errors.push(`${provider}: ${entry.reason instanceof Error ? entry.reason.message : String(entry.reason)}`);
+      diagnostics.push({ provider, status: "failed", quota: discoveryQuotaPolicy(provider) });
       return;
     }
     allRecords.push(...entry.value.result.opportunities);
-    errors.push(
-      ...entry.value.result.errors.map((error) => `${provider}: ${error}`),
-    );
+    errors.push(...entry.value.result.errors.map((error) => `${provider}: ${error}`));
     diagnostics.push({
       provider,
+      quota: discoveryQuotaPolicy(provider),
       status: entry.value.result.errors.length > 0 ? "warning" : "ok",
       candidates: entry.value.result.stats.totalCandidates,
       accepted: entry.value.result.opportunities.length,
@@ -568,23 +504,18 @@ async function fetchConfiguredAiDiscovery(
 
   const merged = mergeDiscoveryRecords(allRecords);
   const uniqueErrors = Array.from(new Set(errors)).slice(0, 20);
-  console.info(
-    JSON.stringify({
-      event: "ai_opportunity_discovery_ensemble",
-      query: options.keywords,
-      configured,
-      selected,
-      memberRuns: diagnostics,
-      acceptedBeforeDedupe: allRecords.length,
-      acceptedAfterDedupe: merged.length,
-      failures: uniqueErrors.length,
-    }),
-  );
-
-  return {
-    records: merged,
-    errors: uniqueErrors,
-  };
+  console.info(JSON.stringify({
+    event: "ai_opportunity_discovery_ensemble",
+    query: options.keywords,
+    configured,
+    selected,
+    selectionPolicy: selected.map((provider) => discoveryQuotaPolicy(provider)),
+    memberRuns: diagnostics,
+    acceptedBeforeDedupe: allRecords.length,
+    acceptedAfterDedupe: merged.length,
+    failures: uniqueErrors.length,
+  }));
+  return { records: merged, errors: uniqueErrors };
 }
 
 export async function fetchOneProvider(
@@ -593,29 +524,16 @@ export async function fetchOneProvider(
 ): Promise<ProviderRunResult> {
   if (provider === "aiDiscovery") {
     const result = await fetchConfiguredAiDiscovery(options);
-    return applyProviderGuards(
-      provider,
-      result.records,
-      result.errors,
-      options.keywords,
-    );
+    return applyProviderGuards(provider, result.records, result.errors, options.keywords);
   }
 
   if (provider === "rssAggregator") {
     const { rssAggregatorProvider } = await import("../providers/rssAggregator");
-    const result = await rssAggregatorProvider.fetch({
-      limit: 100,
-      signal: options.signal,
-    });
-    return applyProviderGuards(
-      provider,
-      result.records,
-      result.errors ?? [],
-      options.keywords,
-    );
+    const result = await rssAggregatorProvider.fetch({ limit: 100, signal: options.signal });
+    return applyProviderGuards(provider, result.records, result.errors ?? [], options.keywords);
   }
 
-  if (provider === "samGov" || provider === "tango") {
+  if (isStructuredFederalProvider(provider)) {
     return fetchStructuredFederalProvider(provider, options);
   }
 
@@ -624,9 +542,16 @@ export async function fetchOneProvider(
     const result = await webIntelligenceFetch({
       keywords: options.keywords,
       dateRange: options.dateRange,
-      useSerper: provider === "serper",
+      useYou: provider === "you",
+      useBrowserbase: provider === "browserbase",
+      useKeenable: provider === "keenable",
       useExa: provider === "exa",
       useLangsearch: provider === "langsearch",
+      useParallel: provider === "parallel",
+      useFirecrawl: provider === "firecrawl",
+      useLinkup: provider === "linkup",
+      useSocrata: provider === "socrata",
+      useWebsearch: provider === "websearch",
       useRssAggregator: false,
       useSelfHostedSearch: false,
       useSelfHostedCrawler: false,
@@ -640,12 +565,9 @@ export async function fetchOneProvider(
     );
   }
 
-  // Loading the registry is deliberately deferred until ingestion actually
-  // starts. Importing it during API bootstrap instantiates every optional source.
   const { providerRegistry } = await import("../providers");
   const source = providerRegistry[provider as keyof typeof providerRegistry];
   if (!source) throw new Error(`Unknown RFP provider: ${provider}`);
-
   const result = await source.fetch({
     keywords: options.keywords,
     dateRange: options.dateRange,
@@ -653,10 +575,5 @@ export async function fetchOneProvider(
     signal: options.signal,
     onProgress: options.onProgress,
   });
-  return applyProviderGuards(
-    provider,
-    result.records,
-    result.errors ?? [],
-    options.keywords,
-  );
+  return applyProviderGuards(provider, result.records, result.errors ?? [], options.keywords);
 }

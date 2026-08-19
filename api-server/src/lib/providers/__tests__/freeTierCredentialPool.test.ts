@@ -107,3 +107,28 @@ test("does not spend backup keys on deterministic bad requests", async () => {
   );
   assert.deepEqual(attempted, ["first"]);
 });
+
+test("safe pool telemetry exposes slot state but never credential values", async () => {
+  clearFreeTierCredentialPoolState();
+  process.env.TEST_TELEMETRY_KEY_1 = "secret-primary-value";
+  process.env.TEST_TELEMETRY_KEY_2 = "secret-backup-value";
+  const pool = new FreeTierCredentialPool(
+    "telemetry-test",
+    [
+      { envKey: "TEST_TELEMETRY_KEY_1" },
+      { envKey: "TEST_TELEMETRY_KEY_2" },
+    ],
+    { rotateOnSuccess: false },
+  );
+
+  const snapshot = await pool.snapshot();
+  assert.equal(snapshot.configuredAccounts, 2);
+  assert.equal(snapshot.activeSlot, "TEST_TELEMETRY_KEY_1");
+  assert.deepEqual(
+    snapshot.slots.map((slot) => slot.slot),
+    ["TEST_TELEMETRY_KEY_1", "TEST_TELEMETRY_KEY_2"],
+  );
+  const serialized = JSON.stringify(snapshot);
+  assert.doesNotMatch(serialized, /secret-primary-value/);
+  assert.doesNotMatch(serialized, /secret-backup-value/);
+});

@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema/rfp";
 import { INSIGHT_SOURCE_ARCHITECTURE } from "../lib/sourceArchitecture";
 import { providerBudgetSnapshot } from "../lib/providerBudget";
+import { credentialPoolTelemetry } from "../lib/providers/freeTierCredentialPool";
 import { runtimeTelemetrySnapshot } from "../lib/runtimeTelemetry";
 import { adminReadAllowed } from "../middleware/api-hardening";
 
@@ -15,17 +16,21 @@ const router = Router();
 const BASE_BUDGET_NAMES = [
   "samGov",
   "tango",
+  "you",
+  "browserbase",
+  "keenable",
+  "parallel",
+  "exa",
+  "firecrawl",
   "langsearch",
   "langsearch:primary",
   "langsearch:secondary",
   "langsearch:tertiary",
-  "serper",
-  "exa",
-  "parallel",
+  "langsearch:quaternary",
   "linkup",
-  "you",
   "socrata",
   "websearch",
+  "microlink",
   "govcon:forecast",
   "govcon:recompete",
   "fco:forecast",
@@ -97,8 +102,9 @@ router.get("/hardening/diagnostics", async (req, res) => {
     ]),
   );
 
-  const [budgets, pipeline] = await Promise.all([
+  const [budgets, credentialPools, pipeline] = await Promise.all([
     providerBudgetSnapshot(budgetNames),
+    credentialPoolTelemetry(),
     ingestionPipeline(
       typeof req.query.runId === "string" ? req.query.runId : undefined,
     ),
@@ -107,6 +113,7 @@ router.get("/hardening/diagnostics", async (req, res) => {
   return res.json({
     generatedAt: new Date().toISOString(),
     architecture: INSIGHT_SOURCE_ARCHITECTURE,
+    credentialPools,
     budgets: budgets.map((budget) => ({
       provider: budget.provider,
       policy: budget.policy,

@@ -8,12 +8,16 @@ import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const COHERE_BASE = "https://api.cohere.com/v2";
 const DEFAULT_RERANK_MODEL = "rerank-english-v3.0";
-const credentials = new FreeTierCredentialPool("cohere", [
-  { dbKey: "cohereApiKey", envKey: "COHERE_API_KEY" },
-  { envKey: "COHERE_API_KEY_2" },
-  { envKey: "COHERE_API_KEY_3" },
-  { envKey: "COHERE_API_KEY_4" },
-]);
+const credentials = new FreeTierCredentialPool(
+  "cohere-multi-account",
+  [
+    { dbKey: "cohereApiKey", envKey: "COHERE_API_KEY" },
+    { envKey: "COHERE_API_KEY_2" },
+    { envKey: "COHERE_API_KEY_3" },
+    { envKey: "COHERE_API_KEY_4" },
+  ],
+  { rotateOnSuccess: false },
+);
 
 export interface CohereRerankResult {
   index: number;
@@ -36,10 +40,6 @@ export class CohereProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  /**
-   * Rerank candidate opportunity text against an ideal query/profile.
-   * Returns index-aligned scores from 0..1, sorted by Cohere's relevance order.
-   */
   async rerank(
     query: string,
     documents: string[],

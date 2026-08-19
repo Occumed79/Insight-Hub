@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ProviderQuotaTelemetry } from "@/components/ProviderQuotaTelemetry";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -128,8 +129,6 @@ const GRADE_CONFIGS: GradeConfig[] = [
   { grade: "spam", label: "Not relevant", short: "N/A" },
 ];
 
-const FEDERAL_PROVIDER_KEYS = new Set(["sam_gov", "tango"]);
-
 type FetchProviderOption = {
   key: string;
   label: string;
@@ -144,18 +143,18 @@ const FETCH_PROVIDER_GROUPS: {
 }[] = [
   {
     id: "federal_apis",
-    label: "Federal Structured Ensemble",
+    label: "Federal Structured Sources",
     options: [
       {
         key: "sam_gov",
         label: "SAM.gov Official API",
-        desc: "Runs together with Tango so official SAM records cannot be suppressed by a non-empty Tango response.",
+        desc: "Independent official SAM.gov retrieval with targeted service queries, Jina hydration, and renewable official-page recovery.",
         stub: false,
       },
       {
         key: "tango",
         label: "Tango Federal Opportunities",
-        desc: "Runs together with SAM.gov; results are independently judged, deduplicated, and retained by quality.",
+        desc: "Independent structured federal discovery source; results stay discovery evidence until separately judged.",
         stub: false,
       },
     ],
@@ -167,7 +166,7 @@ const FETCH_PROVIDER_GROUPS: {
       {
         key: "aiDiscovery",
         label: "State, Local & Private Search",
-        desc: "Budget-aware multi-engine discovery across configured search APIs; no scheduled portal crawler.",
+        desc: "Quota-aware renewable search across You.com, Browserbase, Keenable, Parallel, Exa, Firecrawl, LangSearch, Linkup and fallbacks.",
         stub: false,
       },
     ],
@@ -471,22 +470,11 @@ export default function OpportunitiesDashboard() {
   };
 
   const toggleFetchProvider = (key: string) => {
-    setFetchProviders((prev) => {
-      if (FEDERAL_PROVIDER_KEYS.has(key)) {
-        const federalEnabled = prev.some((provider) =>
-          FEDERAL_PROVIDER_KEYS.has(provider),
-        );
-        if (federalEnabled) {
-          return prev.filter(
-            (provider) => !FEDERAL_PROVIDER_KEYS.has(provider),
-          );
-        }
-        return Array.from(new Set([...prev, "sam_gov", "tango"]));
-      }
-      return prev.includes(key)
+    setFetchProviders((prev) =>
+      prev.includes(key)
         ? prev.filter((provider) => provider !== key)
-        : [...prev, key];
-    });
+        : [...prev, key],
+    );
   };
 
   const handleFetchSubmit = (e: React.FormEvent) => {
@@ -515,7 +503,7 @@ export default function OpportunitiesDashboard() {
         toast({
           title: "Fetch started",
           description:
-            "Progress is saved. Federal sources run as an ensemble and browser sources are selected by available budget and prior yield.",
+            "Progress is saved. SAM.gov and Tango respect your selections; browser discovery spends renewable quota before lower-priority fallbacks.",
         });
       } catch (err: any) {
         toast({
@@ -736,37 +724,41 @@ export default function OpportunitiesDashboard() {
         label: "SAM.gov",
         classes: "bg-amber-500/10 text-amber-300 border-amber-500/20",
       },
-      publicPortalProviders: {
-        label: "U.S. Public Portals",
+      you: {
+        label: "You.com",
+        classes: "bg-sky-500/10 text-sky-300 border-sky-500/20",
+      },
+      browserbase: {
+        label: "Browserbase",
         classes: "bg-blue-500/10 text-blue-300 border-blue-500/20",
       },
-      statePortals: {
-        label: "U.S. Public Portals",
-        classes: "bg-blue-500/10 text-blue-300 border-blue-500/20",
-      },
-      eunaBonfire: {
-        label: "Euna Supplier Network",
-        classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
-      },
-      internationalPublicPortals: {
-        label: "International Portals",
+      keenable: {
+        label: "Keenable",
         classes: "bg-violet-500/10 text-violet-300 border-violet-500/20",
-      },
-      serper: {
-        label: "Serper",
-        classes: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
       },
       exa: {
         label: "Exa",
         classes: "bg-cyan-500/10 text-cyan-300 border-cyan-500/20",
       },
+      parallel: {
+        label: "Parallel",
+        classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
+      },
+      firecrawl: {
+        label: "Firecrawl",
+        classes: "bg-orange-500/10 text-orange-300 border-orange-500/20",
+      },
+      langsearch: {
+        label: "LangSearch",
+        classes: "bg-teal-500/10 text-teal-300 border-teal-500/20",
+      },
+      linkup: {
+        label: "Linkup",
+        classes: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20",
+      },
       tango: {
         label: "Tango",
         classes: "bg-orange-500/10 text-orange-300 border-orange-500/20",
-      },
-      bidnet: {
-        label: "BidNet",
-        classes: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
       },
       csv_import: {
         label: "CSV Import",
@@ -1305,9 +1297,12 @@ export default function OpportunitiesDashboard() {
               <DialogDescription className="text-muted-foreground">
                 {showRunProgress
                   ? "Manual ingestion progress is persisted while you navigate or refresh."
-                  : "Run the hardened opportunity ensemble: SAM.gov + Tango are searched independently, then a budget-aware browser/search pool broadens state, local, and private discovery. Candidates are deduplicated and judged before promotion."}
+                  : "Run the hardened opportunity ensemble: SAM.gov and Tango can run independently, while a quota-aware browser/search pool broadens state, local, and private discovery. Candidates are deduplicated and judged before promotion."}
               </DialogDescription>
             </DialogHeader>
+            <div className="pt-4">
+              <ProviderQuotaTelemetry />
+            </div>
             {showRunProgress && currentRun ? (
               <div className="grid gap-5 py-6">
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">

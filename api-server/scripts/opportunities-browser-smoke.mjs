@@ -100,6 +100,45 @@ await page.route("**/api/**", async (route) => {
   }
   if (path === "/api/settings") return json({});
   if (path === "/api/providers") return json({ providers: [] });
+  if (path === "/api/providers/telemetry") {
+    return json({
+      generatedAt: new Date().toISOString(),
+      quotaPolicies: [
+        { provider: "you", renewal: "daily", priority: 10, purpose: "discovery" },
+        { provider: "browserbase", renewal: "monthly", priority: 20, purpose: "discovery" },
+        { provider: "keenable", renewal: "monthly", priority: 22, purpose: "discovery" },
+        { provider: "exa", renewal: "monthly", priority: 26, purpose: "discovery" },
+      ],
+      credentialPools: {
+        "you-multi-account": {
+          id: "you-multi-account",
+          rotateOnSuccess: false,
+          configuredAccounts: 2,
+          activeSlot: "YOU_API_KEY",
+          slots: [
+            { slot: "YOU_API_KEY", configured: true, active: true, coolingDown: false, cooldownUntil: null },
+            { slot: "YOU_API_KEY_2", configured: true, active: false, coolingDown: false, cooldownUntil: null },
+          ],
+        },
+        "browserbase-multi-account": {
+          id: "browserbase-multi-account",
+          rotateOnSuccess: false,
+          configuredAccounts: 2,
+          activeSlot: "BROWSERBASE_API_KEY",
+          slots: [
+            { slot: "BROWSERBASE_API_KEY", configured: true, active: true, coolingDown: false, cooldownUntil: null },
+            { slot: "BROWSERBASE_KEY_2", configured: true, active: false, coolingDown: false, cooldownUntil: null },
+          ],
+        },
+      },
+      budgets: [
+        { provider: "you", requestsToday: 12, requestsThisMonth: 12, remainingToday: 88, remainingThisMonth: null, available: true, cooldownUntil: 0, lastOutcome: "success" },
+        { provider: "browserbase", requestsToday: 2, requestsThisMonth: 14, remainingToday: null, remainingThisMonth: null, available: true, cooldownUntil: 0, lastOutcome: "success" },
+        { provider: "keenable", requestsToday: 1, requestsThisMonth: 8, remainingToday: null, remainingThisMonth: null, available: true, cooldownUntil: 0, lastOutcome: "success" },
+        { provider: "exa", requestsToday: 1, requestsThisMonth: 6, remainingToday: null, remainingThisMonth: null, available: true, cooldownUntil: 0, lastOutcome: "success" },
+      ],
+    });
+  }
 
   if (path === "/api/opportunities" && request.method() === "GET") {
     const view = url.searchParams.get("view") ?? "actionable";
@@ -304,16 +343,27 @@ try {
     .waitFor();
 
   await page.getByRole("button", { name: "Fetch Intelligence" }).click();
-  await page.getByRole("dialog").waitFor();
-  await page.getByText("Federal Structured Ensemble", { exact: true }).waitFor();
-  await page.getByText("SAM.gov Official API", { exact: true }).waitFor();
-  await page
+  const fetchDialog = page.getByRole("dialog");
+  await fetchDialog.waitFor();
+  await fetchDialog.getByText("Federal Structured Sources", { exact: true }).waitFor();
+  await fetchDialog.getByText("SAM.gov Official API", { exact: true }).waitFor();
+  await fetchDialog
     .getByText("Tango Federal Opportunities", { exact: true })
     .waitFor();
-  await page
+  await fetchDialog
     .getByText("State, Local & Private Search", { exact: true })
     .waitFor();
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await fetchDialog
+    .getByText("Search quota / account routing", { exact: true })
+    .waitFor();
+  await fetchDialog.getByText("You.com", { exact: true }).waitFor();
+  await fetchDialog.getByText("Browserbase", { exact: true }).waitFor();
+
+  const samButton = fetchDialog.getByRole("button", { name: /SAM.gov Official API/ });
+  const tangoButton = fetchDialog.getByRole("button", { name: /Tango Federal Opportunities/ });
+  await samButton.click();
+  await assert.doesNotReject(async () => tangoButton.waitFor());
+  await fetchDialog.getByRole("button", { name: "Cancel" }).click();
 
   await card
     .getByTitle("Mark not relevant before opening or generating an AI brief")
@@ -381,8 +431,9 @@ try {
         "opportunity-page-render",
         "quality-tabs",
         "card-feedback-before-brief",
-        "federal-ensemble-dialog",
+        "independent-federal-source-controls",
         "browser-discovery-selector",
+        "quota-account-telemetry",
         "not-relevant-refetch-suppression",
         "forecast-page-and-ranked-record",
         "recompete-page-and-official-award-verification",

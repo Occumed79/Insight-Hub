@@ -10,11 +10,7 @@ import {
   type SamOpportunity,
 } from "./samGovQuality";
 
-export {
-  buildSamGovAutonomousTitleQueries,
-  buildSamGovTitleQueries,
-  isBidReadySamOpportunity,
-} from "./samGovQuality";
+export { buildSamGovAutonomousTitleQueries, buildSamGovTitleQueries, isBidReadySamOpportunity } from "./samGovQuality";
 
 const SAM_GOV_DEFAULT_BASE = "https://api.sam.gov/opportunities/v2/search";
 const SAM_GOV_BID_NOTICE_TYPES = ["o", "k"] as const;
@@ -24,17 +20,18 @@ const SAM_GOV_HYDRATION_LIMIT = 16;
 const SAM_GOV_HYDRATION_CONCURRENCY = 2;
 let autonomousQueryCursor = 0;
 
-export function formatSamGovApiError(status: number, body: string, credential: Pick<ResolvedCredential, "source" | "key">): string {
+export function formatSamGovApiError(
+  status: number,
+  body: string,
+  credential: Pick<ResolvedCredential, "source" | "key">,
+): string {
   const snippet = body.replace(/\s+/g, " ").trim().slice(0, 200);
   const sourceLabel = credential.source === "environment"
     ? `${credential.key} environment variable`
     : `${credential.key} database setting`;
-
   if (status === 401 && /API_KEY_INVALID/i.test(body)) {
-    return `SAM.gov API error 401: API_KEY_INVALID. The rejected key was loaded from the ${sourceLabel}. `
-      + `If the key you entered in Settings is correct, check for a stale SAM_GOV_API_KEY deployment secret because environment variables take precedence over database settings.`;
+    return `SAM.gov API error 401: API_KEY_INVALID. The rejected key was loaded from the ${sourceLabel}. If the key you entered in Settings is correct, check for a stale SAM_GOV_API_KEY deployment secret because environment variables take precedence over database settings.`;
   }
-
   return `SAM.gov API error ${status}: ${snippet}`;
 }
 
@@ -43,10 +40,7 @@ export function isOfficialSamOpportunityUrl(value?: string): boolean {
   try {
     const parsed = new URL(value);
     const host = parsed.hostname.toLowerCase();
-    return (
-      (host === "sam.gov" || host.endsWith(".sam.gov")) &&
-      /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname)
-    );
+    return (host === "sam.gov" || host.endsWith(".sam.gov")) && /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -64,23 +58,17 @@ export class SamGovProvider implements DataSourceProvider {
   }
 
   private async getBaseUrl(): Promise<string> {
-    const custom = await resolveCredential("samBaseUrl", "SAM_GOV_BASE_URL");
-    return custom || SAM_GOV_DEFAULT_BASE;
+    return (await resolveCredential("samBaseUrl", "SAM_GOV_BASE_URL")) || SAM_GOV_DEFAULT_BASE;
   }
 
   async isConfigured(): Promise<boolean> {
     return !!(await this.getApiKey());
   }
 
-  private static fmtDate(d: Date): string {
-    return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+  private static fmtDate(date: Date): string {
+    return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}/${date.getFullYear()}`;
   }
 
-  /**
-   * Run one supported SAM.gov title query and discard only notices that are not
-   * structurally bid-ready. Semantic Occu-Med relevance is intentionally left
-   * to the shared structured decision layer after content hydration.
-   */
   private async runQuery(
     apiKey: string,
     apiKeySource: ResolvedCredential,
@@ -100,13 +88,11 @@ export class SamGovProvider implements DataSourceProvider {
       ...extra,
     });
     SAM_GOV_BID_NOTICE_TYPES.forEach((type) => params.append("ptype", type));
-
     const response = await fetch(`${baseUrl}?${params}`, { signal });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(formatSamGovApiError(response.status, text, apiKeySource));
     }
-
     const json = (await response.json()) as {
       opportunitiesData?: SamOpportunity[];
       totalRecords?: number;
@@ -114,7 +100,6 @@ export class SamGovProvider implements DataSourceProvider {
       message?: string;
       nextAccessTime?: string;
     };
-
     if (
       json.code === "900804" ||
       json.message?.toLowerCase().includes("throttled") ||
@@ -123,7 +108,6 @@ export class SamGovProvider implements DataSourceProvider {
       const resetTime = json.nextAccessTime ?? "soon";
       throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
     }
-
     return (json.opportunitiesData ?? [])
       .filter((opportunity) => isBidReadySamOpportunity(opportunity, today))
       .map((opportunity) => this.normalize(opportunity));
@@ -134,62 +118,46 @@ export class SamGovProvider implements DataSourceProvider {
     signal?: AbortSignal,
   ): Promise<NormalizedOpportunity[]> {
     const candidates = records
-      .filter((record) => {
-        const originalDescription = record.rawData?.samDescriptionUrl;
-        return typeof originalDescription === "string" && !!record.sourceUrl;
-      })
+      .filter((record) => typeof record.rawData?.samDescriptionUrl === "string" && !!record.sourceUrl)
       .slice(0, SAM_GOV_HYDRATION_LIMIT);
     if (candidates.length === 0) return records;
-
     const { jinaProvider } = await import("./jina");
     const hydrated = new Map<string, string>();
-
     for (let index = 0; index < candidates.length; index += SAM_GOV_HYDRATION_CONCURRENCY) {
       const batch = candidates.slice(index, index + SAM_GOV_HYDRATION_CONCURRENCY);
       const results = await Promise.allSettled(
         batch.map(async (record) => ({
           id: record.externalId,
-          text: record.sourceUrl
-            ? await jinaProvider.extractUrl(record.sourceUrl, 6_000, signal)
-            : null,
+          text: record.sourceUrl ? await jinaProvider.extractUrl(record.sourceUrl, 6_000, signal) : null,
         })),
       );
       for (const result of results) {
-        if (
-          result.status === "fulfilled" &&
-          result.value.text &&
-          result.value.text.trim().length >= 120
-        ) {
+        if (result.status === "fulfilled" && result.value.text && result.value.text.trim().length >= 120) {
           hydrated.set(result.value.id, result.value.text.trim());
         }
       }
     }
-
     return records.map((record) => {
       const description = hydrated.get(record.externalId);
-      if (!description) return record;
-      return {
-        ...record,
-        description,
-        rawData: {
-          ...(record.rawData ?? {}),
-          descriptionHydratedBy: "jina-reader",
-          descriptionHydratedFrom: record.sourceUrl,
-        },
-      };
+      return description
+        ? {
+            ...record,
+            description,
+            rawData: {
+              ...(record.rawData ?? {}),
+              descriptionHydratedBy: "jina-reader",
+              descriptionHydratedFrom: record.sourceUrl,
+            },
+          }
+        : record;
     });
   }
 
   private titleQueriesForRun(keywords?: string): string[] {
     const explicit = buildSamGovTitleQueries(keywords);
     if (explicit.length > 0) return explicit.slice(0, 2);
-
-    const queries = buildSamGovAutonomousTitleQueries(
-      autonomousQueryCursor,
-      SAM_GOV_AUTONOMOUS_QUERY_COUNT,
-    );
-    autonomousQueryCursor =
-      (autonomousQueryCursor + SAM_GOV_AUTONOMOUS_QUERY_COUNT) % 8;
+    const queries = buildSamGovAutonomousTitleQueries(autonomousQueryCursor, SAM_GOV_AUTONOMOUS_QUERY_COUNT);
+    autonomousQueryCursor = (autonomousQueryCursor + SAM_GOV_AUTONOMOUS_QUERY_COUNT) % 8;
     return queries;
   }
 
@@ -214,12 +182,14 @@ export class SamGovProvider implements DataSourceProvider {
         discoveryQueries: [samSearch],
         candidateUrlFilter: isOfficialSamOpportunityUrl,
         dateRange: options.dateRange,
-        useSerper: false,
-        useExa: true,
-        useLangsearch: true,
-        useParallel: true,
-        useLinkup: true,
         useYou: true,
+        useBrowserbase: true,
+        useKeenable: true,
+        useParallel: true,
+        useExa: true,
+        useFirecrawl: true,
+        useLangsearch: true,
+        useLinkup: true,
         useSocrata: false,
         useWebsearch: true,
         useRssAggregator: false,
@@ -228,7 +198,6 @@ export class SamGovProvider implements DataSourceProvider {
         discoveryPoolId: "sam-gov-zero-result-recovery",
         signal: options.signal,
       });
-
       const records = result.opportunities
         .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
         .map((record) => ({
@@ -242,25 +211,16 @@ export class SamGovProvider implements DataSourceProvider {
             samGovFallbackReason: "structured-zero-results",
           },
         }));
-
       if (records.length > 0) {
-        console.warn(
-          JSON.stringify({
-            event: "sam_gov_zero_result_recovered",
-            titleQueries,
-            recovered: records.length,
-          }),
-        );
+        console.warn(JSON.stringify({ event: "sam_gov_zero_result_recovered", titleQueries, recovered: records.length }));
       }
       return records;
     } catch (error) {
-      console.warn(
-        JSON.stringify({
-          event: "sam_gov_zero_result_recovery_failed",
-          titleQueries,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      console.warn(JSON.stringify({
+        event: "sam_gov_zero_result_recovery_failed",
+        titleQueries,
+        error: error instanceof Error ? error.message : String(error),
+      }));
       return [];
     }
   }
@@ -268,25 +228,19 @@ export class SamGovProvider implements DataSourceProvider {
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const apiKeyCredential = await this.getApiKeyCredential();
     if (!apiKeyCredential) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
-    const apiKey = apiKeyCredential.value;
-
     const baseUrl = await this.getBaseUrl();
     const dateRange = Math.max(1, Math.min(364, options.dateRange ?? 30));
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - dateRange);
-    const limit = Math.max(
-      1,
-      Math.min(options.limit ?? 100, SAM_GOV_MAX_RESULTS_PER_TITLE),
-    );
-
+    const limit = Math.max(1, Math.min(options.limit ?? 100, SAM_GOV_MAX_RESULTS_PER_TITLE));
     const normalized: NormalizedOpportunity[] = [];
     const seen = new Set<string>();
     const titleQueries = this.titleQueriesForRun(options.keywords);
 
     for (const title of titleQueries) {
       const matches = await this.runQuery(
-        apiKey,
+        apiKeyCredential.value,
         apiKeyCredential,
         baseUrl,
         { title },
@@ -314,18 +268,12 @@ export class SamGovProvider implements DataSourceProvider {
     }
 
     const hydrated = await this.hydrateDescriptions(normalized, options.signal);
-
-    return {
-      records: hydrated,
-      total: hydrated.length,
-      errors: [],
-    };
+    return { records: hydrated, total: hydrated.length, errors: [] };
   }
 
   async getStatus(): Promise<ProviderStatus> {
     const configured = await this.isConfigured();
     let recordCount: number | undefined;
-
     if (configured) {
       try {
         const rows = await db
@@ -333,69 +281,53 @@ export class SamGovProvider implements DataSourceProvider {
           .from(opportunitiesTable)
           .where(eq(opportunitiesTable.source, "sam_gov"));
         recordCount = Number(rows[0]?.count ?? 0);
-      } catch {
-        // DB may not be migrated yet — record count is non-critical.
-      }
+      } catch {}
     }
-
     return { name: this.name, configured, healthy: configured, recordCount };
   }
 
-  private normalize(o: SamOpportunity): NormalizedOpportunity {
-    const parts = (o.fullParentPathName ?? "").split(".");
-    const city = o.placeOfPerformance?.city?.name ?? "";
-    const state = o.placeOfPerformance?.state?.code ?? "";
+  private normalize(opportunity: SamOpportunity): NormalizedOpportunity {
+    const parts = (opportunity.fullParentPathName ?? "").split(".");
+    const city = opportunity.placeOfPerformance?.city?.name ?? "";
+    const state = opportunity.placeOfPerformance?.state?.code ?? "";
     const place = [city, state].filter(Boolean).join(", ") || undefined;
-    const awardAmount = o.award?.amount
-      ? parseFloat(String(o.award.amount))
+    const awardAmount = opportunity.award?.amount
+      ? parseFloat(String(opportunity.award.amount))
       : undefined;
-    const originalDescription = o.description?.trim() ?? "";
+    const originalDescription = opportunity.description?.trim() ?? "";
     const descriptionIsUrl = /^https?:\/\//i.test(originalDescription);
-
-    const metadataDescription = (() => {
-      const metadata: string[] = [];
-      if (o.solicitationNumber) metadata.push(`Solicitation: ${o.solicitationNumber}`);
-      if (o.typeOfSetAsideDescription) metadata.push(`Set-aside: ${o.typeOfSetAsideDescription}`);
-      if (o.naicsCode) metadata.push(`NAICS: ${o.naicsCode}`);
-      if (o.classificationCode) metadata.push(`PSC: ${o.classificationCode}`);
-      if (o.officeAddress?.city) metadata.push(`Location: ${o.officeAddress.city}, ${o.officeAddress.state ?? ""}`);
-      return metadata.length > 0 ? metadata.join(" · ") : undefined;
-    })();
+    const metadata: string[] = [];
+    if (opportunity.solicitationNumber) metadata.push(`Solicitation: ${opportunity.solicitationNumber}`);
+    if (opportunity.typeOfSetAsideDescription) metadata.push(`Set-aside: ${opportunity.typeOfSetAsideDescription}`);
+    if (opportunity.naicsCode) metadata.push(`NAICS: ${opportunity.naicsCode}`);
+    if (opportunity.classificationCode) metadata.push(`PSC: ${opportunity.classificationCode}`);
+    if (opportunity.officeAddress?.city) metadata.push(`Location: ${opportunity.officeAddress.city}, ${opportunity.officeAddress.state ?? ""}`);
 
     return {
-      externalId: o.noticeId ?? o.solicitationNumber ?? "",
-      title: o.title ?? "Untitled",
+      externalId: opportunity.noticeId ?? opportunity.solicitationNumber ?? "",
+      title: opportunity.title ?? "Untitled",
       agency: parts[0]?.trim() ?? "Unknown Agency",
       subAgency: parts[1]?.trim(),
-      type: o.type ?? o.baseType ?? "Solicitation",
-      status: o.active === "Yes" ? "active" : "archived",
-      naicsCode: o.naicsCode,
-      postedDate: o.postedDate ? new Date(o.postedDate) : new Date(0),
-      responseDeadline: o.responseDeadLine
-        ? new Date(o.responseDeadLine)
-        : undefined,
-      setAside: o.typeOfSetAsideDescription ?? o.typeOfSetAside,
+      type: opportunity.type ?? opportunity.baseType ?? "Solicitation",
+      status: opportunity.active === "Yes" ? "active" : "archived",
+      naicsCode: opportunity.naicsCode,
+      postedDate: opportunity.postedDate ? new Date(opportunity.postedDate) : new Date(0),
+      responseDeadline: opportunity.responseDeadLine ? new Date(opportunity.responseDeadLine) : undefined,
+      setAside: opportunity.typeOfSetAsideDescription ?? opportunity.typeOfSetAside,
       placeOfPerformance: place,
-      description:
-        originalDescription && !descriptionIsUrl
-          ? originalDescription
-          : metadataDescription,
-      solicitationNumber: o.solicitationNumber,
-      sourceUrl: o.noticeId
-        ? `https://sam.gov/opp/${o.noticeId}/view`
-        : o.uiLink,
+      description: originalDescription && !descriptionIsUrl ? originalDescription : (metadata.length > 0 ? metadata.join(" · ") : undefined),
+      solicitationNumber: opportunity.solicitationNumber,
+      sourceUrl: opportunity.noticeId ? `https://sam.gov/opp/${opportunity.noticeId}/view` : opportunity.uiLink,
       awardAmount,
-      awardee: o.award?.awardee?.name,
+      awardee: opportunity.award?.awardee?.name,
       source: this.name,
       rawData: {
-        ...(o as Record<string, unknown>),
+        ...(opportunity as Record<string, unknown>),
         providerPlatform: "sam.gov",
-        providerNativeId: o.noticeId,
+        providerNativeId: opportunity.noticeId,
         evidenceType: "direct-structured",
         ...(descriptionIsUrl ? { samDescriptionUrl: originalDescription } : {}),
-        ...(!o.postedDate || Number.isNaN(new Date(o.postedDate).getTime())
-          ? { dateUnknown: true }
-          : {}),
+        ...(!opportunity.postedDate || Number.isNaN(new Date(opportunity.postedDate).getTime()) ? { dateUnknown: true } : {}),
       },
     };
   }
