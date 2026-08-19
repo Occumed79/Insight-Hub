@@ -1,13 +1,4 @@
-/**
- * OpenRouter Provider
- *
- * Role: Alternative AI backend with access to 100+ models (Claude, GPT-4, Mistral,
- * Llama, Gemma, etc.) via a single OpenAI-compatible API. Used as a flexible
- * replacement or complement to Gemini for query generation, extraction, and scoring.
- *
- * API docs: https://openrouter.ai/docs
- */
-
+/** OpenRouter AI provider used as a bounded extraction/scoring fallback. */
 import type {
   DataSourceProvider,
   FetchOptions,
@@ -20,20 +11,20 @@ import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free";
-const credentials = new FreeTierCredentialPool("openrouter", [
-  { dbKey: "openrouterApiKey", envKey: "OPENROUTER_API_KEY" },
-  { envKey: "OPENROUTER_KEY_2" },
-]);
+const credentials = new FreeTierCredentialPool(
+  "openrouter-multi-account",
+  [
+    { dbKey: "openrouterApiKey", envKey: "OPENROUTER_API_KEY" },
+    { envKey: "OPENROUTER_KEY_2" },
+  ],
+  { rotateOnSuccess: false },
+);
 
 export class OpenRouterProvider implements DataSourceProvider {
   readonly name = "openrouter" as const;
 
   private async getModel(): Promise<string> {
-    const model = await resolveCredential(
-      "openrouterModel",
-      "OPENROUTER_MODEL",
-    );
-    return model ?? DEFAULT_MODEL;
+    return (await resolveCredential("openrouterModel", "OPENROUTER_MODEL")) ?? DEFAULT_MODEL;
   }
 
   async isConfigured(): Promise<boolean> {
@@ -49,9 +40,6 @@ export class OpenRouterProvider implements DataSourceProvider {
     return { name: this.name, configured, healthy: configured };
   }
 
-  /**
-   * Send a chat completion request to OpenRouter.
-   */
   async complete(
     prompt: string,
     maxTokens = 512,
@@ -77,146 +65,52 @@ export class OpenRouterProvider implements DataSourceProvider {
           ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
           : AbortSignal.timeout(30_000),
       });
-
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        throw new Error(
-          `OpenRouter error ${response.status}: ${body.slice(0, 200)}`,
-        );
+        throw new Error(`OpenRouter error ${response.status}: ${body.slice(0, 200)}`);
       }
-
       const json = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
       };
-
       return (json.choices?.[0]?.message?.content ?? "").trim();
     });
   }
 
-  /**
-   * Generate targeted search queries for Occu-Med opportunity discovery.
-   * Falls back to OCCUMED_DEFAULT_QUERIES if the call fails.
-   */
   async generateSearchQueries(customKeywords?: string): Promise<string[]> {
-    const QUERY_YEAR = new Date().getFullYear();
-
-    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.
-
-Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
-They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
-${customKeywords ? `User-specified focus: ${customKeywords}` : ""}
-
-Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs, solicitations, and procurement opportunities that Occu-Med could bid on.
-
-Rules:
-- Each query must be a Google search string
-- Target OPEN/ACTIVE opportunities only — include year ${QUERY_YEAR} in each query
-- Mix different Occu-Med service lines across the 8 queries
-- Use procurement terms: RFP, "request for proposal", solicitation, bid, contract, procurement
-
-Respond ONLY with a JSON array of 8 query strings:
-["query1", "query2", ..., "query8"]`;
-
+    const year = new Date().getFullYear();
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.\n${customKeywords ? `User-specified focus: ${customKeywords}` : ""}\nGenerate exactly 8 highly targeted search queries to find ACTIVE RFPs and solicitations for ${year}. Respond ONLY with a JSON array.`;
     try {
       const text = await this.complete(prompt, 600);
-      const cleaned = text
-        .replace(/```json\n?/g, "")
-        .replace(/```/g, "")
-        .trim();
-      const queries = JSON.parse(cleaned);
-      if (Array.isArray(queries) && queries.length > 0)
-        return queries as string[];
-    } catch {
-      // fall through to defaults
-    }
-
+      const queries = JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());
+      if (Array.isArray(queries) && queries.length > 0) return queries as string[];
+    } catch {}
     return OCCUMED_DEFAULT_QUERIES;
   }
 
-  /**
-   * Analyze a web result and extract opportunity data.
-   * Returns null if the call fails.
-   */
   async extractOpportunityFromWebResult(
     title: string,
     url: string,
     content: string,
-  ): Promise<{
-    isOpportunity: boolean;
-    title?: string;
-    agency?: string;
-    description?: string;
-    deadline?: string | null;
-    estimatedValue?: number | null;
-    location?: string | null;
-    relevanceScore?: number;
-    relevanceReason?: string;
-    reason?: string;
-  } | null> {
+  ): Promise<any | null> {
     const today = new Date().toISOString().split("T")[0];
-
-    const prompt = `You are a procurement intelligence analyst for Occu-Med, an occupational health services company.
-
-Occu-Med's services: ${OCCUMED_PROFILE.services.slice(0, 7).join("; ")}.
-Today's date: ${today}
-
-Analyze this web result and determine if it is an ACTIVE, OPEN solicitation or RFP that Occu-Med could bid on.
-
-Title: ${title}
-URL: ${url}
-Content: ${content.slice(0, 2500)}
-
-If this IS an active open opportunity respond ONLY with JSON (no markdown):
-{
-  "isOpportunity": true,
-  "title": "clean opportunity title",
-  "agency": "procuring organization",
-  "description": "what is being procured (2-3 sentences)",
-  "deadline": "YYYY-MM-DD or null",
-  "estimatedValue": number or null,
-  "location": "city/state or null",
-  "relevanceScore": 0-100,
-  "relevanceReason": "one sentence"
-}
-
-If NOT a valid opportunity respond ONLY with:
-{"isOpportunity": false, "reason": "brief reason"}`;
-
+    const prompt = `You are a procurement intelligence analyst for Occu-Med. Today: ${today}. Analyze whether this is an ACTIVE, OPEN solicitation relevant to occupational health. Title: ${title}\nURL: ${url}\nContent: ${content.slice(0, 2500)}\nReturn JSON only with isOpportunity, title, agency, description, deadline, estimatedValue, location, relevanceScore, relevanceReason, or reason.`;
     try {
       const text = await this.complete(prompt, 512);
-      const cleaned = text
-        .replace(/```json\n?/g, "")
-        .replace(/```/g, "")
-        .trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());
     } catch {
       return null;
     }
   }
 
-  /**
-   * Score an opportunity's relevance to Occu-Med (0-100).
-   */
   async scoreRelevance(
     opportunityTitle: string,
     description: string,
     orgContext: string,
   ): Promise<{ score: number; explanation: string } | null> {
-    const prompt = `Score the relevance of this opportunity to the organization.
-
-Organization: ${orgContext}
-Opportunity: ${opportunityTitle}
-Description: ${description.slice(0, 2000)}
-
-Respond ONLY with JSON: {"score": <0-100>, "explanation": "1-2 sentences"}`;
-
+    const prompt = `Score the relevance of this opportunity 0-100. Organization: ${orgContext}\nOpportunity: ${opportunityTitle}\nDescription: ${description.slice(0, 2000)}\nRespond ONLY with JSON: {"score":0,"explanation":"..."}`;
     try {
       const text = await this.complete(prompt, 256);
-      const cleaned = text
-        .replace(/```json\n?/g, "")
-        .replace(/```/g, "")
-        .trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());
     } catch {
       return null;
     }
