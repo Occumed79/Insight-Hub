@@ -1,3 +1,9 @@
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 import { composeAbortSignal } from "./abortSignals";
 
@@ -7,7 +13,7 @@ const REQUEST_TIMEOUT_MS = 25_000;
 const credentials = new FreeTierCredentialPool(
   "browserbase-multi-account",
   [
-    { envKey: "BROWSERBASE_API_KEY" },
+    { dbKey: "browserbaseApiKey", envKey: "BROWSERBASE_API_KEY" },
     { envKey: "BROWSERBASE_KEY_2" },
   ],
   { rotateOnSuccess: false },
@@ -21,11 +27,22 @@ export interface BrowserbaseSearchResult {
   publishedDate?: string;
 }
 
-export class BrowserbaseProvider {
+export class BrowserbaseProvider implements DataSourceProvider {
   readonly name = "browserbase" as const;
 
   async isConfigured(): Promise<boolean> {
     return credentials.isConfigured();
+  }
+
+  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
+    // Browserbase is orchestrated as a search/fetch utility, not a standalone
+    // canonical opportunity feed.
+    return { records: [], total: 0, errors: [] };
+  }
+
+  async getStatus(): Promise<ProviderStatus> {
+    const configured = await this.isConfigured();
+    return { name: this.name, configured, healthy: configured };
   }
 
   async search(
@@ -33,7 +50,7 @@ export class BrowserbaseProvider {
     limit = 15,
     signal?: AbortSignal,
   ): Promise<BrowserbaseSearchResult[]> {
-    return credentials.run(async (apiKey) => {
+    return credentials.run(async (apiKey, slot) => {
       const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, signal);
       try {
         const response = await fetch(`${BROWSERBASE_BASE}/search`, {
@@ -48,6 +65,7 @@ export class BrowserbaseProvider {
           }),
           signal: requestSignal.signal,
         });
+        credentials.recordRateLimitHeaders(slot, response.headers);
         const body = await response.text();
         if (!response.ok) {
           throw new Error(
@@ -85,7 +103,7 @@ export class BrowserbaseProvider {
     maxLength = 8_000,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    return credentials.run(async (apiKey) => {
+    return credentials.run(async (apiKey, slot) => {
       const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, signal);
       try {
         const response = await fetch(`${BROWSERBASE_BASE}/fetch`, {
@@ -102,6 +120,7 @@ export class BrowserbaseProvider {
           }),
           signal: requestSignal.signal,
         });
+        credentials.recordRateLimitHeaders(slot, response.headers);
         const body = await response.text();
         if (!response.ok) {
           throw new Error(

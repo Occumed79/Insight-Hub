@@ -14,12 +14,31 @@ export interface FreeTierCredentialPoolOptions {
   rotateOnSuccess?: boolean;
 }
 
+export type CredentialSlotOutcome =
+  | "success"
+  | "empty"
+  | "rate_limited"
+  | "quota"
+  | "auth"
+  | "timeout"
+  | "budget_exhausted"
+  | "error";
+
 export interface CredentialPoolSlotSnapshot {
   slot: string;
   configured: boolean;
   active: boolean;
   coolingDown: boolean;
   cooldownUntil: string | null;
+  attempts: number;
+  successes: number;
+  failures: number;
+  lastOutcome: CredentialSlotOutcome | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  quotaLimit: number | null;
+  quotaRemaining: number | null;
+  quotaResetAt: string | null;
 }
 
 export interface CredentialPoolSnapshot {
@@ -30,39 +49,114 @@ export interface CredentialPoolSnapshot {
   slots: CredentialPoolSlotSnapshot[];
 }
 
+type SlotRuntimeState = {
+  attempts: number;
+  successes: number;
+  failures: number;
+  lastOutcome: CredentialSlotOutcome | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  quotaLimit: number | null;
+  quotaRemaining: number | null;
+  quotaResetAt: string | null;
+};
+
 const cursors = new Map<string, number>();
 const cooldowns = new Map<string, number>();
+const slotStates = new Map<string, SlotRuntimeState>();
 const poolInstances = new Map<string, FreeTierCredentialPool>();
 
-function cooldownMs(error: unknown): number {
+function runtimeKey(poolId: string, slot: string): string {
+  return `${poolId}:${slot}`;
+}
+
+function emptySlotState(): SlotRuntimeState {
+  return {
+    attempts: 0,
+    successes: 0,
+    failures: 0,
+    lastOutcome: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    quotaLimit: null,
+    quotaRemaining: null,
+    quotaResetAt: null,
+  };
+}
+
+function slotState(poolId: string, slot: string): SlotRuntimeState {
+  const key = runtimeKey(poolId, slot);
+  const state = slotStates.get(key) ?? emptySlotState();
+  slotStates.set(key, state);
+  return state;
+}
+
+function failureOutcome(error: unknown): CredentialSlotOutcome {
   const message = error instanceof Error ? error.message : String(error);
-  if (
-    /\b(401|403)\b|invalid api.?key|unauthori[sz]ed|forbidden/i.test(message)
-  ) {
-    return 6 * 60 * 60 * 1_000;
+  if (/\b(401|403)\b|invalid api.?key|unauthori[sz]ed|forbidden/i.test(message)) {
+    return "auth";
   }
-  if (/\b429\b|quota|rate.?limit|credit|balance|budget|exceed|exhaust/i.test(message)) {
-    return 30 * 60 * 1_000;
+  // A transport-level 429 is rate limiting even when the message also says
+  // "limit exceeded". Reserve quota for explicit credit/team/budget exhaustion.
+  if (/\b429\b|rate.?limit|too many requests|throttl/i.test(message)) {
+    return "rate_limited";
   }
+  if (/team_budget_exceeded|no_more_credits|api_key_budget_exceeded|quota|credit|balance|budget|exhaust/i.test(message)) {
+    return "quota";
+  }
+  if (/\b408\b|timeout|timed out|ECONN|fetch failed|\b5\d\d\b/i.test(message)) {
+    return "timeout";
+  }
+  return "error";
+}
+
+function cooldownMs(error: unknown): number {
+  const outcome = failureOutcome(error);
+  if (outcome === "auth") return 6 * 60 * 60 * 1_000;
+  if (outcome === "quota") return 24 * 60 * 60 * 1_000;
+  if (outcome === "rate_limited") return 30 * 60 * 1_000;
+  if (outcome === "timeout") return 60_000;
   return 60_000;
 }
 
 function isCredentialRetryable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  // Do not spend every free-tier key on a deterministic bad request. Rotate
-  // only for credential/quota pressure and transient upstream/network faults.
   if (/\b(400|404|405|413|422)\b/.test(message)) return false;
   return /\b(401|403|408|409|429|5\d\d)\b|quota|rate.?limit|credit|balance|budget|exceed|exhaust|timeout|ECONN|fetch failed/i.test(
     message,
   );
 }
 
-/**
- * A tiny in-process pool for free-tier keys. A failing key cools down and the
- * same operation immediately tries the next slot. Pools can either rotate on
- * every success or stay pinned to one account until quota/rate pressure forces
- * a failover.
- */
+function numericHeader(headers: Headers, names: string[]): number | null {
+  for (const name of names) {
+    const raw = headers.get(name);
+    if (!raw) continue;
+    const value = Number(raw);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  return null;
+}
+
+function resetHeader(headers: Headers): string | null {
+  const raw =
+    headers.get("x-ratelimit-reset") ??
+    headers.get("ratelimit-reset") ??
+    headers.get("x-rate-limit-reset");
+  if (!raw) return null;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const timestamp =
+      numeric > 1_000_000_000_000
+        ? numeric
+        : numeric > 1_000_000_000
+          ? numeric * 1_000
+          : Date.now() + numeric * 1_000;
+    return new Date(timestamp).toISOString();
+  }
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
 export class FreeTierCredentialPool {
   private readonly rotateOnSuccess: boolean;
 
@@ -97,6 +191,31 @@ export class FreeTierCredentialPool {
     return (await this.credentials()).length > 0;
   }
 
+  recordRateLimitHeaders(slot: string, headers: Headers): void {
+    const state = slotState(this.id, slot);
+    const limit = numericHeader(headers, [
+      "x-ratelimit-limit",
+      "ratelimit-limit",
+      "x-rate-limit-limit",
+    ]);
+    const remaining = numericHeader(headers, [
+      "x-ratelimit-remaining",
+      "ratelimit-remaining",
+      "x-rate-limit-remaining",
+    ]);
+    const resetAt = resetHeader(headers);
+    if (limit != null) state.quotaLimit = limit;
+    if (remaining != null) state.quotaRemaining = remaining;
+    if (resetAt) state.quotaResetAt = resetAt;
+
+    if (remaining === 0 && resetAt) {
+      const resetMs = Date.parse(resetAt);
+      if (Number.isFinite(resetMs) && resetMs > Date.now()) {
+        cooldowns.set(runtimeKey(this.id, slot), resetMs);
+      }
+    }
+  }
+
   async snapshot(): Promise<CredentialPoolSnapshot> {
     const credentials = await this.credentials();
     const cursor = credentials.length > 0
@@ -111,19 +230,31 @@ export class FreeTierCredentialPool {
       configuredAccounts: credentials.length,
       activeSlot,
       slots: this.slots.map(({ envKey }) => {
-        const until = cooldowns.get(`${this.id}:${envKey}`) ?? 0;
+        const until = cooldowns.get(runtimeKey(this.id, envKey)) ?? 0;
+        const state = slotState(this.id, envKey);
         return {
           slot: envKey,
           configured: configuredSlots.has(envKey),
           active: envKey === activeSlot,
           coolingDown: until > now,
           cooldownUntil: until > now ? new Date(until).toISOString() : null,
+          attempts: state.attempts,
+          successes: state.successes,
+          failures: state.failures,
+          lastOutcome: state.lastOutcome,
+          lastAttemptAt: state.lastAttemptAt,
+          lastSuccessAt: state.lastSuccessAt,
+          quotaLimit: state.quotaLimit,
+          quotaRemaining: state.quotaRemaining,
+          quotaResetAt: state.quotaResetAt,
         };
       }),
     };
   }
 
-  async run<T>(operation: (apiKey: string) => Promise<T>): Promise<T> {
+  async run<T>(
+    operation: (apiKey: string, slot: string) => Promise<T>,
+  ): Promise<T> {
     const credentials = await this.credentials();
     if (credentials.length === 0) {
       throw new Error(`${this.id} API key not configured`);
@@ -135,13 +266,19 @@ export class FreeTierCredentialPool {
     ];
     const now = Date.now();
     const available = ordered.filter(
-      ({ slot }) => (cooldowns.get(`${this.id}:${slot}`) ?? 0) <= now,
+      ({ slot }) => (cooldowns.get(runtimeKey(this.id, slot)) ?? 0) <= now,
     );
     const candidates = available.length > 0 ? available : ordered.slice(0, 1);
     const errors: string[] = [];
     for (const candidate of candidates) {
+      const state = slotState(this.id, candidate.slot);
+      state.attempts += 1;
+      state.lastAttemptAt = new Date().toISOString();
       try {
-        const value = await operation(candidate.value);
+        const value = await operation(candidate.value, candidate.slot);
+        state.successes += 1;
+        state.lastOutcome = "success";
+        state.lastSuccessAt = new Date().toISOString();
         const index = credentials.findIndex(
           ({ slot }) => slot === candidate.slot,
         );
@@ -149,12 +286,19 @@ export class FreeTierCredentialPool {
           this.id,
           this.rotateOnSuccess ? (index + 1) % credentials.length : index,
         );
-        cooldowns.delete(`${this.id}:${candidate.slot}`);
+        const configuredReset = state.quotaResetAt
+          ? Date.parse(state.quotaResetAt)
+          : Number.NaN;
+        if (state.quotaRemaining !== 0 || !Number.isFinite(configuredReset)) {
+          cooldowns.delete(runtimeKey(this.id, candidate.slot));
+        }
         return value;
       } catch (error) {
+        state.failures += 1;
+        state.lastOutcome = failureOutcome(error);
         if (!isCredentialRetryable(error)) throw error;
         cooldowns.set(
-          `${this.id}:${candidate.slot}`,
+          runtimeKey(this.id, candidate.slot),
           Date.now() + cooldownMs(error),
         );
         errors.push(
@@ -168,11 +312,20 @@ export class FreeTierCredentialPool {
   }
 }
 
-export async function credentialPoolTelemetry(): Promise<CredentialPoolSnapshot[]> {
-  return Promise.all([...poolInstances.values()].map((pool) => pool.snapshot()));
+/**
+ * Safe telemetry boundary. Runtime values are sanitized snapshot objects only;
+ * no credential value is present. The broad array return avoids leaking the
+ * pool's internal generic implementation into dynamic consumers.
+ */
+export async function credentialPoolTelemetry(): Promise<any[]> {
+  const snapshots: CredentialPoolSnapshot[] = await Promise.all(
+    [...poolInstances.values()].map((pool) => pool.snapshot()),
+  );
+  return snapshots;
 }
 
 export function clearFreeTierCredentialPoolState(): void {
   cursors.clear();
   cooldowns.clear();
+  slotStates.clear();
 }

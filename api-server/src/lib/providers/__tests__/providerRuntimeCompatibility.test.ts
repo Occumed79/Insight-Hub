@@ -6,23 +6,36 @@ process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.AUTH_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
-const { toSerperFreeTierQuery, SerperProvider } = await import("../serper");
 const { TangoProvider } = await import("../tango");
-const { OlostepProvider } = await import("../olostep");
 const { JinaProvider } = await import("../jina");
+const { KeenableProvider } = await import("../keenable");
+const { MicrolinkProvider } = await import("../microlink");
 const { SocrataProvider } = await import("../socrata");
+const { providerRegistry } = await import("../index");
+const {
+  PROVIDER_DEFINITIONS,
+  RFP_INGESTION_PROVIDER_NAMES,
+} = await import("../../config/providerConfig");
+const { sourceDefinition } = await import("../../sourceArchitecture");
 
-test("Serper compatibility helper remains stable while the provider is retired", async () => {
-  const safe = toSerperFreeTierQuery(
-    '("occupational health" OR "employee health") (RFP OR RFQ) site:example.gov -awarded -jobs',
-  );
+test("retired finite providers are absent from the active catalogue and registry", () => {
+  assert.equal("serper" in PROVIDER_DEFINITIONS, false);
+  assert.equal("olostep" in PROVIDER_DEFINITIONS, false);
+  assert.equal("serper" in providerRegistry, false);
+  assert.equal("olostep" in providerRegistry, false);
+  assert.equal(RFP_INGESTION_PROVIDER_NAMES.includes("serper" as never), false);
+  assert.equal(RFP_INGESTION_PROVIDER_NAMES.includes("olostep" as never), false);
+  assert.equal(sourceDefinition("serper")?.role, "legacy_disabled");
+  assert.equal(sourceDefinition("olostep")?.role, "legacy_disabled");
+});
 
-  assert.equal(safe, "occupational health employee health RFP RFQ");
-  assert.doesNotMatch(safe, /\bOR\b|[()"]|site:|-awarded|-jobs/i);
-
-  const provider = new SerperProvider();
-  assert.equal(await provider.isConfigured(), false);
-  assert.deepEqual(await provider.search("occupational health RFP"), []);
+test("Keenable and Microlink are first-class providers with keyless operation", async () => {
+  assert.ok(PROVIDER_DEFINITIONS.keenable);
+  assert.ok(PROVIDER_DEFINITIONS.microlink);
+  assert.equal(providerRegistry.keenable.name, "keenable");
+  assert.equal(providerRegistry.microlink.name, "microlink");
+  assert.equal(await new KeenableProvider().isConfigured(), true);
+  assert.equal(await new MicrolinkProvider().isConfigured(), true);
 });
 
 test("Tango uses a supported meta wildcard instead of expanding meta.notice_type", async () => {
@@ -55,30 +68,6 @@ test("Tango uses a supported meta wildcard instead of expanding meta.notice_type
   }
 });
 
-test("OloStep is permanently retired and never makes a network request", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalApiKey = process.env.OLOSTEP_API_KEY;
-  let called = false;
-
-  process.env.OLOSTEP_API_KEY = "test-olostep-key";
-  globalThis.fetch = async () => {
-    called = true;
-    throw new Error("OloStep network call should never happen");
-  };
-
-  try {
-    const provider = new OlostepProvider();
-    assert.equal(await provider.isConfigured(), false);
-    assert.equal(await provider.getText("https://example.gov/rfp"), null);
-    assert.deepEqual(await provider.scrapeMany(["https://example.gov/rfp"]), []);
-    assert.equal(called, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalApiKey === undefined) delete process.env.OLOSTEP_API_KEY;
-    else process.env.OLOSTEP_API_KEY = originalApiKey;
-  }
-});
-
 test("Jina Reader works keyless and attaches the key only when available", async () => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.JINA_API_KEY;
@@ -97,6 +86,7 @@ test("Jina Reader works keyless and attaches the key only when available", async
     delete process.env.JINA_API_KEY;
     const provider = new JinaProvider();
     assert.equal(await provider.isConfigured(), true);
+    assert.equal(await provider.usageMode(), "keyless");
     assert.match(
       (await provider.extractUrl("https://example.gov/rfp")) ?? "",
       /Occupational Health RFP/,
@@ -104,6 +94,7 @@ test("Jina Reader works keyless and attaches the key only when available", async
     assert.equal(authorizations[0], "");
 
     process.env.JINA_API_KEY = "test-jina-key";
+    assert.equal(await provider.usageMode(), "keyed");
     assert.match(
       (await provider.extractUrl("https://example.gov/rfp")) ?? "",
       /Occupational Health RFP/,

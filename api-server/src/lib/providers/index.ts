@@ -15,17 +15,18 @@ export * from "./eunaBonfire";
 export * from "./disabledEunaDiscoveryProvider";
 export * from "./internationalPublicPortals";
 export * from "./gemini";
-export * from "./serper";
 export * from "./tango";
 export * from "./bidnet";
 export * from "./firecrawl";
+export * from "./browserbase";
+export * from "./keenable";
+export * from "./microlink";
 export * from "./jina";
 export * from "./openrouter";
 export * from "./groq";
 export * from "./exa";
 export * from "./browseAi";
 export * from "./browserUse";
-export * from "./olostep";
 export * from "./parallel";
 export * from "./linkup";
 export * from "./socrata";
@@ -53,17 +54,18 @@ import { productionPublicPortalProvider } from "./productionPublicPortalProvider
 import { disabledEunaDiscoveryProvider } from "./disabledEunaDiscoveryProvider";
 import { internationalPublicPortalsProvider } from "./internationalPublicPortals";
 import { geminiProvider } from "./gemini";
-import { serperProvider } from "./serper";
 import { tangoProvider } from "./tango";
 import { bidnetProvider } from "./bidnet";
 import { firecrawlProvider } from "./firecrawl";
+import { browserbaseProvider } from "./browserbase";
+import { keenableProvider } from "./keenable";
+import { microlinkProvider } from "./microlink";
 import { jinaProvider } from "./jina";
 import { openrouterProvider } from "./openrouter";
 import { groqProvider } from "./groq";
 import { exaProvider } from "./exa";
 import { browseAiProvider } from "./browseAi";
 import { browserUseProvider } from "./browserUse";
-import { olostepProvider } from "./olostep";
 import { parallelProvider } from "./parallel";
 import { linkupProvider } from "./linkup";
 import { socrataProvider } from "./socrata";
@@ -107,17 +109,18 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   usaSpending: usaSpendingProvider,
   federalRegister: federalRegisterProvider,
   gemini: geminiProvider,
-  serper: serperProvider,
   tango: tangoProvider,
   bidnet: bidnetProvider,
   firecrawl: firecrawlProvider,
+  browserbase: browserbaseProvider,
+  keenable: keenableProvider,
+  microlink: microlinkProvider,
   jina: jinaProvider,
   openrouter: openrouterProvider,
   groq: groqProvider,
   exa: exaProvider,
   browseAi: browseAiProvider,
   browserUse: browserUseProvider,
-  olostep: olostepProvider,
   parallel: parallelProvider,
   linkup: linkupProvider,
   socrata: socrataProvider,

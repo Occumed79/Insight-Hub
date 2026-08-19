@@ -35,7 +35,7 @@ test("sticky account pools keep using the current account until it fails", async
   assert.equal(await pool.run(async (key) => key), "account-one");
 });
 
-test("sticky account pools fail over on quota and stay on the replacement account", async () => {
+test("sticky account pools fail over on explicit quota exhaustion and stay on the replacement account", async () => {
   clearFreeTierCredentialPoolState();
   process.env.TEST_STICKY_FAIL_KEY_1 = "account-one";
   process.env.TEST_STICKY_FAIL_KEY_2 = "account-two";
@@ -54,7 +54,7 @@ test("sticky account pools fail over on quota and stay on the replacement accoun
     attempted.push(key);
     if (key === "account-one" && primaryQuotaExhausted) {
       primaryQuotaExhausted = false;
-      throw new Error("HTTP 429 quota exhausted");
+      throw new Error("TEAM_BUDGET_EXCEEDED monthly credits exhausted");
     }
     return key;
   });
@@ -66,9 +66,21 @@ test("sticky account pools fail over on quota and stay on the replacement accoun
   assert.equal(first, "account-two");
   assert.equal(second, "account-two");
   assert.deepEqual(attempted, ["account-one", "account-two", "account-two"]);
+
+  const snapshot = await pool.snapshot();
+  const firstSlot = snapshot.slots.find(
+    (slot) => slot.slot === "TEST_STICKY_FAIL_KEY_1",
+  )!;
+  const secondSlot = snapshot.slots.find(
+    (slot) => slot.slot === "TEST_STICKY_FAIL_KEY_2",
+  )!;
+  assert.equal(firstSlot.lastOutcome, "quota");
+  assert.equal(firstSlot.coolingDown, true);
+  assert.equal(secondSlot.active, true);
+  assert.equal(secondSlot.successes, 2);
 });
 
-test("cools down a quota-limited key and immediately falls back", async () => {
+test("cools down an HTTP 429 account as rate-limited and immediately falls back", async () => {
   clearFreeTierCredentialPoolState();
   process.env.TEST_POOL_KEY_1 = "limited";
   process.env.TEST_POOL_KEY_2 = "healthy";
@@ -80,12 +92,17 @@ test("cools down a quota-limited key and immediately falls back", async () => {
 
   const result = await pool.run(async (key) => {
     attempted.push(key);
-    if (key === "limited") throw new Error("HTTP 429 quota exhausted");
+    if (key === "limited") throw new Error("HTTP 429 rate limit exceeded");
     return "ok";
   });
 
   assert.equal(result, "ok");
   assert.deepEqual(attempted, ["limited", "healthy"]);
+  const limited = (await pool.snapshot()).slots.find(
+    (slot) => slot.slot === "TEST_POOL_KEY_1",
+  )!;
+  assert.equal(limited.lastOutcome, "rate_limited");
+  assert.equal(limited.coolingDown, true);
 });
 
 test("does not spend backup keys on deterministic bad requests", async () => {
@@ -108,7 +125,7 @@ test("does not spend backup keys on deterministic bad requests", async () => {
   assert.deepEqual(attempted, ["first"]);
 });
 
-test("safe pool telemetry exposes slot state but never credential values", async () => {
+test("safe pool telemetry exposes vendor quota state but never credential values", async () => {
   clearFreeTierCredentialPoolState();
   process.env.TEST_TELEMETRY_KEY_1 = "secret-primary-value";
   process.env.TEST_TELEMETRY_KEY_2 = "secret-backup-value";
@@ -121,6 +138,18 @@ test("safe pool telemetry exposes slot state but never credential values", async
     { rotateOnSuccess: false },
   );
 
+  await pool.run(async (_key, slot) => {
+    pool.recordRateLimitHeaders(
+      slot,
+      new Headers({
+        "X-RateLimit-Limit": "100",
+        "X-RateLimit-Remaining": "87",
+        "X-RateLimit-Reset": "60",
+      }),
+    );
+    return "ok";
+  });
+
   const snapshot = await pool.snapshot();
   assert.equal(snapshot.configuredAccounts, 2);
   assert.equal(snapshot.activeSlot, "TEST_TELEMETRY_KEY_1");
@@ -128,6 +157,14 @@ test("safe pool telemetry exposes slot state but never credential values", async
     snapshot.slots.map((slot) => slot.slot),
     ["TEST_TELEMETRY_KEY_1", "TEST_TELEMETRY_KEY_2"],
   );
+  const primary = snapshot.slots[0]!;
+  assert.equal(primary.attempts, 1);
+  assert.equal(primary.successes, 1);
+  assert.equal(primary.lastOutcome, "success");
+  assert.equal(primary.quotaLimit, 100);
+  assert.equal(primary.quotaRemaining, 87);
+  assert.ok(primary.quotaResetAt);
+
   const serialized = JSON.stringify(snapshot);
   assert.doesNotMatch(serialized, /secret-primary-value/);
   assert.doesNotMatch(serialized, /secret-backup-value/);

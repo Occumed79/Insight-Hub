@@ -1,17 +1,11 @@
 /**
- * OloStep Provider (retired)
+ * OloStep compatibility utility (retired).
  *
- * OloStep's free allowance is not treated as dependable renewable operating
- * capacity. Keep this compatibility shell so historical provider names and
- * imports remain valid, but never configure or call OloStep at runtime.
+ * OloStep is intentionally absent from ProviderName, providerRegistry,
+ * PROVIDER_DEFINITIONS and autonomous Opportunity Intelligence. This inert shell
+ * remains only for older non-ingestion imports and never reads a key or performs
+ * a network request.
  */
-
-import type {
-  DataSourceProvider,
-  FetchOptions,
-  ProviderFetchResult,
-  ProviderStatus,
-} from "./types";
 
 export interface OlostepScrapeResult {
   url: string;
@@ -21,24 +15,11 @@ export interface OlostepScrapeResult {
   status_code?: number;
 }
 
-export class OlostepProvider implements DataSourceProvider {
+export class OlostepProvider {
   readonly name = "olostep" as const;
 
   async isConfigured(): Promise<boolean> {
     return false;
-  }
-
-  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    return { records: [], total: 0, errors: [] };
-  }
-
-  async getStatus(): Promise<ProviderStatus> {
-    return {
-      name: this.name,
-      configured: false,
-      healthy: false,
-      errorMessage: "OloStep retired: finite/trial quota is not used for autonomous intelligence.",
-    };
   }
 
   async scrape(

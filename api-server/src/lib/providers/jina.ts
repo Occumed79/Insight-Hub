@@ -26,13 +26,14 @@ export class JinaProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    // Jina Reader supports keyless basic usage. A configured key raises the
-    // Reader rate limit but is not required for URL extraction.
     return true;
   }
 
+  async usageMode(): Promise<"keyed" | "keyless"> {
+    return (await this.getApiKey()) ? "keyed" : "keyless";
+  }
+
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    // Jina is a utility provider (URL -> content), not a direct data source.
     return { records: [], total: 0, errors: [] };
   }
 
@@ -50,13 +51,6 @@ export class JinaProvider implements DataSourceProvider {
     return { name: this.name, configured: true, healthy, errorMessage };
   }
 
-  /**
-   * Extract clean text content from a URL using Jina Reader.
-   *
-   * The request deliberately works without JINA_API_KEY so Insight Hub retains
-   * Jina's renewable basic Reader capacity. If a key exists, it is attached to
-   * the same Reader request to receive the account's increased rate limit.
-   */
   async extractUrl(
     url: string,
     maxLength = 8000,
@@ -92,10 +86,6 @@ export class JinaProvider implements DataSourceProvider {
     }
   }
 
-  /**
-   * Embed one or more texts with Jina's embeddings API. Embeddings still
-   * require JINA_API_KEY; keyless mode is intentionally limited to Reader.
-   */
   async embed(
     texts: string[],
     task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
@@ -155,7 +145,6 @@ export class JinaProvider implements DataSourceProvider {
     }
   }
 
-  /** Extract content from multiple URLs in bounded parallel batches. */
   async extractUrls(
     urls: string[],
     concurrency = 3,

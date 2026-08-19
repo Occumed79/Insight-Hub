@@ -1,80 +1,54 @@
 /**
- * Serper Provider (retired)
+ * Serper compatibility utility (retired).
  *
- * Serper's free allowance is a finite signup balance rather than renewable
- * operating capacity. Keep this compatibility shell so historical provider
- * names and imports remain valid, but never configure or call Serper at
- * runtime.
+ * Serper is intentionally absent from ProviderName, providerRegistry,
+ * PROVIDER_DEFINITIONS and Opportunity Intelligence ingestion. This inert shell
+ * exists only so older non-ingestion research modules can compile while they are
+ * migrated. It never reads SERPER_API_KEY and never performs a network call.
  */
-
-import type {
-  DataSourceProvider,
-  FetchOptions,
-  ProviderFetchResult,
-  ProviderStatus,
-} from "./types";
 
 export interface SerperSearchResult {
   title: string;
   link: string;
   snippet: string;
+  position?: number;
   date?: string;
   source?: string;
 }
 
-const DEFAULT_SAFE_QUERY = "occupational health services RFP solicitation";
-const MAX_SAFE_QUERY_LENGTH = 220;
+export type SerperResult = SerperSearchResult;
 
-/** Retained for compatibility with existing tests and callers. */
-export function toSerperFreeTierQuery(query: string): string {
-  const withoutNegativeTerms = query.replace(
-    /-(?:"[^"]+"|'[^']+'|\S+)/g,
-    " ",
-  );
-  const withoutAdvancedOperators = withoutNegativeTerms
-    .replace(/\b(?:site|inurl|intitle|filetype):\S+/gi, " ")
-    .replace(/\b(?:OR|AND)\b/gi, " ")
-    .replace(/[()"']/g, " ")
-    .replace(/[^a-zA-Z0-9&/.,\-\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const safe = withoutAdvancedOperators || DEFAULT_SAFE_QUERY;
-  if (safe.length <= MAX_SAFE_QUERY_LENGTH) return safe;
-  const shortened = safe.slice(0, MAX_SAFE_QUERY_LENGTH + 1);
-  const lastSpace = shortened.lastIndexOf(" ");
-  return shortened.slice(0, lastSpace > 40 ? lastSpace : MAX_SAFE_QUERY_LENGTH);
+export interface LegacySerperSearchOptions {
+  num?: number;
+  recency?: string;
+  type?: string;
+  tbs?: string;
+  signal?: AbortSignal;
 }
 
-export class SerperProvider implements DataSourceProvider {
+export function toSerperFreeTierQuery(query: string): string {
+  const tokens = query
+    .replace(/site:\S+/gi, " ")
+    .replace(/-\S+/g, " ")
+    .replace(/[()\"]/g, " ")
+    .replace(/\b(?:AND|OR|NOT)\b/gi, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens)).join(" ").slice(0, 180);
+}
+
+export class SerperProvider {
   readonly name = "serper" as const;
 
   async isConfigured(): Promise<boolean> {
     return false;
   }
 
-  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    return { records: [], total: 0, errors: [] };
-  }
-
-  async getStatus(): Promise<ProviderStatus> {
-    return {
-      name: this.name,
-      configured: false,
-      healthy: false,
-      errorMessage: "Serper retired: finite signup quota is not used for autonomous intelligence.",
-    };
-  }
-
   async search(
     _query: string,
-    _num = 10,
-    _options: {
-      type?: "search" | "news";
-      tbs?: string;
-      page?: number;
-      signal?: AbortSignal;
-    } = {},
+    _optionsOrNum: LegacySerperSearchOptions | number = {},
+    _legacyOptions: LegacySerperSearchOptions = {},
   ): Promise<SerperSearchResult[]> {
     return [];
   }
@@ -82,14 +56,7 @@ export class SerperProvider implements DataSourceProvider {
   async searchMultiple(
     _queries: string[],
     _numPerQuery = 10,
-    _options: { signal?: AbortSignal } = {},
-  ): Promise<SerperSearchResult[]> {
-    return [];
-  }
-
-  async enrichOpportunity(
-    _opportunityTitle: string,
-    _agency: string,
+    _options: LegacySerperSearchOptions = {},
   ): Promise<SerperSearchResult[]> {
     return [];
   }

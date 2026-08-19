@@ -2,12 +2,77 @@ import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-export type ProviderName = "samGov" | "texasEsbd" | "nyScr" | "publicPortalProviders" | "eunaBonfire" | "internationalPublicPortals" | "gemini" | "serper" | "tango" | "bidnet" | "firecrawl" | "openrouter" | "groq" | "exa" | "browseAi" | "browserUse" | "olostep" | "clod" | "jina" | "minimax" | "you" | "langsearch" | "parallel" | "linkup" | "socrata" | "websearch" | "grantsGov" | "usaSpending" | "federalRegister" | "cerebras" | "cohere" | "deepseek" | "fal" | "mistral" | "nvidia" | "pinecone" | "qdrant" | "cloudflareWorker" | "mongoDb" | "voyage" | "huggingFace" | "selfHostedCrawler" | "rssAggregator" | "localLlm" | "selfHostedSearch" | "emailNotifications";
+export type ProviderName =
+  | "samGov"
+  | "texasEsbd"
+  | "nyScr"
+  | "publicPortalProviders"
+  | "eunaBonfire"
+  | "internationalPublicPortals"
+  | "gemini"
+  | "tango"
+  | "bidnet"
+  | "firecrawl"
+  | "browserbase"
+  | "keenable"
+  | "microlink"
+  | "openrouter"
+  | "groq"
+  | "exa"
+  | "browseAi"
+  | "browserUse"
+  | "clod"
+  | "jina"
+  | "minimax"
+  | "you"
+  | "langsearch"
+  | "parallel"
+  | "linkup"
+  | "socrata"
+  | "websearch"
+  | "grantsGov"
+  | "usaSpending"
+  | "federalRegister"
+  | "cerebras"
+  | "cohere"
+  | "deepseek"
+  | "fal"
+  | "mistral"
+  | "nvidia"
+  | "pinecone"
+  | "qdrant"
+  | "cloudflareWorker"
+  | "mongoDb"
+  | "voyage"
+  | "huggingFace"
+  | "selfHostedCrawler"
+  | "rssAggregator"
+  | "localLlm"
+  | "selfHostedSearch"
+  | "emailNotifications";
 
 export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegister">;
 
-/** Providers that are valid inputs to the RFP ingestion pipeline. */
-export const RFP_INGESTION_PROVIDER_NAMES = ["samGov", "publicPortalProviders", "eunaBonfire", "internationalPublicPortals", "tango", "bidnet", "serper", "exa"] as const satisfies readonly ProviderName[];
+/**
+ * Real active inputs that can contribute opportunity candidates. Legacy portal
+ * aliases and retired finite providers are intentionally absent.
+ */
+export const RFP_INGESTION_PROVIDER_NAMES = [
+  "samGov",
+  "tango",
+  "you",
+  "browserbase",
+  "keenable",
+  "parallel",
+  "exa",
+  "firecrawl",
+  "langsearch",
+  "linkup",
+  "socrata",
+  "websearch",
+  "rssAggregator",
+  "emailNotifications",
+] as const satisfies readonly ProviderName[];
 
 export type RfpIngestionProviderName = (typeof RFP_INGESTION_PROVIDER_NAMES)[number];
 
@@ -44,7 +109,11 @@ export interface ProviderField {
   envKey?: string;
 }
 
-const secretField = (dbKey: string, envKey: string, label = "API Key"): ProviderField => ({
+const secretField = (
+  dbKey: string,
+  envKey: string,
+  label = "API Key",
+): ProviderField => ({
   key: "apiKey",
   label,
   type: "secret",
@@ -53,7 +122,16 @@ const secretField = (dbKey: string, envKey: string, label = "API Key"): Provider
   envKey,
 });
 
-const provider = (name: RfpProviderName, displayName: string, category: ProviderDefinition["category"], useCase: ProviderUseCase, requiredFields: ProviderField[], capabilities: string[], status: ProviderDefinition["status"] = "partial", description = `${displayName} data source for opportunity intelligence.`): ProviderDefinition => ({
+const provider = (
+  name: RfpProviderName,
+  displayName: string,
+  category: ProviderDefinition["category"],
+  useCase: ProviderUseCase,
+  requiredFields: ProviderField[],
+  capabilities: string[],
+  status: ProviderDefinition["status"] = "partial",
+  description = `${displayName} data source for opportunity intelligence.`,
+): ProviderDefinition => ({
   name,
   displayName,
   description,
@@ -66,16 +144,87 @@ const provider = (name: RfpProviderName, displayName: string, category: Provider
 });
 
 export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> = {
-  samGov: provider("samGov", "SAM.gov", "primary", "direct_source", [secretField("samApiKey", "SAM_GOV_API_KEY")], ["Federal solicitations", "Awards", "Presolicitations"], "live", "Direct source for U.S. federal contracting opportunities from System for Award Management."),
-  texasEsbd: provider("texasEsbd", "Texas ESBD / Texas SmartBuy", "primary", "direct_source", [], ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"], "live", "Dedicated parser for the official Texas ESBD / Texas SmartBuy public listing. It does not yet provide complete pagination or document collection."),
-  nyScr: provider("nyScr", "New York State Contract Reporter", "primary", "direct_source", [], ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"], "live", "Dedicated parser for the official New York State Contract Reporter public listing. It does not yet provide complete pagination or document collection."),
-  publicPortalProviders: provider("publicPortalProviders", "U.S. Public Portals", "procurement", "hybrid", [], ["Two dedicated official listing adapters", "Bounded generic extraction (default 3-page cap) for eligible public pages", "Serper official-domain discovery fallback", "Cross-path deduplication", "Per-domain rate limiting"], "partial", "Hybrid U.S. portal source. Texas ESBD and NYSCR have dedicated adapters; other eligible public pages use bounded generic extraction (default 3-page cap), while unsupported portals rely on Serper discovery. Catalog inclusion is not equivalent to a completed connector."),
-  eunaBonfire: provider("eunaBonfire", "Euna Supplier Network", "procurement", "web_discovery", [], ["Serper discovery of public Bonfire/Euna pages", "Occu-Med relevance filtering", "Cross-provider deduplication"], "partial", "Search-discovery source using the configured Serper key. It is not a direct Euna API or supplier-feed integration, and no Euna credentials are stored."),
-  internationalPublicPortals: provider("internationalPublicPortals", "International Public Portals", "procurement", "web_discovery", [], ["Serper discovery on official international domains", "Canada, United Kingdom, Europe, and multilateral directory coverage", "International buyer and jurisdiction metadata", "Cross-provider deduplication"], "partial", "Search-discovery source covering the official international portal directory. Direct CanadaBuys, Contracts Finder, TED, and other portal connectors are not yet implemented."),
-  gemini: provider("gemini", "Gemini AI", "ai", "hybrid", [secretField("geminiApiKey", "GEMINI_API_KEY")], ["Query generation", "Extraction", "Relevance scoring"], "partial", "Google Gemini powers intelligent opportunity discovery and scoring."),
-  serper: provider("serper", "Serper", "search", "web_discovery", [secretField("serperApiKey", "SERPER_API_KEY")], ["Google search API", "RFP discovery", "Procurement signals"], "partial"),
+  samGov: provider(
+    "samGov",
+    "SAM.gov",
+    "primary",
+    "direct_source",
+    [secretField("samApiKey", "SAM_GOV_API_KEY")],
+    ["Federal solicitations", "Targeted service queries", "Official opportunity hydration"],
+    "live",
+    "Direct official source for U.S. federal contracting opportunities from the System for Award Management.",
+  ),
+  texasEsbd: provider(
+    "texasEsbd",
+    "Texas ESBD / Texas SmartBuy",
+    "primary",
+    "direct_source",
+    [],
+    ["Texas public solicitations", "Due dates", "Solicitation IDs", "Official buyer portal"],
+    "live",
+    "Dedicated compatibility parser for the official Texas ESBD / Texas SmartBuy listing.",
+  ),
+  nyScr: provider(
+    "nyScr",
+    "New York State Contract Reporter",
+    "primary",
+    "direct_source",
+    [],
+    ["New York public solicitations", "CR numbers", "Issue/due dates", "Official buyer portal"],
+    "live",
+    "Dedicated compatibility parser for the official New York State Contract Reporter listing.",
+  ),
+  publicPortalProviders: provider(
+    "publicPortalProviders",
+    "U.S. Public Portals (Legacy Alias)",
+    "procurement",
+    "web_discovery",
+    [],
+    ["Legacy selection alias", "Routes into quota-aware browser discovery"],
+    "not_configured",
+    "Legacy selection alias retained for old requests. It does not run a standalone portal crawler or retired search provider; current state/local discovery is handled by the quota-aware browser/search ensemble.",
+  ),
+  eunaBonfire: provider(
+    "eunaBonfire",
+    "Euna Supplier Network (Legacy Alias)",
+    "procurement",
+    "web_discovery",
+    [],
+    ["Legacy selection alias", "Routes into quota-aware browser discovery"],
+    "not_configured",
+    "Legacy Euna/Bonfire selection alias. Current discovery uses the active browser/search ensemble; no Euna credentials or retired search-provider dependency is required.",
+  ),
+  internationalPublicPortals: provider(
+    "internationalPublicPortals",
+    "International Public Portals (Legacy Alias)",
+    "procurement",
+    "web_discovery",
+    [],
+    ["Legacy selection alias", "Routes into quota-aware browser discovery"],
+    "not_configured",
+    "Legacy international-portal selection alias. Current international discovery is performed by active browser/search providers rather than a retired finite search service.",
+  ),
+  gemini: provider(
+    "gemini",
+    "Gemini AI",
+    "ai",
+    "hybrid",
+    [secretField("geminiApiKey", "GEMINI_API_KEY")],
+    ["Query generation", "Extraction", "Relevance scoring", "Independent account failover"],
+    "active",
+    "Google Gemini supports query generation and procurement scoring through the configured independent-account pool.",
+  ),
   tango: {
-    ...provider("tango", "Tango", "procurement", "direct_source", [secretField("tangoApiKey", "TANGO_API_KEY")], ["Direct federal procurement API", "Structured opportunity metadata", "Bounded pagination"], "live", "Primary structured federal opportunity pool using the Tango by MakeGov API."),
+    ...provider(
+      "tango",
+      "Tango",
+      "procurement",
+      "direct_source",
+      [secretField("tangoApiKey", "TANGO_API_KEY")],
+      ["Direct federal procurement API", "Structured opportunity metadata", "Bounded pagination"],
+      "live",
+      "Independent structured federal opportunity source using the Tango by MakeGov API.",
+    ),
     optionalFields: [
       {
         key: "baseUrl",
@@ -88,7 +237,16 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
     ],
   },
   bidnet: {
-    ...provider("bidnet", "BidNet Direct", "procurement", "direct_source", [secretField("bidnetApiKey", "BIDNET_API_KEY")], ["Planned state and local bid access"], "coming_soon", "Configuration scaffold only. The direct endpoint, authentication contract, and response mapping are not implemented."),
+    ...provider(
+      "bidnet",
+      "BidNet Direct",
+      "procurement",
+      "direct_source",
+      [secretField("bidnetApiKey", "BIDNET_API_KEY")],
+      ["Planned state and local bid access"],
+      "coming_soon",
+      "Configuration scaffold only. The direct endpoint, authentication contract, and response mapping are not implemented.",
+    ),
     optionalFields: [
       {
         key: "baseUrl",
@@ -100,9 +258,62 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
       },
     ],
   },
-  firecrawl: provider("firecrawl", "FireCrawl", "search", "web_discovery", [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")], ["Full-page scraping", "Markdown extraction"], "partial"),
+  firecrawl: provider(
+    "firecrawl",
+    "Firecrawl",
+    "search",
+    "web_discovery",
+    [secretField("firecrawlApiKey", "FIRECRAWL_API_KEY")],
+    ["Web search", "Full-page scraping", "Markdown extraction", "Three-account failover"],
+    "active",
+    "Monthly-credit discovery and page extraction fallback. Search and scrape share the same three-account failover pool.",
+  ),
+  browserbase: provider(
+    "browserbase",
+    "Browserbase Search / Fetch",
+    "search",
+    "web_discovery",
+    [secretField("browserbaseApiKey", "BROWSERBASE_API_KEY")],
+    ["Web search", "Managed page fetch", "Two-account failover"],
+    "active",
+    "Managed search and page-fetch fallback with two independent account slots.",
+  ),
+  keenable: {
+    ...provider(
+      "keenable",
+      "Keenable",
+      "search",
+      "web_discovery",
+      [],
+      ["Keyless web search", "Date filtering", "Page fetch", "Optional higher-rate API key"],
+      "active",
+      "Keyless-first search and page-fetch provider. KEENABLE_API_KEY is optional and only raises service limits.",
+    ),
+    optionalFields: [secretField("keenableApiKey", "KEENABLE_API_KEY", "Optional API Key")],
+  },
+  microlink: {
+    ...provider(
+      "microlink",
+      "Microlink",
+      "search",
+      "research_analysis",
+      [],
+      ["Keyless page text extraction", "Daily-budget guard", "Final enrichment fallback"],
+      "active",
+      "Final page-extraction fallback protected by a tiny daily request budget. It is not used for opportunity discovery.",
+    ),
+    optionalFields: [secretField("microlinkApiKey", "MICROLINK_API_KEY", "Optional API Key")],
+  },
   openrouter: {
-    ...provider("openrouter", "OpenRouter", "ai", "hybrid", [secretField("openrouterApiKey", "OPENROUTER_API_KEY")], ["AI model routing", "Extraction", "Scoring"], "partial"),
+    ...provider(
+      "openrouter",
+      "OpenRouter",
+      "ai",
+      "hybrid",
+      [secretField("openrouterApiKey", "OPENROUTER_API_KEY")],
+      ["AI model routing", "Extraction", "Scoring", "Independent account failover"],
+      "active",
+    ),
     optionalFields: [
       {
         key: "model",
@@ -115,7 +326,15 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
     ],
   },
   groq: {
-    ...provider("groq", "Groq", "ai", "hybrid", [secretField("groqApiKey", "GROQ_API_KEY")], ["Fast AI inference", "Extraction", "Scoring"], "partial"),
+    ...provider(
+      "groq",
+      "Groq",
+      "ai",
+      "hybrid",
+      [secretField("groqApiKey", "GROQ_API_KEY")],
+      ["Fast AI inference", "Extraction", "Scoring", "Independent account failover"],
+      "active",
+    ),
     optionalFields: [
       {
         key: "model",
@@ -127,9 +346,25 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
       },
     ],
   },
-  exa: provider("exa", "Exa", "search", "web_discovery", [secretField("exaApiKey", "EXA_API_KEY")], ["Neural search", "Semantic discovery"], "partial"),
+  exa: provider(
+    "exa",
+    "Exa",
+    "search",
+    "web_discovery",
+    [secretField("exaApiKey", "EXA_API_KEY")],
+    ["Neural search", "Semantic discovery", "Three-account failover", "Per-account quota telemetry"],
+    "active",
+  ),
   browseAi: {
-    ...provider("browseAi", "Browse AI", "search", "web_discovery", [secretField("browseAiApiKey", "BROWSE_AI_API_KEY")], ["Scraping robots", "Structured extraction"], "partial"),
+    ...provider(
+      "browseAi",
+      "Browse AI",
+      "search",
+      "web_discovery",
+      [secretField("browseAiApiKey", "BROWSE_AI_API_KEY")],
+      ["Scraping robots", "Structured extraction"],
+      "partial",
+    ),
     optionalFields: [
       {
         key: "robotId",
@@ -141,10 +376,25 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
       },
     ],
   },
-  browserUse: provider("browserUse", "BrowserUse AI", "search", "web_discovery", [secretField("browserUseApiKey", "BROWSER_USE_API_KEY")], ["Browser automation", "Dynamic site extraction"], "partial"),
-  olostep: provider("olostep", "Olostep", "search", "web_discovery", [secretField("olostepApiKey", "OLOSTEP_API_KEY")], ["Residential proxy scraping", "Blocked portal access"], "partial"),
+  browserUse: provider(
+    "browserUse",
+    "BrowserUse AI",
+    "search",
+    "web_discovery",
+    [secretField("browserUseApiKey", "BROWSER_USE_API_KEY")],
+    ["Browser automation", "Dynamic site extraction"],
+    "partial",
+  ),
   clod: {
-    ...provider("clod", "CLōD AI", "ai", "hybrid", [secretField("clodApiKey", "CLOD_API_KEY", "API Key (JWT)")], ["AI extraction", "Scoring"], "partial"),
+    ...provider(
+      "clod",
+      "CLōD AI",
+      "ai",
+      "hybrid",
+      [secretField("clodApiKey", "CLOD_API_KEY", "API Key (JWT)")],
+      ["AI extraction", "Scoring"],
+      "partial",
+    ),
     optionalFields: [
       {
         key: "model",
@@ -156,12 +406,24 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
       },
     ],
   },
-  jina: provider("jina", "Jina AI Reader", "search", "web_discovery", [secretField("jinaApiKey", "JINA_API_KEY")], ["URL to markdown", "Content enrichment", "Embeddings for semantic rerank"], "active"),
+  jina: {
+    ...provider(
+      "jina",
+      "Jina AI Reader",
+      "search",
+      "research_analysis",
+      [],
+      ["Keyless URL-to-markdown Reader", "Optional higher Reader rate", "Embeddings when keyed"],
+      "active",
+      "First-choice page reader. Basic Reader works without a key; JINA_API_KEY only raises Reader limits and enables embeddings.",
+    ),
+    optionalFields: [secretField("jinaApiKey", "JINA_API_KEY", "Optional API Key")],
+  },
   minimax: provider("minimax", "Minimax AI", "ai", "hybrid", [secretField("minimaxApiKey", "MINIMAX_API_KEY")], ["Opportunity extraction", "Relevance scoring"], "partial"),
-  you: provider("you", "You.com", "search", "web_discovery", [secretField("youApiKey", "YOU_API_KEY")], ["Web search", "Opportunity sourcing"], "partial"),
-  langsearch: provider("langsearch", "Langsearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing"], "partial"),
-  parallel: provider("parallel", "Parallel", "search", "web_discovery", [secretField("parallelApiKey", "PARALLEL_API_KEY")], ["Web search", "State/local/private RFP discovery", "Rotating trial fallback"], "active"),
-  linkup: provider("linkup", "Linkup", "search", "web_discovery", [secretField("linkupApiKey", "LINKUP_API_KEY")], ["Web search", "Domain-filtered opportunity discovery", "Rotating trial fallback"], "active"),
+  you: provider("you", "You.com", "search", "web_discovery", [secretField("youApiKey", "YOU_API_KEY")], ["Web search", "Opportunity sourcing", "Two-account failover", "Per-account quota/reset telemetry"], "active"),
+  langsearch: provider("langsearch", "LangSearch", "search", "web_discovery", [secretField("langsearchApiKey", "LANGSEARCH_API_KEY")], ["LLM-native search", "Opportunity sourcing", "Four independent account slots"], "active"),
+  parallel: provider("parallel", "Parallel", "search", "web_discovery", [secretField("parallelApiKey", "PARALLEL_API_KEY")], ["Web search", "State/local/private RFP discovery", "Monthly renewable fallback"], "active"),
+  linkup: provider("linkup", "Linkup", "search", "web_discovery", [secretField("linkupApiKey", "LINKUP_API_KEY")], ["Web search", "Domain-filtered opportunity discovery"], "active"),
   socrata: provider("socrata", "Tyler Data & Insights / Socrata", "procurement", "web_discovery", [secretField("socrataApiKey", "SOCRATA_API_KEY", "API Key"), secretField("socrataApiSecret", "SOCRATA_API_SECRET", "API Secret")], ["Official open-data catalog discovery", "State and municipal procurement datasets", "Structured-source fallback"], "active"),
   websearch: provider("websearch", "WebSearch API", "search", "web_discovery", [secretField("websearchApiKey", "WEBSEARCH_API_KEY")], ["Broad web search", "Opportunity sourcing"], "partial"),
   grantsGov: {
@@ -170,7 +432,7 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   },
 
   cerebras: provider("cerebras", "Cerebras", "ai", "hybrid", [secretField("cerebrasApiKey", "CEREBRAS_API_KEY")], ["AI extraction", "Fast inference", "Scoring failover"], "active"),
-  cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Semantic reranking", "Opportunity relevance scoring"], "active"),
+  cohere: provider("cohere", "Cohere", "ai", "research_analysis", [secretField("cohereApiKey", "COHERE_API_KEY")], ["Semantic reranking", "Opportunity relevance scoring", "Four-account failover"], "active"),
   deepseek: provider("deepseek", "DeepSeek", "ai", "hybrid", [secretField("deepseekApiKey", "DEEPSEEK_API_KEY")], ["AI extraction", "Reasoning", "Scoring failover"], "active"),
   fal: provider("fal", "Fal.ai", "ai", "research_analysis", [secretField("falApiKey", "FAL_API_KEY")], ["Media/model utility workflows"], "partial"),
   mistral: provider("mistral", "Mistral", "ai", "hybrid", [secretField("mistralApiKey", "MISTRAL_API_KEY")], ["AI extraction", "Structured generation", "Scoring failover"], "active"),
@@ -242,37 +504,46 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   voyage: provider("voyage", "Voyage AI", "ai", "research_analysis", [secretField("voyageApiKey", "VOYAGE_API_KEY")], ["Embeddings", "Semantic similarity", "Vector indexing fallback"], "active"),
   huggingFace: provider("huggingFace", "Hugging Face", "ai", "hybrid", [secretField("huggingFaceApiKey", "HUGGINGFACE_API_KEY")], ["Embeddings", "Model inference", "Vector indexing fallback"], "active"),
   selfHostedCrawler: provider("selfHostedCrawler", "Self-Hosted Crawler", "search", "web_discovery", [secretField("selfHostedCrawlerUrl", "SELF_HOSTED_CRAWLER_URL", "Crawler Service URL")], ["Full-page scraping", "Markdown extraction", "No API keys required"], "active"),
-  rssAggregator: provider("rssAggregator", "RSS Feed Aggregator", "procurement", "direct_source", [], ["Government RSS feeds", "Real-time updates", "No API keys required"], "live", "Aggregates RSS feeds from official government portals for stable, real-time opportunity discovery without API dependencies."),
+  rssAggregator: provider("rssAggregator", "RSS Feed Aggregator", "procurement", "direct_source", [], ["Government RSS feeds", "Real-time updates", "No API keys required"], "live", "Aggregates RSS feeds from official government portals for supplemental opportunity discovery without paid search dependencies."),
   localLlm: provider("localLlm", "Local LLM (Retired)", "ai", "research_analysis", [], ["Retired integration"], "not_configured", "Retired self-hosted LLM integration. The hardened runtime no longer supports Ollama, LocalAI, or local OpenAI-compatible inference as an extraction or scoring fallback."),
-  selfHostedSearch: provider("selfHostedSearch", "Self-Hosted Search (Meilisearch/Typesense)", "search", "research_analysis", [secretField("selfHostedSearchEndpoint", "SELF_HOSTED_SEARCH_ENDPOINT", "Search Engine URL")], ["Full-text search", "No API keys required", "Self-hosted"], "active", "Self-hosted search engine provider supporting Meilisearch, Typesense, or any OpenSearch/Elasticsearch-compatible server for search capabilities without external API dependencies."),
+  selfHostedSearch: provider("selfHostedSearch", "Self-Hosted Search (Meilisearch/Typesense)", "search", "research_analysis", [secretField("selfHostedSearchEndpoint", "SELF_HOSTED_SEARCH_ENDPOINT", "Search Engine URL")], ["Full-text search", "No API keys required", "Self-hosted"], "active", "Self-hosted search engine provider supporting Meilisearch, Typesense, or compatible servers for non-production research paths."),
   emailNotifications: {
-    ...provider("emailNotifications", "Email Notifications", "procurement", "direct_source", [
-      {
-        key: "imapHost",
-        label: "IMAP Host",
-        type: "text",
-        placeholder: "imap.gmail.com",
-        dbKey: "emailImapHost",
-        envKey: "EMAIL_IMAP_HOST",
-      },
-      {
-        key: "imapPort",
-        label: "IMAP Port",
-        type: "text",
-        placeholder: "993",
-        dbKey: "emailImapPort",
-        envKey: "EMAIL_IMAP_PORT",
-      },
-      {
-        key: "imapUser",
-        label: "Email Address",
-        type: "text",
-        placeholder: "procurement@example.com",
-        dbKey: "emailImapUser",
-        envKey: "EMAIL_IMAP_USER",
-      },
-      secretField("emailImapPassword", "EMAIL_IMAP_PASSWORD", "Email Password/App Password"),
-    ], ["Email notification parsing", "Official portal alerts", "No scraping required"], "live", "Polls a dedicated email inbox for procurement opportunity notifications from government portals. Uses IMAP to fetch emails and extracts opportunity details with Occu-Med relevance filtering."),
+    ...provider(
+      "emailNotifications",
+      "Email Notifications",
+      "procurement",
+      "direct_source",
+      [
+        {
+          key: "imapHost",
+          label: "IMAP Host",
+          type: "text",
+          placeholder: "imap.gmail.com",
+          dbKey: "emailImapHost",
+          envKey: "EMAIL_IMAP_HOST",
+        },
+        {
+          key: "imapPort",
+          label: "IMAP Port",
+          type: "text",
+          placeholder: "993",
+          dbKey: "emailImapPort",
+          envKey: "EMAIL_IMAP_PORT",
+        },
+        {
+          key: "imapUser",
+          label: "Email Address",
+          type: "text",
+          placeholder: "procurement@example.com",
+          dbKey: "emailImapUser",
+          envKey: "EMAIL_IMAP_USER",
+        },
+        secretField("emailImapPassword", "EMAIL_IMAP_PASSWORD", "Email Password/App Password"),
+      ],
+      ["Email notification parsing", "Official portal alerts", "No scraping required"],
+      "live",
+      "Polls a dedicated email inbox for procurement opportunity notifications from government portals.",
+    ),
     optionalFields: [],
   },
 };
@@ -282,36 +553,37 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
  *
  * Precedence (env-first):
  *   1. Environment variable — Render secrets and process-level env take priority.
- *      This ensures that secrets deployed via Render dashboard are never silently
- *      overridden by an older database setting.
  *   2. Database setting — used only when the environment variable is absent or empty.
- *      Useful for credentials entered through the Settings UI in local/dev deployments.
  *
  * Returns null when neither source provides a non-empty value.
  * Never logs or exposes the resolved secret value.
  */
-
 export interface ResolvedCredential {
   value: string;
   source: "environment" | "database";
   key: string;
 }
 
-/**
- * Resolve a provider credential and identify which backing source supplied it.
- * This is useful for diagnostics when an invalid environment secret silently
- * takes precedence over a Settings UI value.
- */
-export async function resolveCredentialWithSource(dbKey: string, envKey?: string): Promise<ResolvedCredential | null> {
+export async function resolveCredentialWithSource(
+  dbKey: string,
+  envKey?: string,
+): Promise<ResolvedCredential | null> {
   if (envKey) {
     const envVal = process.env[envKey];
-    if (envVal && envVal.trim()) return { value: envVal.trim(), source: "environment", key: envKey };
+    if (envVal && envVal.trim()) {
+      return { value: envVal.trim(), source: "environment", key: envKey };
+    }
   }
 
   try {
-    const rows = await db.select().from(settingsTable).where(eq(settingsTable.key, dbKey));
+    const rows = await db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.key, dbKey));
     const dbVal = rows[0]?.value;
-    if (dbVal && dbVal.trim()) return { value: dbVal.trim(), source: "database", key: dbKey };
+    if (dbVal && dbVal.trim()) {
+      return { value: dbVal.trim(), source: "database", key: dbKey };
+    }
   } catch {
     // DB may be unavailable during early startup; treat as unconfigured.
   }
@@ -319,14 +591,17 @@ export async function resolveCredentialWithSource(dbKey: string, envKey?: string
   return null;
 }
 
-export async function resolveCredential(dbKey: string, envKey?: string): Promise<string | null> {
+export async function resolveCredential(
+  dbKey: string,
+  envKey?: string,
+): Promise<string | null> {
   return (await resolveCredentialWithSource(dbKey, envKey))?.value ?? null;
 }
 
-/**
- * Check whether a credential is configured without returning its value.
- * Safe to use in API responses — returns a boolean only.
- */
-export async function isCredentialConfigured(dbKey: string, envKey?: string): Promise<boolean> {
+/** Check whether a credential is configured without returning its value. */
+export async function isCredentialConfigured(
+  dbKey: string,
+  envKey?: string,
+): Promise<boolean> {
   return (await resolveCredential(dbKey, envKey)) !== null;
 }

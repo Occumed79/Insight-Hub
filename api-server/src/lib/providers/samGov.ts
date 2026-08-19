@@ -116,11 +116,11 @@ export class SamGovProvider implements DataSourceProvider {
   private async hydrateDescriptions(
     records: NormalizedOpportunity[],
     signal?: AbortSignal,
-  ): Promise<NormalizedOpportunity[]> {
+  ): Promise<{ records: NormalizedOpportunity[]; hydratedCount: number }> {
     const candidates = records
       .filter((record) => typeof record.rawData?.samDescriptionUrl === "string" && !!record.sourceUrl)
       .slice(0, SAM_GOV_HYDRATION_LIMIT);
-    if (candidates.length === 0) return records;
+    if (candidates.length === 0) return { records, hydratedCount: 0 };
     const { jinaProvider } = await import("./jina");
     const hydrated = new Map<string, string>();
     for (let index = 0; index < candidates.length; index += SAM_GOV_HYDRATION_CONCURRENCY) {
@@ -137,20 +137,23 @@ export class SamGovProvider implements DataSourceProvider {
         }
       }
     }
-    return records.map((record) => {
-      const description = hydrated.get(record.externalId);
-      return description
-        ? {
-            ...record,
-            description,
-            rawData: {
-              ...(record.rawData ?? {}),
-              descriptionHydratedBy: "jina-reader",
-              descriptionHydratedFrom: record.sourceUrl,
-            },
-          }
-        : record;
-    });
+    return {
+      hydratedCount: hydrated.size,
+      records: records.map((record) => {
+        const description = hydrated.get(record.externalId);
+        return description
+          ? {
+              ...record,
+              description,
+              rawData: {
+                ...(record.rawData ?? {}),
+                descriptionHydratedBy: "jina-reader",
+                descriptionHydratedFrom: record.sourceUrl,
+              },
+            }
+          : record;
+      }),
+    };
   }
 
   private titleQueriesForRun(keywords?: string): string[] {
@@ -264,11 +267,35 @@ export class SamGovProvider implements DataSourceProvider {
         errors: recovered.length > 0
           ? [`SAM.gov structured title queries returned no bid-ready records; recovered ${recovered.length} official SAM.gov opportunity pages through renewable web discovery.`]
           : [],
+        diagnostics: {
+          queryCount: titleQueries.length,
+          queries: titleQueries,
+          targetedQueries: true,
+          structuredMatches: 0,
+          recoveryUsed: true,
+          recovered: recovered.length,
+          hydrationProvider: "jina-reader",
+          hydratedCount: 0,
+        },
       };
     }
 
     const hydrated = await this.hydrateDescriptions(normalized, options.signal);
-    return { records: hydrated, total: hydrated.length, errors: [] };
+    return {
+      records: hydrated.records,
+      total: hydrated.records.length,
+      errors: [],
+      diagnostics: {
+        queryCount: titleQueries.length,
+        queries: titleQueries,
+        targetedQueries: true,
+        structuredMatches: normalized.length,
+        recoveryUsed: false,
+        recovered: 0,
+        hydrationProvider: "jina-reader",
+        hydratedCount: hydrated.hydratedCount,
+      },
+    };
   }
 
   async getStatus(): Promise<ProviderStatus> {

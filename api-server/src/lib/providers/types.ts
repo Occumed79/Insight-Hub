@@ -1,8 +1,17 @@
 import type { ProviderName } from "../config/providerConfig";
 
 /**
- * Normalized opportunity record from any provider.
- * All providers must map their data to this shape.
+ * Historical opportunity rows may legitimately retain provenance from retired
+ * services. These literals are evidence labels only: they are deliberately NOT
+ * members of ProviderName and therefore cannot enter provider configuration,
+ * registry, health, or autonomous ingestion routing.
+ */
+export type LegacyOpportunitySource = "serper" | "olostep";
+export type OpportunitySource = ProviderName | LegacyOpportunitySource;
+
+/**
+ * Normalized opportunity record from any active provider or historical source.
+ * Active providers must map their data to this shape.
  */
 export interface NormalizedOpportunity {
   externalId: string;
@@ -24,18 +33,20 @@ export interface NormalizedOpportunity {
   estimatedValue?: number;
   awardAmount?: number;
   awardee?: string;
-  source: ProviderName;
+  source: OpportunitySource;
   providerName?: string;
   rawData?: Record<string, unknown>;
 }
 
 /**
- * Result of a provider fetch operation.
+ * Result of a provider fetch operation. Diagnostics are deliberately optional
+ * and contain only non-secret operational metadata suitable for run telemetry.
  */
 export interface ProviderFetchResult {
   records: NormalizedOpportunity[];
   total: number;
   errors: string[];
+  diagnostics?: Record<string, unknown>;
 }
 
 export type ProviderProgressPhase =
@@ -63,7 +74,7 @@ export interface ProviderProgressEvent {
 }
 
 /**
- * Status of a provider (for display in Settings).
+ * Status of an active/configurable provider (for display in Settings).
  */
 export interface ProviderStatus {
   name: ProviderName;
@@ -88,24 +99,17 @@ export interface FetchOptions {
 }
 
 /**
- * Every data source provider must implement this interface.
+ * Every active data source provider must implement this interface.
  */
 export interface DataSourceProvider {
   readonly name: ProviderName;
 
-  /**
-   * Check whether the provider is configured (credentials present).
-   */
+  /** Check whether the provider is configured (credentials present). */
   isConfigured(): Promise<boolean>;
 
-  /**
-   * Fetch normalized opportunity records from this source.
-   * Should throw a descriptive error if not configured or the fetch fails.
-   */
+  /** Fetch normalized opportunity records from this source. */
   fetch(options: FetchOptions): Promise<ProviderFetchResult>;
 
-  /**
-   * Get current provider health/status for display in Settings.
-   */
+  /** Get current provider health/status for display in Settings. */
   getStatus(): Promise<ProviderStatus>;
 }
