@@ -16,10 +16,12 @@ export interface FreeTierCredentialPoolOptions {
 
 export type CredentialSlotOutcome =
   | "success"
+  | "empty"
   | "rate_limited"
   | "quota"
   | "auth"
   | "timeout"
+  | "budget_exhausted"
   | "error";
 
 export interface CredentialPoolSlotSnapshot {
@@ -117,8 +119,6 @@ function cooldownMs(error: unknown): number {
 
 function isCredentialRetryable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  // Do not spend every free-tier key on a deterministic bad request. Rotate
-  // only for credential/quota pressure and transient upstream/network faults.
   if (/\b(400|404|405|413|422)\b/.test(message)) return false;
   return /\b(401|403|408|409|429|5\d\d)\b|quota|rate.?limit|credit|balance|budget|exceed|exhaust|timeout|ECONN|fetch failed/i.test(
     message,
@@ -155,12 +155,6 @@ function resetHeader(headers: Headers): string | null {
   return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
 }
 
-/**
- * A tiny in-process pool for free-tier keys. A failing key cools down and the
- * same operation immediately tries the next slot. Pools can either rotate on
- * every success or stay pinned to one account until quota/rate pressure forces
- * a failover.
- */
 export class FreeTierCredentialPool {
   private readonly rotateOnSuccess: boolean;
 
@@ -195,7 +189,6 @@ export class FreeTierCredentialPool {
     return (await this.credentials()).length > 0;
   }
 
-  /** Record provider-supplied rate-limit headers against the actual account slot. */
   recordRateLimitHeaders(slot: string, headers: Headers): void {
     const state = slotState(this.id, slot);
     const limit = numericHeader(headers, [
@@ -317,8 +310,16 @@ export class FreeTierCredentialPool {
   }
 }
 
-export async function credentialPoolTelemetry(): Promise<CredentialPoolSnapshot[]> {
-  return Promise.all([...poolInstances.values()].map((pool) => pool.snapshot()));
+/**
+ * Safe telemetry boundary. Runtime values are sanitized snapshot objects only;
+ * no credential value is present. The broad array return avoids leaking the
+ * pool's internal generic implementation into dynamic consumers.
+ */
+export async function credentialPoolTelemetry(): Promise<any[]> {
+  const snapshots: CredentialPoolSnapshot[] = await Promise.all(
+    [...poolInstances.values()].map((pool) => pool.snapshot()),
+  );
+  return snapshots;
 }
 
 export function clearFreeTierCredentialPoolState(): void {
