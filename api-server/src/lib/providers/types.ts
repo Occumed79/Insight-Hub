@@ -1,8 +1,17 @@
 import type { ProviderName } from "../config/providerConfig";
 
 /**
- * Normalized opportunity record from any provider.
- * All providers must map their data to this shape.
+ * Historical opportunity rows may legitimately retain provenance from retired
+ * services. These literals are evidence labels only: they are deliberately NOT
+ * members of ProviderName and therefore cannot enter provider configuration,
+ * registry, health, or autonomous ingestion routing.
+ */
+export type LegacyOpportunitySource = "serper" | "olostep";
+export type OpportunitySource = ProviderName | LegacyOpportunitySource;
+
+/**
+ * Normalized opportunity record from any active provider or historical source.
+ * Active providers must map their data to this shape.
  */
 export interface NormalizedOpportunity {
   externalId: string;
@@ -24,7 +33,7 @@ export interface NormalizedOpportunity {
   estimatedValue?: number;
   awardAmount?: number;
   awardee?: string;
-  source: ProviderName;
+  source: OpportunitySource;
   providerName?: string;
   rawData?: Record<string, unknown>;
 }
@@ -65,7 +74,7 @@ export interface ProviderProgressEvent {
 }
 
 /**
- * Status of a provider (for display in Settings).
+ * Status of an active/configurable provider (for display in Settings).
  */
 export interface ProviderStatus {
   name: ProviderName;
@@ -90,7 +99,7 @@ export interface FetchOptions {
 }
 
 /**
- * Every data source provider must implement this interface.
+ * Every active data source provider must implement this interface.
  */
 export interface DataSourceProvider {
   readonly name: ProviderName;
