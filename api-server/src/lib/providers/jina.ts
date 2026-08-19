@@ -1,14 +1,17 @@
 /**
  * Jina AI Provider
  *
- * Role: Web content extraction via Jina Reader API (r.jina.ai).
- * Converts any URL into clean markdown — great fallback/complement to FireCrawl
- * for extracting full page content before AI analysis.
- *
- * API docs: https://jina.ai/reader/
+ * Role: renewable web content extraction via Jina Reader (r.jina.ai).
+ * Reader works without a key at the free basic rate; JINA_API_KEY is optional
+ * and is used only to raise Reader limits and to enable the embeddings API.
  */
 
-import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import { resolveCredential } from "../config/providerConfig";
 
 const JINA_READER_BASE = "https://r.jina.ai/";
@@ -23,35 +26,36 @@ export class JinaProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    // Jina Reader supports keyless basic usage. A configured key raises the
+    // Reader rate limit but is not required for URL extraction.
+    return true;
   }
 
   async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
-    // Jina is a utility provider (URL → content), not a direct data source
+    // Jina is a utility provider (URL -> content), not a direct data source.
     return { records: [], total: 0, errors: [] };
   }
 
   async getStatus(): Promise<ProviderStatus> {
-    const configured = await this.isConfigured();
     let healthy = false;
     let errorMessage: string | undefined;
 
-    if (configured) {
-      try {
-        // Light test: fetch a known URL
-        const result = await this.extractUrl("https://example.com", 2000);
-        healthy = result !== null && result.length > 10;
-      } catch (e) {
-        errorMessage = e instanceof Error ? e.message : "Unknown error";
-      }
+    try {
+      const result = await this.extractUrl("https://example.com", 2000);
+      healthy = result !== null && result.length > 10;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Unknown error";
     }
 
-    return { name: this.name, configured, healthy, errorMessage };
+    return { name: this.name, configured: true, healthy, errorMessage };
   }
 
   /**
    * Extract clean text content from a URL using Jina Reader.
-   * Returns markdown string or null on failure.
+   *
+   * The request deliberately works without JINA_API_KEY so Insight Hub retains
+   * Jina's renewable basic Reader capacity. If a key exists, it is attached to
+   * the same Reader request to receive the account's increased rate limit.
    */
   async extractUrl(
     url: string,
@@ -59,21 +63,25 @@ export class JinaProvider implements DataSourceProvider {
     signal?: AbortSignal,
   ): Promise<string | null> {
     const apiKey = await this.getApiKey();
-    if (!apiKey) return null;
 
     try {
-      const response = await fetch(`${JINA_READER_BASE}${encodeURIComponent(url)}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "text/plain",
-          "X-Return-Format": "markdown",
-          "X-Timeout": "10",
+      const headers: Record<string, string> = {
+        Accept: "text/plain",
+        "X-Return-Format": "markdown",
+        "X-Timeout": "10",
+      };
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+      const response = await fetch(
+        `${JINA_READER_BASE}${encodeURIComponent(url)}`,
+        {
+          method: "GET",
+          headers,
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+            : AbortSignal.timeout(15_000),
         },
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-          : AbortSignal.timeout(15_000),
-      });
+      );
 
       if (!response.ok) return null;
 
@@ -85,11 +93,13 @@ export class JinaProvider implements DataSourceProvider {
   }
 
   /**
-   * Embed one or more texts with Jina's embeddings API (jina-embeddings-v3).
-   * Returns one vector per input (aligned by index), or null if unavailable.
-   * Used for semantic re-ranking of opportunities against an ideal profile.
+   * Embed one or more texts with Jina's embeddings API. Embeddings still
+   * require JINA_API_KEY; keyless mode is intentionally limited to Reader.
    */
-  async embed(texts: string[], task: "retrieval.query" | "retrieval.passage" = "retrieval.passage"): Promise<number[][] | null> {
+  async embed(
+    texts: string[],
+    task: "retrieval.query" | "retrieval.passage" = "retrieval.passage",
+  ): Promise<number[][] | null> {
     const apiKey = await this.getApiKey();
     if (!apiKey || texts.length === 0) return null;
 
@@ -104,55 +114,66 @@ export class JinaProvider implements DataSourceProvider {
         body: JSON.stringify({
           model: JINA_EMBEDDING_MODEL,
           task,
-          input: texts.map((t) => t.slice(0, 2000)),
+          input: texts.map((text) => text.slice(0, 2000)),
         }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(20_000),
       });
 
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        console.warn(`[Jina embed] HTTP ${response.status}: ${body.slice(0, 200)}`);
+        console.warn(
+          `[Jina embed] HTTP ${response.status}: ${body.slice(0, 200)}`,
+        );
         return null;
       }
 
-      const json = (await response.json()) as { data?: { index: number; embedding: number[] }[] };
+      const json = (await response.json()) as {
+        data?: { index: number; embedding: number[] }[];
+      };
       const data = json.data;
       if (!data?.length) return null;
 
-      // Re-order defensively by the API-provided index so vectors align to inputs.
-      const out: (number[] | undefined)[] = new Array(texts.length).fill(undefined);
+      const out: (number[] | undefined)[] = new Array(texts.length).fill(
+        undefined,
+      );
       for (const item of data) {
-        if (item.index >= 0 && item.index < texts.length && Array.isArray(item.embedding)) {
+        if (
+          item.index >= 0 &&
+          item.index < texts.length &&
+          Array.isArray(item.embedding)
+        ) {
           out[item.index] = item.embedding;
         }
       }
-      if (out.some((v) => v === undefined)) return null;
+      if (out.some((value) => value === undefined)) return null;
       return out as number[][];
-    } catch (err) {
-      console.warn(`[Jina embed] ${err instanceof Error ? err.message : err}`);
+    } catch (error) {
+      console.warn(
+        `[Jina embed] ${error instanceof Error ? error.message : error}`,
+      );
       return null;
     }
   }
 
-  /**
-   * Extract content from multiple URLs in parallel (limited concurrency).
-   */
+  /** Extract content from multiple URLs in bounded parallel batches. */
   async extractUrls(
     urls: string[],
     concurrency = 3,
-    maxLength = 6000
+    maxLength = 6000,
   ): Promise<Map<string, string>> {
     const results = new Map<string, string>();
 
-    for (let i = 0; i < urls.length; i += concurrency) {
-      const batch = urls.slice(i, i + concurrency);
+    for (let index = 0; index < urls.length; index += concurrency) {
+      const batch = urls.slice(index, index + concurrency);
       const extracted = await Promise.allSettled(
-        batch.map((url) => this.extractUrl(url, maxLength).then((text) => ({ url, text })))
+        batch.map((url) =>
+          this.extractUrl(url, maxLength).then((text) => ({ url, text })),
+        ),
       );
 
-      for (const r of extracted) {
-        if (r.status === "fulfilled" && r.value.text) {
-          results.set(r.value.url, r.value.text);
+      for (const result of extracted) {
+        if (result.status === "fulfilled" && result.value.text) {
+          results.set(result.value.url, result.value.text);
         }
       }
     }
