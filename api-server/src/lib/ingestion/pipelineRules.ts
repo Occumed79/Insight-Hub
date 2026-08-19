@@ -12,7 +12,7 @@ const SOURCE_CONFIDENCE_RANK: Record<string, number> = {
 const CANONICAL_PROVIDER_AUTHORITY: Record<string, number> = {
   samgov: 100,
   sam_gov: 100,
-  tango: 90,
+  tango: 15,
   texasesbd: 80,
   nyscr: 80,
   eunabonfire: 80,
