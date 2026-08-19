@@ -3,13 +3,26 @@ import { resolveCredential, resolveCredentialWithSource, type ResolvedCredential
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { classifyResult } from "../search/relevance";
-import { buildSamGovTitleQueries, isBidReadySamOpportunity, type SamOpportunity } from "./samGovQuality";
+import {
+  buildSamGovAutonomousTitleQueries,
+  buildSamGovTitleQueries,
+  isBidReadySamOpportunity,
+  type SamOpportunity,
+} from "./samGovQuality";
 
-export { buildSamGovTitleQueries, isBidReadySamOpportunity } from "./samGovQuality";
+export {
+  buildSamGovAutonomousTitleQueries,
+  buildSamGovTitleQueries,
+  isBidReadySamOpportunity,
+} from "./samGovQuality";
 
 const SAM_GOV_DEFAULT_BASE = "https://api.sam.gov/opportunities/v2/search";
 const SAM_GOV_BID_NOTICE_TYPES = ["o", "k"] as const;
+const SAM_GOV_MAX_RESULTS_PER_TITLE = 250;
+const SAM_GOV_AUTONOMOUS_QUERY_COUNT = 2;
+const SAM_GOV_HYDRATION_LIMIT = 16;
+const SAM_GOV_HYDRATION_CONCURRENCY = 2;
+let autonomousQueryCursor = 0;
 
 export function formatSamGovApiError(status: number, body: string, credential: Pick<ResolvedCredential, "source" | "key">): string {
   const snippet = body.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -23,6 +36,20 @@ export function formatSamGovApiError(status: number, body: string, credential: P
   }
 
   return `SAM.gov API error ${status}: ${snippet}`;
+}
+
+export function isOfficialSamOpportunityUrl(value?: string): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      (host === "sam.gov" || host.endsWith(".sam.gov")) &&
+      /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 export class SamGovProvider implements DataSourceProvider {
@@ -42,8 +69,7 @@ export class SamGovProvider implements DataSourceProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    const key = await this.getApiKey();
-    return !!key;
+    return !!(await this.getApiKey());
   }
 
   private static fmtDate(d: Date): string {
@@ -51,13 +77,9 @@ export class SamGovProvider implements DataSourceProvider {
   }
 
   /**
-   * Run one supported SAM.gov title query and discard non-bid notices before
-   * normalization. SAM's public v2 API does not support a `keywords` parameter.
-   *
-   * Important: do not combine the posted-date window with a separate response-
-   * deadline window. SAM.gov validates the earliest and latest dates across the
-   * request and rejects a combined span greater than one year. Future response
-   * deadlines are filtered locally by isBidReadySamOpportunity instead.
+   * Run one supported SAM.gov title query and discard only notices that are not
+   * structurally bid-ready. Semantic Occu-Med relevance is intentionally left
+   * to the shared structured decision layer after content hydration.
    */
   private async runQuery(
     apiKey: string,
@@ -67,7 +89,7 @@ export class SamGovProvider implements DataSourceProvider {
     fromDate: Date,
     today: Date,
     limit: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<NormalizedOpportunity[]> {
     const params = new URLSearchParams({
       api_key: apiKey,
@@ -85,10 +107,19 @@ export class SamGovProvider implements DataSourceProvider {
       throw new Error(formatSamGovApiError(response.status, text, apiKeySource));
     }
 
-    const json = (await response.json()) as { opportunitiesData?: SamOpportunity[]; totalRecords?: number; code?: string; message?: string; nextAccessTime?: string };
+    const json = (await response.json()) as {
+      opportunitiesData?: SamOpportunity[];
+      totalRecords?: number;
+      code?: string;
+      message?: string;
+      nextAccessTime?: string;
+    };
 
-    // SAM.gov returns 200 even for quota errors — detect by presence of error code
-    if (json.code === "900804" || json.message?.toLowerCase().includes("throttled") || json.message?.toLowerCase().includes("quota")) {
+    if (
+      json.code === "900804" ||
+      json.message?.toLowerCase().includes("throttled") ||
+      json.message?.toLowerCase().includes("quota")
+    ) {
       const resetTime = json.nextAccessTime ?? "soon";
       throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
     }
@@ -96,6 +127,142 @@ export class SamGovProvider implements DataSourceProvider {
     return (json.opportunitiesData ?? [])
       .filter((opportunity) => isBidReadySamOpportunity(opportunity, today))
       .map((opportunity) => this.normalize(opportunity));
+  }
+
+  private async hydrateDescriptions(
+    records: NormalizedOpportunity[],
+    signal?: AbortSignal,
+  ): Promise<NormalizedOpportunity[]> {
+    const candidates = records
+      .filter((record) => {
+        const originalDescription = record.rawData?.samDescriptionUrl;
+        return typeof originalDescription === "string" && !!record.sourceUrl;
+      })
+      .slice(0, SAM_GOV_HYDRATION_LIMIT);
+    if (candidates.length === 0) return records;
+
+    const { jinaProvider } = await import("./jina");
+    const hydrated = new Map<string, string>();
+
+    for (let index = 0; index < candidates.length; index += SAM_GOV_HYDRATION_CONCURRENCY) {
+      const batch = candidates.slice(index, index + SAM_GOV_HYDRATION_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (record) => ({
+          id: record.externalId,
+          text: record.sourceUrl
+            ? await jinaProvider.extractUrl(record.sourceUrl, 6_000, signal)
+            : null,
+        })),
+      );
+      for (const result of results) {
+        if (
+          result.status === "fulfilled" &&
+          result.value.text &&
+          result.value.text.trim().length >= 120
+        ) {
+          hydrated.set(result.value.id, result.value.text.trim());
+        }
+      }
+    }
+
+    return records.map((record) => {
+      const description = hydrated.get(record.externalId);
+      if (!description) return record;
+      return {
+        ...record,
+        description,
+        rawData: {
+          ...(record.rawData ?? {}),
+          descriptionHydratedBy: "jina-reader",
+          descriptionHydratedFrom: record.sourceUrl,
+        },
+      };
+    });
+  }
+
+  private titleQueriesForRun(keywords?: string): string[] {
+    const explicit = buildSamGovTitleQueries(keywords);
+    if (explicit.length > 0) return explicit.slice(0, 2);
+
+    const queries = buildSamGovAutonomousTitleQueries(
+      autonomousQueryCursor,
+      SAM_GOV_AUTONOMOUS_QUERY_COUNT,
+    );
+    autonomousQueryCursor =
+      (autonomousQueryCursor + SAM_GOV_AUTONOMOUS_QUERY_COUNT) % 8;
+    return queries;
+  }
+
+  private async recoverOfficialSamPages(
+    options: FetchOptions,
+    titleQueries: string[],
+  ): Promise<NormalizedOpportunity[]> {
+    const quotedFocus = titleQueries
+      .filter(Boolean)
+      .map((title) => `"${title.replace(/"/g, "")}"`)
+      .join(" OR ");
+    const samSearch = [
+      "site:sam.gov/opp/ inurl:/view",
+      quotedFocus ? `(${quotedFocus})` : "(occupational OR medical OR health OR testing OR surveillance)",
+      '(solicitation OR "combined synopsis/solicitation")',
+    ].join(" ");
+
+    try {
+      const { webIntelligenceFetch } = await import("../search/webIntelligence");
+      const result = await webIntelligenceFetch({
+        keywords: options.keywords,
+        discoveryQueries: [samSearch],
+        candidateUrlFilter: isOfficialSamOpportunityUrl,
+        dateRange: options.dateRange,
+        useSerper: false,
+        useExa: true,
+        useLangsearch: true,
+        useParallel: true,
+        useLinkup: true,
+        useYou: true,
+        useSocrata: false,
+        useWebsearch: true,
+        useRssAggregator: false,
+        useSelfHostedSearch: false,
+        useSelfHostedCrawler: false,
+        discoveryPoolId: "sam-gov-zero-result-recovery",
+        signal: options.signal,
+      });
+
+      const records = result.opportunities
+        .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
+        .map((record) => ({
+          ...record,
+          source: "samGov" as const,
+          rawData: {
+            ...(record.rawData ?? {}),
+            providerName: "samGovPublicSearch",
+            evidenceType: "discovery",
+            samGovKeylessFallback: true,
+            samGovFallbackReason: "structured-zero-results",
+          },
+        }));
+
+      if (records.length > 0) {
+        console.warn(
+          JSON.stringify({
+            event: "sam_gov_zero_result_recovered",
+            titleQueries,
+            recovered: records.length,
+          }),
+        );
+      }
+      return records;
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "sam_gov_zero_result_recovery_failed",
+          titleQueries,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return [];
+    }
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
@@ -108,61 +275,50 @@ export class SamGovProvider implements DataSourceProvider {
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - dateRange);
-    const limit = options.limit ?? 100;
+    const limit = Math.max(
+      1,
+      Math.min(options.limit ?? 100, SAM_GOV_MAX_RESULTS_PER_TITLE),
+    );
 
     const normalized: NormalizedOpportunity[] = [];
     const seen = new Set<string>();
-    const titleQueries = buildSamGovTitleQueries(options.keywords);
-    // An omitted title is SAM's broad structured search. Optional focus text
-    // may narrow it, but every run remains a single API request.
-    const searches = titleQueries.length > 0
-      ? [{ title: titleQueries[0] }]
-      : [{}];
-    for (const search of searches) {
-      const matches = await this.runQuery(apiKey, apiKeyCredential, baseUrl, search, fromDate, today, limit, options.signal);
+    const titleQueries = this.titleQueriesForRun(options.keywords);
+
+    for (const title of titleQueries) {
+      const matches = await this.runQuery(
+        apiKey,
+        apiKeyCredential,
+        baseUrl,
+        { title },
+        fromDate,
+        today,
+        limit,
+        options.signal,
+      );
       for (const opportunity of matches) {
-        if (seen.has(opportunity.externalId)) continue;
+        if (!opportunity.externalId || seen.has(opportunity.externalId)) continue;
         seen.add(opportunity.externalId);
         normalized.push(opportunity);
       }
     }
 
-    const relevant = normalized.flatMap((opportunity) => {
-      const relevance = classifyResult({
-        title: opportunity.title,
-        snippet: [
-          opportunity.type,
-          opportunity.description,
-          opportunity.agency,
-          opportunity.subAgency,
-          opportunity.naicsCode,
-          opportunity.naicsDescription,
-        ].filter(Boolean).join(" "),
-        url: opportunity.sourceUrl,
-        date: opportunity.postedDate,
-        deadlineInFuture: Boolean(opportunity.responseDeadline && opportunity.responseDeadline > today),
-        allowHistorical: true,
-      });
-      if (relevance.rejected || relevance.score < 65 || relevance.confidence === "possible_adjacent") return [];
-      return [{
-        ...opportunity,
-        rawData: {
-          ...(opportunity.rawData ?? {}),
-          relevanceScore: relevance.score,
-          relevanceReason: relevance.reasons.join("; "),
-          relevanceConfidence: relevance.confidence,
-        },
-      }];
-    });
+    if (normalized.length === 0) {
+      const recovered = await this.recoverOfficialSamPages(options, titleQueries);
+      return {
+        records: recovered,
+        total: recovered.length,
+        errors: recovered.length > 0
+          ? [`SAM.gov structured title queries returned no bid-ready records; recovered ${recovered.length} official SAM.gov opportunity pages through renewable web discovery.`]
+          : [],
+      };
+    }
 
-    const noMatchWarning = relevant.length === 0 && normalized.length > 0
-      ? ["SAM.gov returned bid-ready notices, but none had a strong current match to Occu-Med service lines."]
-      : [];
+    const hydrated = await this.hydrateDescriptions(normalized, options.signal);
 
     return {
-      records: relevant,
-      total: normalized.length,
-      errors: noMatchWarning,
+      records: hydrated,
+      total: hydrated.length,
+      errors: [],
     };
   }
 
@@ -178,7 +334,7 @@ export class SamGovProvider implements DataSourceProvider {
           .where(eq(opportunitiesTable.source, "sam_gov"));
         recordCount = Number(rows[0]?.count ?? 0);
       } catch {
-        // DB may not be migrated yet — record count is non-critical
+        // DB may not be migrated yet — record count is non-critical.
       }
     }
 
@@ -190,7 +346,21 @@ export class SamGovProvider implements DataSourceProvider {
     const city = o.placeOfPerformance?.city?.name ?? "";
     const state = o.placeOfPerformance?.state?.code ?? "";
     const place = [city, state].filter(Boolean).join(", ") || undefined;
-    const awardAmount = o.award?.amount ? parseFloat(String(o.award.amount)) : undefined;
+    const awardAmount = o.award?.amount
+      ? parseFloat(String(o.award.amount))
+      : undefined;
+    const originalDescription = o.description?.trim() ?? "";
+    const descriptionIsUrl = /^https?:\/\//i.test(originalDescription);
+
+    const metadataDescription = (() => {
+      const metadata: string[] = [];
+      if (o.solicitationNumber) metadata.push(`Solicitation: ${o.solicitationNumber}`);
+      if (o.typeOfSetAsideDescription) metadata.push(`Set-aside: ${o.typeOfSetAsideDescription}`);
+      if (o.naicsCode) metadata.push(`NAICS: ${o.naicsCode}`);
+      if (o.classificationCode) metadata.push(`PSC: ${o.classificationCode}`);
+      if (o.officeAddress?.city) metadata.push(`Location: ${o.officeAddress.city}, ${o.officeAddress.state ?? ""}`);
+      return metadata.length > 0 ? metadata.join(" · ") : undefined;
+    })();
 
     return {
       externalId: o.noticeId ?? o.solicitationNumber ?? "",
@@ -201,27 +371,19 @@ export class SamGovProvider implements DataSourceProvider {
       status: o.active === "Yes" ? "active" : "archived",
       naicsCode: o.naicsCode,
       postedDate: o.postedDate ? new Date(o.postedDate) : new Date(0),
-      responseDeadline: o.responseDeadLine ? new Date(o.responseDeadLine) : undefined,
+      responseDeadline: o.responseDeadLine
+        ? new Date(o.responseDeadLine)
+        : undefined,
       setAside: o.typeOfSetAsideDescription ?? o.typeOfSetAside,
       placeOfPerformance: place,
-      // SAM.gov 'description' field is often just an API URL — strip it and use a real summary
-      description: (() => {
-        const d = o.description ?? "";
-        if (!d || d.startsWith("https://api.sam.gov")) {
-          // Build a meaningful description from available fields
-          const parts: string[] = [];
-          if (o.solicitationNumber) parts.push(`Solicitation: ${o.solicitationNumber}`);
-          if (o.typeOfSetAsideDescription) parts.push(`Set-aside: ${o.typeOfSetAsideDescription}`);
-          if (o.naicsCode) parts.push(`NAICS: ${o.naicsCode}`);
-          if (o.classificationCode) parts.push(`PSC: ${o.classificationCode}`);
-          if (o.award?.awardee?.name) parts.push(`Awardee: ${o.award.awardee.name}`);
-          if (o.officeAddress?.city) parts.push(`Location: ${o.officeAddress.city}, ${o.officeAddress.state}`);
-          return parts.length > 0 ? parts.join(" · ") : undefined;
-        }
-        return d;
-      })(),
+      description:
+        originalDescription && !descriptionIsUrl
+          ? originalDescription
+          : metadataDescription,
       solicitationNumber: o.solicitationNumber,
-      sourceUrl: o.noticeId ? `https://sam.gov/opp/${o.noticeId}/view` : o.uiLink,
+      sourceUrl: o.noticeId
+        ? `https://sam.gov/opp/${o.noticeId}/view`
+        : o.uiLink,
       awardAmount,
       awardee: o.award?.awardee?.name,
       source: this.name,
@@ -230,7 +392,10 @@ export class SamGovProvider implements DataSourceProvider {
         providerPlatform: "sam.gov",
         providerNativeId: o.noticeId,
         evidenceType: "direct-structured",
-        ...(!o.postedDate || Number.isNaN(new Date(o.postedDate).getTime()) ? { dateUnknown: true } : {}),
+        ...(descriptionIsUrl ? { samDescriptionUrl: originalDescription } : {}),
+        ...(!o.postedDate || Number.isNaN(new Date(o.postedDate).getTime())
+          ? { dateUnknown: true }
+          : {}),
       },
     };
   }
