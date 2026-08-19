@@ -1,3 +1,10 @@
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
+import { resolveCredential } from "../config/providerConfig";
 import { composeAbortSignal } from "./abortSignals";
 
 const KEENABLE_BASE = "https://api.keenable.ai/v1";
@@ -12,11 +19,11 @@ export interface KeenableSearchResult {
   acquiredAt?: string;
 }
 
-export class KeenableProvider {
+export class KeenableProvider implements DataSourceProvider {
   readonly name = "keenable" as const;
 
-  private getApiKey(): string | null {
-    return process.env.KEENABLE_API_KEY?.trim() || null;
+  private async getApiKey(): Promise<string | null> {
+    return resolveCredential("keenableApiKey", "KEENABLE_API_KEY");
   }
 
   /** Keenable's REST API is keyless by default; an API key only lifts limits. */
@@ -24,8 +31,17 @@ export class KeenableProvider {
     return true;
   }
 
-  private headers(): Record<string, string> {
-    const apiKey = this.getApiKey();
+  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
+    // Keenable is consumed by the quota-aware browser-discovery ensemble.
+    return { records: [], total: 0, errors: [] };
+  }
+
+  async getStatus(): Promise<ProviderStatus> {
+    return { name: this.name, configured: true, healthy: true };
+  }
+
+  private async headers(): Promise<Record<string, string>> {
+    const apiKey = await this.getApiKey();
     return {
       "Content-Type": "application/json",
       ...(apiKey ? { "X-API-Key": apiKey } : {}),
@@ -44,7 +60,7 @@ export class KeenableProvider {
     try {
       const response = await fetch(`${KEENABLE_BASE}/search`, {
         method: "POST",
-        headers: this.headers(),
+        headers: await this.headers(),
         body: JSON.stringify({
           query,
           snippet_max_length: 1_500,
@@ -98,7 +114,7 @@ export class KeenableProvider {
       const endpoint = new URL(`${KEENABLE_BASE}/fetch`);
       endpoint.searchParams.set("url", url);
       const response = await fetch(endpoint, {
-        headers: this.headers(),
+        headers: await this.headers(),
         signal: requestSignal.signal,
       });
       const body = await response.text();
@@ -119,6 +135,10 @@ export class KeenableProvider {
     } finally {
       requestSignal.cleanup();
     }
+  }
+
+  async usageMode(): Promise<"keyed" | "keyless"> {
+    return (await this.getApiKey()) ? "keyed" : "keyless";
   }
 }
 
