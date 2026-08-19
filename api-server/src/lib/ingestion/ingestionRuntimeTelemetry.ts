@@ -1,3 +1,7 @@
+import { desc, inArray } from "drizzle-orm";
+import { rfpDb } from "@workspace/db";
+import { opportunityIngestionRunsTable } from "@workspace/db/schema/rfp";
+
 export interface IngestionMemberTelemetry {
   provider: string;
   status: "selected" | "used" | "warning" | "failed" | "skipped";
@@ -34,6 +38,9 @@ type RunState = {
 const runs = new Map<string, RunState>();
 const MAX_RUNS = 32;
 const RUN_TTL_MS = 6 * 60 * 60 * 1_000;
+const ACTIVE_RUN_CACHE_MS = 1_000;
+let activeRunCache: { runId: string | null; loadedAt: number } | null = null;
+let activeRunPromise: Promise<string | null> | null = null;
 
 function prune(now = Date.now()): void {
   for (const [runId, state] of runs) {
@@ -65,11 +72,43 @@ function ensure(runId: string): RunState {
   return created;
 }
 
-export function recordDiscoverySelection(
-  runId: string | undefined,
+async function activeDurableRunId(): Promise<string | null> {
+  const now = Date.now();
+  if (activeRunCache && now - activeRunCache.loadedAt < ACTIVE_RUN_CACHE_MS) {
+    return activeRunCache.runId;
+  }
+  if (activeRunPromise) return activeRunPromise;
+  activeRunPromise = (async () => {
+    try {
+      const [row] = await rfpDb
+        .select({ id: opportunityIngestionRunsTable.id })
+        .from(opportunityIngestionRunsTable)
+        .where(
+          inArray(opportunityIngestionRunsTable.status, ["queued", "running"]),
+        )
+        .orderBy(desc(opportunityIngestionRunsTable.createdAt))
+        .limit(1);
+      const runId = row?.id ?? null;
+      activeRunCache = { runId, loadedAt: Date.now() };
+      return runId;
+    } catch {
+      activeRunCache = { runId: null, loadedAt: Date.now() };
+      return null;
+    } finally {
+      activeRunPromise = null;
+    }
+  })();
+  return activeRunPromise;
+}
+
+async function resolvedRunId(runId?: string): Promise<string | null> {
+  return runId?.trim() || (await activeDurableRunId());
+}
+
+function applyDiscoverySelection(
+  runId: string,
   input: { configured: string[]; selected: string[] },
 ): void {
-  if (!runId) return;
   const state = ensure(runId);
   state.configuredDiscoveryProviders = [...input.configured];
   state.selectedDiscoveryProviders = [...input.selected];
@@ -88,13 +127,22 @@ export function recordDiscoverySelection(
       ...(existing ?? {}),
     });
   }
+  state.updatedAt = Date.now();
 }
 
-export function recordIngestionProviderTelemetry(
+export function recordDiscoverySelection(
   runId: string | undefined,
+  input: { configured: string[]; selected: string[] },
+): void {
+  void resolvedRunId(runId).then((resolved) => {
+    if (resolved) applyDiscoverySelection(resolved, input);
+  });
+}
+
+function applyProviderTelemetry(
+  runId: string,
   input: Omit<IngestionMemberTelemetry, "updatedAt">,
 ): void {
-  if (!runId) return;
   const state = ensure(runId);
   const previous = state.providers.get(input.provider);
   const aiScorers = Array.from(
@@ -112,6 +160,15 @@ export function recordIngestionProviderTelemetry(
     updatedAt: new Date().toISOString(),
   });
   state.updatedAt = Date.now();
+}
+
+export function recordIngestionProviderTelemetry(
+  runId: string | undefined,
+  input: Omit<IngestionMemberTelemetry, "updatedAt">,
+): void {
+  void resolvedRunId(runId).then((resolved) => {
+    if (resolved) applyProviderTelemetry(resolved, input);
+  });
 }
 
 export function ingestionRunTelemetrySnapshot(
@@ -143,4 +200,6 @@ export function ingestionRunTelemetrySnapshot(
 
 export function clearIngestionRuntimeTelemetryForTests(): void {
   runs.clear();
+  activeRunCache = null;
+  activeRunPromise = null;
 }
