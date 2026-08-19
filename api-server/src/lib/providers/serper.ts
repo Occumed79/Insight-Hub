@@ -13,9 +13,18 @@ export interface SerperSearchResult {
   snippet: string;
   position?: number;
   date?: string;
+  source?: string;
 }
 
 export type SerperResult = SerperSearchResult;
+
+export interface LegacySerperSearchOptions {
+  num?: number;
+  recency?: string;
+  type?: string;
+  tbs?: string;
+  signal?: AbortSignal;
+}
 
 export function toSerperFreeTierQuery(query: string): string {
   const tokens = query
@@ -38,7 +47,8 @@ export class SerperProvider {
 
   async search(
     _query: string,
-    _options: { num?: number; recency?: string; signal?: AbortSignal } = {},
+    _optionsOrNum: LegacySerperSearchOptions | number = {},
+    _legacyOptions: LegacySerperSearchOptions = {},
   ): Promise<SerperSearchResult[]> {
     return [];
   }
@@ -46,7 +56,7 @@ export class SerperProvider {
   async searchMultiple(
     _queries: string[],
     _numPerQuery = 10,
-    _options: { signal?: AbortSignal } = {},
+    _options: LegacySerperSearchOptions = {},
   ): Promise<SerperSearchResult[]> {
     return [];
   }
