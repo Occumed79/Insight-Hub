@@ -246,14 +246,17 @@ function logBudgetReached(
 }
 
 /**
- * Runs limited-capacity providers sequentially. Each success advances the pool
- * cursor so the next request begins with a different provider. Provider errors
- * enter cooldown, but a recovered fallback failure is diagnostic—not a failed
- * Fetch Intelligence run. Only an exhausted pool returns terminal errors.
+ * Runs limited-capacity providers sequentially. Generic pools rotate after a
+ * successful call so capacity can be shared. Opportunity page enrichment is
+ * deliberately different: it always restarts at the cheapest provider so Jina
+ * stays first and paid/monthly fallbacks are only reached when cheaper readers
+ * fail or return unusable content.
  *
- * Opportunity pools also enforce a shared call ceiling across the active run
- * window. Reaching that ceiling is normal partial completion, not an error.
- * Parent cancellation is never converted into provider failure/cooldown state.
+ * Provider errors enter cooldown, but a recovered fallback failure is
+ * diagnostic—not a failed Fetch Intelligence run. Only an exhausted pool
+ * returns terminal errors. Opportunity pools also enforce a shared call ceiling
+ * across the active run window. Parent cancellation is never converted into
+ * provider failure/cooldown state.
  */
 export async function runLimitedProviderPool<T>(
   poolId: string,
@@ -295,7 +298,8 @@ export async function runLimitedProviderPool<T>(
     }
   }
 
-  const rotateProviders = options.rotate !== false;
+  const rotateProviders =
+    options.rotate ?? poolId !== "opportunity-page-enrichment";
   const start = rotateProviders ? (cursors.get(poolId) ?? 0) : 0;
   const ordered = rotated(configured, start);
   const attempted: string[] = [];
