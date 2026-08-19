@@ -57,6 +57,14 @@ services:
         sync: false
       - key: FIRECRAWL_API_KEY_3
         sync: false
+      - key: KEENABLE_API_KEY
+        sync: false
+      - key: MICROLINK_API_KEY
+        sync: false
+      - key: INSIGHT_BUDGET_MICROLINK_DAILY
+        value: "25"
+      - key: INSIGHT_BUDGET_MICROLINK_RESERVE
+        value: "1"
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_KEY_2
