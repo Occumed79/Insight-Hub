@@ -37,10 +37,10 @@ interface QuotaPolicy {
 }
 
 interface TelemetryResponse {
-  generatedAt: string;
-  quotaPolicies: QuotaPolicy[];
-  credentialPools: Record<string, PoolSnapshot>;
-  budgets: BudgetSnapshot[];
+  generatedAt?: string;
+  quotaPolicies?: QuotaPolicy[];
+  credentialPools?: Record<string, PoolSnapshot>;
+  budgets?: BudgetSnapshot[];
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -77,7 +77,10 @@ function poolForProvider(
 ): PoolSnapshot | undefined {
   return Object.values(pools).find((pool) => {
     const id = pool.id.toLowerCase();
-    return id === provider.toLowerCase() || id.startsWith(`${provider.toLowerCase()}-`);
+    return (
+      id === provider.toLowerCase() ||
+      id.startsWith(`${provider.toLowerCase()}-`)
+    );
   });
 }
 
@@ -127,12 +130,23 @@ export function ProviderQuotaTelemetry() {
 
   const rows = useMemo(() => {
     if (!data) return [];
-    return data.quotaPolicies
+    const quotaPolicies = Array.isArray(data.quotaPolicies)
+      ? data.quotaPolicies
+      : [];
+    const budgets = Array.isArray(data.budgets) ? data.budgets : [];
+    const credentialPools =
+      data.credentialPools && typeof data.credentialPools === "object"
+        ? data.credentialPools
+        : {};
+
+    return quotaPolicies
       .filter((policy) => policy.purpose === "discovery")
       .sort((left, right) => left.priority - right.priority)
       .map((policy) => {
-        const budget = data.budgets.find((item) => item.provider === policy.provider);
-        const pool = poolForProvider(policy.provider, data.credentialPools);
+        const budget = budgets.find(
+          (item) => item.provider === policy.provider,
+        );
+        const pool = poolForProvider(policy.provider, credentialPools);
         return { policy, budget, pool };
       });
   }, [data]);
@@ -196,7 +210,7 @@ export function ProviderQuotaTelemetry() {
                           : "bg-emerald-400"
                       }`}
                     />
-                    {PROVIDER_LABELS[policy.provider] ?? policy.provider}
+                    <span>{PROVIDER_LABELS[policy.provider] ?? policy.provider}</span>
                     <span className="text-[9px] font-normal uppercase text-white/35">
                       {policy.renewal}
                     </span>
@@ -226,7 +240,11 @@ export function ProviderQuotaTelemetry() {
         <div className="mt-3 flex items-center gap-2 text-[11px] text-white/45">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading provider state…
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-3 text-[10px] text-white/35">
+          Provider quota details are not available yet; discovery can still run.
+        </div>
+      )}
     </div>
   );
 }
