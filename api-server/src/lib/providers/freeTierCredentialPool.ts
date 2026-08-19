@@ -14,8 +14,25 @@ export interface FreeTierCredentialPoolOptions {
   rotateOnSuccess?: boolean;
 }
 
+export interface CredentialPoolSlotSnapshot {
+  slot: string;
+  configured: boolean;
+  active: boolean;
+  coolingDown: boolean;
+  cooldownUntil: string | null;
+}
+
+export interface CredentialPoolSnapshot {
+  id: string;
+  rotateOnSuccess: boolean;
+  configuredAccounts: number;
+  activeSlot: string | null;
+  slots: CredentialPoolSlotSnapshot[];
+}
+
 const cursors = new Map<string, number>();
 const cooldowns = new Map<string, number>();
+const poolInstances = new Map<string, FreeTierCredentialPool>();
 
 function cooldownMs(error: unknown): number {
   const message = error instanceof Error ? error.message : String(error);
@@ -55,6 +72,7 @@ export class FreeTierCredentialPool {
     options: FreeTierCredentialPoolOptions = {},
   ) {
     this.rotateOnSuccess = options.rotateOnSuccess ?? true;
+    poolInstances.set(id, this);
   }
 
   private async credentials(): Promise<Array<{ slot: string; value: string }>> {
@@ -77,6 +95,32 @@ export class FreeTierCredentialPool {
 
   async isConfigured(): Promise<boolean> {
     return (await this.credentials()).length > 0;
+  }
+
+  async snapshot(): Promise<CredentialPoolSnapshot> {
+    const credentials = await this.credentials();
+    const cursor = credentials.length > 0
+      ? (cursors.get(this.id) ?? 0) % credentials.length
+      : 0;
+    const activeSlot = credentials[cursor]?.slot ?? null;
+    const configuredSlots = new Set(credentials.map((credential) => credential.slot));
+    const now = Date.now();
+    return {
+      id: this.id,
+      rotateOnSuccess: this.rotateOnSuccess,
+      configuredAccounts: credentials.length,
+      activeSlot,
+      slots: this.slots.map(({ envKey }) => {
+        const until = cooldowns.get(`${this.id}:${envKey}`) ?? 0;
+        return {
+          slot: envKey,
+          configured: configuredSlots.has(envKey),
+          active: envKey === activeSlot,
+          coolingDown: until > now,
+          cooldownUntil: until > now ? new Date(until).toISOString() : null,
+        };
+      }),
+    };
   }
 
   async run<T>(operation: (apiKey: string) => Promise<T>): Promise<T> {
@@ -122,6 +166,10 @@ export class FreeTierCredentialPool {
       `${this.id} credential pool exhausted: ${errors.join(" | ")}`,
     );
   }
+}
+
+export async function credentialPoolTelemetry(): Promise<CredentialPoolSnapshot[]> {
+  return Promise.all([...poolInstances.values()].map((pool) => pool.snapshot()));
 }
 
 export function clearFreeTierCredentialPoolState(): void {
