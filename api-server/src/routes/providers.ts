@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { opportunityIngestionRunsTable } from "@workspace/db/schema/rfp";
+import { desc, eq, inArray } from "drizzle-orm";
 import { providerRegistry } from "../lib/providers";
 import {
   PROVIDER_DEFINITIONS,
@@ -51,6 +52,23 @@ function ingestionMode(name: string) {
   if (source?.role === "retrieval") return "retrieval" as const;
   if (source?.role === "intelligence") return "intelligence" as const;
   return "support" as const;
+}
+
+async function currentTelemetryRunId(explicit?: unknown): Promise<string | null> {
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  try {
+    const [row] = await db
+      .select({ id: opportunityIngestionRunsTable.id })
+      .from(opportunityIngestionRunsTable)
+      .where(
+        inArray(opportunityIngestionRunsTable.status, ["queued", "running"]),
+      )
+      .orderBy(desc(opportunityIngestionRunsTable.createdAt))
+      .limit(1);
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 router.get("/providers", async (req, res) => {
@@ -184,22 +202,25 @@ router.get("/providers/telemetry", async (req, res) => {
       "websearch",
       "microlink",
     ];
-    const [credentialPools, budgets, jinaMode, keenableMode, microlinkMode] =
-      await Promise.all([
-        credentialPoolTelemetry(),
-        providerBudgetSnapshot(budgetNames),
-        jinaProvider.usageMode(),
-        keenableProvider.usageMode(),
-        microlinkProvider.usageMode(),
-      ]);
+    const [
+      credentialPools,
+      budgets,
+      jinaMode,
+      keenableMode,
+      microlinkMode,
+      runId,
+    ] = await Promise.all([
+      credentialPoolTelemetry(),
+      providerBudgetSnapshot(budgetNames),
+      jinaProvider.usageMode(),
+      keenableProvider.usageMode(),
+      microlinkProvider.usageMode(),
+      currentTelemetryRunId(req.query.runId),
+    ]);
 
     const poolsById = Object.fromEntries(
       credentialPools.map((pool: CredentialPoolSnapshot) => [pool.id, pool]),
     );
-    const runId =
-      typeof req.query.runId === "string" && req.query.runId.trim()
-        ? req.query.runId.trim()
-        : null;
 
     return res.json({
       generatedAt: new Date().toISOString(),
