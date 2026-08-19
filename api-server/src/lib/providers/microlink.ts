@@ -1,20 +1,44 @@
+import type {
+  DataSourceProvider,
+  FetchOptions,
+  ProviderFetchResult,
+  ProviderStatus,
+} from "./types";
 import {
   providerBudgetAvailable,
   recordProviderFailure,
   recordProviderSuccess,
 } from "../providerBudget";
+import { resolveCredential } from "../config/providerConfig";
 import { composeAbortSignal } from "./abortSignals";
 
 const MICROLINK_ENDPOINT = "https://api.microlink.io";
 const REQUEST_TIMEOUT_MS = 20_000;
 
-export class MicrolinkProvider {
+export class MicrolinkProvider implements DataSourceProvider {
   readonly name = "microlink" as const;
 
-  // Microlink's free endpoint is keyless. An optional paid key can be supplied
-  // later without making the free fallback depend on one.
   async isConfigured(): Promise<boolean> {
     return true;
+  }
+
+  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
+    // Microlink is enrichment-only and must never become a discovery feed.
+    return { records: [], total: 0, errors: [] };
+  }
+
+  async getStatus(): Promise<ProviderStatus> {
+    return {
+      name: this.name,
+      configured: true,
+      healthy: await providerBudgetAvailable("microlink"),
+    };
+  }
+
+  async usageMode(): Promise<"keyed" | "keyless"> {
+    return (await resolveCredential("microlinkApiKey", "MICROLINK_API_KEY"))
+      ? "keyed"
+      : "keyless";
   }
 
   async fetchText(
@@ -33,7 +57,10 @@ export class MicrolinkProvider {
 
     try {
       const headers: Record<string, string> = { Accept: "application/json" };
-      const optionalKey = process.env.MICROLINK_API_KEY?.trim();
+      const optionalKey = await resolveCredential(
+        "microlinkApiKey",
+        "MICROLINK_API_KEY",
+      );
       if (optionalKey) headers["x-api-key"] = optionalKey;
 
       const response = await fetch(endpoint, {
