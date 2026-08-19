@@ -96,11 +96,13 @@ function failureOutcome(error: unknown): CredentialSlotOutcome {
   if (/\b(401|403)\b|invalid api.?key|unauthori[sz]ed|forbidden/i.test(message)) {
     return "auth";
   }
-  if (/team_budget_exceeded|no_more_credits|api_key_budget_exceeded|quota|credit|balance|budget|exceed|exhaust/i.test(message)) {
-    return "quota";
-  }
+  // A transport-level 429 is rate limiting even when the message also says
+  // "limit exceeded". Reserve quota for explicit credit/team/budget exhaustion.
   if (/\b429\b|rate.?limit|too many requests|throttl/i.test(message)) {
     return "rate_limited";
+  }
+  if (/team_budget_exceeded|no_more_credits|api_key_budget_exceeded|quota|credit|balance|budget|exhaust/i.test(message)) {
+    return "quota";
   }
   if (/\b408\b|timeout|timed out|ECONN|fetch failed|\b5\d\d\b/i.test(message)) {
     return "timeout";
