@@ -27,7 +27,7 @@
     "express": "^5",
     "imapflow": "^1.0.162",
     "multer": "^2.2.0",
-    "pino": "^9",
+    "pino": "^10",
     "pino-http": "^10"
   },
   "devDependencies": {
