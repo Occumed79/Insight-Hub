@@ -9,7 +9,7 @@ import {
   type RfpProviderName,
 } from "../lib/config/providerConfig";
 import { sourceDefinition } from "../lib/sourceArchitecture";
-import { browserbaseProvider } from "../lib/providers/browserbase";
+import { jinaProvider } from "../lib/providers/jina";
 import { keenableProvider } from "../lib/providers/keenable";
 import { microlinkProvider } from "../lib/providers/microlink";
 import {
@@ -18,6 +18,7 @@ import {
 } from "../lib/providers/freeTierCredentialPool";
 import { providerBudgetSnapshot } from "../lib/providerBudget";
 import { DISCOVERY_QUOTA_POLICIES } from "../lib/discoveryQuotaPolicy";
+import { ingestionRunTelemetrySnapshot } from "../lib/ingestion/ingestionRuntimeTelemetry";
 
 const router = Router();
 
@@ -52,48 +53,9 @@ function ingestionMode(name: string) {
   return "support" as const;
 }
 
-const MANAGED_RUNTIME_PROVIDERS = [
-  {
-    name: "browserbase",
-    displayName: "Browserbase Search / Fetch",
-    description:
-      "Managed web search and page fetching with independent account failover.",
-    category: "search",
-    useCase: "web_discovery",
-    capabilities: ["Web search", "Page fetch", "Independent account failover"],
-    isConfigured: () => browserbaseProvider.isConfigured(),
-  },
-  {
-    name: "keenable",
-    displayName: "Keenable",
-    description:
-      "Indexed web search and page fetching for opportunity discovery and enrichment.",
-    category: "search",
-    useCase: "web_discovery",
-    capabilities: ["Web search", "Date filters", "Page fetch"],
-    isConfigured: () => keenableProvider.isConfigured(),
-  },
-  {
-    name: "microlink",
-    displayName: "Microlink",
-    description:
-      "Keyless final page-extraction fallback protected by a daily request budget.",
-    category: "search",
-    useCase: "web_discovery",
-    capabilities: ["Page text extraction", "Keyless fallback", "Daily budget guard"],
-    isConfigured: () => microlinkProvider.isConfigured(),
-  },
-] as const;
-
-/**
- * GET /api/providers
- * Returns only active integrations. Retired Serper/OloStep compatibility shells
- * are intentionally omitted, while managed runtime utilities are surfaced even
- * though they do not participate in the generic provider registry.
- */
 router.get("/providers", async (req, res) => {
   try {
-    const registeredStatuses = await Promise.all(
+    const providers = await Promise.all(
       PROVIDER_NAMES.map(async (name) => {
         const provider = providerRegistry[name];
         const def = PROVIDER_DEFINITIONS[name];
@@ -178,32 +140,7 @@ router.get("/providers", async (req, res) => {
       }),
     );
 
-    const managedStatuses = await Promise.all(
-      MANAGED_RUNTIME_PROVIDERS.map(async (provider) => {
-        const configured = await provider.isConfigured().catch(() => false);
-        const source = sourceDefinition(provider.name);
-        return {
-          name: provider.name,
-          displayName: provider.displayName,
-          description: provider.description,
-          category: provider.category,
-          useCase: provider.useCase,
-          sourceRole: source?.role ?? null,
-          ingestionEligible: source?.role === "browser_discovery",
-          ingestionMode: ingestionMode(provider.name),
-          capabilities: provider.capabilities,
-          requiredFields: [],
-          optionalFields: [],
-          notes: "Managed through deployment environment variables.",
-          status: {
-            configured,
-            healthy: configured,
-          },
-        };
-      }),
-    );
-
-    return res.json({ providers: [...registeredStatuses, ...managedStatuses] });
+    return res.json({ providers });
   } catch (error) {
     req.log.error(error);
     return res.status(500).json({ error: "Failed to get provider statuses" });
@@ -212,13 +149,11 @@ router.get("/providers", async (req, res) => {
 
 /**
  * Safe operational telemetry for Fetch Intelligence. Never returns credential
- * values: account-pool telemetry exposes only environment slot names, whether a
- * slot exists, the active slot, and cooldown timestamps.
+ * values. Account telemetry exposes slot names, per-slot outcomes, vendor quota
+ * headers when available, and cooldown/reset timestamps.
  */
 router.get("/providers/telemetry", async (req, res) => {
   try {
-    // Import/initialise the multi-account providers so their pools register with
-    // the safe telemetry registry even before the first ingestion run.
     await Promise.all([
       import("../lib/providers/gemini"),
       import("../lib/providers/groq"),
@@ -249,19 +184,34 @@ router.get("/providers/telemetry", async (req, res) => {
       "websearch",
       "microlink",
     ];
-    const [credentialPools, budgets] = await Promise.all([
-      credentialPoolTelemetry(),
-      providerBudgetSnapshot(budgetNames),
-    ]);
+    const [credentialPools, budgets, jinaMode, keenableMode, microlinkMode] =
+      await Promise.all([
+        credentialPoolTelemetry(),
+        providerBudgetSnapshot(budgetNames),
+        jinaProvider.usageMode(),
+        keenableProvider.usageMode(),
+        microlinkProvider.usageMode(),
+      ]);
 
     const poolsById = Object.fromEntries(
       credentialPools.map((pool: CredentialPoolSnapshot) => [pool.id, pool]),
     );
+    const runId =
+      typeof req.query.runId === "string" && req.query.runId.trim()
+        ? req.query.runId.trim()
+        : null;
+
     return res.json({
       generatedAt: new Date().toISOString(),
       quotaPolicies: DISCOVERY_QUOTA_POLICIES,
       credentialPools: poolsById,
       budgets,
+      utilityModes: {
+        jina: jinaMode,
+        keenable: keenableMode,
+        microlink: microlinkMode,
+      },
+      run: runId ? ingestionRunTelemetrySnapshot(runId) : null,
     });
   } catch (error) {
     req.log.error(error);
@@ -318,7 +268,10 @@ router.put("/providers/:name", async (req, res) => {
         await db
           .insert(settingsTable)
           .values({ key: field.dbKey, value: normalized })
-          .onConflictDoUpdate({ target: settingsTable.key, set: { value: normalized } });
+          .onConflictDoUpdate({
+            target: settingsTable.key,
+            set: { value: normalized },
+          });
         savedKeys.push(field.dbKey);
       }
     }
