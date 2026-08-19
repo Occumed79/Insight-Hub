@@ -71,7 +71,7 @@ export class ExaProvider implements DataSourceProvider {
     body: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<T> {
-    return credentials.run(async (apiKey) => {
+    return credentials.run(async (apiKey, slot) => {
       const requestSignal = composeAbortSignal(EXA_REQUEST_TIMEOUT_MS, signal);
       let response: Response;
       try {
@@ -84,6 +84,7 @@ export class ExaProvider implements DataSourceProvider {
           body: JSON.stringify(body),
           signal: requestSignal.signal,
         });
+        credentials.recordRateLimitHeaders(slot, response.headers);
       } finally {
         requestSignal.cleanup();
       }
