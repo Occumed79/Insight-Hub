@@ -482,8 +482,9 @@ describe("run retry and deadline rules", () => {
     assert.ok(runner.includes("dateRange: options.dateRange"));
     assert.ok(web.includes("dateRangeDays"));
     assert.ok(web.includes("startPublishedDate: publishedAfterIso"));
+    assert.ok(web.includes("publishedAfter: publishedAfterIso"));
     assert.ok(web.includes("dateRange: dateRangeDays"));
-    assert.ok(web.includes("requestedSerperRecency"));
+    assert.equal(web.includes("requestedSerperRecency"), false);
     assert.equal(web.includes("options.keywords ? 365 : 30"), false);
   });
 
