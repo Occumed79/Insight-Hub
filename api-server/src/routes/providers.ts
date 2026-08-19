@@ -2,11 +2,12 @@ import { Router } from "express";
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { opportunityIngestionRunsTable } from "@workspace/db/schema/rfp";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { providerRegistry } from "../lib/providers";
 import {
   PROVIDER_DEFINITIONS,
   RFP_INGESTION_PROVIDER_NAMES,
+  resolveCredential,
   type RfpProviderName,
 } from "../lib/config/providerConfig";
 import { sourceDefinition } from "../lib/sourceArchitecture";
@@ -60,9 +61,6 @@ async function currentTelemetryRunId(explicit?: unknown): Promise<string | null>
     const [row] = await db
       .select({ id: opportunityIngestionRunsTable.id })
       .from(opportunityIngestionRunsTable)
-      .where(
-        inArray(opportunityIngestionRunsTable.status, ["queued", "running"]),
-      )
       .orderBy(desc(opportunityIngestionRunsTable.createdAt))
       .limit(1);
     return row?.id ?? null;
@@ -209,6 +207,7 @@ router.get("/providers/telemetry", async (req, res) => {
       keenableMode,
       microlinkMode,
       runId,
+      langsearchCredentials,
     ] = await Promise.all([
       credentialPoolTelemetry(),
       providerBudgetSnapshot(budgetNames),
@@ -216,11 +215,73 @@ router.get("/providers/telemetry", async (req, res) => {
       keenableProvider.usageMode(),
       microlinkProvider.usageMode(),
       currentTelemetryRunId(req.query.runId),
+      Promise.all([
+        resolveCredential("langsearchApiKey", "LANGSEARCH_API_KEY"),
+        resolveCredential("langsearchApiKey2", "LANGSEARCH_API_KEY_2"),
+        resolveCredential("langsearchApiKey3", "LANGSEARCH_API_KEY_3"),
+        resolveCredential("langsearchApiKey4", "LANGSEARCH_API_KEY_4"),
+      ]),
     ]);
 
     const poolsById = Object.fromEntries(
       credentialPools.map((pool: CredentialPoolSnapshot) => [pool.id, pool]),
     );
+
+    const langSlotNames = [
+      "primary",
+      "secondary",
+      "tertiary",
+      "quaternary",
+    ] as const;
+    const configuredLangSlots = langSlotNames.flatMap((slot, index) =>
+      langsearchCredentials[index]?.trim() ? [slot] : [],
+    );
+    const langBudgets = langSlotNames.map((slot) => ({
+      slot,
+      budget: budgets.find((budget) => budget.provider === `langsearch:${slot}`),
+    }));
+    const activeLangSlot = langBudgets
+      .filter(({ slot }) => configuredLangSlots.includes(slot))
+      .sort((left, right) => {
+        const leftTime = left.budget?.lastSuccessAt
+          ? new Date(left.budget.lastSuccessAt).getTime()
+          : 0;
+        const rightTime = right.budget?.lastSuccessAt
+          ? new Date(right.budget.lastSuccessAt).getTime()
+          : 0;
+        if (rightTime !== leftTime) return rightTime - leftTime;
+        return langSlotNames.indexOf(left.slot) - langSlotNames.indexOf(right.slot);
+      })[0]?.slot ?? configuredLangSlots[0] ?? null;
+
+    if (configuredLangSlots.length > 0) {
+      poolsById["langsearch-multi-account"] = {
+        id: "langsearch-multi-account",
+        rotateOnSuccess: false,
+        configuredAccounts: configuredLangSlots.length,
+        activeSlot: activeLangSlot,
+        slots: langBudgets.map(({ slot, budget }) => ({
+          slot,
+          configured: configuredLangSlots.includes(slot),
+          active: slot === activeLangSlot,
+          coolingDown: Boolean(
+            budget?.cooldownUntil && budget.cooldownUntil > Date.now(),
+          ),
+          cooldownUntil:
+            budget?.cooldownUntil && budget.cooldownUntil > Date.now()
+              ? new Date(budget.cooldownUntil).toISOString()
+              : null,
+          attempts: budget?.requestsThisMonth ?? 0,
+          successes: budget?.successes ?? 0,
+          failures: budget?.failures ?? 0,
+          lastOutcome: budget?.lastOutcome ?? null,
+          lastAttemptAt: budget?.lastAttemptAt ?? null,
+          lastSuccessAt: budget?.lastSuccessAt ?? null,
+          quotaLimit: budget?.policy.dailyLimit ?? budget?.policy.monthlyLimit ?? null,
+          quotaRemaining: budget?.remainingToday ?? budget?.remainingThisMonth ?? null,
+          quotaResetAt: null,
+        })),
+      } satisfies CredentialPoolSnapshot;
+    }
 
     return res.json({
       generatedAt: new Date().toISOString(),
