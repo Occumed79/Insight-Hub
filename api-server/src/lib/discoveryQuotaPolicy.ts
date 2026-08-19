@@ -25,6 +25,13 @@ export interface DiscoveryQuotaPolicy {
  */
 export const DISCOVERY_QUOTA_POLICIES: readonly DiscoveryQuotaPolicy[] = [
   {
+    provider: "keenable",
+    renewal: "hourly",
+    priority: 5,
+    purpose: "discovery",
+    note: "Keyless web search/fetch by default; optional API key only lifts rate limits.",
+  },
+  {
     provider: "you",
     renewal: "daily",
     priority: 10,
@@ -37,13 +44,6 @@ export const DISCOVERY_QUOTA_POLICIES: readonly DiscoveryQuotaPolicy[] = [
     priority: 20,
     purpose: "discovery",
     note: "Monthly free search/fetch capacity; separate accounts are sticky failover pools.",
-  },
-  {
-    provider: "keenable",
-    renewal: "monthly",
-    priority: 22,
-    purpose: "discovery",
-    note: "Monthly organization allowance for Search/Fetch.",
   },
   {
     provider: "parallel",
@@ -85,7 +85,7 @@ export const DISCOVERY_QUOTA_POLICIES: readonly DiscoveryQuotaPolicy[] = [
     renewal: "metered",
     priority: 50,
     purpose: "discovery",
-    note: "Structured public-data discovery fallback.",
+    note: "Structured public-data procurement discovery fallback.",
   },
   {
     provider: "websearch",
@@ -137,7 +137,7 @@ function usefulness(snapshot: ProviderBudgetSnapshot): number {
 /**
  * Select discovery providers by renewable-quota class first, then by observed
  * usefulness inside the same class. This prevents a historically productive
- * monthly provider from consuming credits before a daily-renewing provider.
+ * monthly provider from consuming credits before a renewable hourly/daily one.
  */
 export async function selectQuotaAwareDiscoveryProviders(
   providers: readonly string[],
