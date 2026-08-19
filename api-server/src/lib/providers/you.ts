@@ -49,7 +49,7 @@ export class YouProvider implements DataSourceProvider {
     numResults: number,
     signal?: AbortSignal,
   ): Promise<YouHit[]> {
-    return credentials.run(async (apiKey) => {
+    return credentials.run(async (apiKey, slot) => {
       const url = new URL(`${YOU_BASE}/search`);
       url.searchParams.set("query", query);
       url.searchParams.set("num_web_results", String(numResults));
@@ -58,6 +58,7 @@ export class YouProvider implements DataSourceProvider {
         headers: { "X-API-Key": apiKey },
         signal,
       });
+      credentials.recordRateLimitHeaders(slot, response.headers);
       const body = await response.text();
       if (!response.ok) {
         throw new Error(
