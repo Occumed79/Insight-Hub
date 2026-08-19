@@ -76,11 +76,13 @@ describe("SAM.gov bid-ready query policy", () => {
     const originalFetch = globalThis.fetch;
     const originalSamKey = process.env.SAM_GOV_API_KEY;
     const originalSamBase = process.env.SAM_GOV_BASE_URL;
+    const originalJinaKey = process.env.JINA_API_KEY;
     const samRequests: string[] = [];
     const jinaRequests: string[] = [];
 
     process.env.SAM_GOV_API_KEY = "test-sam-key";
     process.env.SAM_GOV_BASE_URL = "https://api.sam.gov/opportunities/v2/search";
+    process.env.JINA_API_KEY = "test-jina-key";
 
     globalThis.fetch = async (input) => {
       const url = String(input);
@@ -140,6 +142,8 @@ describe("SAM.gov bid-ready query policy", () => {
       else process.env.SAM_GOV_API_KEY = originalSamKey;
       if (originalSamBase === undefined) delete process.env.SAM_GOV_BASE_URL;
       else process.env.SAM_GOV_BASE_URL = originalSamBase;
+      if (originalJinaKey === undefined) delete process.env.JINA_API_KEY;
+      else process.env.JINA_API_KEY = originalJinaKey;
     }
   });
 });
