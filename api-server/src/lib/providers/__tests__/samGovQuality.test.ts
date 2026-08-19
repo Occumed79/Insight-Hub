@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildSamGovAutonomousTitleQueries,
   buildSamGovTitleQueries,
   isBidReadySamOpportunity,
 } from "../samGovQuality";
@@ -25,12 +26,21 @@ describe("SAM.gov bid-ready query policy", () => {
     );
     assert.deepEqual(
       buildSamGovTitleQueries("drug testing and DOT physical solicitation"),
-      ["drug testing", "pre-employment physical"],
+      ["drug testing", "medical examination"],
     );
   });
 
-  it("uses one broad structured retrieval when no query is supplied", () => {
+  it("reserves blank input for the rotating autonomous service portfolio", () => {
     assert.deepEqual(buildSamGovTitleQueries(), []);
+    assert.deepEqual(buildSamGovAutonomousTitleQueries(0, 2), [
+      "occupational health",
+      "occupational medicine",
+    ]);
+    assert.deepEqual(buildSamGovAutonomousTitleQueries(6, 3), [
+      "respiratory protection",
+      "hearing conservation",
+      "occupational health",
+    ]);
   });
 
   it("accepts only active bid notices with a future response deadline", () => {
