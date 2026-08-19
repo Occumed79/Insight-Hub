@@ -38,6 +38,20 @@ export function formatSamGovApiError(status: number, body: string, credential: P
   return `SAM.gov API error ${status}: ${snippet}`;
 }
 
+export function isOfficialSamOpportunityUrl(value?: string): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      (host === "sam.gov" || host.endsWith(".sam.gov")) &&
+      /^\/opp\/[^/]+\/view\/?$/i.test(parsed.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class SamGovProvider implements DataSourceProvider {
   readonly name = "samGov" as const;
 
@@ -179,6 +193,78 @@ export class SamGovProvider implements DataSourceProvider {
     return queries;
   }
 
+  private async recoverOfficialSamPages(
+    options: FetchOptions,
+    titleQueries: string[],
+  ): Promise<NormalizedOpportunity[]> {
+    const quotedFocus = titleQueries
+      .filter(Boolean)
+      .map((title) => `"${title.replace(/"/g, "")}"`)
+      .join(" OR ");
+    const samSearch = [
+      "site:sam.gov/opp/ inurl:/view",
+      quotedFocus ? `(${quotedFocus})` : "(occupational OR medical OR health OR testing OR surveillance)",
+      '(solicitation OR "combined synopsis/solicitation")',
+    ].join(" ");
+
+    try {
+      const { webIntelligenceFetch } = await import("../search/webIntelligence");
+      const result = await webIntelligenceFetch({
+        keywords: options.keywords,
+        discoveryQueries: [samSearch],
+        candidateUrlFilter: isOfficialSamOpportunityUrl,
+        dateRange: options.dateRange,
+        useSerper: false,
+        useExa: true,
+        useLangsearch: true,
+        useParallel: true,
+        useLinkup: true,
+        useYou: true,
+        useSocrata: false,
+        useWebsearch: true,
+        useRssAggregator: false,
+        useSelfHostedSearch: false,
+        useSelfHostedCrawler: false,
+        discoveryPoolId: "sam-gov-zero-result-recovery",
+        signal: options.signal,
+      });
+
+      const records = result.opportunities
+        .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
+        .map((record) => ({
+          ...record,
+          source: "samGov" as const,
+          rawData: {
+            ...(record.rawData ?? {}),
+            providerName: "samGovPublicSearch",
+            evidenceType: "discovery",
+            samGovKeylessFallback: true,
+            samGovFallbackReason: "structured-zero-results",
+          },
+        }));
+
+      if (records.length > 0) {
+        console.warn(
+          JSON.stringify({
+            event: "sam_gov_zero_result_recovered",
+            titleQueries,
+            recovered: records.length,
+          }),
+        );
+      }
+      return records;
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "sam_gov_zero_result_recovery_failed",
+          titleQueries,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return [];
+    }
+  }
+
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const apiKeyCredential = await this.getApiKeyCredential();
     if (!apiKeyCredential) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
@@ -214,6 +300,17 @@ export class SamGovProvider implements DataSourceProvider {
         seen.add(opportunity.externalId);
         normalized.push(opportunity);
       }
+    }
+
+    if (normalized.length === 0) {
+      const recovered = await this.recoverOfficialSamPages(options, titleQueries);
+      return {
+        records: recovered,
+        total: recovered.length,
+        errors: recovered.length > 0
+          ? [`SAM.gov structured title queries returned no bid-ready records; recovered ${recovered.length} official SAM.gov opportunity pages through renewable web discovery.`]
+          : [],
+      };
     }
 
     const hydrated = await this.hydrateDescriptions(normalized, options.signal);
