@@ -37,8 +37,7 @@ export const env = {
   VOYAGE_API_KEY: process.env.VOYAGE_API_KEY,
   HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY,
 
-  // Serper (Google Search API)
-  SERPER_API_KEY: process.env.SERPER_API_KEY,
+  // Renewable / recurring search and extraction providers
   PARALLEL_API_KEY: process.env.PARALLEL_API_KEY,
   LINKUP_API_KEY: process.env.LINKUP_API_KEY,
   YOU_API_KEY: process.env.YOU_API_KEY,

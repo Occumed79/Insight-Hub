@@ -51,8 +51,6 @@ services:
         sync: false
       - key: GEMINI_KEY_3
         sync: false
-      - key: SERPER_API_KEY
-        sync: false
       - key: FIRECRAWL_API_KEY
         sync: false
       - key: FIRECRAWL_API_KEY_2
@@ -88,8 +86,6 @@ services:
       - key: APIFY_KEY
         sync: false
       - key: OCR_SPACE_KEY
-        sync: false
-      - key: OLOSTEP_API_KEY
         sync: false
       - key: CLOD_API_KEY
         sync: false

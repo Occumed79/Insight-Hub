@@ -6,21 +6,23 @@ process.env.INTEL_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.AUTH_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 process.env.APP_DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
 
-const { toSerperFreeTierQuery } = await import("../serper");
+const { toSerperFreeTierQuery, SerperProvider } = await import("../serper");
 const { TangoProvider } = await import("../tango");
 const { OlostepProvider } = await import("../olostep");
+const { JinaProvider } = await import("../jina");
 const { SocrataProvider } = await import("../socrata");
 
-test("Serper removes free-tier-incompatible boolean and negative operators", () => {
+test("Serper compatibility helper remains stable while the provider is retired", async () => {
   const safe = toSerperFreeTierQuery(
     '("occupational health" OR "employee health") (RFP OR RFQ) site:example.gov -awarded -jobs',
   );
 
-  assert.equal(
-    safe,
-    "occupational health employee health RFP RFQ",
-  );
+  assert.equal(safe, "occupational health employee health RFP RFQ");
   assert.doesNotMatch(safe, /\bOR\b|[()"]|site:|-awarded|-jobs/i);
+
+  const provider = new SerperProvider();
+  assert.equal(await provider.isConfigured(), false);
+  assert.deepEqual(await provider.search("occupational health RFP"), []);
 });
 
 test("Tango uses a supported meta wildcard instead of expanding meta.notice_type", async () => {
@@ -53,50 +55,64 @@ test("Tango uses a supported meta wildcard instead of expanding meta.notice_type
   }
 });
 
-test("Olostep posts to the current v1 scrape endpoint with bearer auth", async () => {
+test("OloStep is permanently retired and never makes a network request", async () => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.OLOSTEP_API_KEY;
-  let requestedUrl = "";
-  let requestedMethod = "";
-  let authorization = "";
-  let requestBody: Record<string, unknown> = {};
+  let called = false;
 
   process.env.OLOSTEP_API_KEY = "test-olostep-key";
-  globalThis.fetch = async (input, init) => {
-    requestedUrl = String(input);
-    requestedMethod = init?.method ?? "GET";
-    const headers = init?.headers as Record<string, string> | undefined;
-    authorization = headers?.Authorization ?? "";
-    requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<
-      string,
-      unknown
-    >;
-    return new Response(
-      JSON.stringify({
-        url_to_scrape: "https://example.gov/rfp",
-        result: {
-          markdown_content: "# Occupational Health RFP",
-          page_metadata: { status_code: 200 },
-        },
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error("OloStep network call should never happen");
   };
 
   try {
-    const text = await new OlostepProvider().getText(
-      "https://example.gov/rfp",
-    );
-    assert.equal(requestedUrl, "https://api.olostep.com/v1/scrapes");
-    assert.equal(requestedMethod, "POST");
-    assert.equal(authorization, "Bearer test-olostep-key");
-    assert.equal(requestBody.url_to_scrape, "https://example.gov/rfp");
-    assert.deepEqual(requestBody.formats, ["markdown", "text"]);
-    assert.equal(text, "# Occupational Health RFP");
+    const provider = new OlostepProvider();
+    assert.equal(await provider.isConfigured(), false);
+    assert.equal(await provider.getText("https://example.gov/rfp"), null);
+    assert.deepEqual(await provider.scrapeMany(["https://example.gov/rfp"]), []);
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalApiKey === undefined) delete process.env.OLOSTEP_API_KEY;
     else process.env.OLOSTEP_API_KEY = originalApiKey;
+  }
+});
+
+test("Jina Reader works keyless and attaches the key only when available", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.JINA_API_KEY;
+  const authorizations: string[] = [];
+
+  globalThis.fetch = async (_input, init) => {
+    const headers = init?.headers as Record<string, string> | undefined;
+    authorizations.push(headers?.Authorization ?? "");
+    return new Response("# Occupational Health RFP\nOpen solicitation", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
+  };
+
+  try {
+    delete process.env.JINA_API_KEY;
+    const provider = new JinaProvider();
+    assert.equal(await provider.isConfigured(), true);
+    assert.match(
+      (await provider.extractUrl("https://example.gov/rfp")) ?? "",
+      /Occupational Health RFP/,
+    );
+    assert.equal(authorizations[0], "");
+
+    process.env.JINA_API_KEY = "test-jina-key";
+    assert.match(
+      (await provider.extractUrl("https://example.gov/rfp")) ?? "",
+      /Occupational Health RFP/,
+    );
+    assert.equal(authorizations[1], "Bearer test-jina-key");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.JINA_API_KEY;
+    else process.env.JINA_API_KEY = originalApiKey;
   }
 });
 
