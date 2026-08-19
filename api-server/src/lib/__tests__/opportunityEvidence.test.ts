@@ -107,7 +107,7 @@ describe("centralized opportunity evidence normalization", () => {
     );
   });
 
-  it("does not promote Serper discovery disguised by the public-portal source bucket", () => {
+  it("does not promote historical retired-search discovery disguised by the public-portal source bucket", () => {
     const db = normalizedToDbRecord({
       ...complete,
       externalId: "portal-search-1",
@@ -182,11 +182,11 @@ describe("centralized opportunity evidence normalization", () => {
     );
   });
 
-  it("keeps weaker evidence below stronger canonical evidence", () => {
+  it("keeps weaker discovery evidence below stronger canonical evidence", () => {
     const strong = normalizedToDbRecord(complete) as any;
     const weak = normalizedToDbRecord({
       ...complete,
-      source: "serper",
+      source: "websearch",
       rawData: { providerName: "serper", fallback: true },
     }) as any;
     assert.ok(
@@ -219,10 +219,10 @@ describe("centralized opportunity evidence normalization", () => {
     assert.equal(ADAPTER_EVIDENCE_CLASS.exa, "discovery");
   });
 
-  it("reports discovery evidence before persistence", () => {
+  it("reports historical retired-search evidence as discovery before persistence", () => {
     const profile = normalizeOpportunityEvidence({
       ...complete,
-      source: "serper",
+      source: "websearch",
       rawData: { providerName: "serper", fallback: true },
     });
     assert.equal(profile.evidenceType, "discovery");
