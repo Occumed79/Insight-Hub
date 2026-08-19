@@ -16,6 +16,8 @@ const {
   resolveManualProviders,
 } = await import("../providerRunner");
 const { mergeSourceRefresh } = await import("../pipelineRules");
+const { discoveryQuotaPolicy } = await import("../../discoveryQuotaPolicy");
+const { sourceDefinition } = await import("../../sourceArchitecture");
 
 test("manual Fetch Intelligence defaults to both federal sources plus browser discovery", () => {
   assert.deepEqual(resolveManualProviders(), ["samGov", "tango", "aiDiscovery"]);
@@ -107,6 +109,30 @@ test("browser discovery can still run alone while internal discovery members are
     () => resolveManualProviders(["scheduledCrawler"]),
     /Unsupported RFP provider/,
   );
+});
+
+test("quota policy spends renewable daily capacity before monthly and metered fallbacks", () => {
+  const you = discoveryQuotaPolicy("you");
+  const browserbase = discoveryQuotaPolicy("browserbase");
+  const exa = discoveryQuotaPolicy("exa");
+  const firecrawl = discoveryQuotaPolicy("firecrawl");
+  const langsearch = discoveryQuotaPolicy("langsearch");
+  const websearch = discoveryQuotaPolicy("websearch");
+
+  assert.equal(you?.renewal, "daily");
+  assert.equal(exa?.renewal, "monthly");
+  assert.ok((you?.priority ?? Infinity) < (browserbase?.priority ?? -Infinity));
+  assert.ok((browserbase?.priority ?? Infinity) < (exa?.priority ?? -Infinity));
+  assert.ok((exa?.priority ?? Infinity) <= (firecrawl?.priority ?? -Infinity));
+  assert.ok((firecrawl?.priority ?? Infinity) < (langsearch?.priority ?? -Infinity));
+  assert.ok((langsearch?.priority ?? Infinity) < (websearch?.priority ?? -Infinity));
+});
+
+test("Serper and OloStep remain registered only as inactive legacy compatibility shells", () => {
+  assert.equal(sourceDefinition("serper")?.active, false);
+  assert.equal(sourceDefinition("serper")?.role, "legacy_disabled");
+  assert.equal(sourceDefinition("olostep")?.active, false);
+  assert.equal(sourceDefinition("olostep")?.role, "legacy_disabled");
 });
 
 test("browser discovery collapses one solicitation across different result URLs and keeps the richer record", () => {
