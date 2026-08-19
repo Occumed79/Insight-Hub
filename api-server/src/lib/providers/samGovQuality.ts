@@ -41,7 +41,7 @@ const SAM_TITLE_PROFILES = [
     aliases: ["drug testing", "drug screening", "alcohol testing"],
   },
   {
-    title: "pre-employment physical",
+    title: "medical examination",
     aliases: [
       "pre-employment physical",
       "pre employment physical",
@@ -49,6 +49,7 @@ const SAM_TITLE_PROFILES = [
       "pre placement physical",
       "dot physical",
       "medical examination",
+      "physical examination",
     ],
   },
   {
@@ -56,11 +57,17 @@ const SAM_TITLE_PROFILES = [
     aliases: ["fitness for duty", "fit for duty", "return to work"],
   },
   {
-    title: "respirator fit testing",
-    aliases: ["respirator fit", "fit testing", "spirometry"],
+    title: "respiratory protection",
+    aliases: [
+      "respirator fit",
+      "fit testing",
+      "respiratory protection",
+      "spirometry",
+      "pulmonary function",
+    ],
   },
   {
-    title: "audiometric testing",
+    title: "hearing conservation",
     aliases: ["audiometric", "audiogram", "hearing conservation"],
   },
 ] as const;
@@ -76,8 +83,6 @@ export function buildSamGovTitleQueries(keywords?: string): string[] {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  // Blank autonomous runs retrieve broadly once; the Occu-Med ontology then
-  // classifies notices locally instead of spending a call per service title.
   if (!normalized) return [];
 
   const matched = SAM_TITLE_PROFILES.filter((profile) =>
@@ -90,6 +95,24 @@ export function buildSamGovTitleQueries(keywords?: string): string[] {
     .replace(/\s+/g, " ")
     .trim();
   return custom.length >= 3 ? [custom.slice(0, 80)] : [];
+}
+
+/**
+ * Autonomous SAM runs should never burn the daily quota on one giant generic
+ * federal result set. Instead, they rotate through two high-value Occu-Med
+ * service titles per run so every few runs cover the full service ontology.
+ */
+export function buildSamGovAutonomousTitleQueries(
+  cursor = 0,
+  count = 2,
+): string[] {
+  const titles = SAM_TITLE_PROFILES.map((profile) => profile.title);
+  if (titles.length === 0) return [];
+  const normalizedCursor = ((Math.floor(cursor) % titles.length) + titles.length) % titles.length;
+  const take = Math.max(1, Math.min(Math.floor(count), titles.length));
+  return Array.from({ length: take }, (_, offset) =>
+    titles[(normalizedCursor + offset) % titles.length]!,
+  );
 }
 
 export function isBidReadySamOpportunity(
