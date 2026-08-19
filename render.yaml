@@ -71,6 +71,16 @@ services:
         sync: false
       - key: EXA_API_KEY
         sync: false
+      - key: EXA_API_KEY_2
+        sync: false
+      - key: EXA_API_KEY_3
+        sync: false
+      - key: YOU_API_KEY
+        sync: false
+      - key: YOU_API_KEY_2
+        sync: false
+      - key: JINA_API_KEY
+        sync: false
       - key: BROWSE_AI_API_KEY
         sync: false
       - key: BROWSE_AI_ROBOT_ID

@@ -5,6 +5,15 @@ export interface CredentialSlot {
   envKey: string;
 }
 
+export interface FreeTierCredentialPoolOptions {
+  /**
+   * When true (default), move to the next key after every successful call.
+   * When false, keep using the current account until it becomes unavailable,
+   * then fail over to the next account and stay there.
+   */
+  rotateOnSuccess?: boolean;
+}
+
 const cursors = new Map<string, number>();
 const cooldowns = new Map<string, number>();
 
@@ -15,7 +24,7 @@ function cooldownMs(error: unknown): number {
   ) {
     return 6 * 60 * 60 * 1_000;
   }
-  if (/\b429\b|quota|rate.?limit|credit|balance|exhaust/i.test(message)) {
+  if (/\b429\b|quota|rate.?limit|credit|balance|budget|exceed|exhaust/i.test(message)) {
     return 30 * 60 * 1_000;
   }
   return 60_000;
@@ -26,21 +35,27 @@ function isCredentialRetryable(error: unknown): boolean {
   // Do not spend every free-tier key on a deterministic bad request. Rotate
   // only for credential/quota pressure and transient upstream/network faults.
   if (/\b(400|404|405|413|422)\b/.test(message)) return false;
-  return /\b(401|403|408|409|429|5\d\d)\b|quota|rate.?limit|credit|balance|exhaust|timeout|ECONN|fetch failed/i.test(
+  return /\b(401|403|408|409|429|5\d\d)\b|quota|rate.?limit|credit|balance|budget|exceed|exhaust|timeout|ECONN|fetch failed/i.test(
     message,
   );
 }
 
 /**
- * A tiny in-process pool for free-tier keys. Calls rotate across distinct keys;
- * a failing key cools down and the same operation immediately tries the next
- * slot. This increases availability without multiplying upstream requests.
+ * A tiny in-process pool for free-tier keys. A failing key cools down and the
+ * same operation immediately tries the next slot. Pools can either rotate on
+ * every success or stay pinned to one account until quota/rate pressure forces
+ * a failover.
  */
 export class FreeTierCredentialPool {
+  private readonly rotateOnSuccess: boolean;
+
   constructor(
     private readonly id: string,
     private readonly slots: readonly CredentialSlot[],
-  ) {}
+    options: FreeTierCredentialPoolOptions = {},
+  ) {
+    this.rotateOnSuccess = options.rotateOnSuccess ?? true;
+  }
 
   private async credentials(): Promise<Array<{ slot: string; value: string }>> {
     const resolved = await Promise.all(
@@ -86,7 +101,10 @@ export class FreeTierCredentialPool {
         const index = credentials.findIndex(
           ({ slot }) => slot === candidate.slot,
         );
-        cursors.set(this.id, (index + 1) % credentials.length);
+        cursors.set(
+          this.id,
+          this.rotateOnSuccess ? (index + 1) % credentials.length : index,
+        );
         cooldowns.delete(`${this.id}:${candidate.slot}`);
         return value;
       } catch (error) {

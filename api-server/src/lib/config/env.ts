@@ -38,9 +38,13 @@ export const env = {
   HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY,
 
   // Renewable / recurring search and extraction providers
+  EXA_API_KEY: process.env.EXA_API_KEY,
+  EXA_API_KEY_2: process.env.EXA_API_KEY_2,
+  EXA_API_KEY_3: process.env.EXA_API_KEY_3,
   PARALLEL_API_KEY: process.env.PARALLEL_API_KEY,
   LINKUP_API_KEY: process.env.LINKUP_API_KEY,
   YOU_API_KEY: process.env.YOU_API_KEY,
+  YOU_API_KEY_2: process.env.YOU_API_KEY_2,
   LANGSEARCH_API_KEY: process.env.LANGSEARCH_API_KEY,
   LANGSEARCH_API_KEY_2: process.env.LANGSEARCH_API_KEY_2,
   LANGSEARCH_API_KEY_3: process.env.LANGSEARCH_API_KEY_3,

@@ -14,30 +14,70 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
-import { resolveCredential } from "../config/providerConfig";
-import { OCCUMED_PROFILE } from "./gemini";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const YOU_BASE = "https://api.ydc-index.io";
+
+// These keys belong to separate You.com accounts. Keep the current account
+// active until its daily/rate/auth capacity is unavailable, then cool it down
+// and fail over to the second renewable account.
+const credentials = new FreeTierCredentialPool(
+  "you-multi-account",
+  [
+    { dbKey: "youApiKey", envKey: "YOU_API_KEY" },
+    { envKey: "YOU_API_KEY_2" },
+  ],
+  { rotateOnSuccess: false },
+);
+
+type YouHit = {
+  title?: string;
+  url?: string;
+  description?: string;
+  snippets?: string[];
+};
 
 export class YouProvider implements DataSourceProvider {
   readonly name = "you" as const;
 
-  private async getApiKey(): Promise<string | null> {
-    return resolveCredential("youApiKey", "YOU_API_KEY");
+  async isConfigured(): Promise<boolean> {
+    return credentials.isConfigured();
   }
 
-  async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+  private async searchRequest(
+    query: string,
+    numResults: number,
+    signal?: AbortSignal,
+  ): Promise<YouHit[]> {
+    return credentials.run(async (apiKey) => {
+      const url = new URL(`${YOU_BASE}/search`);
+      url.searchParams.set("query", query);
+      url.searchParams.set("num_web_results", String(numResults));
+
+      const response = await fetch(url.toString(), {
+        headers: { "X-API-Key": apiKey },
+        signal,
+      });
+      const body = await response.text();
+      if (!response.ok) {
+        throw new Error(
+          `You.com API error ${response.status}: ${body.slice(0, 200)}`,
+        );
+      }
+
+      const data = JSON.parse(body) as { hits?: YouHit[] };
+      return data.hits ?? [];
+    });
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey)
+    if (!(await credentials.isConfigured())) {
       return {
         records: [],
         total: 0,
-        errors: ["You.com API key not configured"],
+        errors: ["You.com API keys not configured"],
       };
+    }
 
     const queries = this.buildQueries(options.keywords);
     const records = [];
@@ -45,33 +85,14 @@ export class YouProvider implements DataSourceProvider {
 
     for (const query of queries.slice(0, 4)) {
       try {
-        const url = new URL(`${YOU_BASE}/search`);
-        url.searchParams.set("query", query);
-        url.searchParams.set("num_web_results", "10");
-
-        const res = await fetch(url.toString(), {
-          headers: { "X-API-Key": apiKey },
-        });
-
-        if (!res.ok) {
-          errors.push(`You.com error ${res.status} for query: ${query}`);
-          continue;
-        }
-
-        const data = (await res.json()) as {
-          hits?: Array<{
-            title: string;
-            url: string;
-            description: string;
-            snippets?: string[];
-          }>;
-        };
-
-        for (const hit of data.hits ?? []) {
+        const hits = await this.searchRequest(query, 10, options.signal);
+        for (const hit of hits) {
+          if (!hit.url) continue;
           records.push({
             id: `you-${Buffer.from(hit.url).toString("base64").slice(0, 16)}`,
-            title: hit.title,
-            description: (hit.snippets ?? []).join(" ") || hit.description,
+            title: hit.title ?? hit.url,
+            description:
+              (hit.snippets ?? []).join(" ") || hit.description || "",
             url: hit.url,
             source: "you" as const,
             providerName: "You.com",
@@ -80,8 +101,8 @@ export class YouProvider implements DataSourceProvider {
             rawData: { query, hit },
           });
         }
-      } catch (err: any) {
-        errors.push(err.message ?? String(err));
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -90,7 +111,7 @@ export class YouProvider implements DataSourceProvider {
 
   private buildQueries(keywords?: string): string[] {
     const year = new Date().getFullYear();
-    const base = keywords
+    return keywords
       ? [
           `${keywords} RFP solicitation ${year}`,
           `${keywords} government contract bid ${year}`,
@@ -101,7 +122,6 @@ export class YouProvider implements DataSourceProvider {
           `employee wellness occupational medicine RFP ${year}`,
           `audiometric pulmonary testing solicitation ${year}`,
         ];
-    return base;
   }
 
   async getStatus(): Promise<ProviderStatus> {
@@ -113,36 +133,15 @@ export class YouProvider implements DataSourceProvider {
     query: string,
     signal?: AbortSignal,
   ): Promise<Array<{ title: string; url: string; content: string }>> {
-    const apiKey = await this.getApiKey();
-    if (!apiKey) throw new Error("You.com API key not configured.");
-    const url = new URL(`${YOU_BASE}/search`);
-    url.searchParams.set("query", query);
-    url.searchParams.set("num_web_results", "15");
-    const response = await fetch(url, {
-      headers: { "X-API-Key": apiKey },
-      signal,
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      throw new Error(
-        `You.com API error ${response.status}: ${body.slice(0, 200)}`,
-      );
-    }
-    const data = JSON.parse(body) as {
-      hits?: Array<{
-        title?: string;
-        url?: string;
-        description?: string;
-        snippets?: string[];
-      }>;
-    };
-    return (data.hits ?? []).flatMap((hit) =>
+    const hits = await this.searchRequest(query, 15, signal);
+    return hits.flatMap((hit) =>
       hit.url
         ? [
             {
               title: hit.title ?? hit.url,
               url: hit.url,
-              content: (hit.snippets ?? []).join(" ") || hit.description || "",
+              content:
+                (hit.snippets ?? []).join(" ") || hit.description || "",
             },
           ]
         : [],
