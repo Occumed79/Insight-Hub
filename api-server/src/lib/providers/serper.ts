@@ -7,13 +7,15 @@
  * migrated. It never reads SERPER_API_KEY and never performs a network call.
  */
 
-export interface SerperResult {
+export interface SerperSearchResult {
   title: string;
   link: string;
   snippet: string;
   position?: number;
   date?: string;
 }
+
+export type SerperResult = SerperSearchResult;
 
 export function toSerperFreeTierQuery(query: string): string {
   const tokens = query
@@ -37,7 +39,15 @@ export class SerperProvider {
   async search(
     _query: string,
     _options: { num?: number; recency?: string; signal?: AbortSignal } = {},
-  ): Promise<SerperResult[]> {
+  ): Promise<SerperSearchResult[]> {
+    return [];
+  }
+
+  async searchMultiple(
+    _queries: string[],
+    _numPerQuery = 10,
+    _options: { signal?: AbortSignal } = {},
+  ): Promise<SerperSearchResult[]> {
     return [];
   }
 }
