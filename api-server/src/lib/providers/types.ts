@@ -30,12 +30,14 @@ export interface NormalizedOpportunity {
 }
 
 /**
- * Result of a provider fetch operation.
+ * Result of a provider fetch operation. Diagnostics are deliberately optional
+ * and contain only non-secret operational metadata suitable for run telemetry.
  */
 export interface ProviderFetchResult {
   records: NormalizedOpportunity[];
   total: number;
   errors: string[];
+  diagnostics?: Record<string, unknown>;
 }
 
 export type ProviderProgressPhase =
@@ -93,19 +95,12 @@ export interface FetchOptions {
 export interface DataSourceProvider {
   readonly name: ProviderName;
 
-  /**
-   * Check whether the provider is configured (credentials present).
-   */
+  /** Check whether the provider is configured (credentials present). */
   isConfigured(): Promise<boolean>;
 
-  /**
-   * Fetch normalized opportunity records from this source.
-   * Should throw a descriptive error if not configured or the fetch fails.
-   */
+  /** Fetch normalized opportunity records from this source. */
   fetch(options: FetchOptions): Promise<ProviderFetchResult>;
 
-  /**
-   * Get current provider health/status for display in Settings.
-   */
+  /** Get current provider health/status for display in Settings. */
   getStatus(): Promise<ProviderStatus>;
 }
