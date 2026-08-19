@@ -54,11 +54,11 @@ const DISCOVERY_PROVIDERS = new Set([
   "websearch",
   "aiDiscovery",
   "rssAggregator",
+  "tango",
 ]);
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
   "sam_gov",
-  "tango",
   "eunaBonfire",
   "texasEsbd",
   "nyScr",
