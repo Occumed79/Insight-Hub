@@ -35,7 +35,7 @@ test("sticky account pools keep using the current account until it fails", async
   assert.equal(await pool.run(async (key) => key), "account-one");
 });
 
-test("sticky account pools fail over on quota and stay on the replacement account", async () => {
+test("sticky account pools fail over on explicit quota exhaustion and stay on the replacement account", async () => {
   clearFreeTierCredentialPoolState();
   process.env.TEST_STICKY_FAIL_KEY_1 = "account-one";
   process.env.TEST_STICKY_FAIL_KEY_2 = "account-two";
@@ -54,7 +54,7 @@ test("sticky account pools fail over on quota and stay on the replacement accoun
     attempted.push(key);
     if (key === "account-one" && primaryQuotaExhausted) {
       primaryQuotaExhausted = false;
-      throw new Error("HTTP 429 quota exhausted");
+      throw new Error("TEAM_BUDGET_EXCEEDED monthly credits exhausted");
     }
     return key;
   });
@@ -80,7 +80,7 @@ test("sticky account pools fail over on quota and stay on the replacement accoun
   assert.equal(secondSlot.successes, 2);
 });
 
-test("cools down a quota-limited key and immediately falls back", async () => {
+test("cools down an HTTP 429 account as rate-limited and immediately falls back", async () => {
   clearFreeTierCredentialPoolState();
   process.env.TEST_POOL_KEY_1 = "limited";
   process.env.TEST_POOL_KEY_2 = "healthy";
@@ -102,6 +102,7 @@ test("cools down a quota-limited key and immediately falls back", async () => {
     (slot) => slot.slot === "TEST_POOL_KEY_1",
   )!;
   assert.equal(limited.lastOutcome, "rate_limited");
+  assert.equal(limited.coolingDown, true);
 });
 
 test("does not spend backup keys on deterministic bad requests", async () => {
