@@ -40,6 +40,36 @@ test("limited provider pools rotate after each successful call", async () => {
   assert.deepEqual(calls, ["one", "two", "three"]);
 });
 
+test("opportunity page enrichment always retries the cheapest provider first", async () => {
+  clearLimitedProviderPoolState();
+  const calls: string[] = [];
+  const providers = ["jina", "keenable", "firecrawl", "microlink"].map(
+    (name) => ({
+      name,
+      isConfigured: async () => true,
+      run: async () => {
+        calls.push(name);
+        return `${name} usable page content`.repeat(10);
+      },
+    }),
+  );
+
+  const first = await runLimitedProviderPool(
+    "opportunity-page-enrichment",
+    providers,
+    (value) => value.length > 120,
+  );
+  const second = await runLimitedProviderPool(
+    "opportunity-page-enrichment",
+    providers,
+    (value) => value.length > 120,
+  );
+
+  assert.equal(first.provider, "jina");
+  assert.equal(second.provider, "jina");
+  assert.deepEqual(calls, ["jina", "jina"]);
+});
+
 test("limited provider pools fall through and cool down quota failures", async () => {
   clearLimitedProviderPoolState();
   const calls: string[] = [];
