@@ -29,15 +29,23 @@ test("manual Fetch Intelligence defaults to both federal sources plus browser di
   ]);
 });
 
-test("selecting either federal source keeps the complete structured federal ensemble", () => {
-  assert.deepEqual(resolveManualProviders(["sam_gov"]), ["samGov", "tango"]);
-  assert.deepEqual(resolveManualProviders(["tango_api"]), ["samGov", "tango"]);
+test("explicit SAM and Tango selections stay independent", () => {
+  assert.deepEqual(resolveManualProviders(["sam_gov"]), ["samGov"]);
+  assert.deepEqual(resolveManualProviders(["tango_api"]), ["tango"]);
+  assert.deepEqual(resolveManualProviders(["samGov", "aiDiscovery"]), [
+    "samGov",
+    "aiDiscovery",
+  ]);
+  assert.deepEqual(resolveManualProviders(["tango", "aiDiscovery"]), [
+    "tango",
+    "aiDiscovery",
+  ]);
 });
 
-test("selecting both federal sources never collapses one into fallback", () => {
+test("selecting both federal sources preserves both without collapsing either", () => {
   assert.deepEqual(resolveManualProviders(["tango", "samGov", "aiDiscovery"]), [
-    "samGov",
     "tango",
+    "samGov",
     "aiDiscovery",
   ]);
   assert.deepEqual(resolveManualProviders(["samGov", "tango", "aiDiscovery"]), [
@@ -73,7 +81,7 @@ test("recognizes unavailable SAM API access and only accepts official SAM hosts"
   assert.equal(isOfficialSamOpportunityUrl("https://sam.gov.evil.test/opp/example/view"), false);
 });
 
-test("legacy portal selections collapse into browser discovery while retaining the full federal ensemble", () => {
+test("legacy portal selections collapse into browser discovery without forcing Tango", () => {
   assert.deepEqual(
     resolveManualProviders([
       "sam_gov",
@@ -81,14 +89,18 @@ test("legacy portal selections collapse into browser discovery while retaining t
       "eunaBonfire",
       "internationalPublicPortals",
     ]),
-    ["samGov", "tango", "aiDiscovery"],
+    ["samGov", "aiDiscovery"],
   );
 });
 
-test("browser discovery can still run alone while crawler providers stay unavailable", () => {
+test("browser discovery can still run alone while internal discovery members are not top-level manual sources", () => {
   assert.deepEqual(resolveManualProviders(["aiDiscovery"]), ["aiDiscovery"]);
   assert.throws(
     () => resolveManualProviders(["firecrawl"]),
+    /Unsupported RFP provider/,
+  );
+  assert.throws(
+    () => resolveManualProviders(["serper"]),
     /Unsupported RFP provider/,
   );
   assert.throws(
@@ -111,8 +123,8 @@ test("browser discovery collapses one solicitation across different result URLs 
   const merged = mergeDiscoveryRecords([
     {
       ...base,
-      externalId: "serper-1",
-      source: "serper",
+      externalId: "you-1",
+      source: "you",
       sourceUrl: "https://search.example/one",
       rawData: { relevanceScore: 72, sourceConfidence: "low" },
     },
