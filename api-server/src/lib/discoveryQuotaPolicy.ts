@@ -134,35 +134,82 @@ function usefulness(snapshot: ProviderBudgetSnapshot): number {
   return successRate * 40 + Math.min(40, yieldPerSuccess) - quotaPenalty;
 }
 
+function sortByPolicyAndUsefulness<T extends {
+  index: number;
+  policy: DiscoveryQuotaPolicy | null;
+  snapshot: ProviderBudgetSnapshot;
+}>(rows: T[]): T[] {
+  return rows.slice().sort((left, right) => {
+    const leftPriority = left.policy?.priority ?? 55;
+    const rightPriority = right.policy?.priority ?? 55;
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    const utilityDelta = usefulness(right.snapshot) - usefulness(left.snapshot);
+    if (utilityDelta !== 0) return utilityDelta;
+    return left.index - right.index;
+  });
+}
+
 /**
- * Select discovery providers by renewable-quota class first, then by observed
- * usefulness inside the same class. This prevents a historically productive
- * monthly provider from consuming credits before a renewable hourly/daily one.
+ * Spend policy for autonomous discovery:
+ * - use every available hourly/daily renewable source first;
+ * - spend at most one monthly pool in the same run;
+ * - metered sources participate only when no hourly/daily/monthly source is
+ *   available;
+ * - emergency search participates only when every higher class is unavailable.
+ *
+ * The monthly slot is chosen by observed usefulness, with declared priority as
+ * the stable tie-breaker. This preserves cross-provider coverage without burning
+ * Exa, Parallel, Firecrawl, Browserbase, and the renewable sources together on
+ * every Fetch Intelligence run.
  */
 export async function selectQuotaAwareDiscoveryProviders(
   providers: readonly string[],
   maxProviders: number,
 ): Promise<string[]> {
   if (maxProviders <= 0) return [];
-  const rows = await Promise.all(
-    providers.map(async (provider, index) => ({
-      provider,
-      index,
-      policy: discoveryQuotaPolicy(provider),
-      snapshot: await getProviderBudgetSnapshot(provider),
-    })),
-  );
+  const rows = (
+    await Promise.all(
+      providers.map(async (provider, index) => ({
+        provider,
+        index,
+        policy: discoveryQuotaPolicy(provider),
+        snapshot: await getProviderBudgetSnapshot(provider),
+      })),
+    )
+  ).filter(({ snapshot }) => snapshot.available);
 
-  return rows
-    .filter(({ snapshot }) => snapshot.available)
+  const renewable = sortByPolicyAndUsefulness(
+    rows.filter(({ policy }) =>
+      policy?.renewal === "hourly" || policy?.renewal === "daily",
+    ),
+  );
+  const monthly = rows
+    .filter(({ policy }) => policy?.renewal === "monthly")
     .sort((left, right) => {
-      const leftPriority = left.policy?.priority ?? 55;
-      const rightPriority = right.policy?.priority ?? 55;
-      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
       const utilityDelta = usefulness(right.snapshot) - usefulness(left.snapshot);
       if (utilityDelta !== 0) return utilityDelta;
+      const priorityDelta = (left.policy?.priority ?? 55) - (right.policy?.priority ?? 55);
+      if (priorityDelta !== 0) return priorityDelta;
       return left.index - right.index;
-    })
-    .slice(0, maxProviders)
-    .map(({ provider }) => provider);
+    });
+  const metered = sortByPolicyAndUsefulness(
+    rows.filter(({ policy }) => policy?.renewal === "metered"),
+  );
+  const emergency = sortByPolicyAndUsefulness(
+    rows.filter(({ policy }) => policy?.renewal === "emergency" || !policy),
+  );
+
+  const selected = renewable.slice(0, maxProviders);
+  if (selected.length < maxProviders && monthly.length > 0) {
+    selected.push(monthly[0]!);
+  }
+
+  if (selected.length === 0 && metered.length > 0) {
+    selected.push(...metered.slice(0, maxProviders));
+  }
+  if (selected.length === 0 && emergency.length > 0) {
+    selected.push(...emergency.slice(0, maxProviders));
+  }
+
+  return selected.slice(0, maxProviders).map(({ provider }) => provider);
 }
