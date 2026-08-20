@@ -32,11 +32,12 @@ function config(
 export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
   samGov: config("samGov", "tier1", false, false, "Official federal government procurement source", 1),
   tango: config("tango", "tier1", true, false, "Independent structured federal procurement source", 2),
-  texasEsbd: config("texasEsbd", "tier1", false, false, "Texas official procurement compatibility source", 3),
-  nyScr: config("nyScr", "tier1", false, false, "New York official procurement compatibility source", 4),
-  rssAggregator: config("rssAggregator", "tier1", false, false, "Explicit supplemental government RSS input", 5),
-  grantsGov: config("grantsGov", "tier1", false, false, "Federal grants intelligence; not an open-RFP source", 6),
-  emailNotifications: config("emailNotifications", "tier1", false, false, "Explicit procurement-alert inbox input", 7),
+  internationalPublicPortals: config("internationalPublicPortals", "tier1", false, false, "CanadaBuys official Canadian tenders plus anonymous TED European procurement search", 3),
+  texasEsbd: config("texasEsbd", "tier1", false, false, "Texas official procurement compatibility source", 4),
+  nyScr: config("nyScr", "tier1", false, false, "New York official procurement compatibility source", 5),
+  rssAggregator: config("rssAggregator", "tier1", false, false, "Explicit supplemental government RSS input", 6),
+  grantsGov: config("grantsGov", "tier1", false, false, "Federal grants intelligence; not an open-RFP source", 7),
+  emailNotifications: config("emailNotifications", "tier1", false, false, "Explicit procurement-alert inbox input", 8),
 
   keenable: config("keenable", "tier2", false, false, "Keyless-first search/fetch with optional higher-rate key", 1),
   you: config("you", "tier2", true, false, "Daily-renewing search with two independent accounts", 2),
@@ -73,7 +74,6 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
   federalRegister: config("federalRegister", "disabled", false, false, "Policy/rule intelligence only; not opportunity ingestion", 0),
   publicPortalProviders: config("publicPortalProviders", "disabled", false, false, "Legacy portal alias into browser discovery", 0),
   eunaBonfire: config("eunaBonfire", "disabled", false, false, "Legacy Euna/Bonfire alias into browser discovery", 0),
-  internationalPublicPortals: config("internationalPublicPortals", "disabled", false, false, "Legacy international portal alias", 0),
   selfHostedCrawler: config("selfHostedCrawler", "disabled", false, true, "Self-hosted crawler disabled for manual opportunity discovery", 0),
   selfHostedSearch: config("selfHostedSearch", "disabled", false, true, "Self-hosted search disabled for manual opportunity discovery", 0),
   bidnet: config("bidnet", "disabled", true, false, "BidNet direct endpoint is not implemented", 0),
@@ -111,6 +111,7 @@ export function getRecommendedProviders(
       return [
         "samGov",
         "tango",
+        "internationalPublicPortals",
         "keenable",
         "you",
         "browserbase",
