@@ -60,6 +60,7 @@ export type RfpProviderName = Exclude<ProviderName, "usaSpending" | "federalRegi
 export const RFP_INGESTION_PROVIDER_NAMES = [
   "samGov",
   "tango",
+  "internationalPublicPortals",
   "you",
   "browserbase",
   "keenable",
@@ -196,13 +197,18 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
   ),
   internationalPublicPortals: provider(
     "internationalPublicPortals",
-    "International Public Portals (Legacy Alias)",
+    "Canada + Europe Procurement",
     "procurement",
-    "web_discovery",
+    "direct_source",
     [],
-    ["Legacy selection alias", "Routes into quota-aware browser discovery"],
-    "not_configured",
-    "Legacy international-portal selection alias. Current international discovery is performed by active browser/search providers rather than a retired finite search service.",
+    [
+      "CanadaBuys official tender discovery",
+      "TED anonymous Search API",
+      "EU CPV 85147000 Company health services",
+      "Canada/Europe source telemetry",
+    ],
+    "live",
+    "First-class international procurement source combining CanadaBuys official tender pages with the European Union's anonymous TED published-notice Search API. No dedicated international API key is required.",
   ),
   gemini: provider(
     "gemini",

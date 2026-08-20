@@ -32,15 +32,18 @@ export const PROVIDER_ALIASES = new Map<string, string>([
   ["webIntelligence", "aiDiscovery"],
   ["publicPortalProviders", "aiDiscovery"],
   ["eunaBonfire", "aiDiscovery"],
-  ["internationalPublicPortals", "aiDiscovery"],
+  ["internationalPublicPortals", "internationalPublicPortals"],
   ["public_portal_providers", "aiDiscovery"],
   ["publicPortals", "aiDiscovery"],
   ["public_portals", "aiDiscovery"],
   ["statePortals", "aiDiscovery"],
   ["euna_bonfire", "aiDiscovery"],
   ["eunaSupplierNetwork", "aiDiscovery"],
-  ["international_public_portals", "aiDiscovery"],
-  ["internationalOpportunities", "aiDiscovery"],
+  ["international_public_portals", "internationalPublicPortals"],
+  ["internationalOpportunities", "internationalPublicPortals"],
+  ["canadaEurope", "internationalPublicPortals"],
+  ["canadaBuys", "internationalPublicPortals"],
+  ["ted", "internationalPublicPortals"],
   ["rss_aggregator", "rssAggregator"],
   ["rssAggregator", "rssAggregator"],
 ]);
@@ -48,13 +51,19 @@ export const PROVIDER_ALIASES = new Map<string, string>([
 export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
+  "internationalPublicPortals",
   "aiDiscovery",
   "emailNotifications",
   "rssAggregator",
 ]);
 
 const DEFAULT_OCCUMED_QUERY = "occupational health services";
-const DEFAULT_MANUAL_PROVIDERS = ["samGov", "tango", "aiDiscovery"] as const;
+const DEFAULT_MANUAL_PROVIDERS = [
+  "samGov",
+  "tango",
+  "internationalPublicPortals",
+  "aiDiscovery",
+] as const;
 const DISCOVERY_PROVIDER_ORDER = [
   "keenable",
   "you",

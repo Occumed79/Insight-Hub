@@ -19,12 +19,18 @@ const { mergeSourceRefresh } = await import("../pipelineRules");
 const { discoveryQuotaPolicy } = await import("../../discoveryQuotaPolicy");
 const { sourceDefinition } = await import("../../sourceArchitecture");
 
-test("manual Fetch Intelligence defaults to both federal sources plus browser discovery", () => {
-  assert.deepEqual(resolveManualProviders(), ["samGov", "tango", "aiDiscovery"]);
+test("manual Fetch Intelligence defaults to U.S., Canada/Europe, and browser discovery", () => {
+  assert.deepEqual(resolveManualProviders(), [
+    "samGov",
+    "tango",
+    "internationalPublicPortals",
+    "aiDiscovery",
+  ]);
   assert.deepEqual(Array.from(FEDERAL_MANUAL_PROVIDERS), ["samGov", "tango"]);
   assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), [
     "samGov",
     "tango",
+    "internationalPublicPortals",
     "aiDiscovery",
     "emailNotifications",
     "rssAggregator",
@@ -42,6 +48,19 @@ test("explicit SAM and Tango selections stay independent", () => {
     "tango",
     "aiDiscovery",
   ]);
+});
+
+test("CanadaBuys and TED aliases resolve to the international procurement source", () => {
+  assert.deepEqual(resolveManualProviders(["canadaBuys"]), [
+    "internationalPublicPortals",
+  ]);
+  assert.deepEqual(resolveManualProviders(["ted"]), [
+    "internationalPublicPortals",
+  ]);
+  assert.deepEqual(
+    resolveManualProviders(["canadaBuys", "ted", "internationalOpportunities"]),
+    ["internationalPublicPortals"],
+  );
 });
 
 test("selecting both federal sources preserves both without collapsing either", () => {
@@ -83,7 +102,7 @@ test("recognizes unavailable SAM API access and only accepts official SAM hosts"
   assert.equal(isOfficialSamOpportunityUrl("https://sam.gov.evil.test/opp/example/view"), false);
 });
 
-test("legacy portal selections collapse into browser discovery without forcing Tango", () => {
+test("legacy U.S. portal selections still collapse into browser discovery while international is first-class", () => {
   assert.deepEqual(
     resolveManualProviders([
       "sam_gov",
@@ -91,8 +110,13 @@ test("legacy portal selections collapse into browser discovery without forcing T
       "eunaBonfire",
       "internationalPublicPortals",
     ]),
-    ["samGov", "aiDiscovery"],
+    ["samGov", "aiDiscovery", "internationalPublicPortals"],
   );
+});
+
+test("international source is active direct procurement architecture", () => {
+  assert.equal(sourceDefinition("internationalPublicPortals")?.active, true);
+  assert.equal(sourceDefinition("internationalPublicPortals")?.role, "direct_source");
 });
 
 test("browser discovery can still run alone while internal discovery members are not top-level manual sources", () => {
