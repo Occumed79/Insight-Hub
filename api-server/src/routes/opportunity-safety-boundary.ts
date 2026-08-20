@@ -4,13 +4,9 @@ import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { classifyResult } from "../lib/search/relevance";
 import {
-  isSemanticRerankEnabled,
-  semanticRerank,
-} from "../lib/search/semanticRerank";
-import {
   canonicalSamOpportunityUrl,
   classifyOpportunityQuality,
-  opportunityQualityRank,
+  calculateOpportunityRank,
   qualityMatchesView,
   type OpportunityViewMode,
 } from "../lib/opportunityQuality";
@@ -28,8 +24,7 @@ const VIEW_MODES = new Set<OpportunityViewMode>([
   "all",
 ]);
 const FEEDBACK_RANK_WEIGHT = 15;
-const MAX_RANKING_CANDIDATES = 2_000;
-const MIN_RANKING_CANDIDATES = 500;
+const MAX_RANKING_CANDIDATES = 10_000;
 
 function parseTags(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -61,6 +56,9 @@ function sourceAuthority(provider: unknown): {
   const value = String(provider ?? "").toLowerCase();
   if (value === "samgov" || value === "sam_gov") {
     return { label: "official", bonus: 240 };
+  }
+  if (value === "internationalpublicportals") {
+    return { label: "official", bonus: 220 };
   }
   if (value === "tango") return { label: "structured", bonus: 180 };
   if (
@@ -246,10 +244,9 @@ router.get("/opportunities", async (req, res) => {
       );
     }
 
-    const candidateCap = Math.min(
-      MAX_RANKING_CANDIDATES,
-      Math.max(MIN_RANKING_CANDIDATES, page * limit * 10),
-    );
+    // Rank the whole bounded candidate set, never merely the requested page.
+    // The response reports truncation if this production safety bound is hit.
+    const candidateCap = MAX_RANKING_CANDIDATES;
     const rows = await db
       .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
@@ -282,30 +279,46 @@ router.get("/opportunities", async (req, res) => {
       };
       const mapped = mapOpportunity(row, contextual.adjustment);
       const authority = sourceAuthority(row.providerName ?? row.source);
-      const rank =
-        opportunityQualityRank(row, quality) +
-        authority.bonus +
-        feedbackAdjustment(row.userConfidence) * 4 +
-        contextual.adjustment * 6;
+      const rankBreakdown = calculateOpportunityRank(row, quality);
+      // Contextual learning is deliberately bounded and scope-specific: one
+      // poor result cannot poison a provider or overpower procurement fit.
+      const contextualFeedback = Math.max(-5, Math.min(5, contextual.adjustment));
+      const rank = Math.max(0, Math.min(100,
+        rankBreakdown.finalRankScore + contextualFeedback));
       const key = crossSourceKey(row);
       const existing = best.get(key);
-      if (!existing || rank > existing.rank) {
+      const canonicalWins = !existing ||
+        authority.bonus > existing.authority.bonus ||
+        (authority.bonus === existing.authority.bonus && rank > existing.rank);
+      if (canonicalWins) {
+        const groupRank = Math.max(rank, existing?.rank ?? 0);
         best.set(key, {
           item: {
             ...mapped,
             quality,
             crossSource: {
               canonicalKey: key,
-              rank,
+              rank: groupRank,
+              rankBreakdown: {
+                ...rankBreakdown,
+                contextualFeedbackAdjustment: contextualFeedback,
+                finalRankScore: groupRank,
+              },
               authority: authority.label,
               contextHash: contextual.contextHash,
               suppressed: row.userGrade === "spam",
             },
           },
-          rank,
+          rank: groupRank,
           authority,
           contextHash: contextual.contextHash,
         });
+      } else if (existing && rank > existing.rank) {
+        // Secondary discovery evidence may strengthen group ranking without
+        // stealing canonical ownership from the authoritative record.
+        existing.rank = rank;
+        existing.item.crossSource.rank = rank;
+        existing.item.crossSource.rankBreakdown.finalRankScore = rank;
       }
     }
 
@@ -315,41 +328,7 @@ router.get("/opportunities", async (req, res) => {
     });
     const total = sorted.length;
     const offset = (page - 1) * limit;
-    let data = sorted.slice(offset, offset + limit).map((row) => row.item);
-
-    if (isSemanticRerankEnabled() && data.length > 0) {
-      try {
-        const reranked = await semanticRerank(
-          data.map((item) => ({
-            item,
-            baseScore:
-              item.crossSource.rank +
-              (item.relevance.contextualFeedbackAdj ?? 0),
-            text: [
-              item.title,
-              item.type,
-              item.solicitationNumber,
-              item.agency,
-              item.description,
-            ]
-              .filter(Boolean)
-              .join(". "),
-          })),
-          Math.min(80, data.length),
-          search || undefined,
-        );
-        data = reranked.map((result) => {
-          if (result.similarity != null) {
-            result.item.relevance.semanticSimilarity = Math.round(
-              result.similarity * 100,
-            );
-          }
-          return result.item;
-        });
-      } catch (error) {
-        req.log.warn(error, "semantic rerank failed; using cross-source rank");
-      }
-    }
+    const data = sorted.slice(offset, offset + limit).map((row) => row.item);
 
     return res.json({
       data,
@@ -358,11 +337,11 @@ router.get("/opportunities", async (req, res) => {
       limit,
       view,
       ranking: {
-        mode: "cross-source-v2",
-        candidates: rows.length,
+        mode: "best-match-v3",
+        candidateCount: rows.length,
         candidateCap,
         truncated: rows.length >= candidateCap,
-        canonicalRecords: total,
+        canonicalCount: total,
         queryContext: search || null,
       },
     });
