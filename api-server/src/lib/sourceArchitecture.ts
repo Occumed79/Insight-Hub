@@ -18,6 +18,7 @@ export interface InsightSourceDefinition {
 export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "samGov", role: "direct_source", active: true, purpose: "Official structured U.S. federal opportunities" },
   { name: "tango", role: "direct_source", active: true, purpose: "Structured federal opportunity pool" },
+  { name: "internationalPublicPortals", role: "direct_source", active: true, purpose: "CanadaBuys official Canadian tenders plus anonymous TED Search API procurement notices for Europe" },
   { name: "texasEsbd", role: "direct_source", active: true, purpose: "Texas official procurement compatibility source" },
   { name: "nyScr", role: "direct_source", active: true, purpose: "New York official procurement compatibility source" },
 
@@ -67,7 +68,6 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "federalRegister", role: "legacy_disabled", active: false, purpose: "Policy/rule intelligence only; not opportunity ingestion" },
   { name: "publicPortalProviders", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
   { name: "eunaBonfire", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
-  { name: "internationalPublicPortals", role: "legacy_disabled", active: false, purpose: "Legacy selection aliases into browser discovery" },
   { name: "bidnet", role: "legacy_disabled", active: false, purpose: "Direct endpoint is not implemented" },
   { name: "browseAi", role: "legacy_disabled", active: false, purpose: "Browser automation path disabled" },
   { name: "browserUse", role: "legacy_disabled", active: false, purpose: "Browser automation path disabled" },
