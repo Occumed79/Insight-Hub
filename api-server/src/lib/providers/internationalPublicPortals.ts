@@ -9,7 +9,6 @@ import type {
 } from "./types";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { classifyResult } from "../search/relevance";
-import { extractMetadataFromText } from "../search/heuristicExtract";
 
 const TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search";
 const TED_NOTICE_BASE = "https://ted.europa.eu/en/notice";
@@ -205,7 +204,11 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
       directOfficialApi: true,
       authenticationRequired: false,
       sourceConfidence: "high",
-      evidenceType: "official_direct",
+      evidenceType: "direct-structured",
+      buyerProvenance: "official_structured",
+      deadlineProvenance: deadline ? "official_structured" : "unknown",
+      statusProvenance: "official_structured",
+      descriptionProvenance: description ? "official_structured" : "unknown",
       ted: record,
     },
   };
@@ -234,7 +237,6 @@ async function fetchTed(options: FetchOptions): Promise<ProviderFetchResult> {
       ],
       page: 1,
       limit,
-      scope: "ACTIVE",
       checkQuerySyntax: false,
       paginationMode: "PAGE_NUMBER",
     }),
@@ -278,16 +280,18 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
     discoveryQueries: queries,
     candidateUrlFilter: isOfficialCanadaBuysTenderUrl,
     dateRange: options.dateRange,
+    // CanadaBuys runs on every default Fetch Intelligence request, so keep this
+    // source on renewable/keyless capacity and do not burn monthly pools twice.
     useKeenable: true,
     useYou: true,
-    useExa: true,
-    useLangsearch: true,
-    useLinkup: true,
     useBrowserbase: true,
+    useExa: false,
+    useLangsearch: false,
+    useLinkup: false,
     useParallel: false,
     useFirecrawl: false,
     useSocrata: false,
-    useWebsearch: true,
+    useWebsearch: false,
     useRssAggregator: false,
     useSelfHostedSearch: false,
     useSelfHostedCrawler: false,
@@ -309,7 +313,7 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
         portalName: "CanadaBuys",
         geography: "Canada",
         directOfficialPortal: true,
-        evidenceType: "official_portal_discovery",
+        evidenceType: "authoritative-page",
         sourceConfidence: "high",
       },
     }));
