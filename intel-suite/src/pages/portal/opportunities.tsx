@@ -160,6 +160,18 @@ const FETCH_PROVIDER_GROUPS: {
     ],
   },
   {
+    id: "international_procurement",
+    label: "International Procurement",
+    options: [
+      {
+        key: "internationalPublicPortals",
+        label: "Canada + Europe Procurement",
+        desc: "CanadaBuys official tender discovery plus the EU's keyless TED Search API, anchored to CPV 85147000 Company health services.",
+        stub: false,
+      },
+    ],
+  },
+  {
     id: "browser_discovery",
     label: "Browser/Search Discovery",
     options: [
@@ -234,6 +246,7 @@ export default function OpportunitiesDashboard() {
   const [fetchProviders, setFetchProviders] = useState<string[]>([
     "sam_gov",
     "tango",
+    "internationalPublicPortals",
     "aiDiscovery",
   ]);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -503,7 +516,7 @@ export default function OpportunitiesDashboard() {
         toast({
           title: "Fetch started",
           description:
-            "Progress is saved. SAM.gov and Tango respect your selections; browser discovery spends renewable quota before lower-priority fallbacks.",
+            "Progress is saved. SAM.gov, Tango, and Canada + Europe respect your selections; browser discovery spends renewable quota before lower-priority fallbacks.",
         });
       } catch (err: any) {
         toast({
@@ -724,6 +737,10 @@ export default function OpportunitiesDashboard() {
         label: "SAM.gov",
         classes: "bg-amber-500/10 text-amber-300 border-amber-500/20",
       },
+      internationalPublicPortals: {
+        label: "Canada + Europe",
+        classes: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+      },
       you: {
         label: "You.com",
         classes: "bg-sky-500/10 text-sky-300 border-sky-500/20",
@@ -868,7 +885,6 @@ export default function OpportunitiesDashboard() {
                 ![
                   "publicPortalProviders",
                   "eunaBonfire",
-                  "internationalPublicPortals",
                   "bidnet",
                 ].includes(provider.name),
             )
@@ -1297,7 +1313,7 @@ export default function OpportunitiesDashboard() {
               <DialogDescription className="text-muted-foreground">
                 {showRunProgress
                   ? "Manual ingestion progress is persisted while you navigate or refresh."
-                  : "Run the hardened opportunity ensemble: SAM.gov and Tango can run independently, while a quota-aware browser/search pool broadens state, local, and private discovery. Candidates are deduplicated and judged before promotion."}
+                  : "Run the hardened opportunity ensemble: SAM.gov, Tango, CanadaBuys/TED, and quota-aware browser search can run independently. Candidates are deduplicated and judged before promotion."}
               </DialogDescription>
             </DialogHeader>
             <div className="pt-4">
@@ -1348,7 +1364,9 @@ export default function OpportunitiesDashboard() {
                             ? "SAM.gov Official API"
                             : currentRun.currentProvider === "tango"
                               ? "Tango Federal Opportunities"
-                              : currentRun.currentProvider}
+                              : currentRun.currentProvider === "internationalPublicPortals"
+                                ? "Canada + Europe Procurement"
+                                : currentRun.currentProvider}
                       </span>
                     </p>
                   )}
