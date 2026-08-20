@@ -11,7 +11,7 @@ import { webIntelligenceFetch } from "../search/webIntelligence";
 import { classifyResult } from "../search/relevance";
 
 const TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search";
-const TED_NOTICE_BASE = "https://ted.europa.eu/en/notice";
+const TED_NOTICE_BASE = "https://ted.europa.eu/en/notice/-/detail";
 const CANADA_BUYS_HOST = "canadabuys.canada.ca";
 const DEFAULT_LIMIT = 100;
 const TED_PAGE_LIMIT = 100;
@@ -71,9 +71,9 @@ function tedQueryForKeywords(keywords?: string): string {
   const focus = keywords?.trim();
   if (focus) {
     const escaped = focus.replace(/"/g, "").slice(0, 120);
-    return `(classification-cpv = 85147000 OR notice-title ~ "${escaped}" OR description-proc ~ "${escaped}" OR description-lot ~ "${escaped}")`;
+    return `(classification-cpv=85147000 OR FT~"${escaped}")`;
   }
-  return "classification-cpv = 85147000";
+  return "classification-cpv=85147000";
 }
 
 function firstString(value: unknown): string | undefined {
@@ -110,7 +110,7 @@ function tedField(record: Record<string, unknown>, ...names: string[]): string |
 
 function parseDate(value?: string): Date | undefined {
   if (!value) return undefined;
-  const parsed = new Date(value);
+  const parsed = new Date(value.slice(0, 10));
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
@@ -123,6 +123,12 @@ function parseMoney(value?: string): number | undefined {
     : cleaned.replace(/,/g, ".");
   const amount = Number(normalized);
   return Number.isFinite(amount) && amount > 0 ? amount : undefined;
+}
+
+function tedNoticeUrl(publicationNumber?: string): string {
+  return publicationNumber
+    ? `${TED_NOTICE_BASE}/${encodeURIComponent(publicationNumber)}`
+    : "https://ted.europa.eu/en/";
 }
 
 function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOpportunity | null {
@@ -145,7 +151,7 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
   const classification = classifyResult({
     title,
     snippet: description ?? "",
-    url: publicationNumber ? `${TED_NOTICE_BASE}/${publicationNumber}/html` : TED_NOTICE_BASE,
+    url: tedNoticeUrl(publicationNumber),
     allowHistorical: false,
   });
   const cpv = tedField(record, "classification-cpv", "classificationCpv");
@@ -168,13 +174,14 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
   const externalId = `ted-${createHash("sha256").update(idSeed).digest("hex").slice(0, 20)}`;
   const location = tedField(
     record,
+    "buyer-country",
     "place-of-performance",
     "placeOfPerformance",
     "organisation-country-buyer",
     "country-procurement",
   );
   const estimatedValue = parseMoney(
-    tedField(record, "estimated-value-proc", "estimatedValueProc", "estimated-value-lot"),
+    tedField(record, "estimated-value-proc", "estimatedValueProc", "total-value", "estimated-value-lot"),
   );
 
   return {
@@ -189,7 +196,7 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
     location,
     placeOfPerformance: location,
     estimatedValue,
-    sourceUrl: publicationNumber ? `${TED_NOTICE_BASE}/${publicationNumber}/html` : TED_NOTICE_BASE,
+    sourceUrl: tedNoticeUrl(publicationNumber),
     solicitationNumber: publicationNumber,
     source: "internationalPublicPortals",
     providerName: "internationalPublicPortals",
@@ -199,7 +206,8 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
       internationalSource: "ted",
       portalName: "Tenders Electronic Daily (TED)",
       geography: "Europe",
-      country: tedField(record, "organisation-country-buyer", "country-procurement"),
+      country: tedField(record, "buyer-country", "organisation-country-buyer", "country-procurement"),
+      currency: tedField(record, "estimated-value-cur-proc", "total-value-cur"),
       cpv,
       directOfficialApi: true,
       authenticationRequired: false,
@@ -226,17 +234,21 @@ async function fetchTed(options: FetchOptions): Promise<ProviderFetchResult> {
         "publication-number",
         "notice-title",
         "buyer-name",
+        "buyer-country",
         "notice-type",
         "publication-date",
         "deadline",
         "description-proc",
         "description-lot",
         "classification-cpv",
-        "organisation-country-buyer",
         "estimated-value-proc",
+        "estimated-value-cur-proc",
+        "total-value",
+        "total-value-cur",
       ],
       page: 1,
       limit,
+      scope: "ACTIVE",
       checkQuerySyntax: false,
       paginationMode: "PAGE_NUMBER",
     }),
