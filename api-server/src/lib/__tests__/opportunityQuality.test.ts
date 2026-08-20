@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildOpportunityQualityPage, canonicalSamOpportunityUrl, classifyOpportunityQuality, deadlineEndForComparison, opportunityQualityRank, summaryEvidenceFingerprint, summaryIneligibilityReason } from "../opportunityQuality";
+import { buildOpportunityQualityPage, calculateOpportunityRank, canonicalSamOpportunityUrl, classifyOpportunityQuality, deadlineEndForComparison, summaryEvidenceFingerprint, summaryIneligibilityReason } from "../opportunityQuality";
 
 const now = new Date("2026-07-21T19:00:00.000Z");
 const base = {
@@ -83,12 +83,57 @@ describe("opportunity quality classifier", () => {
     assert.equal(classifyOpportunityQuality(higherGov, now).classification, "discovery-only");
   });
 
-  it("ranks verified-open before weaker classifications", () => {
-    const verified = classifyOpportunityQuality(base, now);
-    const weakOpp = { ...base, providerName: "exa", tags: ["ai-pending"], relevanceScore: "100" };
-    const weak = classifyOpportunityQuality(weakOpp, now);
-    assert.equal(weak.classification, "discovery-only");
-    assert.ok(opportunityQualityRank(base, verified, now) > opportunityQualityRank(weakOpp, weak, now));
+  it("makes Occu-Med fit dominant over federal source authority", () => {
+    const local = { ...base, id: "local", providerName: "manual", relevanceScore: "95",
+      samUrl: "https://county.gov/bids/occ-health", description: "RFP for physical exams, medical surveillance, drug testing, audiometry, spirometry and respirator fit testing." };
+    const federal = { ...base, id: "federal", relevanceScore: "45",
+      description: "Solicitation mentioning a general employee wellness service." };
+    assert.ok(calculateOpportunityRank(local, classifyOpportunityQuality(local, now), now).finalRankScore >
+      calculateOpportunityRank(federal, classifyOpportunityQuality(federal, now), now).finalRankScore);
+  });
+
+  it("rewards multi-service coverage over generic wellness", () => {
+    const broad = { ...base, relevanceScore: "80", description: "RFP for physical examinations, drug testing, medical surveillance, audiometry, spirometry, and respirator fit testing." };
+    const wellness = { ...base, relevanceScore: "80", description: "RFP for occupational health and general employee wellness." };
+    const broadRank = calculateOpportunityRank(broad, classifyOpportunityQuality(broad, now), now);
+    const wellnessRank = calculateOpportunityRank(wellness, classifyOpportunityQuality(wellness, now), now);
+    assert.ok(broadRank.serviceCoverageBoost > wellnessRank.serviceCoverageBoost);
+    assert.ok(broadRank.finalRankScore > wellnessRank.finalRankScore);
+  });
+
+  it("penalizes expired and poorly graded records without penalizing a provider", () => {
+    const open = { ...base, relevanceScore: "90", userConfidence: 50 };
+    const expired = { ...open, responseDeadline: new Date("2026-06-01") };
+    const poor = { ...open, userConfidence: 0 };
+    assert.ok(calculateOpportunityRank(open, classifyOpportunityQuality(open, now), now).finalRankScore >
+      calculateOpportunityRank(expired, classifyOpportunityQuality(expired, now), now).finalRankScore);
+    assert.ok(calculateOpportunityRank(open, classifyOpportunityQuality(open, now), now).finalRankScore >
+      calculateOpportunityRank(poor, classifyOpportunityQuality(poor, now), now).finalRankScore);
+    assert.equal(calculateOpportunityRank({ ...open, id: "same-provider" }, classifyOpportunityQuality(open, now), now).feedbackAdjustment, 0);
+  });
+
+  it("ranks globally before pagination and preserves ordering after source filtering", () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({ ...base, id: `rank-${index}`,
+      title: `RFP Occupational Health Services rank ${index}`, samUrl: `https://sam.gov/opp/rank-${index}/view`,
+      relevanceScore: String(50 + index) }));
+    const first = buildOpportunityQualityPage(rows, "actionable", 1, 5, now);
+    const second = buildOpportunityQualityPage(rows, "actionable", 2, 5, now);
+    assert.deepEqual(first.data.map((row) => row.id), ["rank-29", "rank-28", "rank-27", "rank-26", "rank-25"]);
+    assert.equal(second.data[0].id, "rank-24");
+    const tangoOnly = rows.filter((_, index) => index % 2 === 0).map((row) => ({ ...row, providerName: "tango" }));
+    const filtered = buildOpportunityQualityPage(tangoOnly, "all", 1, 3, now);
+    assert.deepEqual(filtered.data.map((row) => row.id), ["rank-28", "rank-26", "rank-24"]);
+  });
+
+  it("scores Canadian and TED structured records in the same bounded ranking", () => {
+    for (const internationalSource of ["canadaBuys", "ted"]) {
+      const record = { ...base, providerName: "internationalPublicPortals", relevanceScore: "88",
+        tags: ["evidence:direct-structured", "complete-direct-evidence", internationalSource],
+        samUrl: internationalSource === "ted" ? "https://ted.europa.eu/en/notice/-/detail/123" : "https://canadabuys.canada.ca/en/tender-opportunities/tender-notice/123" };
+      const quality = classifyOpportunityQuality(record, now);
+      assert.equal(quality.sourceType, "official-direct");
+      assert.ok(calculateOpportunityRank(record, quality, now).finalRankScore > 70);
+    }
   });
 
   it("normalizes equivalent SAM.gov opportunity URL forms", () => {

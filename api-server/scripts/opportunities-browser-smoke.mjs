@@ -32,6 +32,24 @@ let notRelevant = false;
 const future = new Date(Date.now() + 30 * 86_400_000).toISOString();
 const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
 
+function opportunityRecord({ id, title, rank, providerName = "samGov", quality = "verified-open" }) {
+  return {
+    id, noticeId: id, title, agency: "Department of Example", type: "Solicitation",
+    status: quality === "closed" ? "archived" : "active", postedDate: recent,
+    responseDeadline: quality === "closed" ? recent : future,
+    description: "Request for occupational health examinations, drug testing, audiometry, spirometry, and medical surveillance.",
+    solicitationNumber: id, samUrl: providerName === "internationalPublicPortals"
+      ? `https://ted.europa.eu/en/notice/-/detail/${id}` : `https://sam.gov/opp/${id}/view`,
+    providerName, source: providerName, sourceConfidence: "high",
+    userGrade: notRelevant ? "spam" : null,
+    relevance: { score: rank, reasons: ["Explicit occupational-health procurement scope"], category: "Occupational health", confidence: "high", feedbackAdj: 0, contextualFeedbackAdj: 0 },
+    quality: { classification: quality, label: quality === "verified-open" ? "Verified Open" : "Closed", actionable: quality === "verified-open", summaryEligible: quality === "verified-open", sourceType: "official-direct", reasons: [] },
+    crossSource: { canonicalKey: `sol:departmentofexample:${id}`, rank,
+      rankBreakdown: { finalRankScore: rank, baseRelevanceScore: rank },
+      authority: "official", contextHash: "browser-smoke", suppressed: notRelevant },
+  };
+}
+
 function forecastRecord(recompete) {
   return {
     id: recompete ? "recompete-browser-001" : "forecast-browser-001",
@@ -99,7 +117,10 @@ await page.route("**/api/**", async (route) => {
     return json({ run: null });
   }
   if (path === "/api/settings") return json({});
-  if (path === "/api/providers") return json({ providers: [] });
+  if (path === "/api/providers") return json({ providers: [
+    { name: "samGov", displayName: "SAM.gov", ingestionEligible: true, ingestionMode: "live", status: { configured: true } },
+    { name: "internationalPublicPortals", displayName: "Canada + Europe", ingestionEligible: true, ingestionMode: "live", status: { configured: true } },
+  ] });
   if (path === "/api/providers/telemetry") {
     return json({
       generatedAt: new Date().toISOString(),
@@ -142,62 +163,31 @@ await page.route("**/api/**", async (route) => {
 
   if (path === "/api/opportunities" && request.method() === "GET") {
     const view = url.searchParams.get("view") ?? "actionable";
-    const rows =
-      notRelevant && view !== "all"
-        ? []
+    const requestedPage = Number(url.searchParams.get("page") ?? 1);
+    const source = url.searchParams.get("source");
+    let rows = view === "closed"
+      ? [opportunityRecord({ id: "CLOSED-001", title: "Closed Occupational Health RFP", rank: 72, quality: "closed" })]
+      : requestedPage === 2
+        ? [opportunityRecord({ id: "PAGE-051", title: "Page Two Occupational Health RFP", rank: 61 })]
         : [
-            {
-              id: "11111111-1111-4111-8111-111111111111",
-              noticeId: "TEST-001",
-              title: "Occupational Health and Medical Surveillance Services",
-              agency: "Department of Example",
-              type: "Solicitation",
-              status: "active",
-              postedDate: recent,
-              responseDeadline: future,
-              description:
-                "Request for proposal for occupational health examinations, audiometry, spirometry, and employee medical surveillance.",
-              solicitationNumber: "TEST-001",
-              samUrl: "https://sam.gov/opp/test-001/view",
-              providerName: "samGov",
-              source: "sam_gov",
-              sourceConfidence: "high",
-              userGrade: notRelevant ? "spam" : null,
-              relevance: {
-                score: 96,
-                reasons: ["Explicit occupational-health procurement scope"],
-                category: "Occupational health",
-                confidence: "high",
-                feedbackAdj: 0,
-                contextualFeedbackAdj: 0,
-              },
-              quality: {
-                classification: "verified-open",
-                label: "Verified Open",
-                actionable: true,
-                summaryEligible: true,
-                sourceType: "official-direct",
-                reasons: [],
-              },
-              crossSource: {
-                canonicalKey: "sol:departmentofexample:test001",
-                rank: 10400,
-                authority: "official",
-                contextHash: "browser-smoke",
-                suppressed: notRelevant,
-              },
-            },
+            opportunityRecord({ id: "LOCAL-095", title: "County Multi-Service Occupational Health RFP", rank: 95 }),
+            opportunityRecord({ id: "TED-088", title: "Canada Europe Occupational Medicine Tender", rank: 88, providerName: "internationalPublicPortals" }),
+            opportunityRecord({ id: "SAM-045", title: "Federal Employee Wellness Solicitation", rank: 45 }),
           ];
+    if (source) rows = rows.filter((row) => row.providerName === source);
+    if (notRelevant && view !== "all") rows = [];
     return json({
       data: rows,
-      total: rows.length,
-      page: 1,
+      total: source || view === "closed" ? rows.length : 51,
+      page: requestedPage,
       limit: 50,
       view,
       ranking: {
-        mode: "cross-source-v2",
-        candidates: rows.length,
-        canonicalRecords: rows.length,
+        mode: "best-match-v3",
+        candidateCount: 51,
+        candidateCap: 10_000,
+        canonicalCount: 51,
+        truncated: false,
         queryContext: null,
       },
     });
@@ -317,7 +307,7 @@ await page.route("**/api/**", async (route) => {
 
 try {
   const opportunityTitle =
-    "Occupational Health and Medical Surveillance Services";
+    "County Multi-Service Occupational Health RFP";
   await page.goto(`${baseUrl}/portal/opportunities`, {
     waitUntil: "networkidle",
     timeout: 30_000,
@@ -329,6 +319,38 @@ try {
   await page.getByText(opportunityTitle, { exact: true }).waitFor();
   await page.getByRole("button", { name: "Bid-ready & Verified" }).waitFor();
   await page.getByRole("button", { name: "Fetch Intelligence" }).waitFor();
+
+  const renderedTitles = await page.locator("article h3").allTextContents();
+  assert.deepEqual(renderedTitles, [
+    "County Multi-Service Occupational Health RFP",
+    "Canada Europe Occupational Medicine Tender",
+    "Federal Employee Wellness Solicitation",
+  ], "the UI must preserve descending API best-match order");
+  await page.getByText("Canada Europe Occupational Medicine Tender", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByText("Page Two Occupational Health RFP", { exact: true }).waitFor();
+  assert.deepEqual(await page.locator("article h3").allTextContents(), ["Page Two Occupational Health RFP"],
+    "pagination must not locally reorder API results");
+  await page.getByRole("button", { name: "Prev" }).click();
+  await page.getByText(opportunityTitle, { exact: true }).waitFor();
+
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/opportunities") && response.url().includes("source=internationalPublicPortals")),
+    page.getByRole("button", { name: "Canada + Europe" }).click(),
+  ]);
+  await page.locator("article").filter({ hasText: "County Multi-Service Occupational Health RFP" }).waitFor({ state: "detached" });
+  assert.deepEqual(await page.locator("article h3").allTextContents(), ["Canada Europe Occupational Medicine Tender"],
+    "source filtering must preserve backend order");
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByText(opportunityTitle, { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Closed / Non-biddable" }).click();
+  await page.getByText("Closed Occupational Health RFP", { exact: true }).waitFor();
+  assert.deepEqual(await page.locator("article h3").allTextContents(), ["Closed Occupational Health RFP"],
+    "quality tabs must preserve backend order");
+  await page.getByRole("button", { name: "Bid-ready & Verified" }).click();
+  await page.getByText(opportunityTitle, { exact: true }).waitFor();
 
   const card = page
     .locator("article")
@@ -349,6 +371,9 @@ try {
   await fetchDialog.getByText("SAM.gov Official API", { exact: true }).waitFor();
   await fetchDialog
     .getByText("Tango Federal Opportunities", { exact: true })
+    .waitFor();
+  await fetchDialog
+    .getByText("Canada + Europe Procurement", { exact: true })
     .waitFor();
   await fetchDialog
     .getByText("State, Local & Private Search", { exact: true })
@@ -430,6 +455,10 @@ try {
       verified: [
         "opportunity-page-render",
         "quality-tabs",
+        "descending-best-match-order",
+        "pagination-preserves-api-order",
+        "source-filter-preserves-api-order",
+        "international-procurement-card",
         "card-feedback-before-brief",
         "independent-federal-source-controls",
         "browser-discovery-selector",

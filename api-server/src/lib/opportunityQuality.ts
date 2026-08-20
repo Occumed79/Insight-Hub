@@ -59,6 +59,7 @@ const DISCOVERY_PROVIDERS = new Set([
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
   "sam_gov",
+  "internationalPublicPortals",
   "eunaBonfire",
   "texasEsbd",
   "nyScr",
@@ -407,56 +408,79 @@ export function qualityMatchesView(
   );
 }
 
-export function opportunityQualityRank(
+/** Transparent, bounded best-match score used by the list API before pagination. */
+export interface OpportunityRankBreakdown {
+  finalRankScore: number;
+  baseRelevanceScore: number;
+  serviceCoverageBoost: number;
+  qualityBoost: number;
+  sourceAuthorityBoost: number;
+  deadlineBoost: number;
+  completenessBoost: number;
+  feedbackAdjustment: number;
+  statusPenalty: number;
+  matchedServiceLines: string[];
+}
+
+function numericScore(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
+}
+
+export function calculateOpportunityRank(
   opp: OpportunityLike,
-  quality: OpportunityQualityView,
+  quality = classifyOpportunityQuality(opp),
   now = new Date(),
-): number {
-  const deadline = deadlineEndForComparison(opp.responseDeadline);
-  const days = deadline
-    ? Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000))
-    : 999;
-  const relevance = quality.relevanceScore;
-  const classScore =
-    quality.classification === "verified-open"
-      ? 10000
-      : quality.classification === "needs-verification"
-        ? 5000
-        : quality.classification === "discovery-only"
-          ? 3000
-          : 0;
-  const deadlineScore = quality.hasFutureDeadline
-    ? Math.max(0, 120 - Math.abs(days - 21))
-    : 0;
-  const sourceScore = quality.sourceVerified
-    ? 300
-    : quality.sourceType === "aggregator"
-      ? 50
-      : 0;
-  const completeScore =
-    [
-      quality.deadlineKnown,
-      quality.buyerKnown,
-      quality.solicitationLike,
-      quality.sourceVerified,
-    ].filter(Boolean).length * 25;
-  const recency = opp.postedDate
-    ? Math.max(
-        0,
-        100 -
-          Math.floor(
-            (now.getTime() - new Date(opp.postedDate).getTime()) / 86400000,
-          ),
-      )
-    : 0;
-  return (
-    classScore +
-    deadlineScore +
-    sourceScore +
-    completeScore +
-    (Number.isFinite(relevance) ? relevance : 50) +
-    recency
-  );
+): OpportunityRankBreakdown {
+  const judged = classifyResult({
+    title: String(opp.title ?? ""),
+    snippet: [opp.type, opp.description, opp.agency, opp.solicitationNumber]
+      .filter(Boolean).join(" "),
+    url: String(opp.samUrl ?? opp.sourceUrl ?? opp.url ?? ""),
+    date: opp.postedDate,
+    deadlineInFuture: quality.hasFutureDeadline,
+    allowHistorical: true,
+  });
+  // The persisted judge score is the normalized ingestion decision. Fall back
+  // to a fresh heuristic classification for legacy records only.
+  const baseRelevanceScore = numericScore(opp.relevanceScore) ?? judged.score;
+  const matchedServiceLines = judged.matchedServiceCategories;
+  const serviceCoverageBoost = Math.min(8, matchedServiceLines.length * 1.6);
+  const qualityBoost = quality.classification === "verified-open" ? 5
+    : quality.classification === "needs-verification" ? 3
+    : quality.classification === "discovery-only" ? 1 : 0;
+  const sourceAuthorityBoost = quality.sourceType === "official-direct" ? 4
+    : quality.sourceType === "verified-solicitation-page" ? 3
+    : quality.sourceType === "search-discovery" ? 1
+    : quality.sourceType === "aggregator" ? 0 : 1;
+  const deadlineBoost = quality.hasFutureDeadline ? 3 : 0;
+  const completenessFields = [opp.agency, opp.responseDeadline, opp.description,
+    opp.solicitationNumber, opp.location, opp.estimatedValue ?? opp.awardAmount,
+    opp.samUrl ?? opp.sourceUrl ?? opp.url];
+  const completenessBoost = Math.round(
+    (completenessFields.filter((value) => value != null && String(value).trim()).length /
+      completenessFields.length) * 3 * 10,
+  ) / 10;
+  const confidence = numericScore(opp.userConfidence);
+  const feedbackAdjustment = confidence == null
+    ? 0 : Math.round(Math.max(-7, Math.min(7, ((confidence - 50) / 50) * 7)) * 10) / 10;
+  const statusPenalty = quality.hasFutureDeadline || !quality.deadlineKnown
+    ? 0 : -15;
+  const raw = baseRelevanceScore * 0.7 + serviceCoverageBoost + qualityBoost +
+    sourceAuthorityBoost + deadlineBoost + completenessBoost +
+    feedbackAdjustment + statusPenalty;
+  return {
+    finalRankScore: Math.round(Math.max(0, Math.min(100, raw)) * 10) / 10,
+    baseRelevanceScore,
+    serviceCoverageBoost,
+    qualityBoost,
+    sourceAuthorityBoost,
+    deadlineBoost,
+    completenessBoost,
+    feedbackAdjustment,
+    statusPenalty,
+    matchedServiceLines,
+  };
 }
 
 export interface QualityPageResult<T extends OpportunityLike> {
@@ -523,7 +547,7 @@ export class OpportunityQualityPageAccumulator<T extends OpportunityLike> {
     const quality = classifyOpportunityQuality(row, this.now);
     if (!qualityMatchesView(quality, this.view)) return;
     const key = opportunityCollapseKey(row);
-    const score = opportunityQualityRank(row, quality, this.now);
+    const score = calculateOpportunityRank(row, quality, this.now).finalRankScore;
     const previous = this.bestScores.get(key);
     if (previous != null && previous >= score) return;
     this.bestScores.set(key, score);
