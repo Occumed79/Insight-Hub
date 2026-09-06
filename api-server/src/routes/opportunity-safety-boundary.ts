@@ -189,6 +189,7 @@ router.get("/opportunities", async (req, res) => {
     );
     const dateRange = Number.parseInt(String(req.query.dateRange ?? ""), 10);
     const freshOnly = String(req.query.freshOnly ?? "") === "true";
+    const rankingNow = new Date();
 
     const conditions: any[] = [];
     if (status === "active" || status === "archived") {
@@ -244,19 +245,42 @@ router.get("/opportunities", async (req, res) => {
       );
     }
 
-    // Rank the whole bounded candidate set, never merely the requested page.
-    // The response reports truncation if this production safety bound is hit.
+    // Preserve a hard memory/CPU safety bound, but make admission fit-first
+    // instead of recency-first. The old newest-first LIMIT could hide an older
+    // still-open high-fit solicitation before the real ranking engine saw it.
+    // Actionable/All views reserve admission priority for deadlines that are
+    // today or later, then rank that pool by persisted relevance; recency is
+    // only a secondary tie-breaker. The final quality classifier still decides
+    // exact deadline validity, preserving date-only end-of-day semantics.
     const candidateCap = MAX_RANKING_CANDIDATES;
-    const rows = await db
+    const prioritizeOpenCandidates = view === "actionable" || view === "all";
+    const candidateOrder = prioritizeOpenCandidates
+      ? [
+          sql`CASE
+            WHEN ${opportunitiesTable.responseDeadline} >= date_trunc('day', ${rankingNow}::timestamptz) THEN 0
+            WHEN ${opportunitiesTable.responseDeadline} IS NULL THEN 1
+            ELSE 2
+          END ASC`,
+          sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
+          sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
+          asc(opportunitiesTable.id),
+        ]
+      : [
+          sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
+          sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
+          asc(opportunitiesTable.id),
+        ];
+
+    // Fetch one extra row so truncation is reported only when there are truly
+    // more candidates than the safety window (not when there are exactly 10k).
+    const candidateRows = await db
       .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
       .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(
-        desc(opportunitiesTable.postedDate),
-        desc(opportunitiesTable.relevanceScore),
-        asc(opportunitiesTable.id),
-      )
-      .limit(candidateCap);
+      .orderBy(...candidateOrder)
+      .limit(candidateCap + 1);
+    const truncated = candidateRows.length > candidateCap;
+    const rows = candidateRows.slice(0, candidateCap);
 
     const context = await contextualAdjustments(rows, search || undefined);
     const best = new Map<
@@ -338,9 +362,12 @@ router.get("/opportunities", async (req, res) => {
       view,
       ranking: {
         mode: "best-match-v3",
+        candidateStrategy: prioritizeOpenCandidates
+          ? "open-then-fit-v1"
+          : "fit-then-recency-v1",
         candidateCount: rows.length,
         candidateCap,
-        truncated: rows.length >= candidateCap,
+        truncated,
         canonicalCount: total,
         queryContext: search || null,
       },
