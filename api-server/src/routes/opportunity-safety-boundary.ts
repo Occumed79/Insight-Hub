@@ -244,37 +244,32 @@ router.get("/opportunities", async (req, res) => {
         sql`coalesce(${opportunitiesTable.userGrade}, '') <> 'spam'`,
       );
     }
-    // An actionable opportunity must have a future deadline. Enforce that
-    // before candidate admission so expired/newer noise cannot consume the
-    // bounded ranking window and crowd out older, still-open strong matches.
-    if (view === "actionable") {
-      conditions.push(gt(opportunitiesTable.responseDeadline, rankingNow));
-    }
 
     // Preserve a hard memory/CPU safety bound, but make admission fit-first
     // instead of recency-first. The old newest-first LIMIT could hide an older
     // still-open high-fit solicitation before the real ranking engine saw it.
-    // We now admit by persisted relevance first, with recency only as a
-    // secondary tie-breaker. For the All view, future-deadline records are
-    // preferred ahead of unknown/expired records before relevance is applied.
+    // Actionable/All views reserve admission priority for deadlines that are
+    // today or later, then rank that pool by persisted relevance; recency is
+    // only a secondary tie-breaker. The final quality classifier still decides
+    // exact deadline validity, preserving date-only end-of-day semantics.
     const candidateCap = MAX_RANKING_CANDIDATES;
-    const candidateOrder =
-      view === "all"
-        ? [
-            sql`CASE
-              WHEN ${opportunitiesTable.responseDeadline} > ${rankingNow} THEN 0
-              WHEN ${opportunitiesTable.responseDeadline} IS NULL THEN 1
-              ELSE 2
-            END ASC`,
-            sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
-            sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
-            asc(opportunitiesTable.id),
-          ]
-        : [
-            sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
-            sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
-            asc(opportunitiesTable.id),
-          ];
+    const prioritizeOpenCandidates = view === "actionable" || view === "all";
+    const candidateOrder = prioritizeOpenCandidates
+      ? [
+          sql`CASE
+            WHEN ${opportunitiesTable.responseDeadline} >= date_trunc('day', ${rankingNow}::timestamptz) THEN 0
+            WHEN ${opportunitiesTable.responseDeadline} IS NULL THEN 1
+            ELSE 2
+          END ASC`,
+          sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
+          sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
+          asc(opportunitiesTable.id),
+        ]
+      : [
+          sql`${opportunitiesTable.relevanceScore} DESC NULLS LAST`,
+          sql`${opportunitiesTable.postedDate} DESC NULLS LAST`,
+          asc(opportunitiesTable.id),
+        ];
 
     // Fetch one extra row so truncation is reported only when there are truly
     // more candidates than the safety window (not when there are exactly 10k).
@@ -367,12 +362,9 @@ router.get("/opportunities", async (req, res) => {
       view,
       ranking: {
         mode: "best-match-v3",
-        candidateStrategy:
-          view === "actionable"
-            ? "future-deadline-then-fit-v1"
-            : view === "all"
-              ? "open-then-fit-v1"
-              : "fit-then-recency-v1",
+        candidateStrategy: prioritizeOpenCandidates
+          ? "open-then-fit-v1"
+          : "fit-then-recency-v1",
         candidateCount: rows.length,
         candidateCap,
         truncated,
