@@ -1,0 +1,52 @@
+name: Apply provider delete cache invalidation
+
+on:
+  push:
+    branches:
+      - fix/provider-settings-query-storm
+    paths:
+      - .github/workflows/apply-provider-delete-cache-invalidation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/provider-settings-query-storm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Add invalidation to credential DELETE route
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('api-server/src/routes/providers.ts')
+          text = path.read_text()
+          old = '''    await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));\n    return res.json({\n      name,\n      dbKey,\n      removed: true,\n'''
+          new = '''    await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));\n    invalidateCredentialSettingsCache();\n    return res.json({\n      name,\n      dbKey,\n      removed: true,\n'''
+          if old not in text:
+              raise SystemExit('credential DELETE marker not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Hardening regressions
+        run: pnpm --filter @workspace/api-server run test:hardening
+      - name: Commit verified fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server/src/routes/providers.ts
+          git diff --cached --check
+          git commit -m "Invalidate provider credential cache on delete"
+          git push origin HEAD:fix/provider-settings-query-storm
