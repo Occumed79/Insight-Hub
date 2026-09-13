@@ -27,11 +27,16 @@ export class SocrataProvider implements DataSourceProvider {
   readonly name = "socrata" as const;
 
   private async credentials(): Promise<SocrataCredentials | null> {
-    const [appToken, key, secret] = await Promise.all([
+    const [appToken, key, apiSecret, legacyAppSecret] = await Promise.all([
       resolveCredential("socrataAppToken", "SOCRATA_APP_TOKEN"),
       resolveCredential("socrataApiKey", "SOCRATA_API_KEY"),
+      resolveCredential("socrataApiSecret", "SOCRATA_API_SECRET"),
+      // Backward compatibility for the older Render variable name. New
+      // deployments should use SOCRATA_API_SECRET so the provider, settings UI,
+      // central env contract, and Render manifest all agree.
       resolveCredential("socrataApiSecret", "SOCRATA_APP_SECRET"),
     ]);
+    const secret = apiSecret ?? legacyAppSecret;
 
     // Public catalogue discovery only needs the Tyler/Socrata application
     // token. Retain API-key/secret Basic authentication as a compatible
