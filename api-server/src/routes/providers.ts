@@ -7,6 +7,7 @@ import { providerRegistry } from "../lib/providers";
 import {
   PROVIDER_DEFINITIONS,
   RFP_INGESTION_PROVIDER_NAMES,
+  invalidateCredentialSettingsCache,
   resolveCredential,
   type RfpProviderName,
 } from "../lib/config/providerConfig";
@@ -337,6 +338,7 @@ router.put("/providers/:name", async (req, res) => {
           (body[field.dbKey] === null || body[field.dbKey] === ""));
       if (shouldRemove) {
         await db.delete(settingsTable).where(eq(settingsTable.key, field.dbKey));
+        invalidateCredentialSettingsCache();
         removedKeys.push(field.dbKey);
         continue;
       }
@@ -354,6 +356,7 @@ router.put("/providers/:name", async (req, res) => {
             target: settingsTable.key,
             set: { value: normalized },
           });
+        invalidateCredentialSettingsCache();
         savedKeys.push(field.dbKey);
       }
     }
