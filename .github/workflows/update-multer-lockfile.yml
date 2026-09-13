@@ -1,0 +1,44 @@
+name: Temporary Multer lockfile update
+
+on:
+  push:
+    branches:
+      - fix/reconcile-runtime-contract-and-docs
+    paths:
+      - .github/workflows/update-multer-lockfile.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/reconcile-runtime-contract-and-docs
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Upgrade Multer and regenerate lockfile
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'api-server/package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.dependencies.multer = '^2.3.0';
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          pnpm install --lockfile-only
+      - name: Commit dependency update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-server/package.json pnpm-lock.yaml
+          git diff --cached --check
+          git commit -m "Upgrade Multer to patched 2.3.0"
+          git push origin HEAD:fix/reconcile-runtime-contract-and-docs
