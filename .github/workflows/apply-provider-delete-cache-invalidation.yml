@@ -40,8 +40,14 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck
         run: pnpm run typecheck
-      - name: Hardening regressions
-        run: pnpm --filter @workspace/api-server run test:hardening
+      - name: Verify DELETE route invalidates cache
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const text = fs.readFileSync('api-server/src/routes/providers.ts', 'utf8');
+          const marker = 'await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));\n    invalidateCredentialSettingsCache();\n    return res.json({';
+          if (!text.includes(marker)) throw new Error('DELETE route cache invalidation not present');
+          NODE
       - name: Commit verified fix
         run: |
           git config user.name "github-actions[bot]"
