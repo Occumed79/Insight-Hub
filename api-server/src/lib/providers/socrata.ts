@@ -23,15 +23,43 @@ export interface SocrataCatalogResult {
   updatedAt?: string;
 }
 
+/**
+ * Socrata used SOCRATA_APP_SECRET in older deployments and now uses the
+ * canonical SOCRATA_API_SECRET name. Both environment aliases must outrank a
+ * database fallback so a stale settings row can never shadow a Render secret.
+ */
+export function selectSocrataApiSecret(
+  canonicalEnvironmentSecret?: string,
+  legacyEnvironmentSecret?: string,
+  databaseSecret?: string | null,
+): string | null {
+  for (const candidate of [
+    canonicalEnvironmentSecret,
+    legacyEnvironmentSecret,
+    databaseSecret,
+  ]) {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 export class SocrataProvider implements DataSourceProvider {
   readonly name = "socrata" as const;
 
   private async credentials(): Promise<SocrataCredentials | null> {
-    const [appToken, key, secret] = await Promise.all([
+    const [appToken, key, databaseSecret] = await Promise.all([
       resolveCredential("socrataAppToken", "SOCRATA_APP_TOKEN"),
       resolveCredential("socrataApiKey", "SOCRATA_API_KEY"),
-      resolveCredential("socrataApiSecret", "SOCRATA_APP_SECRET"),
+      // Environment aliases are handled explicitly below so both aliases keep
+      // environment-first precedence ahead of this single DB fallback.
+      resolveCredential("socrataApiSecret"),
     ]);
+    const secret = selectSocrataApiSecret(
+      process.env.SOCRATA_API_SECRET,
+      process.env.SOCRATA_APP_SECRET,
+      databaseSecret,
+    );
 
     // Public catalogue discovery only needs the Tyler/Socrata application
     // token. Retain API-key/secret Basic authentication as a compatible

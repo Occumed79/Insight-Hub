@@ -10,7 +10,7 @@ const { TangoProvider } = await import("../tango");
 const { JinaProvider } = await import("../jina");
 const { KeenableProvider } = await import("../keenable");
 const { MicrolinkProvider } = await import("../microlink");
-const { SocrataProvider } = await import("../socrata");
+const { SocrataProvider, selectSocrataApiSecret } = await import("../socrata");
 const { providerRegistry } = await import("../index");
 const {
   PROVIDER_DEFINITIONS,
@@ -107,17 +107,36 @@ test("Jina Reader works keyless and attaches the key only when available", async
   }
 });
 
+test("Socrata secret precedence keeps both environment aliases ahead of the database fallback", () => {
+  assert.equal(
+    selectSocrataApiSecret("canonical-env-secret", "legacy-env-secret", "database-secret"),
+    "canonical-env-secret",
+  );
+  assert.equal(
+    selectSocrataApiSecret(undefined, "legacy-env-secret", "database-secret"),
+    "legacy-env-secret",
+  );
+  assert.equal(
+    selectSocrataApiSecret(undefined, undefined, "database-secret"),
+    "database-secret",
+  );
+  assert.equal(selectSocrataApiSecret("  ", " legacy-trimmed ", " database "), "legacy-trimmed");
+  assert.equal(selectSocrataApiSecret(undefined, undefined, undefined), null);
+});
+
 test("Socrata accepts the configured app token without requiring an API key pair", async () => {
   const originalFetch = globalThis.fetch;
   const originalAppToken = process.env.SOCRATA_APP_TOKEN;
   const originalApiKey = process.env.SOCRATA_API_KEY;
   const originalApiSecret = process.env.SOCRATA_API_SECRET;
+  const originalLegacySecret = process.env.SOCRATA_APP_SECRET;
   let appToken = "";
   let authorization = "";
 
   process.env.SOCRATA_APP_TOKEN = "test-socrata-app-token";
   delete process.env.SOCRATA_API_KEY;
   delete process.env.SOCRATA_API_SECRET;
+  delete process.env.SOCRATA_APP_SECRET;
   globalThis.fetch = async (_input, init) => {
     const headers = init?.headers as Record<string, string> | undefined;
     appToken = headers?.["X-App-Token"] ?? "";
@@ -143,5 +162,95 @@ test("Socrata accepts the configured app token without requiring an API key pair
     else process.env.SOCRATA_API_KEY = originalApiKey;
     if (originalApiSecret === undefined) delete process.env.SOCRATA_API_SECRET;
     else process.env.SOCRATA_API_SECRET = originalApiSecret;
+    if (originalLegacySecret === undefined) delete process.env.SOCRATA_APP_SECRET;
+    else process.env.SOCRATA_APP_SECRET = originalLegacySecret;
+  }
+});
+
+test("Socrata accepts the canonical API key and secret pair", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalAppToken = process.env.SOCRATA_APP_TOKEN;
+  const originalApiKey = process.env.SOCRATA_API_KEY;
+  const originalApiSecret = process.env.SOCRATA_API_SECRET;
+  const originalLegacySecret = process.env.SOCRATA_APP_SECRET;
+  let appToken = "";
+  let authorization = "";
+
+  delete process.env.SOCRATA_APP_TOKEN;
+  process.env.SOCRATA_API_KEY = "test-socrata-key";
+  process.env.SOCRATA_API_SECRET = "test-socrata-secret";
+  delete process.env.SOCRATA_APP_SECRET;
+  globalThis.fetch = async (_input, init) => {
+    const headers = init?.headers as Record<string, string> | undefined;
+    appToken = headers?.["X-App-Token"] ?? "";
+    authorization = headers?.Authorization ?? "";
+    return new Response(JSON.stringify({ results: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const provider = new SocrataProvider();
+    assert.equal(await provider.isConfigured(), true);
+    const results = await provider.search("occupational health procurement");
+    assert.deepEqual(results, []);
+    assert.equal(appToken, "");
+    assert.equal(
+      authorization,
+      `Basic ${Buffer.from("test-socrata-key:test-socrata-secret").toString("base64")}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalAppToken === undefined) delete process.env.SOCRATA_APP_TOKEN;
+    else process.env.SOCRATA_APP_TOKEN = originalAppToken;
+    if (originalApiKey === undefined) delete process.env.SOCRATA_API_KEY;
+    else process.env.SOCRATA_API_KEY = originalApiKey;
+    if (originalApiSecret === undefined) delete process.env.SOCRATA_API_SECRET;
+    else process.env.SOCRATA_API_SECRET = originalApiSecret;
+    if (originalLegacySecret === undefined) delete process.env.SOCRATA_APP_SECRET;
+    else process.env.SOCRATA_APP_SECRET = originalLegacySecret;
+  }
+});
+
+test("Socrata retains the legacy APP_SECRET fallback for existing deployments", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalAppToken = process.env.SOCRATA_APP_TOKEN;
+  const originalApiKey = process.env.SOCRATA_API_KEY;
+  const originalApiSecret = process.env.SOCRATA_API_SECRET;
+  const originalLegacySecret = process.env.SOCRATA_APP_SECRET;
+  let authorization = "";
+
+  delete process.env.SOCRATA_APP_TOKEN;
+  process.env.SOCRATA_API_KEY = "legacy-socrata-key";
+  delete process.env.SOCRATA_API_SECRET;
+  process.env.SOCRATA_APP_SECRET = "legacy-socrata-secret";
+  globalThis.fetch = async (_input, init) => {
+    const headers = init?.headers as Record<string, string> | undefined;
+    authorization = headers?.Authorization ?? "";
+    return new Response(JSON.stringify({ results: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const provider = new SocrataProvider();
+    assert.equal(await provider.isConfigured(), true);
+    await provider.search("occupational health procurement");
+    assert.equal(
+      authorization,
+      `Basic ${Buffer.from("legacy-socrata-key:legacy-socrata-secret").toString("base64")}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalAppToken === undefined) delete process.env.SOCRATA_APP_TOKEN;
+    else process.env.SOCRATA_APP_TOKEN = originalAppToken;
+    if (originalApiKey === undefined) delete process.env.SOCRATA_API_KEY;
+    else process.env.SOCRATA_API_KEY = originalApiKey;
+    if (originalApiSecret === undefined) delete process.env.SOCRATA_API_SECRET;
+    else process.env.SOCRATA_API_SECRET = originalApiSecret;
+    if (originalLegacySecret === undefined) delete process.env.SOCRATA_APP_SECRET;
+    else process.env.SOCRATA_APP_SECRET = originalLegacySecret;
   }
 });

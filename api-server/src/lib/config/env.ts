@@ -32,6 +32,7 @@ export const env = {
   COHERE_API_KEY_4: process.env.COHERE_API_KEY_4,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   FAL_API_KEY: process.env.FAL_API_KEY,
+  MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   NVIDIA_API_KEY: process.env.NVIDIA_API_KEY,
   VOYAGE_API_KEY: process.env.VOYAGE_API_KEY,
@@ -60,8 +61,10 @@ export const env = {
   BROWSERLESS_KEY: process.env.BROWSERLESS_KEY,
   APIFY_KEY: process.env.APIFY_KEY,
   OCR_SPACE_KEY: process.env.OCR_SPACE_KEY,
+  SOCRATA_APP_TOKEN: process.env.SOCRATA_APP_TOKEN,
   SOCRATA_API_KEY: process.env.SOCRATA_API_KEY,
   SOCRATA_API_SECRET: process.env.SOCRATA_API_SECRET,
+  WEBSEARCH_API_KEY: process.env.WEBSEARCH_API_KEY,
 
   // Vector search / storage backends
   PINECONE_API_KEY: process.env.PINECONE_API_KEY,
@@ -81,6 +84,10 @@ export const env = {
   CLOUDFLARE_EMBEDDING_MODEL: process.env.CLOUDFLARE_EMBEDDING_MODEL,
   CLOUDFLARE_RERANK_MODEL: process.env.CLOUDFLARE_RERANK_MODEL,
   MONGO_DB_API: process.env.MONGO_DB_API,
+
+  // Hub 1 surface APIs
+  GOVCON_API_KEY: process.env.GOVCON_API_KEY,
+  GNEWS_API_KEY: process.env.GNEWS_API_KEY,
 
   // Procurement source feature flags
   STATE_PROCUREMENT_SOURCES_ENABLED:
