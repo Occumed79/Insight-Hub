@@ -1,135 +1,200 @@
-# Occu-Med Insight Hub
+# Occu-Med Insight Hub (Hub 1)
 
-## Overview
+## Authoritative scope
 
-Premium dark-mode government contracting and business intelligence platform for Occu-Med. macOS Tahoe / Liquid Glass aesthetic. pnpm workspace monorepo using TypeScript.
+Insight Hub 1 is the procurement-facing workspace. Its active product surfaces are:
 
-## Portals
+- **Opportunity Intelligence** (`/portal/opportunities`)
+- **Forecasts** (`/portal/forecasts`)
+- **Recompete Watch** (`/portal/recompete-watch`)
+- **Relevant News** (`/portal/relevant-news`)
+- **Integrations / provider telemetry** (`/portal/settings`)
 
-- **Opportunity Intelligence** (`/portal/opportunities`) — multi-source opportunity discovery (SAM.gov live, Serper/Tavily/Gemini/State Portals operational, Tango/BidNet stubs)
-- **Client Intelligence** (`/portal/clients`) — fully built: searchable/filterable list of all 28 seeded clients, client detail view with 5 tabs: **Org Structure** (14-category contact system with EHS pinning, bulk import API at `POST /api/clients/:id/contacts/bulk`, seeded for AC Transit/CACI/CDCR/Constellis), **FEC/Political** (PAC data, cycle charts, party-split donut), **Regulatory** (OSHA records), **Litigation** (CourtListener/RECAP), **Branches** (AI research + hiring trend). `client_contacts` table in DB.
-- **Competitor Intelligence** (`/portal/competitors`) — fully built: competitor cards, tier badges, service tags, geographic coverage, AI research engine (Serper + Tavily + Gemini), contract signal extraction, detail panel flyout, "Load Known Competitors" seed action
-- **Prospect Intelligence** (`/portal/prospects`) — fully built: list, detail view with 4 tabs (Overview, Locations, Hiring, Org Structure). Location discovery: Serper → Gemini (if key valid) → heuristic regex extraction → Wikipedia fallback. 14-category org contacts with EHS pinning.
-- **Federal Agencies** (`/portal/federal-agencies`) — fully built: 9-bucket workspace (Forecast, Recompete Watch, Agency Pain, Policy Radar, Incumbent Tracker, Leadership/Org, Deploy/Medical, Budget/Funding, Protests) with Refresh per bucket.
-- **State Agencies** (`/portal/state-agencies`) — fully built: 50-state selector grouped by region, 13 per-state buckets (Procurement, Legislature, Governor/Agencies, Health Dept, Labor/WARN, Medical Licensing, Emergency Mgmt, OSHA Plan, Insurance Dept, Corrections, FMCSA/CDL, POST Guidelines, State DOT), Cross-State Intel panel (CDC HAN, Travel Advisories, FDA Recalls, FEMA Disasters via OpenFEMA API). All states have hardcoded official URL links. Serper-powered refresh per bucket.
-- **Integrations** (`/portal/settings`) — provider control center with credential management for all 7 data sources
+The former Clients, Prospects, Competitors, Federal Agencies, State Agencies, and Intelligence Feed workspaces belong to **Insight Hub 2**. Do not resurrect those surfaces or their retired provider dependencies in Hub 1.
 
-## Provider Architecture
+## Opportunity Intelligence architecture
 
-All providers live in `artifacts/api-server/src/lib/providers/`:
-- **SAM.gov** — fully wired (direct source, requires `SAM_GOV_API_KEY`); quota resets midnight UTC daily; throttle code `900804` detected
-- **Serper** — fully wired (web search, requires `SERPER_API_KEY`); powers web intelligence pipeline
-- **Tavily** — fully wired (deep research, requires `TAVILY_API_KEY`); powers web intelligence pipeline
-- **Gemini AI** — fully wired (query gen + opportunity extraction, requires `GEMINI_API_KEY`); free tier has strict daily quota limits
-- **Tango** — stub (direct source, requires API endpoint confirmation from Tango support)
-- **BidNet** — configuration scaffold only; never operational. The endpoint contract, authentication method, and response mapping are not implemented. `isConfigured()` always returns false.
+Fetch Intelligence has four independent top-level source families. Selecting one must not silently force, suppress, masquerade as, or replace another.
 
-Credential resolution: env var first, DB fallback (`resolveCredential()` in `providerConfig.ts`). Environment variables (Render dashboard secrets) always take precedence over database settings. Database settings are used only when the env var is absent or empty.
+1. **SAM.gov** — official structured U.S. federal opportunities.
+2. **Tango / MakeGov** — independent structured secondary federal source.
+3. **Canada + Europe Procurement** — CanadaBuys plus TED Europe.
+4. **AI Discovery** — quota-aware state/local/private/web discovery ensemble.
 
-## Web Intelligence Pipeline
+### AI Discovery ensemble
 
-`artifacts/api-server/src/lib/search/webIntelligence.ts` — main orchestrator:
-1. **Query generation** — Gemini generates 8 targeted search queries (falls back to `OCCUMED_DEFAULT_QUERIES` in `gemini.ts`)
-2. **Web search** — Serper (Google) + Tavily in parallel
-3. **Deduplication** — by URL
-4. **RFP keyword pre-filter** — only candidates containing RFP/solicitation keywords proceed to Gemini (reduces API calls ~60%)
-5. **Gemini extraction** — analyzes candidates, extracts structured data, scores relevance 0-100
-6. **Fallback** — if Gemini quota is exhausted (`GEMINI_QUOTA_EXCEEDED`), pre-filtered candidates are saved directly as `sourceConfidence: "low"` with notes "Web discovery — AI analysis pending"
+The active discovery pool is intentionally bounded and quota-aware. It may use, where configured and budget-available:
 
-**Key GEMINI error propagation**: All `catch {}` blocks in `gemini.ts` re-throw `GEMINI_QUOTA_EXCEEDED` errors so the orchestrator can trigger the fallback path properly.
+- Keenable
+- You.com
+- Browserbase
+- Parallel
+- Exa
+- Firecrawl
+- LangSearch
+- Linkup
+- Tyler Data & Insights / Socrata
+- WebSearch as an emergency broad-search fallback
 
-## Opportunity Data Model
+Renewable/daily capacity should be preferred before scarce monthly capacity. One exhausted or failing member must not kill successful results from the rest of the ensemble.
 
-`lib/db/src/schema/opportunities.ts` — full schema including:
-title, agency, subAgency, office, type, status, naicsCode, naicsDescription, pscCode, contractType, postedDate, responseDeadline, periodOfPerformance, setAside, placeOfPerformance, description, solicitationNumber, samUrl, estimatedValue, ceilingValue, floorValue, awardAmount, awardee, source (enum), providerName (text), relevanceScore, sourceConfidence, tags (JSON text), notes
+### International procurement
 
-## Stack
+- **CanadaBuys** is the official Canadian procurement path.
+- **TED Europe** is the official European procurement path and includes Company Health Services / CPV 85147000 anchoring plus relevant keyword coverage.
+- International records participate in the same normalization, evidence, dedupe, quality, and final ranking pipeline as U.S. opportunities.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+### Enrichment / page reading
 
-## Structure
+Discovery and page extraction are separate concerns. The enrichment stack includes:
+
+- Jina Reader — keyless-first reader; a key raises available rate/capacity.
+- Keenable fetch
+- Browserbase
+- Firecrawl
+- Microlink — small-budget last-resort page extraction fallback.
+
+### Relevance / judge pool
+
+Ambiguous opportunity review can use the configured/budget-available judge pool, including:
+
+- Cerebras
+- Groq
+- Mistral
+- NVIDIA
+- OpenRouter
+- Minimax
+- CLOD
+- Gemini
+- DeepSeek
+
+Cohere is supporting reranking infrastructure. Cloudflare/Voyage/Pinecone/Qdrant are supporting embedding/vector infrastructure, not top-level RFP sources.
+
+## Important guardrails
+
+Do **not** reintroduce retired or superseded Opportunity Intelligence architecture:
+
+- Tavily — removed.
+- Serper — retired from Opportunity Intelligence.
+- OloStep — retired.
+- Old coded portal crawler farm — not the active architecture.
+- Self-hosted crawler/search as a primary discovery mechanism — not allowed.
+- `publicPortalProviders` as an independent top-level Fetch Intelligence source — legacy/internal compatibility path only.
+- Euna/Bonfire crawler architecture as an independent source — legacy/internal compatibility path only.
+- BidNet — not live until a real supported endpoint/authentication contract exists.
+- Browse AI / BrowserUse — auxiliary integrations only; not active Opportunity Intelligence ingestion members.
+- USAJobs — not a Hub 1 dependency.
+
+Texas ESBD and New York State Contract Reporter implementations may remain as internal/compatibility portal adapters. They are **not** additional top-level manual Fetch Intelligence choices and must not displace the four source families above.
+
+## Authoritative best-match ranking
+
+Opportunity Intelligence uses the backend/API ordering as the source of truth.
+
+The ranking pipeline is:
 
 ```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+SEARCH BROADLY
+-> NORMALIZE
+-> VERIFY / CLASSIFY
+-> DEDUPLICATE
+-> JUDGE OCCU-MED FIT
+-> SCORE
+-> RANK BEST TO WORST
+-> PAGINATE
+-> DISPLAY
 ```
 
-## TypeScript & Composite Projects
+The current implementation uses `calculateOpportunityRank` / the best-match ranking metadata and ranks the bounded global candidate set **before** limit/offset pagination. The candidate safety window is 10,000 records; when the window is reached, truncation must be explicit rather than pretending the result set is globally exhaustive.
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+Ranking must remain explainable and relevance-led. Occu-Med fit is the primary factor; service-line breadth, verified/open quality, source authority, actionable deadline, completeness, and bounded feedback adjustments may contribute. Source prestige must not overpower actual relevance.
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+Canonical ownership and ranking are separate concerns. A weak snippet must not overwrite a richer official record, but secondary evidence may still enrich lineage/metadata. Tango remains an independent source but does **not** receive privileged canonical authority over stronger evidence.
 
-## Root Scripts
+## Occu-Med opportunity fit
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+Search and judging should cover the real service scope rather than overfitting to the literal phrase `occupational health`, including combinations such as:
 
-## Packages
+- occupational medicine / employee health
+- pre-employment and pre-placement examinations
+- periodic and fitness-for-duty examinations
+- medical surveillance
+- drug and alcohol / DOT testing
+- audiometry / hearing conservation
+- spirometry / pulmonary function testing
+- respirator fit testing / medical clearance
+- vision testing
+- laboratory testing
+- vaccinations / immunizations
+- deployment medical screening
+- international employee medical exams
+- firefighter / public-safety medical exams
+- mobile or multi-location occupational-health programs
+- clinic/provider network coordination
 
-### `artifacts/api-server` (`@workspace/api-server`)
+The system should find relevant federal, state, county, city, transit, utility, school-district, university, public-safety, airport, port, defense, industrial-employer, private-employer, and subcontract/vendor opportunities.
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## Other Hub 1 surfaces
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+### Forecasts
 
-### `lib/db` (`@workspace/db`)
+GovCon is a core forecast source, supplemented by official federal forecast sources where implemented.
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+### Recompete Watch
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — RFP Drizzle Kit config (requires `RFP_DATABASE_URL`); the intel config requires `INTEL_DATABASE_URL`
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
+GovCon provides recompete intelligence, with USAspending and SAM/award evidence used for verification rather than as ordinary open-RFP discovery cards.
 
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+### Relevant News
 
-### `lib/api-spec` (`@workspace/api-spec`)
+GNews is the current Hub 1 news source. Failure or absence of its key should be handled as a provider/configuration state, not confused with Opportunity Intelligence.
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
+## Runtime / Render deployment contract
 
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
+Production service:
 
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+- Render service: `Insight-Hub`
+- URL: `https://insight-hub-952b.onrender.com`
+- GitHub: `Occumed79/Insight-Hub`
+- Branch: `main`
+- Build: `pnpm install && pnpm run build:prod`
+- Start: `pnpm run start:prod` on the existing service
 
-### `lib/api-zod` (`@workspace/api-zod`)
+Core configuration names that must remain aligned across code, provider definitions, `render.yaml`, and live Render configuration include:
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+- `RFP_DATABASE_URL`
+- `INTEL_DATABASE_URL`
+- `SAM_GOV_API_KEY`
+- `TANGO_API_KEY`
+- `TANGO_BASE_URL`
+- `PARALLEL_API_KEY`
+- `GOVCON_API_KEY`
+- `GNEWS_API_KEY`
+- `MINIMAX_API_KEY`
+- `SOCRATA_APP_TOKEN` **or** the canonical `SOCRATA_API_KEY` + `SOCRATA_API_SECRET` pair
 
-### `lib/api-client-react` (`@workspace/api-client-react`)
+The Socrata provider keeps backward compatibility for the old `SOCRATA_APP_SECRET` name, but new configuration should use `SOCRATA_API_SECRET` so the provider, settings UI, central env contract, and Render manifest agree.
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
+Do not place secret values in this document.
 
-### `scripts` (`@workspace/scripts`)
+## Key implementation paths
 
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Opportunity Intelligence changes should trace the real end-to-end path rather than patching only the UI:
+
+- `api-server/src/lib/ingestion/providerRunner.ts`
+- `api-server/src/lib/ingestion/manualIngestion.ts`
+- `api-server/src/lib/search/webIntelligence.ts`
+- `api-server/src/lib/search/relevance.ts`
+- `api-server/src/lib/opportunityEvidence.ts`
+- `api-server/src/lib/opportunityQuality.ts`
+- `api-server/src/lib/ingestion/opportunityIdentity.ts`
+- `api-server/src/lib/ingestion/pipelineRules.ts`
+- `api-server/src/lib/providers/`
+- `api-server/src/lib/sourceArchitecture.ts`
+- `api-server/src/routes/opportunities.ts`
+- `api-server/src/lib/config/providerConfig.ts`
+- `api-server/src/lib/config/providerTiers.ts`
+- `intel-suite/src/pages/portal/opportunities.tsx`
+
+## Verification expectations
+
+For meaningful Opportunity Intelligence changes, preserve the repository's existing regression strategy and run the relevant checks, including typecheck, hardening/ingestion/quality regressions, frontend opportunity regressions, production build, and browser/Playwright acceptance when available. Do not weaken tests to make CI pass.
