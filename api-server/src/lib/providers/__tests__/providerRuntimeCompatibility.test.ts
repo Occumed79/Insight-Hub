@@ -10,7 +10,7 @@ const { TangoProvider } = await import("../tango");
 const { JinaProvider } = await import("../jina");
 const { KeenableProvider } = await import("../keenable");
 const { MicrolinkProvider } = await import("../microlink");
-const { SocrataProvider } = await import("../socrata");
+const { SocrataProvider, selectSocrataApiSecret } = await import("../socrata");
 const { providerRegistry } = await import("../index");
 const {
   PROVIDER_DEFINITIONS,
@@ -105,6 +105,23 @@ test("Jina Reader works keyless and attaches the key only when available", async
     if (originalApiKey === undefined) delete process.env.JINA_API_KEY;
     else process.env.JINA_API_KEY = originalApiKey;
   }
+});
+
+test("Socrata secret precedence keeps both environment aliases ahead of the database fallback", () => {
+  assert.equal(
+    selectSocrataApiSecret("canonical-env-secret", "legacy-env-secret", "database-secret"),
+    "canonical-env-secret",
+  );
+  assert.equal(
+    selectSocrataApiSecret(undefined, "legacy-env-secret", "database-secret"),
+    "legacy-env-secret",
+  );
+  assert.equal(
+    selectSocrataApiSecret(undefined, undefined, "database-secret"),
+    "database-secret",
+  );
+  assert.equal(selectSocrataApiSecret("  ", " legacy-trimmed ", " database "), "legacy-trimmed");
+  assert.equal(selectSocrataApiSecret(undefined, undefined, undefined), null);
 });
 
 test("Socrata accepts the configured app token without requiring an API key pair", async () => {
