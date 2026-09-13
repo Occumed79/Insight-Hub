@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: starter
     buildCommand: pnpm install && pnpm run build:prod
-    startCommand: node --max-old-space-size=224 --max-semi-space-size=8 ./api-server/dist/index.mjs
+    startCommand: pnpm run start:prod
     envVars:
       - key: NODE_ENV
         value: production
@@ -38,7 +38,9 @@ services:
       - key: PUBLIC_PORTAL_ROTATION_BATCH_SIZE
         value: "3"
       - key: WEB_INTELLIGENCE_AI_CANDIDATE_LIMIT
-        value: "60"
+        value: "20"
+      - key: STRUCTURED_RFP_REVIEW_CANDIDATE_LIMIT
+        value: "3"
       - key: SAM_GOV_API_KEY
         sync: false
       - key: TANGO_API_KEY
