@@ -41,9 +41,17 @@ services:
         value: "60"
       - key: SAM_GOV_API_KEY
         sync: false
+      - key: TANGO_API_KEY
+        sync: false
+      - key: TANGO_BASE_URL
+        sync: false
       - key: USAJOBS_API_KEY
         sync: false
       - key: USAJOBS_USER_AGENT
+        sync: false
+      - key: GOVCON_API_KEY
+        sync: false
+      - key: GNEWS_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
@@ -77,6 +85,16 @@ services:
         sync: false
       - key: GROQ_MODEL
         sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: EXA_API_KEY
         sync: false
       - key: EXA_API_KEY_2
@@ -86,6 +104,8 @@ services:
       - key: YOU_API_KEY
         sync: false
       - key: YOU_API_KEY_2
+        sync: false
+      - key: PARALLEL_API_KEY
         sync: false
       - key: JINA_API_KEY
         sync: false
@@ -109,8 +129,6 @@ services:
         sync: false
       - key: CLOD_MODEL
         sync: false
-      - key: CEREBRAS_API_KEY
-        sync: false
       - key: COHERE_API_KEY
         sync: false
       - key: COHERE_API_KEY_2
@@ -129,6 +147,8 @@ services:
         sync: false
       - key: LINKUP_API_KEY
         sync: false
+      - key: WEBSEARCH_API_KEY
+        sync: false
       - key: CLOUDFLARE_ACCOUNT_ID
         sync: false
       - key: CLOUDFLARE_API_TOKEN
@@ -143,13 +163,7 @@ services:
         sync: false
       - key: CLOUDFLARE_RERANK_MODEL
         sync: false
-      - key: DEEPSEEK_API_KEY
-        sync: false
       - key: FAL_API_KEY
-        sync: false
-      - key: MISTRAL_API_KEY
-        sync: false
-      - key: NVIDIA_API_KEY
         sync: false
       - key: PINECONE_API_KEY
         sync: false
@@ -201,7 +215,9 @@ services:
         sync: false
       - key: SOCRATA_APP_TOKEN
         sync: false
-      - key: SOCRATA_APP_SECRET
+      - key: SOCRATA_API_KEY
+        sync: false
+      - key: SOCRATA_API_SECRET
         sync: false
       - key: DATA_GOV_API_KEY
         sync: false
