@@ -403,6 +403,7 @@ router.delete("/providers/:name/credential/:dbKey", async (req, res) => {
       return res.status(404).json({ error: `Unknown credential field: ${dbKey}` });
     }
     await db.delete(settingsTable).where(eq(settingsTable.key, dbKey));
+    invalidateCredentialSettingsCache();
     return res.json({
       name,
       dbKey,
