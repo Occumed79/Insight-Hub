@@ -19,10 +19,11 @@ const { mergeSourceRefresh } = await import("../pipelineRules");
 const { discoveryQuotaPolicy } = await import("../../discoveryQuotaPolicy");
 const { sourceDefinition } = await import("../../sourceArchitecture");
 
-test("manual Fetch Intelligence defaults to U.S., Canada/Europe, and browser discovery", () => {
+test("manual Fetch Intelligence defaults to structured U.S., Socrata, Canada/Europe, and browser discovery", () => {
   assert.deepEqual(resolveManualProviders(), [
     "samGov",
     "tango",
+    "socrata",
     "internationalPublicPortals",
     "aiDiscovery",
   ]);
@@ -30,6 +31,7 @@ test("manual Fetch Intelligence defaults to U.S., Canada/Europe, and browser dis
   assert.deepEqual(Array.from(MANUAL_RFP_PROVIDERS), [
     "samGov",
     "tango",
+    "socrata",
     "internationalPublicPortals",
     "aiDiscovery",
     "emailNotifications",
@@ -48,6 +50,10 @@ test("explicit SAM and Tango selections stay independent", () => {
     "tango",
     "aiDiscovery",
   ]);
+});
+
+test("Socrata is independently selectable as a structured Fetch Intelligence source", () => {
+  assert.deepEqual(resolveManualProviders(["socrata"]), ["socrata"]);
 });
 
 test("CanadaBuys and TED aliases resolve to the international procurement source", () => {
