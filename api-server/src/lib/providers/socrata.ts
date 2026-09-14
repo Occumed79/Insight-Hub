@@ -1,6 +1,7 @@
 import type {
   DataSourceProvider,
   FetchOptions,
+  NormalizedOpportunity,
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
@@ -9,6 +10,11 @@ import {
   searchSocrataCatalog,
   type SocrataCatalogResult,
 } from "./socrataCatalog";
+import { enabledSocrataProfiles } from "./socrataDatasetProfiles";
+import {
+  normalizeSocrataRow,
+  querySocrataDataset,
+} from "./socrataRowAdapter";
 
 export type SocrataCredentials =
   | { mode: "app-token"; appToken: string }
@@ -100,11 +106,11 @@ export class SocrataProvider implements DataSourceProvider {
   }
 
   /**
-   * The opportunity provider must never map catalogue assets into procurement
-   * records. Structured SODA3 row ingestion is feature-gated until its row
-   * adapters, schema guards, and precision fixtures are complete.
+   * Fetch row-level opportunities from curated live solicitation datasets.
+   * Forecast and award/intelligence profiles are deliberately excluded here;
+   * they have separate destinations and must never leak into live RFP cards.
    */
-  async fetch(_options: FetchOptions): Promise<ProviderFetchResult> {
+  async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     if (!isSocrataStructuredEnabled()) {
       return {
         records: [],
@@ -117,15 +123,90 @@ export class SocrataProvider implements DataSourceProvider {
       };
     }
 
+    const credentials = await this.credentials();
+    if (!credentials) {
+      return {
+        records: [],
+        total: 0,
+        errors: [
+          "Socrata structured ingestion is enabled but no Socrata credential is configured.",
+        ],
+        diagnostics: {
+          structuredEnabled: true,
+          catalogAssetsEmitted: 0,
+          datasetProfilesScanned: 0,
+        },
+      };
+    }
+
+    const profiles = enabledSocrataProfiles("live_solicitations");
+    const headers = socrataHeaders(credentials);
+    const records: NormalizedOpportunity[] = [];
+    const errors: string[] = [];
+    const yieldByDataset: Record<string, number> = {};
+    let datasetRowsFetched = 0;
+    let openRows = 0;
+    let relevanceAccepted = 0;
+    let relevanceRejected = 0;
+    let expiredRejected = 0;
+    let schemaFailures = 0;
+
+    for (const profile of profiles) {
+      if (options.signal?.aborted) break;
+      try {
+        const rows = await querySocrataDataset(profile, headers, {
+          signal: options.signal,
+          pageSize: options.limit,
+        });
+        datasetRowsFetched += rows.length;
+        let acceptedForDataset = 0;
+        for (const row of rows) {
+          const decision = normalizeSocrataRow(profile, row);
+          if (decision.reason === "expired") {
+            expiredRejected += 1;
+            continue;
+          }
+          if (decision.reason === "irrelevant") {
+            relevanceRejected += 1;
+            openRows += 1;
+            continue;
+          }
+          if (decision.reason === "missing_identity") {
+            schemaFailures += 1;
+            continue;
+          }
+          if (!decision.record) continue;
+          openRows += 1;
+          relevanceAccepted += 1;
+          acceptedForDataset += 1;
+          records.push(decision.record);
+        }
+        yieldByDataset[profile.key] = acceptedForDataset;
+      } catch (error) {
+        errors.push(
+          `${profile.label}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        yieldByDataset[profile.key] = 0;
+      }
+    }
+
     return {
-      records: [],
-      total: 0,
-      errors: [
-        "Socrata structured ingestion is enabled but no row adapter has been activated yet.",
-      ],
+      records,
+      total: records.length,
+      errors,
       diagnostics: {
         structuredEnabled: true,
         catalogAssetsEmitted: 0,
+        datasetProfilesScanned: profiles.length,
+        datasetRowsFetched,
+        openRows,
+        relevanceAccepted,
+        relevanceRejected,
+        expiredRejected,
+        schemaFailures,
+        freshnessFailures: 0,
+        duplicatesMerged: 0,
+        yieldByDataset,
       },
     };
   }
