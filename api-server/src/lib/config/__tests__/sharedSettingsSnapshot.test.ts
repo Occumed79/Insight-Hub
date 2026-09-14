@@ -15,11 +15,10 @@ test("first-paint settings readers share the same coalesced settings snapshot", 
   assert.match(sharedSnapshot, /createCredentialSettingsCache/);
   assert.match(settingsRoute, /loadSettingsSnapshot/);
   assert.match(runtimeInventoryRoute, /loadSettingsSnapshot/);
-
-  assert.doesNotMatch(
+  assert.match(runtimeInventoryRoute, /healthFromSettings\(settingsSnapshot\)/);
+  assert.match(
     runtimeInventoryRoute,
-    /healthModule\.loadPublicPortalHealth\(\)[\s\S]*crawlerModule\.listApprovedDiscoverySpiderConfigs\(\)/,
-    "runtime inventory should not issue separate first-paint settings reads when the shared snapshot succeeds",
+    /approvedCrawlerConfigsFromSettings\(settingsSnapshot\)/,
   );
 });
 
