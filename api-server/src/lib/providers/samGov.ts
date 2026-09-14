@@ -1,5 +1,6 @@
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
-import { resolveCredential, resolveCredentialWithSource, type ResolvedCredential } from "../config/providerConfig";
+import { resolveCredential, type ResolvedCredential } from "../config/providerConfig";
+import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -19,6 +20,15 @@ const SAM_GOV_AUTONOMOUS_QUERY_COUNT = 2;
 const SAM_GOV_HYDRATION_LIMIT = 16;
 const SAM_GOV_HYDRATION_CONCURRENCY = 2;
 let autonomousQueryCursor = 0;
+
+const samGovCredentials = new FreeTierCredentialPool(
+  "sam-gov-multi-account",
+  [
+    { dbKey: "samApiKey", envKey: "SAM_GOV_API_KEY" },
+    { envKey: "SAM_GOV_API_KEY_2" },
+  ],
+  { rotateOnSuccess: false },
+);
 
 export function formatSamGovApiError(
   status: number,
@@ -49,20 +59,12 @@ export function isOfficialSamOpportunityUrl(value?: string): boolean {
 export class SamGovProvider implements DataSourceProvider {
   readonly name = "samGov" as const;
 
-  private async getApiKey(): Promise<string | null> {
-    return (await this.getApiKeyCredential())?.value ?? null;
-  }
-
-  private async getApiKeyCredential(): Promise<ResolvedCredential | null> {
-    return resolveCredentialWithSource("samApiKey", "SAM_GOV_API_KEY");
-  }
-
   private async getBaseUrl(): Promise<string> {
     return (await resolveCredential("samBaseUrl", "SAM_GOV_BASE_URL")) || SAM_GOV_DEFAULT_BASE;
   }
 
   async isConfigured(): Promise<boolean> {
-    return !!(await this.getApiKey());
+    return samGovCredentials.isConfigured();
   }
 
   private static fmtDate(date: Date): string {
@@ -71,7 +73,7 @@ export class SamGovProvider implements DataSourceProvider {
 
   private async runQuery(
     apiKey: string,
-    apiKeySource: ResolvedCredential,
+    credentialSlot: string,
     baseUrl: string,
     extra: Record<string, string>,
     fromDate: Date,
@@ -89,9 +91,15 @@ export class SamGovProvider implements DataSourceProvider {
     });
     SAM_GOV_BID_NOTICE_TYPES.forEach((type) => params.append("ptype", type));
     const response = await fetch(`${baseUrl}?${params}`, { signal });
+    samGovCredentials.recordRateLimitHeaders(credentialSlot, response.headers);
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(formatSamGovApiError(response.status, text, apiKeySource));
+      throw new Error(
+        formatSamGovApiError(response.status, text, {
+          source: "environment",
+          key: credentialSlot,
+        }),
+      );
     }
     const json = (await response.json()) as {
       opportunitiesData?: SamOpportunity[];
@@ -229,8 +237,9 @@ export class SamGovProvider implements DataSourceProvider {
   }
 
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
-    const apiKeyCredential = await this.getApiKeyCredential();
-    if (!apiKeyCredential) throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+    if (!(await samGovCredentials.isConfigured())) {
+      throw new Error("SAM_API_KEY_NOT_CONFIGURED");
+    }
     const baseUrl = await this.getBaseUrl();
     const dateRange = Math.max(1, Math.min(364, options.dateRange ?? 30));
     const today = new Date();
@@ -242,15 +251,17 @@ export class SamGovProvider implements DataSourceProvider {
     const titleQueries = this.titleQueriesForRun(options.keywords);
 
     for (const title of titleQueries) {
-      const matches = await this.runQuery(
-        apiKeyCredential.value,
-        apiKeyCredential,
-        baseUrl,
-        { title },
-        fromDate,
-        today,
-        limit,
-        options.signal,
+      const matches = await samGovCredentials.run((apiKey, slot) =>
+        this.runQuery(
+          apiKey,
+          slot,
+          baseUrl,
+          { title },
+          fromDate,
+          today,
+          limit,
+          options.signal,
+        ),
       );
       for (const opportunity of matches) {
         if (!opportunity.externalId || seen.has(opportunity.externalId)) continue;
