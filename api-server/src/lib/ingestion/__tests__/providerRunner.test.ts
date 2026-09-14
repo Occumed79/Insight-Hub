@@ -119,6 +119,11 @@ test("international source is active direct procurement architecture", () => {
   assert.equal(sourceDefinition("internationalPublicPortals")?.role, "direct_source");
 });
 
+test("Socrata is structured-source infrastructure, not a browser-discovery quota member", () => {
+  assert.equal(sourceDefinition("socrata")?.role, "direct_source");
+  assert.equal(discoveryQuotaPolicy("socrata"), null);
+});
+
 test("browser discovery can still run alone while internal discovery members are not top-level manual sources", () => {
   assert.deepEqual(resolveManualProviders(["aiDiscovery"]), ["aiDiscovery"]);
   assert.throws(
