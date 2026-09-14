@@ -51,6 +51,7 @@ export const PROVIDER_ALIASES = new Map<string, string>([
 export const FEDERAL_MANUAL_PROVIDERS = ["samGov", "tango"] as const;
 export const MANUAL_RFP_PROVIDERS = new Set([
   ...FEDERAL_MANUAL_PROVIDERS,
+  "socrata",
   "internationalPublicPortals",
   "aiDiscovery",
   "emailNotifications",
@@ -61,6 +62,7 @@ const DEFAULT_OCCUMED_QUERY = "occupational health services";
 const DEFAULT_MANUAL_PROVIDERS = [
   "samGov",
   "tango",
+  "socrata",
   "internationalPublicPortals",
   "aiDiscovery",
 ] as const;
@@ -73,7 +75,6 @@ const DISCOVERY_PROVIDER_ORDER = [
   "firecrawl",
   "langsearch",
   "linkup",
-  "socrata",
   "websearch",
 ] as const;
 const WEB_DISCOVERY_PROVIDERS = new Set<string>(DISCOVERY_PROVIDER_ORDER);
@@ -585,7 +586,6 @@ function discoveryOptions(provider: DiscoveryProvider) {
     useParallel: provider === "parallel",
     useFirecrawl: provider === "firecrawl",
     useLinkup: provider === "linkup",
-    useSocrata: provider === "socrata",
     useWebsearch: provider === "websearch",
     useRssAggregator: false,
     useSelfHostedSearch: false,
@@ -606,7 +606,6 @@ async function fetchConfiguredAiDiscovery(
     firecrawl: () => runtime.firecrawlProvider.isConfigured(),
     langsearch: () => runtime.langsearchProvider.isConfigured(),
     linkup: () => runtime.linkupProvider.isConfigured(),
-    socrata: () => runtime.socrataProvider.isConfigured(),
     websearch: () => runtime.websearchProvider.isConfigured(),
   };
 
@@ -819,7 +818,7 @@ export async function fetchOneProvider(
       useParallel: provider === "parallel",
       useFirecrawl: provider === "firecrawl",
       useLinkup: provider === "linkup",
-      useSocrata: provider === "socrata",
+      useSocrata: false,
       useWebsearch: provider === "websearch",
       useRssAggregator: false,
       useSelfHostedSearch: false,
