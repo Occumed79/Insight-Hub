@@ -41,6 +41,7 @@ function parseTags(raw: unknown): string[] {
 }
 
 function feedbackAdjustment(value: unknown): number {
+  if (value == null || value === "") return 0;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   const delta = ((parsed - 50) / 50) * FEEDBACK_RANK_WEIGHT;
@@ -248,13 +249,6 @@ router.get("/opportunities", async (req, res) => {
       );
     }
 
-    // Preserve a hard memory/CPU safety bound, but make admission fit-first
-    // instead of recency-first. The old newest-first LIMIT could hide an older
-    // still-open high-fit solicitation before the real ranking engine saw it.
-    // Actionable/All views reserve admission priority for deadlines that are
-    // today or later, then rank that pool by persisted relevance; recency is
-    // only a secondary tie-breaker. The final quality classifier still decides
-    // exact deadline validity, preserving date-only end-of-day semantics.
     const candidateCap = MAX_RANKING_CANDIDATES;
     const prioritizeOpenCandidates = view === "actionable" || view === "all";
     const candidateOrder = prioritizeOpenCandidates
@@ -274,8 +268,6 @@ router.get("/opportunities", async (req, res) => {
           asc(opportunitiesTable.id),
         ];
 
-    // Fetch one extra row so truncation is reported only when there are truly
-    // more candidates than the safety window (not when there are exactly 10k).
     const candidateRows = await db
       .select(opportunityListSelection(opportunitiesTable))
       .from(opportunitiesTable)
@@ -285,11 +277,6 @@ router.get("/opportunities", async (req, res) => {
     const truncated = candidateRows.length > candidateCap;
     const rows = candidateRows.slice(0, candidateCap);
 
-    // Quality classification is deterministic and in-memory. Do it before
-    // loading contextual-learning state so empty/actionable pages do not pay a
-    // settings-table read for candidates that cannot appear in the requested
-    // view. This preserves ranking behavior while removing a production hot
-    // path that was adding seconds to first paint under DATABASE_POOL_MAX=1.
     const eligibleRows = rows.flatMap((row) => {
       const quality = classifyOpportunityQuality(row);
       return qualityMatchesView(quality, view) ? [{ row, quality }] : [];
@@ -318,8 +305,6 @@ router.get("/opportunities", async (req, res) => {
       const mapped = mapOpportunity(row, contextual.adjustment);
       const authority = sourceAuthority(row.providerName ?? row.source);
       const rankBreakdown = calculateOpportunityRank(row, quality);
-      // Contextual learning is deliberately bounded and scope-specific: one
-      // poor result cannot poison a provider or overpower procurement fit.
       const contextualFeedback = Math.max(-5, Math.min(5, contextual.adjustment));
       const rank = Math.max(0, Math.min(100,
         rankBreakdown.finalRankScore + contextualFeedback));
@@ -352,8 +337,6 @@ router.get("/opportunities", async (req, res) => {
           contextHash: contextual.contextHash,
         });
       } else if (existing && rank > existing.rank) {
-        // Secondary discovery evidence may strengthen group ranking without
-        // stealing canonical ownership from the authoritative record.
         existing.rank = rank;
         existing.item.crossSource.rank = rank;
         existing.item.crossSource.rankBreakdown.finalRankScore = rank;
