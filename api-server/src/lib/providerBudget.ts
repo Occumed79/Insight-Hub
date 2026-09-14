@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { rfpDb, rfpPool, settingsTable } from "@workspace/db";
 
@@ -28,6 +29,7 @@ export interface ProviderBudgetState {
   emptyResults: number;
   failures: number;
   cooldownUntil: number;
+  credentialFingerprint?: string;
   lastOutcome?: ProviderBudgetOutcome;
   lastError?: string;
   lastAttemptAt?: string;
@@ -327,6 +329,43 @@ async function recordBudgetMutation(
   });
 }
 
+async function synchronizeSamCredentialFingerprint(): Promise<void> {
+  const { resolveCredential } = await import("./config/providerConfig");
+  const credential = await resolveCredential("samApiKey", "SAM_GOV_API_KEY");
+  if (!credential) return;
+
+  const fingerprint = `sha256:${createHash("sha256")
+    .update(credential)
+    .digest("hex")
+    .slice(0, 16)}`;
+  let changed = false;
+  let authCooldownCleared = false;
+
+  await recordBudgetMutation("samGov", (state, now) => {
+    if (state.credentialFingerprint === fingerprint) return state;
+    changed = true;
+    authCooldownCleared =
+      state.lastOutcome === "auth" && state.cooldownUntil > now.getTime();
+    return {
+      ...state,
+      credentialFingerprint: fingerprint,
+      cooldownUntil: authCooldownCleared ? 0 : state.cooldownUntil,
+      lastOutcome: authCooldownCleared ? undefined : state.lastOutcome,
+      lastError: authCooldownCleared ? undefined : state.lastError,
+    };
+  });
+
+  if (changed) {
+    console.info(
+      JSON.stringify({
+        event: "provider_credential_fingerprint_changed",
+        provider: "samGov",
+        authCooldownCleared,
+      }),
+    );
+  }
+}
+
 export async function recordProviderSuccess(
   provider: string,
   usefulResults: number,
@@ -350,8 +389,6 @@ export async function recordProviderFailure(
   provider: string,
   error: unknown,
 ): Promise<void> {
-  // User/run cancellation and a parent run deadline are orchestration outcomes,
-  // not provider reliability failures. Do not consume budget or create cooldowns.
   if (isOrchestrationCancellation(error)) return;
 
   const failure = classifyFailure(error);
@@ -406,6 +443,19 @@ export async function getProviderBudgetSnapshot(
 }
 
 export async function providerBudgetAvailable(provider: string): Promise<boolean> {
+  if (provider === "samGov") {
+    await synchronizeSamCredentialFingerprint().catch((error) => {
+      console.warn(
+        JSON.stringify({
+          event: "provider_credential_fingerprint_sync_failed",
+          provider,
+          error: sanitizeProviderErrorMessage(
+            error instanceof Error ? error.message : String(error),
+          ),
+        }),
+      );
+    });
+  }
   return (await getProviderBudgetSnapshot(provider)).available;
 }
 
