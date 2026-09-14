@@ -21,6 +21,7 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "internationalPublicPortals", role: "direct_source", active: true, purpose: "CanadaBuys official Canadian tenders plus anonymous TED Search API procurement notices for Europe" },
   { name: "texasEsbd", role: "direct_source", active: true, purpose: "Texas official procurement compatibility source" },
   { name: "nyScr", role: "direct_source", active: true, purpose: "New York official procurement compatibility source" },
+  { name: "socrata", role: "direct_source", active: true, purpose: "Curated Tyler/Socrata SODA3 row-level government procurement feeds" },
 
   { name: "you", role: "browser_discovery", active: true, purpose: "Daily-renewing web opportunity discovery with independent account failover" },
   { name: "browserbase", role: "browser_discovery", active: true, purpose: "Managed web search plus page-fetch fallback with independent account failover" },
@@ -30,7 +31,6 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
   { name: "parallel", role: "browser_discovery", active: true, purpose: "Web opportunity discovery fallback" },
   { name: "firecrawl", role: "browser_discovery", active: true, purpose: "Search fallback plus managed page extraction using a three-account pool" },
   { name: "linkup", role: "browser_discovery", active: true, purpose: "Domain-aware opportunity discovery fallback" },
-  { name: "socrata", role: "browser_discovery", active: true, purpose: "Official public-data procurement discovery" },
   { name: "websearch", role: "browser_discovery", active: true, purpose: "Broad web opportunity discovery fallback" },
 
   { name: "jina", role: "enrichment", active: true, purpose: "First-choice renewable/keyless page text extraction; key raises Reader limits" },
