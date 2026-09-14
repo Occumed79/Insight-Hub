@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
+import { loadSettingsSnapshot } from "../lib/config/sharedSettingsSnapshot";
 
 const router: IRouter = Router();
 
 const MODULE_TIMEOUT_MS = 6_000;
 const OPTIONAL_TIMEOUT_MS = 2_500;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const PORTAL_HEALTH_PREFIX = "internal:public-portal-health:";
+const CRAWLER_DISCOVERY_PREFIX = "internal:crawler-discovery-candidate:";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -19,7 +22,10 @@ let inFlight: Promise<JsonRecord> | null = null;
 
 function withDeadline<T>(promise: Promise<T>, milliseconds: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${milliseconds}ms`)), milliseconds);
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${milliseconds}ms`)),
+      milliseconds,
+    );
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -31,6 +37,91 @@ function withDeadline<T>(promise: Promise<T>, milliseconds: number, label: strin
       },
     );
   });
+}
+
+function validDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function parsePortalHealth(value: string): any | undefined {
+  try {
+    const stored = JSON.parse(value) as Record<string, unknown>;
+    if (
+      typeof stored.sourceId !== "string" ||
+      typeof stored.lastCheckedAt !== "string" ||
+      typeof stored.lastOutcome !== "string"
+    ) {
+      return undefined;
+    }
+    const lastCheckedAt = validDate(stored.lastCheckedAt);
+    if (!lastCheckedAt) return undefined;
+    return {
+      sourceId: stored.sourceId,
+      sourceName:
+        typeof stored.sourceName === "string" ? stored.sourceName : undefined,
+      domain: typeof stored.domain === "string" ? stored.domain : undefined,
+      lastCheckedAt,
+      lastSuccessAt: validDate(stored.lastSuccessAt),
+      lastFailureAt: validDate(stored.lastFailureAt),
+      lastFailureReason:
+        typeof stored.lastFailureReason === "string"
+          ? stored.lastFailureReason
+          : undefined,
+      resultCount: finiteNumber(stored.resultCount),
+      matchedCount: finiteNumber(stored.matchedCount),
+      lifetimeResultCount: finiteNumber(stored.lifetimeResultCount),
+      totalAttempts: finiteNumber(stored.totalAttempts),
+      totalSuccesses: finiteNumber(stored.totalSuccesses),
+      totalFailures: finiteNumber(stored.totalFailures),
+      consecutiveFailures: finiteNumber(stored.consecutiveFailures),
+      consecutiveNoResultSuccesses: finiteNumber(
+        stored.consecutiveNoResultSuccesses,
+      ),
+      lastOutcome: stored.lastOutcome,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function healthFromSettings(
+  snapshot: ReadonlyMap<string, string>,
+): Map<string, any> {
+  const statuses = new Map<string, any>();
+  for (const [key, value] of snapshot) {
+    if (!key.startsWith(PORTAL_HEALTH_PREFIX)) continue;
+    const parsed = parsePortalHealth(value);
+    if (parsed) statuses.set(parsed.sourceId, parsed);
+  }
+  return statuses;
+}
+
+function approvedCrawlerConfigsFromSettings(
+  snapshot: ReadonlyMap<string, string>,
+): any[] {
+  const approved: any[] = [];
+  for (const [key, value] of snapshot) {
+    if (!key.startsWith(CRAWLER_DISCOVERY_PREFIX)) continue;
+    try {
+      const candidate = JSON.parse(value) as Record<string, unknown>;
+      if (
+        candidate.state === "approved" &&
+        candidate.approvedConfig &&
+        typeof candidate.approvedConfig === "object"
+      ) {
+        approved.push(candidate.approvedConfig);
+      }
+    } catch {
+      // Ignore malformed internal settings just as the dedicated store does.
+    }
+  }
+  return approved;
 }
 
 async function buildRuntimeInventory(): Promise<JsonRecord> {
@@ -53,13 +144,29 @@ async function buildRuntimeInventory(): Promise<JsonRecord> {
     OPTIONAL_TIMEOUT_MS,
     "Crawler registry",
   ).catch((error) => {
-    warnings.push(error instanceof Error ? error.message : "Crawler registry was unavailable");
+    warnings.push(
+      error instanceof Error ? error.message : "Crawler registry was unavailable",
+    );
     return null;
   });
 
-  const [runtimeModules, crawlerModule] = await Promise.all([
+  const settingsSnapshotPromise = withDeadline(
+    loadSettingsSnapshot(),
+    OPTIONAL_TIMEOUT_MS,
+    "Shared settings snapshot",
+  ).catch((error) => {
+    warnings.push(
+      error instanceof Error
+        ? error.message
+        : "Shared settings snapshot was unavailable",
+    );
+    return null;
+  });
+
+  const [runtimeModules, crawlerModule, settingsSnapshot] = await Promise.all([
     runtimeModulesPromise,
     crawlerModulePromise,
+    settingsSnapshotPromise,
   ]);
   const [
     relevanceModule,
@@ -69,26 +176,39 @@ async function buildRuntimeInventory(): Promise<JsonRecord> {
     healthModule,
   ] = runtimeModules;
 
-  const [healthBySourceId, approvedCrawlerConfigs] = await Promise.all([
-    withDeadline(
-      healthModule.loadPublicPortalHealth(),
-      OPTIONAL_TIMEOUT_MS,
-      "Persisted source health",
-    ).catch((error) => {
-      warnings.push(error instanceof Error ? error.message : "Persisted source health was unavailable");
-      return new Map<string, any>();
-    }),
-    crawlerModule
-      ? withDeadline(
-          crawlerModule.listApprovedDiscoverySpiderConfigs(),
+  const [healthBySourceId, approvedCrawlerConfigs] = settingsSnapshot
+    ? [
+        healthFromSettings(settingsSnapshot),
+        crawlerModule ? approvedCrawlerConfigsFromSettings(settingsSnapshot) : [],
+      ]
+    : await Promise.all([
+        withDeadline(
+          healthModule.loadPublicPortalHealth(),
           OPTIONAL_TIMEOUT_MS,
-          "Approved crawler configs",
+          "Persisted source health",
         ).catch((error) => {
-          warnings.push(error instanceof Error ? error.message : "Approved crawler configs were unavailable");
-          return [];
-        })
-      : Promise.resolve([]),
-  ]);
+          warnings.push(
+            error instanceof Error
+              ? error.message
+              : "Persisted source health was unavailable",
+          );
+          return new Map<string, any>();
+        }),
+        crawlerModule
+          ? withDeadline(
+              crawlerModule.listApprovedDiscoverySpiderConfigs(),
+              OPTIONAL_TIMEOUT_MS,
+              "Approved crawler configs",
+            ).catch((error) => {
+              warnings.push(
+                error instanceof Error
+                  ? error.message
+                  : "Approved crawler configs were unavailable",
+              );
+              return [];
+            })
+          : Promise.resolve([]),
+      ]);
 
   if (crawlerModule) {
     for (const config of approvedCrawlerConfigs) crawlerModule.registerSpiderConfig(config);
@@ -126,7 +246,9 @@ async function buildRuntimeInventory(): Promise<JsonRecord> {
         registeredAdapter,
         runtimeRunnable,
         registrationKind,
-        connectorStatus: crawlerRunnable ? ("generic_extraction" as const) : source.connectorStatus,
+        connectorStatus: crawlerRunnable
+          ? ("generic_extraction" as const)
+          : source.connectorStatus,
         connectorLabel: crawlerRunnable
           ? approvedCrawler?.kind === "json_endpoint"
             ? "Approved official API"
@@ -232,7 +354,10 @@ router.get("/rfp-sources/runtime-inventory", async (_req, res) => {
   } catch (error) {
     logger.error({ err: error }, "Lightweight runtime source inventory failed");
     return res.status(503).json({
-      error: error instanceof Error ? error.message : "Runtime source inventory could not be loaded",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Runtime source inventory could not be loaded",
     });
   } finally {
     inFlight = null;
