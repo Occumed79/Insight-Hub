@@ -123,18 +123,18 @@ describe("manual ingestion query boundary", () => {
     assert.equal(stored.pscCode, "Q533");
 
     const qualityNow = new Date("2026-07-29T12:00:00Z");
-    assert.equal(
-      classifyOpportunityQuality(
-        {
-          ...q533GenericTitle,
-          providerName: "samGov",
-          sourceConfidence: "high",
-          samUrl: q533GenericTitle.sourceUrl,
-        },
-        qualityNow,
-      ).classification,
-      "verified-open",
+    const taxonomyOnlyQuality = classifyOpportunityQuality(
+      {
+        ...q533GenericTitle,
+        providerName: "samGov",
+        sourceConfidence: "high",
+        samUrl: q533GenericTitle.sourceUrl,
+      },
+      qualityNow,
     );
+    assert.equal(taxonomyOnlyQuality.classification, "needs-verification");
+    assert.equal(taxonomyOnlyQuality.actionable, false);
+
     assert.equal(
       classifyOpportunityQuality(
         {
