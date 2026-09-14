@@ -2,17 +2,19 @@ import { Router } from "express";
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { invalidateCredentialSettingsCache, resolveCredential } from "../lib/config/providerConfig";
+import {
+  invalidateCredentialSettingsCache,
+  resolveCredential,
+} from "../lib/config/providerConfig";
+import {
+  invalidateSettingsSnapshotCache,
+  loadSettingsSnapshot,
+} from "../lib/config/sharedSettingsSnapshot";
 
 const router = Router();
 
 async function getAllSettings(): Promise<Record<string, string>> {
-  const rows = await db.select().from(settingsTable);
-  const map: Record<string, string> = {};
-  for (const row of rows) {
-    map[row.key] = row.value;
-  }
-  return map;
+  return Object.fromEntries(await loadSettingsSnapshot());
 }
 
 async function upsertSetting(key: string, value: string) {
@@ -21,11 +23,13 @@ async function upsertSetting(key: string, value: string) {
     .values({ key, value })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value } });
   invalidateCredentialSettingsCache();
+  invalidateSettingsSnapshotCache();
 }
 
 async function removeSetting(key: string) {
   await db.delete(settingsTable).where(eq(settingsTable.key, key));
   invalidateCredentialSettingsCache();
+  invalidateSettingsSnapshotCache();
 }
 
 /**
@@ -70,7 +74,9 @@ async function buildSettingsResponse() {
     fecApiKeyConfigured: !!fecResolved,
     fecApiKeyMasked: maskSecret(settings["fecApiKey"]),
     defaultKeywords: settings["defaultKeywords"] ?? "",
-    defaultDateRange: settings["defaultDateRange"] ? parseInt(settings["defaultDateRange"]) : 30,
+    defaultDateRange: settings["defaultDateRange"]
+      ? parseInt(settings["defaultDateRange"])
+      : 30,
     organizationName: settings["organizationName"] ?? "",
   };
 }
@@ -123,7 +129,10 @@ router.put("/settings", async (req, res) => {
       if (value === undefined) continue; // absent → preserve
       if (typeof value === "string" && value.trim() !== "") {
         await upsertSetting(dbKey, value.trim()); // non-empty → store
-      } else if (value === "" || (typeof value === "string" && value.trim() === "")) {
+      } else if (
+        value === "" ||
+        (typeof value === "string" && value.trim() === "")
+      ) {
         await removeSetting(dbKey); // empty → clear DB override
       }
     }
