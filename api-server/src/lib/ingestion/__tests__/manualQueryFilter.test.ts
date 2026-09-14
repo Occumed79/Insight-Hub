@@ -80,6 +80,39 @@ describe("manual ingestion query boundary", () => {
     assert.equal(decideOpportunityQuality(directPortalRecord).status, "accepted");
   });
 
+  it("uses expanded SAM NAICS/PSC taxonomy as additive relevance evidence, never a whitelist", () => {
+    const q533GenericTitle = record("Employee Readiness Support", {
+      source: "samGov",
+      agency: "DEPARTMENT OF THE AIR FORCE",
+      type: "Solicitation",
+      description: "",
+      sourceUrl: "https://sam.gov/opp/example-q533/view",
+      rawData: {
+        sourceConfidence: "high",
+        providerPlatform: "sam.gov",
+        classificationCode: "Q533",
+        naicsCode: "621498",
+      },
+    });
+
+    const newUnlistedCodeButRelevantScope = record("Occupational Health Services", {
+      source: "samGov",
+      agency: "NEW FEDERAL BUYER",
+      type: "Solicitation",
+      description: "Pre-employment physical examinations and drug testing for employees.",
+      sourceUrl: "https://sam.gov/opp/example-new-code/view",
+      rawData: {
+        sourceConfidence: "high",
+        providerPlatform: "sam.gov",
+        classificationCode: "Z999",
+        naicsCode: "999999",
+      },
+    });
+
+    assert.equal(decideOpportunityQuality(q533GenericTitle).status, "accepted");
+    assert.equal(decideOpportunityQuality(newUnlistedCodeButRelevantScope).status, "accepted");
+  });
+
   it("does not count the epoch sentinel as a real posted date", () => {
     const unknownDate = record("Occupational Health Services", {
       description: "Occupational health examinations and drug testing.",
