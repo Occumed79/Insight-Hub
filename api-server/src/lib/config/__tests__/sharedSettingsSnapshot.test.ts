@@ -6,28 +6,26 @@ function source(relativePath: string): string {
   return readFileSync(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("high-traffic settings readers share the same coalesced settings snapshot", () => {
-  const providerConfig = source("../providerConfig.ts");
+test("first-paint settings readers share the same coalesced settings snapshot", () => {
+  const sharedSnapshot = source("../sharedSettingsSnapshot.ts");
   const settingsRoute = source("../../../routes/settings.ts");
-  const portalHealthStore = source("../../providers/publicPortalProviders/portalHealthStore.ts");
-  const discoveryCandidateStore = source("../../crawler/discoveryCandidateStore.ts");
+  const runtimeInventoryRoute = source("../../../routes/rfp-sources-runtime.ts");
 
-  assert.match(providerConfig, /export async function loadSettingsSnapshot\(/);
+  assert.match(sharedSnapshot, /export async function loadSettingsSnapshot\(/);
+  assert.match(sharedSnapshot, /createCredentialSettingsCache/);
+  assert.match(settingsRoute, /loadSettingsSnapshot/);
+  assert.match(runtimeInventoryRoute, /loadSettingsSnapshot/);
 
-  for (const [name, text] of [
-    ["settings route", settingsRoute],
-    ["portal health store", portalHealthStore],
-    ["crawler discovery candidate store", discoveryCandidateStore],
-  ] as const) {
-    assert.match(text, /loadSettingsSnapshot/,
-      `${name} must read from the shared settings snapshot`);
-  }
+  assert.doesNotMatch(
+    runtimeInventoryRoute,
+    /healthModule\.loadPublicPortalHealth\(\)[\s\S]*crawlerModule\.listApprovedDiscoverySpiderConfigs\(\)/,
+    "runtime inventory should not issue separate first-paint settings reads when the shared snapshot succeeds",
+  );
 });
 
-test("settings-backed health and crawler writes invalidate the shared snapshot", () => {
-  const portalHealthStore = source("../../providers/publicPortalProviders/portalHealthStore.ts");
-  const discoveryCandidateStore = source("../../crawler/discoveryCandidateStore.ts");
+test("settings writes invalidate both credential and shared settings snapshots", () => {
+  const settingsRoute = source("../../../routes/settings.ts");
 
-  assert.match(portalHealthStore, /invalidateSettingsSnapshotCache\(\)/);
-  assert.match(discoveryCandidateStore, /invalidateSettingsSnapshotCache\(\)/);
+  assert.match(settingsRoute, /invalidateCredentialSettingsCache\(\)/);
+  assert.match(settingsRoute, /invalidateSettingsSnapshotCache\(\)/);
 });
