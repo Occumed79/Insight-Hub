@@ -60,7 +60,10 @@ function sourceAuthority(provider: unknown): {
   if (value === "internationalpublicportals") {
     return { label: "official", bonus: 220 };
   }
-  if (value === "tango") return { label: "structured", bonus: 180 };
+  // Tango is an independent secondary procurement source, not an authoritative
+  // canonical owner. Keep it in the discovery authority tier until its record
+  // is independently verified by an official source.
+  if (value === "tango") return { label: "discovery", bonus: 20 };
   if (
     [
       "langsearch",
@@ -282,7 +285,20 @@ router.get("/opportunities", async (req, res) => {
     const truncated = candidateRows.length > candidateCap;
     const rows = candidateRows.slice(0, candidateCap);
 
-    const context = await contextualAdjustments(rows, search || undefined);
+    // Quality classification is deterministic and in-memory. Do it before
+    // loading contextual-learning state so empty/actionable pages do not pay a
+    // settings-table read for candidates that cannot appear in the requested
+    // view. This preserves ranking behavior while removing a production hot
+    // path that was adding seconds to first paint under DATABASE_POOL_MAX=1.
+    const eligibleRows = rows.flatMap((row) => {
+      const quality = classifyOpportunityQuality(row);
+      return qualityMatchesView(quality, view) ? [{ row, quality }] : [];
+    });
+    const context = await contextualAdjustments(
+      eligibleRows.map(({ row }) => row),
+      search || undefined,
+    );
+
     const best = new Map<
       string,
       {
@@ -293,9 +309,7 @@ router.get("/opportunities", async (req, res) => {
       }
     >();
 
-    for (const row of rows) {
-      const quality = classifyOpportunityQuality(row);
-      if (!qualityMatchesView(quality, view)) continue;
+    for (const { row, quality } of eligibleRows) {
       const contextual = context.get(String(row.id)) ?? {
         adjustment: 0,
         context: "",
