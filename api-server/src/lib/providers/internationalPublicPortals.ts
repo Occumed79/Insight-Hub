@@ -302,7 +302,6 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
     useLinkup: false,
     useParallel: false,
     useFirecrawl: false,
-    useSocrata: false,
     useWebsearch: false,
     useRssAggregator: false,
     useSelfHostedSearch: false,
