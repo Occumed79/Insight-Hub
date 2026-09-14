@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { NormalizedOpportunity } from "../../providers/types";
+import { normalizedToDbRecord } from "../../search/normalization";
 import {
   filterRecordsForManualQuery,
   meaningfulManualQueryTerms,
@@ -111,6 +112,10 @@ describe("manual ingestion query boundary", () => {
 
     assert.equal(decideOpportunityQuality(q533GenericTitle).status, "accepted");
     assert.equal(decideOpportunityQuality(newUnlistedCodeButRelevantScope).status, "accepted");
+
+    const stored = normalizedToDbRecord(q533GenericTitle);
+    assert.equal(stored.naicsCode, "621498");
+    assert.equal(stored.pscCode, "Q533");
   });
 
   it("does not count the epoch sentinel as a real posted date", () => {
