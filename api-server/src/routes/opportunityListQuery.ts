@@ -1,4 +1,5 @@
-import { sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { SAM_GOV_DISCOVERY_CLASSIFICATION_CODES } from "../lib/providers/samGovTaxonomyEvidence";
 
 /**
  * Build a PostgreSQL text[] literal with each value kept as a bound parameter.
@@ -27,6 +28,38 @@ export function notLikeAnyText(
   patterns: readonly string[],
 ): SQL {
   return sql`NOT (${likeAnyText(expression, patterns)})`;
+}
+
+/**
+ * Read-time evidence gate for the Opportunities page.
+ *
+ * Text relevance is always one independent path. Official SAM rows discovered
+ * through an Occu-Med taxonomy classification are a second preservation path,
+ * so a thin but potentially relevant SAM record can reach the downstream
+ * quality classifier instead of disappearing before semantic review. The
+ * classification path is additive only: unknown/new codes can still pass via
+ * their actual opportunity text, and taxonomy membership alone does not make a
+ * record actionable.
+ */
+export function opportunityServiceEvidenceFilter(
+  table: typeof import("@workspace/db/schema").opportunitiesTable,
+  servicePatterns: readonly string[],
+): SQL {
+  const textEvidence = likeAnyText(sql`(
+    lower(${table.title}) || ' ' ||
+    lower(coalesce(${table.description}, '')) || ' ' ||
+    lower(coalesce(${table.agency}, ''))
+  )`, servicePatterns);
+
+  const samTaxonomyEvidence = and(
+    eq(table.source, "sam_gov"),
+    or(
+      inArray(table.naicsCode, [...SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.naics]),
+      inArray(table.pscCode, [...SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.psc]),
+    ),
+  );
+
+  return or(textEvidence, samTaxonomyEvidence)!;
 }
 
 /** Keep numeric constants bound while giving PostgreSQL enough type context

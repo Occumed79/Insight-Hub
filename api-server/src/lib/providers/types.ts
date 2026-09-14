@@ -22,6 +22,7 @@ export interface NormalizedOpportunity {
   status: "active" | "archived";
   naicsCode?: string;
   naicsDescription?: string;
+  pscCode?: string;
   postedDate: Date;
   responseDeadline?: Date;
   setAside?: string;

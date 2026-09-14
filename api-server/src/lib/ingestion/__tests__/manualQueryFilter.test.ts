@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { NormalizedOpportunity } from "../../providers/types";
+import { classifyOpportunityQuality } from "../../opportunityQuality";
+import { normalizedToDbRecord } from "../../search/normalization";
 import {
   filterRecordsForManualQuery,
   meaningfulManualQueryTerms,
@@ -78,6 +80,73 @@ describe("manual ingestion query boundary", () => {
         "Pre-employment physical examinations and drug testing for employees.",
     });
     assert.equal(decideOpportunityQuality(directPortalRecord).status, "accepted");
+  });
+
+  it("uses expanded SAM NAICS/PSC taxonomy as additive relevance evidence, never a whitelist", () => {
+    const q533GenericTitle = record("Employee Readiness Support", {
+      source: "samGov",
+      agency: "DEPARTMENT OF THE AIR FORCE",
+      type: "Solicitation",
+      description: "",
+      naicsCode: "621498",
+      pscCode: "Q533",
+      sourceUrl: "https://sam.gov/opp/example-q533/view",
+      rawData: {
+        sourceConfidence: "high",
+        providerPlatform: "sam.gov",
+        classificationCode: "Q533",
+        naicsCode: "621498",
+      },
+    });
+
+    const newUnlistedCodeButRelevantScope = record("Occupational Health Services", {
+      source: "samGov",
+      agency: "NEW FEDERAL BUYER",
+      type: "Solicitation",
+      description: "Pre-employment physical examinations and drug testing for employees.",
+      naicsCode: "999999",
+      pscCode: "Z999",
+      sourceUrl: "https://sam.gov/opp/example-new-code/view",
+      rawData: {
+        sourceConfidence: "high",
+        providerPlatform: "sam.gov",
+        classificationCode: "Z999",
+        naicsCode: "999999",
+      },
+    });
+
+    assert.equal(decideOpportunityQuality(q533GenericTitle).status, "accepted");
+    assert.equal(decideOpportunityQuality(newUnlistedCodeButRelevantScope).status, "accepted");
+
+    const stored = normalizedToDbRecord(q533GenericTitle);
+    assert.equal(stored.naicsCode, "621498");
+    assert.equal(stored.pscCode, "Q533");
+
+    const qualityNow = new Date("2026-07-29T12:00:00Z");
+    const taxonomyOnlyQuality = classifyOpportunityQuality(
+      {
+        ...q533GenericTitle,
+        providerName: "samGov",
+        sourceConfidence: "high",
+        samUrl: q533GenericTitle.sourceUrl,
+      },
+      qualityNow,
+    );
+    assert.equal(taxonomyOnlyQuality.classification, "needs-verification");
+    assert.equal(taxonomyOnlyQuality.actionable, false);
+
+    assert.equal(
+      classifyOpportunityQuality(
+        {
+          ...newUnlistedCodeButRelevantScope,
+          providerName: "samGov",
+          sourceConfidence: "high",
+          samUrl: newUnlistedCodeButRelevantScope.sourceUrl,
+        },
+        qualityNow,
+      ).classification,
+      "verified-open",
+    );
   });
 
   it("does not count the epoch sentinel as a real posted date", () => {

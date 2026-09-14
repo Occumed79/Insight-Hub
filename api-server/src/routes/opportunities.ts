@@ -6,6 +6,11 @@ import { importFromCsv } from "../lib/csv-service";
 import { jinaProvider } from "../lib/providers/jina";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
+import {
+  isSamGovEvidenceRecord,
+  samGovOpportunityClassificationEvidence,
+  SAM_GOV_DISCOVERY_CLASSIFICATION_CODES,
+} from "../lib/providers/samGovTaxonomyEvidence";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
@@ -21,10 +26,10 @@ import {
 } from "../lib/ingestion/manualIngestion";
 import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
 import {
-  likeAnyText,
   notLikeAnyText,
   opportunityListErrorDetail,
   opportunityListSelection,
+  opportunityServiceEvidenceFilter,
 } from "./opportunityListQuery";
 import multer from "multer";
 import { OpportunityQualityPageAccumulator, type OpportunityViewMode } from "../lib/opportunityQuality";
@@ -150,6 +155,16 @@ function hasStaleYearOnly(raw: string): boolean {
   return hasOld && !hasCurrentOrFuture;
 }
 
+function hasSamDiscoveryClassification(opp: any): boolean {
+  if (!isSamGovEvidenceRecord(opp)) return false;
+  const naics = typeof opp.naicsCode === "string" ? opp.naicsCode.trim().toUpperCase() : "";
+  const psc = typeof opp.pscCode === "string" ? opp.pscCode.trim().toUpperCase() : "";
+  return (
+    (Boolean(naics) && SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.naics.includes(naics as any)) ||
+    (Boolean(psc) && SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.psc.includes(psc as any))
+  );
+}
+
 function shouldShowOpportunity(opp: any): boolean {
   const raw = [
     opp.title,
@@ -172,8 +187,10 @@ function shouldShowOpportunity(opp: any): boolean {
   // Hard reject — any match on these = instant discard
   if (hasSignal(text, HARD_REJECT_SIGNALS)) return false;
 
-  // Must match at least one Occu-Med service signal
-  if (!hasSignal(text, OCCUMED_SERVICE_SIGNALS)) return false;
+  // Text relevance and taxonomy discovery are independent positive paths. A
+  // SAM taxonomy match preserves the record for downstream quality reasoning;
+  // it does not automatically make the opportunity actionable.
+  if (!hasSignal(text, OCCUMED_SERVICE_SIGNALS) && !hasSamDiscoveryClassification(opp)) return false;
 
   // Extra: reject if title alone contains obvious job-ad language
   const titleNorm = normalizeForQuality(title);
@@ -188,6 +205,7 @@ function shouldShowOpportunity(opp: any): boolean {
 export { shouldShowOpportunity };
 
 function parseTags(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
   if (typeof raw !== "string" || !raw.trim()) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -204,9 +222,10 @@ function parseTags(raw: unknown): string[] {
  * scored at write time) and falls back to live classification for older rows.
  */
 function buildRelevanceView(opp: any) {
+  const samClassificationEvidence = samGovOpportunityClassificationEvidence(opp);
   const cls = classifyResult({
     title: opp.title,
-    snippet: opp.description,
+    snippet: [opp.description, ...samClassificationEvidence].filter(Boolean).join(" "),
     url: opp.samUrl,
     date: opp.postedDate,
     allowHistorical: true,
@@ -276,7 +295,6 @@ router.get("/opportunities", async (req, res) => {
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(200, parseInt(limit) || 50));
-    const offset = (pageNum - 1) * limitNum;
 
     const days = dateRange != null ? parseInt(dateRange) : NaN;
     const dateCutoff = Number.isFinite(days) && days > 0
@@ -347,19 +365,14 @@ router.get("/opportunities", async (req, res) => {
     // Rule 1: title must be >= 10 characters (catches untitled stubs).
     conditions.push(sql`length(${opportunitiesTable.title}) >= 10` as any);
 
-    // Rule 2: The combined text (title + description + agency) must contain at
-    // least one Occu-Med service signal.
-    // Pattern: lower(concat) LIKE ANY(ARRAY['%signal1%','%signal2%',...])
-    // Each pattern remains a bound parameter inside an explicit PostgreSQL
-    // text[] so LIKE ANY receives the array type it requires.
+    // Rule 2: preserve records supported either by actual Occu-Med service text
+    // OR by an official SAM classification in the discovery taxonomy. Taxonomy
+    // membership only gets the row to downstream quality reasoning; it is not
+    // an automatic relevance or actionable decision.
     {
       const servicePatterns = OCCUMED_SERVICE_SIGNALS.map((s) => `%${s}%`);
       conditions.push(
-        likeAnyText(sql`(
-          lower(${opportunitiesTable.title}) || ' ' ||
-          lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
-          lower(coalesce(${opportunitiesTable.agency}, ''))
-        )`, servicePatterns) as any,
+        opportunityServiceEvidenceFilter(opportunitiesTable, servicePatterns) as any,
       );
     }
 

@@ -10,6 +10,7 @@ import {
   notLikeAnyText,
   opportunityListErrorDetail,
   opportunityListSelection,
+  opportunityServiceEvidenceFilter,
 } from "../opportunityListQuery";
 
 const dialect = new PgDialect();
@@ -36,6 +37,26 @@ describe("opportunity list PostgreSQL pattern filters", () => {
       ).sql,
       /^NOT \(lower\(title\) LIKE ANY\(ARRAY\[\$1\]::text\[\]\)\)$/,
     );
+  });
+
+  it("keeps text relevance OR positive SAM NAICS/PSC evidence instead of whitelisting history", () => {
+    const query = dialect.sqlToQuery(
+      opportunityServiceEvidenceFilter(opportunitiesTable, [
+        "%occupational health%",
+        "%drug testing%",
+      ]),
+    );
+
+    assert.match(query.sql, / OR /i);
+    assert.match(query.sql, /naics_code/i);
+    assert.match(query.sql, /psc_code/i);
+    assert.ok(query.params.includes("%occupational health%"));
+    assert.ok(query.params.includes("sam_gov"));
+    assert.ok(query.params.includes("621498"));
+    assert.ok(query.params.includes("Q533"));
+    assert.ok(query.params.includes("Q701"));
+    assert.equal(query.params.includes("999999"), false);
+    assert.equal(query.params.includes("Z999"), false);
   });
 
   it("casts bound feedback weights before applying unary minus", () => {
