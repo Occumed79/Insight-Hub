@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, it } from "node:test";
 import { SocrataProvider } from "../socrata";
 import { sourceDefinition } from "../../sourceArchitecture";
@@ -33,6 +34,15 @@ describe("Socrata structured procurement boundary", () => {
 
   it("owns Socrata as a direct structured source, not browser discovery", () => {
     assert.equal(sourceDefinition("socrata")?.role, "direct_source");
+  });
+
+  it("is absent from the generic web-discovery execution surface", () => {
+    const source = readFileSync(
+      new URL("../../search/webIntelligence.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /\bsocrataProvider\b/);
+    assert.doesNotMatch(source, /\buseSocrata\b/);
   });
 
   it("queries curated live profiles and never queries forecast or award datasets in the opportunity provider", async () => {
