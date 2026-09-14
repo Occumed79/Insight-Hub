@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { NormalizedOpportunity } from "../../providers/types";
+import { classifyOpportunityQuality } from "../../opportunityQuality";
 import { normalizedToDbRecord } from "../../search/normalization";
 import {
   filterRecordsForManualQuery,
@@ -87,6 +88,8 @@ describe("manual ingestion query boundary", () => {
       agency: "DEPARTMENT OF THE AIR FORCE",
       type: "Solicitation",
       description: "",
+      naicsCode: "621498",
+      pscCode: "Q533",
       sourceUrl: "https://sam.gov/opp/example-q533/view",
       rawData: {
         sourceConfidence: "high",
@@ -101,6 +104,8 @@ describe("manual ingestion query boundary", () => {
       agency: "NEW FEDERAL BUYER",
       type: "Solicitation",
       description: "Pre-employment physical examinations and drug testing for employees.",
+      naicsCode: "999999",
+      pscCode: "Z999",
       sourceUrl: "https://sam.gov/opp/example-new-code/view",
       rawData: {
         sourceConfidence: "high",
@@ -116,6 +121,32 @@ describe("manual ingestion query boundary", () => {
     const stored = normalizedToDbRecord(q533GenericTitle);
     assert.equal(stored.naicsCode, "621498");
     assert.equal(stored.pscCode, "Q533");
+
+    const qualityNow = new Date("2026-07-29T12:00:00Z");
+    assert.equal(
+      classifyOpportunityQuality(
+        {
+          ...q533GenericTitle,
+          providerName: "samGov",
+          sourceConfidence: "high",
+          samUrl: q533GenericTitle.sourceUrl,
+        },
+        qualityNow,
+      ).classification,
+      "verified-open",
+    );
+    assert.equal(
+      classifyOpportunityQuality(
+        {
+          ...newUnlistedCodeButRelevantScope,
+          providerName: "samGov",
+          sourceConfidence: "high",
+          samUrl: newUnlistedCodeButRelevantScope.sourceUrl,
+        },
+        qualityNow,
+      ).classification,
+      "verified-open",
+    );
   });
 
   it("does not count the epoch sentinel as a real posted date", () => {
