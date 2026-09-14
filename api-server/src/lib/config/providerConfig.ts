@@ -1,6 +1,8 @@
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { createCredentialSettingsCache } from "./credentialSettingsCache";
+
+export { createCredentialSettingsCache };
 
 export type ProviderName =
   | "samGov"
@@ -564,6 +566,15 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
  * Returns null when neither source provides a non-empty value.
  * Never logs or exposes the resolved secret value.
  */
+const credentialSettingsCache = createCredentialSettingsCache(async () => {
+  const rows = await db.select().from(settingsTable);
+  return new Map(rows.map((row) => [row.key, row.value]));
+});
+
+export function invalidateCredentialSettingsCache(): void {
+  credentialSettingsCache.invalidate();
+}
+
 export interface ResolvedCredential {
   value: string;
   source: "environment" | "database";
@@ -582,11 +593,7 @@ export async function resolveCredentialWithSource(
   }
 
   try {
-    const rows = await db
-      .select()
-      .from(settingsTable)
-      .where(eq(settingsTable.key, dbKey));
-    const dbVal = rows[0]?.value;
+    const dbVal = (await credentialSettingsCache.get()).get(dbKey);
     if (dbVal && dbVal.trim()) {
       return { value: dbVal.trim(), source: "database", key: dbKey };
     }

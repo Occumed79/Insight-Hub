@@ -2,7 +2,7 @@ import { Router } from "express";
 import { rfpDb as db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { resolveCredential } from "../lib/config/providerConfig";
+import { invalidateCredentialSettingsCache, resolveCredential } from "../lib/config/providerConfig";
 
 const router = Router();
 
@@ -20,10 +20,12 @@ async function upsertSetting(key: string, value: string) {
     .insert(settingsTable)
     .values({ key, value })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value } });
+  invalidateCredentialSettingsCache();
 }
 
 async function removeSetting(key: string) {
   await db.delete(settingsTable).where(eq(settingsTable.key, key));
+  invalidateCredentialSettingsCache();
 }
 
 /**
