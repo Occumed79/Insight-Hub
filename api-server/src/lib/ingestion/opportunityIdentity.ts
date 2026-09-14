@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
+import { samGovClassificationEvidence } from "../providers/samGovTaxonomyEvidence";
 import { classifyResult, type RelevanceResult } from "../search/relevance";
 import { normalizedToDbRecord } from "../search/normalization";
 import { canonicalSamOpportunityUrl } from "../opportunityQuality";
@@ -195,6 +196,32 @@ export function calculateSourceConfidence(
   return record.sourceUrl ? 70 : 45;
 }
 
+function rawString(
+  raw: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = raw?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isSamGovOpportunity(record: NormalizedOpportunity): boolean {
+  if (record.source === "samGov") return true;
+  if (rawString(record.rawData, "providerPlatform")?.toLowerCase() === "sam.gov") return true;
+  try {
+    const host = record.sourceUrl ? new URL(record.sourceUrl).hostname.toLowerCase() : "";
+    return host === "sam.gov" || host.endsWith(".sam.gov");
+  } catch {
+    return false;
+  }
+}
+
+function samTaxonomyEvidenceFor(record: NormalizedOpportunity): string[] {
+  if (!isSamGovOpportunity(record)) return [];
+  const naicsCode = record.naicsCode ?? rawString(record.rawData, "naicsCode");
+  const pscCode = rawString(record.rawData, "classificationCode");
+  return samGovClassificationEvidence(naicsCode, pscCode);
+}
+
 export function decideOpportunityQuality(
   record: NormalizedOpportunity,
 ): QualityDecision {
@@ -236,6 +263,8 @@ export function decideOpportunityQuality(
       sourceConfidence,
     };
   }
+
+  const samTaxonomyEvidence = samTaxonomyEvidenceFor(record);
   const relevance = classifyResult({
     title: record.title,
     snippet: [
@@ -243,6 +272,7 @@ export function decideOpportunityQuality(
       record.solicitationNumber,
       record.description,
       record.agency,
+      ...samTaxonomyEvidence,
     ]
       .filter(Boolean)
       .join(" "),
