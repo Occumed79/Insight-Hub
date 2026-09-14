@@ -43,6 +43,11 @@ const PROVIDER_KEY_MAP: Record<string, ProviderKey> = {
   cloudflareWorker: "manual",
 };
 
+function rawString(raw: Record<string, unknown>, key: string): string | undefined {
+  const value = raw[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 /**
  * Convert a NormalizedOpportunity into a DB record for storage.
  * The primary `id` is intentionally excluded — callers are responsible for
@@ -101,6 +106,8 @@ export function normalizedToDbRecord(
       confidenceRank[evidence.sourceConfidence]
       ? normalizedRawConfidence
       : evidence.sourceConfidence;
+  const rawNaicsCode = rawString(rawData, "naicsCode");
+  const rawPscCode = rawString(rawData, "classificationCode");
 
   return {
     noticeId: record.externalId || undefined,
@@ -112,9 +119,9 @@ export function normalizedToDbRecord(
     // Deadline-based archival is reconciled explicitly after a manual run or
     // through POST /opportunities/reconcile-expired.
     status: record.status,
-    naicsCode: record.naicsCode ?? null,
+    naicsCode: record.naicsCode ?? rawNaicsCode ?? null,
     naicsDescription: record.naicsDescription ?? null,
-    pscCode: null,
+    pscCode: record.pscCode ?? rawPscCode ?? null,
     contractType: null,
     postedDate,
     responseDeadline: record.responseDeadline ?? null,
