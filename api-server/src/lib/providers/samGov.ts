@@ -208,7 +208,6 @@ export class SamGovProvider implements DataSourceProvider {
         useFirecrawl: true,
         useLangsearch: true,
         useLinkup: true,
-        useSocrata: false,
         useWebsearch: true,
         useRssAggregator: false,
         useSelfHostedSearch: false,

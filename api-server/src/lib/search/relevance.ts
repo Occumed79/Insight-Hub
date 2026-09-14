@@ -158,6 +158,12 @@ export interface RelevanceInput {
   deadlineInFuture?: boolean;
   keywords?: string | null;
   allowHistorical?: boolean;
+  /**
+   * A qualified structured procurement feed may supply the procurement-context
+   * predicate even when an individual row omits words such as RFP/RFQ.
+   * This never supplies medical/service relevance on its own.
+   */
+  trustedProcurementContext?: boolean;
 }
 export type RelevanceConfidence =
   | "verified_explicit"
@@ -273,7 +279,11 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       reasonCodes.push(REASON_CODES.negative);
     }
   }
-  const hasProc = matchedProcurementSignals.length > 0;
+  const trustedProcurementContext = input.trustedProcurementContext === true;
+  const hasProc = matchedProcurementSignals.length > 0 || trustedProcurementContext;
+  if (trustedProcurementContext && matchedProcurementSignals.length === 0) {
+    reasons.push("Qualified structured source supplies procurement context");
+  }
   const explicit =
     matchedExplicitPhrases.filter(
       (p) =>

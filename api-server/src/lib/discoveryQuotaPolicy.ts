@@ -81,13 +81,6 @@ export const DISCOVERY_QUOTA_POLICIES: readonly DiscoveryQuotaPolicy[] = [
     note: "Configured search fallback; exact allowance remains deployment-configured.",
   },
   {
-    provider: "socrata",
-    renewal: "metered",
-    priority: 50,
-    purpose: "discovery",
-    note: "Structured public-data procurement discovery fallback.",
-  },
-  {
     provider: "websearch",
     renewal: "emergency",
     priority: 60,
@@ -161,6 +154,10 @@ function sortByPolicyAndUsefulness<T extends {
  * the stable tie-breaker. This preserves cross-provider coverage without burning
  * Exa, Parallel, Firecrawl, Browserbase, and the renewable sources together on
  * every Fetch Intelligence run.
+ *
+ * Structured/direct sources such as Socrata are intentionally absent. Their
+ * execution and health budgets are owned by their direct provider runners, not
+ * by the browser/search discovery ensemble.
  */
 export async function selectQuotaAwareDiscoveryProviders(
   providers: readonly string[],
@@ -188,7 +185,8 @@ export async function selectQuotaAwareDiscoveryProviders(
     .sort((left, right) => {
       const utilityDelta = usefulness(right.snapshot) - usefulness(left.snapshot);
       if (utilityDelta !== 0) return utilityDelta;
-      const priorityDelta = (left.policy?.priority ?? 55) - (right.policy?.priority ?? 55);
+      const priorityDelta =
+        (left.policy?.priority ?? 55) - (right.policy?.priority ?? 55);
       if (priorityDelta !== 0) return priorityDelta;
       return left.index - right.index;
     });

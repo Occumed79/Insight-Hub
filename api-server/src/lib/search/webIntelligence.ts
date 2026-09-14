@@ -10,7 +10,6 @@ import { youProvider } from "../providers/you";
 import { langsearchProvider } from "../providers/langsearch";
 import { parallelProvider } from "../providers/parallel";
 import { linkupProvider } from "../providers/linkup";
-import { socrataProvider } from "../providers/socrata";
 import { websearchProvider } from "../providers/websearch";
 import { rssAggregatorProvider } from "../providers/rssAggregator";
 import { selfHostedCrawlerProvider } from "../providers/selfHostedCrawler";
@@ -43,7 +42,6 @@ type SearchCandidateProvider =
   | "firecrawl"
   | "langsearch"
   | "linkup"
-  | "socrata"
   | "websearch";
 
 function occumedWebQueries(year: number): string[] {
@@ -89,7 +87,6 @@ export interface WebIntelligenceResult {
     firecrawlResults: number;
     langsearchResults: number;
     linkupResults: number;
-    socrataResults: number;
     websearchResults: number;
     rssAggregatorResults: number;
     selfHostedSearchResults: number;
@@ -214,7 +211,6 @@ export async function webIntelligenceFetch(options: {
   useLangsearch?: boolean;
   useParallel?: boolean;
   useLinkup?: boolean;
-  useSocrata?: boolean;
   useWebsearch?: boolean;
   useRssAggregator?: boolean;
   useSelfHostedSearch?: boolean;
@@ -239,7 +235,6 @@ export async function webIntelligenceFetch(options: {
     firecrawlResults: 0,
     langsearchResults: 0,
     linkupResults: 0,
-    socrataResults: 0,
     websearchResults: 0,
     rssAggregatorResults: 0,
     selfHostedSearchResults: 0,
@@ -270,7 +265,6 @@ export async function webIntelligenceFetch(options: {
   const useLangsearch = options.useLangsearch === true;
   const useParallel = options.useParallel === true;
   const useLinkup = options.useLinkup === true;
-  const useSocrata = options.useSocrata === true;
   const useWebsearch = options.useWebsearch === true;
   const useRssAggregator = options.useRssAggregator !== false;
   const useSelfHostedSearch = options.useSelfHostedSearch === true;
@@ -451,18 +445,6 @@ export async function webIntelligenceFetch(options: {
         url: result.url,
         content: result.content,
         sourceProvider: "linkup" as const,
-      })),
-    });
-
-    if (useSocrata) attempts.push({
-      name: "socrata",
-      isConfigured: () => socrataProvider.isConfigured(),
-      run: async (attemptSignal) => (await socrataProvider.search(options.keywords?.trim() || "procurement bids solicitations occupational health", attemptSignal ?? options.signal)).map((result) => ({
-        title: result.title,
-        url: result.url,
-        content: result.description,
-        sourceProvider: "socrata" as const,
-        dateRaw: result.updatedAt,
       })),
     });
 

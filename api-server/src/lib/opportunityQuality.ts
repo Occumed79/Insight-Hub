@@ -50,7 +50,6 @@ const DISCOVERY_PROVIDERS = new Set([
   "langsearch",
   "parallel",
   "linkup",
-  "socrata",
   "websearch",
   "aiDiscovery",
   "rssAggregator",
@@ -59,6 +58,7 @@ const DISCOVERY_PROVIDERS = new Set([
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
   "sam_gov",
+  "socrata",
   "internationalPublicPortals",
   "eunaBonfire",
   "texasEsbd",
