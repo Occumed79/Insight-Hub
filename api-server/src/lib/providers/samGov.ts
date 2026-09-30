@@ -23,12 +23,19 @@ const SAM_GOV_BID_NOTICE_TYPES = ["o", "k"] as const;
 const SAM_GOV_MAX_RESULTS_PER_TITLE = 250;
 const SAM_GOV_MAX_RESULTS_PER_CLASSIFICATION = 75;
 const SAM_GOV_AUTONOMOUS_QUERY_COUNT = 2;
+// SAM accepts one NAICS/PSC code per request, so rotate through the taxonomy
+// instead of firing the full catalogue on every Fetch Intelligence run.
+const SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN = Math.max(
+  1,
+  Math.min(12, Number(process.env.SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN ?? 6) || 6),
+);
 // Keep SAM requests serialized so one quota response updates the credential
 // pool before another classification query can reuse the same exhausted key.
 const SAM_GOV_CLASSIFICATION_CONCURRENCY = 1;
 const SAM_GOV_HYDRATION_LIMIT = 16;
 const SAM_GOV_HYDRATION_CONCURRENCY = 2;
 let autonomousQueryCursor = 0;
+let classificationQueryCursor = 0;
 
 const samGovCredentials = new FreeTierCredentialPool(
   "sam-gov-multi-account",
@@ -287,6 +294,19 @@ export class SamGovProvider implements DataSourceProvider {
     }
   }
 
+  private classificationQueriesForRun(
+    queries: SamGovClassificationQuery[],
+  ): SamGovClassificationQuery[] {
+    if (queries.length <= SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN) return queries;
+    const selected: SamGovClassificationQuery[] = [];
+    for (let offset = 0; offset < SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN; offset += 1) {
+      selected.push(queries[(classificationQueryCursor + offset) % queries.length]!);
+    }
+    classificationQueryCursor =
+      (classificationQueryCursor + SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN) % queries.length;
+    return selected;
+  }
+
   private async runClassificationQueries(
     queries: SamGovClassificationQuery[],
     baseUrl: string,
@@ -360,25 +380,39 @@ export class SamGovProvider implements DataSourceProvider {
     const normalized: NormalizedOpportunity[] = [];
     const seen = new Set<string>();
     const titleQueries = this.titleQueriesForRun(options.keywords);
-    const classificationQueries = buildSamGovClassificationQueries();
+    const allClassificationQueries = buildSamGovClassificationQueries();
+    const classificationQueries = this.classificationQueriesForRun(allClassificationQueries);
+    const titleErrors: string[] = [];
+    let samCapacityExhausted = false;
 
     for (const title of titleQueries) {
-      const matches = await samGovCredentials.run((apiKey, slot) =>
-        this.runQuery(
-          apiKey,
-          slot,
-          baseUrl,
-          { title },
-          fromDate,
-          today,
-          limit,
-          options.signal,
-        ),
-      );
-      SamGovProvider.addUnique(normalized, seen, matches);
+      try {
+        const matches = await samGovCredentials.run((apiKey, slot) =>
+          this.runQuery(
+            apiKey,
+            slot,
+            baseUrl,
+            { title },
+            fromDate,
+            today,
+            limit,
+            options.signal,
+          ),
+        );
+        SamGovProvider.addUnique(normalized, seen, matches);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        titleErrors.push(`SAM.gov title="${title}" failed: ${message}`);
+        if (/credential pool exhausted|credential pool cooling down|quota|rate.?limit|throttl/i.test(message)) {
+          samCapacityExhausted = true;
+          break;
+        }
+      }
     }
 
-    const classified = await this.runClassificationQueries(
+    const classified = samCapacityExhausted
+      ? { records: [], errors: [], attempted: 0 }
+      : await this.runClassificationQueries(
       classificationQueries,
       baseUrl,
       fromDate,
@@ -391,15 +425,19 @@ export class SamGovProvider implements DataSourceProvider {
       queryCount: titleQueries.length + classified.attempted,
       queries: titleQueries,
       targetedQueries: true,
-      classificationQueryCount: classificationQueries.length,
+      classificationQueryCount: allClassificationQueries.length,
+      classificationQueriesScheduled: classificationQueries.length,
       classificationQueriesAttempted: classified.attempted,
       registeredProfileIsWhitelist: false,
-      expandedNaicsCodes: classificationQueries
+      expandedNaicsCodes: allClassificationQueries
         .filter((query) => query.parameter === "ncode")
         .map((query) => query.code),
-      expandedPscCodes: classificationQueries
+      expandedPscCodes: allClassificationQueries
         .filter((query) => query.parameter === "ccode")
         .map((query) => query.code),
+      scheduledClassificationCodes: classificationQueries.map(
+        (query) => `${query.parameter}:${query.code}`,
+      ),
     };
 
     if (normalized.length === 0) {
@@ -408,6 +446,7 @@ export class SamGovProvider implements DataSourceProvider {
         records: recovered,
         total: recovered.length,
         errors: [
+          ...titleErrors,
           ...classified.errors,
           ...(recovered.length > 0
             ? [`SAM.gov structured title/classification queries returned no bid-ready records; recovered ${recovered.length} official SAM.gov opportunity pages through renewable web discovery.`]
@@ -428,7 +467,7 @@ export class SamGovProvider implements DataSourceProvider {
     return {
       records: hydrated.records,
       total: hydrated.records.length,
-      errors: classified.errors,
+      errors: [...titleErrors, ...classified.errors],
       diagnostics: {
         ...diagnostics,
         structuredMatches: normalized.length,
