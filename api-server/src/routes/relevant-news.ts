@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { resolveCredential } from "../lib/config/providerConfig";
+import { keenableProvider } from "../lib/providers/keenable";
 import { logger } from "../lib/logger";
 import { apitubeKeys, contractorNewsSignals, fetchApitubeNews, httpUrl } from "../lib/news/apitube";
 
@@ -34,7 +35,7 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
-  provider: "gnews" | "apitube" | "tinyfish";
+  provider: "gnews" | "apitube" | "tinyfish" | "keenable";
   companies: string[];
   signals: string[];
 };
@@ -45,8 +46,8 @@ type NewsPayload = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews" | "apitube" | "tinyfish" | "mixed";
-  sources: Array<"gnews" | "apitube" | "tinyfish">;
+  source: "gnews" | "apitube" | "tinyfish" | "keenable" | "mixed";
+  sources: Array<"gnews" | "apitube" | "tinyfish" | "keenable">;
   warnings: string[];
   deduplicated: number;
   fetchedAt: string;
@@ -221,7 +222,7 @@ export function normalizeArticle(rawValue: unknown): NewsArticle | null {
       country: asString(source.country),
     },
     relevanceScore: Math.max(relevantNewsScore(raw), contractorSignals.score),
-    provider: raw.provider === "tinyfish" ? "tinyfish" : raw.provider === "apitube" ? "apitube" : "gnews",
+    provider: raw.provider === "keenable" ? "keenable" : raw.provider === "tinyfish" ? "tinyfish" : raw.provider === "apitube" ? "apitube" : "gnews",
     companies: contractorSignals.companies,
     signals: contractorSignals.signals,
   };
@@ -329,6 +330,33 @@ async function fetchTinyfishNews(query: string, max: number, sourceDomains: stri
   });
 }
 
+
+async function fetchKeenablePublicationNews(query: string, max: number, domains: string[]): Promise<{ articles: unknown[]; warnings: string[] }> {
+  const results = await Promise.allSettled(domains.map(domain => keenableProvider.search(query, {
+    site: domain,
+    publishedAfter: new Date(Date.now() - 7 * 86400000).toISOString(),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })));
+  const articles: unknown[] = [];
+  const warnings: string[] = [];
+  let succeeded = false;
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      warnings.push(`Keenable coverage for ${domains[index]} is temporarily unavailable.`);
+      return;
+    }
+    succeeded = true;
+    articles.push(...result.value.map(row => ({
+      title: row.title, url: row.url, description: row.snippet || row.description,
+      publishedAt: row.publishedAt, image: null,
+      source: { name: domains[index], url: `https://${domains[index]}` },
+      provider: "keenable",
+    })));
+  });
+  if (!succeeded) throw Object.assign(new Error("Keenable publication news unavailable"), { statusCode: 502 });
+  return { articles: articles.slice(0, max), warnings };
+}
+
 function matchesSource(article: NewsArticle, domains: string[]): boolean {
   if (!domains.length) return true;
   const hostname = new URL(article.url).hostname.toLowerCase();
@@ -336,11 +364,13 @@ function matchesSource(article: NewsArticle, domains: string[]): boolean {
 }
 
 export async function fetchRelevantNews(query: string, max: number, page: number, search: string | null, sourceDomains: string[] = []): Promise<NewsPayload> {
-  const jobs: Array<{ provider: "gnews" | "apitube" | "tinyfish"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
-  // GNews and APITube keep their full news coverage. Only TinyFish targets monitored publications.
+  const jobs: Array<{ provider: "gnews" | "apitube" | "tinyfish" | "keenable"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
+  // GNews and APITube keep their full news coverage.
+  // TinyFish and Keenable target only the monitored publications.
   // News uses only the primary key; the secondary key belongs to intelligence.
   const tinyfishKey = await resolveCredential("tinyfishApiKey", "TINYFISH_API_KEY");
   if (tinyfishKey && sourceDomains.length) jobs.push({ provider: "tinyfish", run: async () => ({ articles: await fetchTinyfishNews(query, max, sourceDomains, tinyfishKey), warnings: [] }) });
+  if (sourceDomains.length) jobs.push({ provider: "keenable", run: () => fetchKeenablePublicationNews(query, max, sourceDomains) });
   if (process.env.GNEWS_API_KEY?.trim()) jobs.push({
     provider: "gnews",
     run: async () => ({ articles: await fetchGNewsFeed(query, max, page, !search && page === 1), warnings: [] }),
@@ -362,13 +392,13 @@ export async function fetchRelevantNews(query: string, max: number, page: number
     } else {
       failureStatus = Number(result.reason?.statusCode) || 502;
       // Sanitized provider errors only; never forward arbitrary fetch errors.
-      warnings.push(`${provider === "tinyfish" ? "TinyFish news" : provider === "gnews" ? "GNews" : "APITube"} is temporarily unavailable (HTTP ${failureStatus}).`);
+      warnings.push(`${provider === "keenable" ? "Keenable news" : provider === "tinyfish" ? "TinyFish news" : provider === "gnews" ? "GNews" : "APITube"} is temporarily unavailable (HTTP ${failureStatus}).`);
       logger.warn({ provider, statusCode: failureStatus }, "Relevant news provider unavailable");
     }
   }
   if (!sources.length) throw Object.assign(new Error(warnings.join(" ")), { statusCode: failureStatus });
   const relevant = rawArticles.map(normalizeArticle)
-    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6 && (article.provider !== "tinyfish" || matchesSource(article, sourceDomains)));
+    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6 && ((article.provider !== "tinyfish" && article.provider !== "keenable") || matchesSource(article, sourceDomains)));
   const unique = new Map<string, NewsArticle>();
   for (const article of relevant) {
     const key = canonicalArticleUrl(article.url);

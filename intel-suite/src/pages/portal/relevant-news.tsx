@@ -32,7 +32,7 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
-  provider?: "gnews" | "apitube" | "tinyfish";
+  provider?: "gnews" | "apitube" | "tinyfish" | "keenable";
   companies?: string[];
   signals?: string[];
 };
@@ -43,8 +43,8 @@ type NewsResponse = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews" | "apitube" | "tinyfish" | "mixed";
-  sources?: Array<"gnews" | "apitube" | "tinyfish">;
+  source: "gnews" | "apitube" | "tinyfish" | "keenable" | "mixed";
+  sources?: Array<"gnews" | "apitube" | "tinyfish" | "keenable">;
   warnings?: string[];
   deduplicated?: number;
   fetchedAt: string;
@@ -131,7 +131,7 @@ export default function RelevantNewsPage() {
   const upstreamArticles = query.data?.upstreamArticles ?? 0;
   const filteredOut = query.data?.filteredOut ?? 0;
   const providers = (query.data?.sources ?? (query.data?.source === "mixed" ? ["gnews", "apitube"] : query.data?.source ? [query.data.source] : []))
-    .map(provider => provider === "apitube" ? "APITube" : provider === "tinyfish" ? "TinyFish" : "GNews").join(" + ") || "news providers";
+    .map(provider => provider === "keenable" ? "Keenable" : provider === "apitube" ? "APITube" : provider === "tinyfish" ? "TinyFish" : "GNews").join(" + ") || "news providers";
   const statusText = query.isFetching
     ? "Refreshing relevant news"
     : `${articles.length.toLocaleString("en-US")} articles shown`;
@@ -169,7 +169,7 @@ export default function RelevantNewsPage() {
       </form>
 
       <section className="glass-card rounded-2xl border border-white/10 p-4" aria-labelledby="monitored-sources-title">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="monitored-sources-title" className="text-sm font-semibold text-white">Monitored sources</h2><p className="mt-1 text-xs text-white/40">TinyFish searches these publications. GNews and APITube also supply their broader news coverage.</p></div><div className="flex min-w-[280px] flex-1 justify-end gap-2 sm:max-w-xl"><input aria-label="Add a source URL" value={sourceDraft} onChange={event => setSourceDraft(event.target.value)} placeholder="Add a publication URL…" className="min-h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"/><button type="button" onClick={() => { try { const url = new URL(sourceDraft); const domain = url.hostname.replace(/^www\./, ""); if (!domain.includes(".")) return; if (!sources.some(source => source.domain === domain)) setSources([...sources, { name: domain, url: url.href, domain }]); setSourceDraft(""); } catch {} }} className="inline-flex min-h-10 items-center rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs text-primary">Add</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="monitored-sources-title" className="text-sm font-semibold text-white">Monitored sources</h2><p className="mt-1 text-xs text-white/40">TinyFish and Keenable search these publications. The rest of the news feed comes from APITube and GNews.</p></div><div className="flex min-w-[280px] flex-1 justify-end gap-2 sm:max-w-xl"><input aria-label="Add a source URL" value={sourceDraft} onChange={event => setSourceDraft(event.target.value)} placeholder="Add a publication URL…" className="min-h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"/><button type="button" onClick={() => { try { const url = new URL(sourceDraft); const domain = url.hostname.replace(/^www\./, ""); if (!domain.includes(".")) return; if (!sources.some(source => source.domain === domain)) setSources([...sources, { name: domain, url: url.href, domain }]); setSourceDraft(""); } catch {} }} className="inline-flex min-h-10 items-center rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs text-primary">Add</button></div></div>
         <div className="mt-3 flex flex-wrap gap-2">{sources.map(source => <span key={source.domain} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70"><a href={source.url} target="_blank" rel="noreferrer" className="hover:text-primary">{source.name}</a><button type="button" aria-label={`Remove ${source.name}`} onClick={() => setSources(sources.filter(item => item.domain !== source.domain))} className="text-white/35 hover:text-red-200">×</button></span>)}</div>
       </section>
 
@@ -254,7 +254,7 @@ export default function RelevantNewsPage() {
               )}
               <div className="min-w-0 p-5">
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.15em] text-white/35">
-                  <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "apitube" ? "APITube" : article.provider === "tinyfish" ? "TinyFish" : "GNews"}`}</span>
+                  <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "keenable" ? "Keenable" : article.provider === "apitube" ? "APITube" : article.provider === "tinyfish" ? "TinyFish" : "GNews"}`}</span>
                   <time dateTime={article.publishedAt ?? undefined}>{displayDate(article.publishedAt)}</time>
                 </div>
                 <h2 className="ui-break-anywhere mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h2>
