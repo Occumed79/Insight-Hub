@@ -30,6 +30,8 @@ async function buildAll() {
     // Some packages below may not be imported or installed, but are listed in case they are added later.
     external: [
       "*.node",
+      "pg",
+      "pg-pool",
       "imapflow",
       "sharp",
       "better-sqlite3",
