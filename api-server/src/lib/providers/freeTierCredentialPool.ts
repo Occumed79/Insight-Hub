@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { rfpDb, settingsTable } from "@workspace/db";
 import { resolveCredential } from "../config/providerConfig";
 
 export interface CredentialSlot {
@@ -68,6 +70,55 @@ const poolInstances = new Map<string, FreeTierCredentialPool>();
 
 function runtimeKey(poolId: string, slot: string): string {
   return `${poolId}:${slot}`;
+}
+
+function durableCooldownKey(poolId: string, slot: string): string {
+  return `credential-pool:v1:${poolId}:${slot}:cooldown`;
+}
+
+async function loadDurableCooldown(poolId: string, slot: string): Promise<number> {
+  try {
+    const [row] = await rfpDb
+      .select({ value: settingsTable.value })
+      .from(settingsTable)
+      .where(eq(settingsTable.key, durableCooldownKey(poolId, slot)))
+      .limit(1);
+    const parsed = Number(row?.value ?? 0);
+    return Number.isFinite(parsed) && parsed > Date.now() ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function persistDurableCooldown(
+  poolId: string,
+  slot: string,
+  cooldownUntil: number,
+): Promise<void> {
+  try {
+    await rfpDb
+      .insert(settingsTable)
+      .values({
+        key: durableCooldownKey(poolId, slot),
+        value: String(cooldownUntil),
+      })
+      .onConflictDoUpdate({
+        target: settingsTable.key,
+        set: { value: String(cooldownUntil) },
+      });
+  } catch {
+    // Runtime memory still protects the key if persistence is temporarily unavailable.
+  }
+}
+
+async function clearDurableCooldown(poolId: string, slot: string): Promise<void> {
+  try {
+    await rfpDb
+      .delete(settingsTable)
+      .where(eq(settingsTable.key, durableCooldownKey(poolId, slot)));
+  } catch {
+    // Best effort only.
+  }
 }
 
 function emptySlotState(): SlotRuntimeState {
@@ -226,6 +277,15 @@ export class FreeTierCredentialPool {
 
   async snapshot(): Promise<CredentialPoolSnapshot> {
     const credentials = await this.credentials();
+    await Promise.all(
+      this.slots.map(async ({ envKey }) => {
+        const key = runtimeKey(this.id, envKey);
+        const memoryUntil = cooldowns.get(key) ?? 0;
+        if (memoryUntil > Date.now()) return;
+        const durableUntil = await loadDurableCooldown(this.id, envKey);
+        if (durableUntil > Date.now()) cooldowns.set(key, durableUntil);
+      }),
+    );
     const cursor = credentials.length > 0
       ? (cursors.get(this.id) ?? 0) % credentials.length
       : 0;
@@ -267,6 +327,15 @@ export class FreeTierCredentialPool {
     if (credentials.length === 0) {
       throw new Error(`${this.id} API key not configured`);
     }
+    await Promise.all(
+      credentials.map(async ({ slot }) => {
+        const key = runtimeKey(this.id, slot);
+        const memoryUntil = cooldowns.get(key) ?? 0;
+        if (memoryUntil > Date.now()) return;
+        const durableUntil = await loadDurableCooldown(this.id, slot);
+        if (durableUntil > Date.now()) cooldowns.set(key, durableUntil);
+      }),
+    );
     const start = (cursors.get(this.id) ?? 0) % credentials.length;
     const ordered = [
       ...credentials.slice(start),
@@ -308,6 +377,7 @@ export class FreeTierCredentialPool {
           : Number.NaN;
         if (state.quotaRemaining !== 0 || !Number.isFinite(configuredReset)) {
           cooldowns.delete(runtimeKey(this.id, candidate.slot));
+          await clearDurableCooldown(this.id, candidate.slot);
         }
         return value;
       } catch (error) {
@@ -317,6 +387,7 @@ export class FreeTierCredentialPool {
         const explicitReset = explicitCooldownUntilMs(error);
         const cooldownUntil = explicitReset ?? (Date.now() + cooldownMs(error));
         cooldowns.set(runtimeKey(this.id, candidate.slot), cooldownUntil);
+        await persistDurableCooldown(this.id, candidate.slot, cooldownUntil);
         if (explicitReset) {
           state.quotaResetAt = new Date(explicitReset).toISOString();
           if (state.lastOutcome === "quota" || state.lastOutcome === "rate_limited") {
