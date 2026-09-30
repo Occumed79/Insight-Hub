@@ -271,6 +271,7 @@ export class FreeTierCredentialPool {
       const resetMs = Date.parse(resetAt);
       if (Number.isFinite(resetMs) && resetMs > Date.now()) {
         cooldowns.set(runtimeKey(this.id, slot), resetMs);
+        void persistDurableCooldown(this.id, slot, resetMs);
       }
     }
   }
