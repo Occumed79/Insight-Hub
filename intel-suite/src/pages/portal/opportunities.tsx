@@ -804,6 +804,24 @@ export default function OpportunitiesDashboard() {
       ? (extractAgencyHint(opp.title) ?? "—")
       : (opp.agency ?? "—");
   const opportunities = oppsData?.data ?? [];
+  const getOpportunityCategory = (opp: any): string => {
+    const text = [opp.title, opp.description, opp.type, opp.serviceType, ...(opp.matchReasons ?? []), ...(opp.serviceLines ?? [])]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (/(pre[- ]employment|pre[- ]placement|new hire|hiring physical)/.test(text)) return "Pre-Employment / Pre-Placement";
+    if (/(annual physical|periodic physical|periodic exam|annual exam|recurring medical)/.test(text)) return "Annual / Periodic Physicals";
+    if (/(drug|alcohol|substance|urine screen|drug[- ]free)/.test(text) && /(test|screen|testing|program|collection)/.test(text)) return "Drug & Alcohol Testing";
+    if (/(psychological|psychiatric|behavioral health|mental health|psychometric)/.test(text)) return "Psychological Testing";
+    if (/(full physical|medical examination|medical exam|occupational physical|fitness[- ]for[- ]duty|physical examination)/.test(text)) return "Full Physical / Medical Examination";
+    if (/(audiometr|hearing conservation|hearing test|noise monitoring)/.test(text)) return "Hearing / Audiometry";
+    if (/(respirator|fit test|spirometr|pulmonary function|pft)/.test(text)) return "Respiratory / Fit Testing";
+    if (/(laboratory|blood test|lab testing|diagnostic|x[- ]ray|radiolog|ekg|ecg)/.test(text)) return "Laboratory / Diagnostic Testing";
+    if (/(vaccin|immuniz|titer|titres)/.test(text)) return "Vaccinations / Immunizations";
+    return "General Occupational Health";
+  };
+  const categoryOrder = ["Pre-Employment / Pre-Placement", "Annual / Periodic Physicals", "Drug & Alcohol Testing", "Psychological Testing", "Full Physical / Medical Examination", "Hearing / Audiometry", "Respiratory / Fit Testing", "Laboratory / Diagnostic Testing", "Vaccinations / Immunizations", "General Occupational Health"];
+  const groupedOpportunities = categoryOrder
+    .map((category) => [category, opportunities.filter((opp: any) => getOpportunityCategory(opp) === category)] as const)
+    .filter(([, items]) => items.length > 0);
   const currentRunIsStale = Boolean(
     currentRun &&
       isOpportunityRunActive(currentRun.status) &&
@@ -1077,8 +1095,15 @@ export default function OpportunitiesDashboard() {
           </div>
         ) : (
           <AnimatePresence>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-              {opportunities.map((opp: any, index: number) => {
+            {groupedOpportunities.map(([category, categoryOpportunities]) => (
+              <section key={category} aria-labelledby={`opportunity-category-${category}`} className="mb-8 last:mb-0">
+                <div className="mb-4 flex items-center gap-3">
+                  <h2 id={`opportunity-category-${category}`} className="text-sm font-bold uppercase tracking-[0.2em] text-primary [text-shadow:0_0_18px_rgba(72,180,255,0.65)]">{category}</h2>
+                  <span className="h-px flex-1 bg-gradient-to-r from-primary/35 to-transparent" />
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold tabular-nums text-primary/80">{categoryOpportunities.length}</span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {categoryOpportunities.map((opp: any, index: number) => {
                 const href = getOpportunityUrl(opp);
                 const urgent =
                   opp.responseDeadline &&
@@ -1257,7 +1282,9 @@ export default function OpportunitiesDashboard() {
                   </motion.article>
                 );
               })}
-            </div>
+                </div>
+              </section>
+            ))}
           </AnimatePresence>
         )}
 
