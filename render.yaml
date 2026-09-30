@@ -43,6 +43,8 @@ services:
         value: "3"
       - key: SAM_GOV_API_KEY
         sync: false
+      - key: SAM_GOV_API_KEY_2
+        sync: false
       - key: TANGO_API_KEY
         sync: false
       - key: TANGO_BASE_URL
