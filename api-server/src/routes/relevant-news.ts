@@ -348,7 +348,9 @@ export async function fetchRelevantNews(query: string, max: number, page: number
 
 router.get("/relevant-news", async (req, res) => {
   const userSearch = sanitizedSearch(req.query.search);
-  const query = userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY;
+  const sourceDomains = typeof req.query.sources === "string" ? req.query.sources.split(",").map(value => value.trim().replace(/^www\./, "")).filter(value => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)).slice(0, 20) : [];
+  const sourceQuery = sourceDomains.length ? ` (${sourceDomains.map(domain => `site:${domain}`).join(" OR ")})` : "";
+  const query = (userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY) + sourceQuery;
   const max = boundedInteger(req.query.max, 40, 1, 100);
   const page = boundedInteger(req.query.page, 1, 1, 100);
   const cacheKey = `${query}|${max}|${page}|${Boolean(process.env.GNEWS_API_KEY?.trim())}|${apitubeKeys().length}|${process.env.GNEWS_MAX_ARTICLES}|${process.env.APITUBE_NEWS_MAX_ARTICLES}`;

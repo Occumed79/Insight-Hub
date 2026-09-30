@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CircleAlert,
@@ -8,6 +8,15 @@ import {
   RefreshCcw,
   Search,
 } from "lucide-react";
+
+type MonitoredSource = { name: string; url: string; domain: string };
+
+const DEFAULT_SOURCES: MonitoredSource[] = [
+  { name: "Defense Daily", url: "https://www.defensedaily.com/", domain: "defensedaily.com" },
+  { name: "Defense News · Industry", url: "https://www.defensenews.com/industry/", domain: "defensenews.com" },
+  { name: "Aviation Week · Manufacturing & Supply Chain", url: "https://aviationweek.com/aerospace/manufacturing-supply-chain", domain: "aviationweek.com" },
+];
+const sourceStorageKey = "insight-hub.relevant-news.sources";
 
 type NewsArticle = {
   id: string;
@@ -56,9 +65,10 @@ function displayDate(value: string | null): string {
   }).format(parsed);
 }
 
-async function fetchRelevantNews(search: string): Promise<NewsResponse> {
+async function fetchRelevantNews(search: string, sources: MonitoredSource[]): Promise<NewsResponse> {
   const params = new URLSearchParams({ max: "40" });
   if (search) params.set("search", search);
+  if (sources.length) params.set("sources", sources.map(source => source.domain).join(","));
   const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
   const response = await fetch(`${baseUrl}/api/relevant-news?${params.toString()}`);
   const payload = (await response.json().catch(() => ({}))) as NewsResponse;
@@ -96,11 +106,14 @@ function NewsSkeleton() {
 export default function RelevantNewsPage() {
   const [draftSearch, setDraftSearch] = useState("");
   const [search, setSearch] = useState("");
+  const [sources, setSources] = useState<MonitoredSource[]>(() => { try { return JSON.parse(localStorage.getItem(sourceStorageKey) || "null") || DEFAULT_SOURCES; } catch { return DEFAULT_SOURCES; } });
+  const [sourceDraft, setSourceDraft] = useState("");
 
-  const queryKey = useMemo(() => ["relevant-news", search], [search]);
+  useEffect(() => localStorage.setItem(sourceStorageKey, JSON.stringify(sources)), [sources]);
+  const queryKey = useMemo(() => ["relevant-news", search, sources.map(source => source.domain).join(",")], [search, sources]);
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchRelevantNews(search),
+    queryFn: () => fetchRelevantNews(search, sources),
     staleTime: 12 * 60 * 1000,
   });
 
@@ -154,6 +167,11 @@ export default function RelevantNewsPage() {
           <Search className="h-4 w-4" aria-hidden="true" /> Search News
         </button>
       </form>
+
+      <section className="glass-card rounded-2xl border border-white/10 p-4" aria-labelledby="monitored-sources-title">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="monitored-sources-title" className="text-sm font-semibold text-white">Monitored sources</h2><p className="mt-1 text-xs text-white/40">Relevant News searches these publications and preserves the original source link.</p></div><div className="flex min-w-[280px] flex-1 justify-end gap-2 sm:max-w-xl"><input aria-label="Add a source URL" value={sourceDraft} onChange={event => setSourceDraft(event.target.value)} placeholder="Add a publication URL…" className="min-h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white"/><button type="button" onClick={() => { try { const url = new URL(sourceDraft); const domain = url.hostname.replace(/^www\./, ""); if (!domain.includes(".")) return; if (!sources.some(source => source.domain === domain)) setSources([...sources, { name: domain, url: url.href, domain }]); setSourceDraft(""); } catch {} }} className="inline-flex min-h-10 items-center rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs text-primary">Add</button></div></div>
+        <div className="mt-3 flex flex-wrap gap-2">{sources.map(source => <span key={source.domain} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70"><a href={source.url} target="_blank" rel="noreferrer" className="hover:text-primary">{source.name}</a><button type="button" aria-label={`Remove ${source.name}`} onClick={() => setSources(sources.filter(item => item.domain !== source.domain))} className="text-white/35 hover:text-red-200">×</button></span>)}</div>
+      </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm text-white/45" aria-live="polite" aria-atomic="true">
