@@ -23,6 +23,9 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
+  provider?: "gnews" | "apitube";
+  companies?: string[];
+  signals?: string[];
 };
 
 type NewsResponse = {
@@ -31,7 +34,10 @@ type NewsResponse = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews";
+  source: "gnews" | "apitube" | "mixed";
+  sources?: Array<"gnews" | "apitube">;
+  warnings?: string[];
+  deduplicated?: number;
   fetchedAt: string;
   cached?: boolean;
   error?: string;
@@ -58,7 +64,7 @@ async function fetchRelevantNews(search: string): Promise<NewsResponse> {
   const payload = (await response.json().catch(() => ({}))) as NewsResponse;
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to load federal contractor news");
+    throw new Error(payload.error || "Unable to load contractor news");
   }
 
   return payload;
@@ -111,6 +117,8 @@ export default function RelevantNewsPage() {
   const articles = query.data?.articles ?? [];
   const upstreamArticles = query.data?.upstreamArticles ?? 0;
   const filteredOut = query.data?.filteredOut ?? 0;
+  const providers = (query.data?.sources ?? (query.data?.source === "mixed" ? ["gnews", "apitube"] : query.data?.source ? [query.data.source] : []))
+    .map(provider => provider === "apitube" ? "APITube" : "GNews").join(" + ") || "news providers";
   const statusText = query.isFetching
     ? "Refreshing relevant news"
     : `${articles.length.toLocaleString("en-US")} articles shown`;
@@ -118,10 +126,10 @@ export default function RelevantNewsPage() {
   return (
     <div className="ui-page-shell space-y-7" aria-busy={query.isFetching}>
       <section aria-labelledby="relevant-news-title">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Federal Contractor Intelligence</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Defense & Aerospace Contractor Intelligence</p>
         <h1 id="relevant-news-title" className="text-4xl font-bold tracking-tight text-white md:text-5xl">Relevant News</h1>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-white/50 md:text-lg">
-          Current reporting focused on federal contracts, contract awards, acquisitions, procurements, solicitations, and upcoming recompetes.
+          Federal contract awards and recompetes, defense and aerospace contractor activity, acquisitions, workforce expansion, and budget and spending news.
         </p>
       </section>
 
@@ -153,8 +161,8 @@ export default function RelevantNewsPage() {
           <span className="sr-only">{statusText}</span>
           <span aria-hidden="true">
             {query.isFetching
-              ? "Refreshing GNews…"
-              : `${articles.length.toLocaleString("en-US")} shown · ${upstreamArticles.toLocaleString("en-US")} returned by GNews`}
+              ? "Refreshing contractor news…"
+              : `${articles.length.toLocaleString("en-US")} shown · ${upstreamArticles.toLocaleString("en-US")} returned by ${providers}`}
           </span>
           {filteredOut > 0 && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">{filteredOut} filtered</span>}
           {query.data?.cached && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">cached</span>}
@@ -168,6 +176,13 @@ export default function RelevantNewsPage() {
           <RefreshCcw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} aria-hidden="true" /> Refresh
         </button>
       </div>
+
+      {Boolean(query.data?.warnings?.length) && (
+        <div role="status" className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100/80">
+          <p className="font-semibold">Some news coverage is temporarily unavailable. Available results are shown below.</p>
+          {query.data?.warnings?.map(warning => <p key={warning} className="mt-1">{warning}</p>)}
+        </div>
+      )}
 
       {query.isError && (
         <div role="alert" className="flex items-start gap-3 rounded-2xl border border-red-300/20 bg-red-300/10 p-4 text-sm text-red-100/80">
@@ -183,10 +198,10 @@ export default function RelevantNewsPage() {
         <div className="glass-card rounded-2xl border border-white/10 p-6 text-center text-white/45 sm:p-10">
           <p className="font-medium text-white/70">
             {upstreamArticles > 0
-              ? `GNews returned ${upstreamArticles} article${upstreamArticles === 1 ? "" : "s"}, but none met the federal-contract relevance threshold.`
-              : "GNews returned no articles for this search."}
+              ? `${providers} returned ${upstreamArticles} article${upstreamArticles === 1 ? "" : "s"}, but none met the contractor-news relevance threshold.`
+              : `${providers} returned no articles for this search.`}
           </p>
-          <p className="mt-2 text-sm">The feed uses a broader federal-contract query and does not restrict results by publisher country.</p>
+          <p className="mt-2 text-sm">Coverage includes contractor business developments and defense and aerospace spending reports, with links to the original publishers.</p>
           {search && (
             <button type="button" onClick={clearSearch} className="mt-4 min-h-11 rounded-full border border-primary/25 bg-primary/10 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/20">
               Clear additional search term
@@ -221,11 +236,16 @@ export default function RelevantNewsPage() {
               )}
               <div className="min-w-0 p-5">
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.15em] text-white/35">
-                  <span className="ui-break-anywhere">{article.source.name}</span>
+                  <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "apitube" ? "APITube" : "GNews"}`}</span>
                   <time dateTime={article.publishedAt ?? undefined}>{displayDate(article.publishedAt)}</time>
                 </div>
                 <h2 className="ui-break-anywhere mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h2>
                 {article.description && <p className="ui-break-anywhere mt-3 line-clamp-3 text-sm leading-relaxed text-white/45">{article.description}</p>}
+                {Boolean(article.signals?.length || article.companies?.length) && (
+                  <p className="ui-break-anywhere mt-3 text-xs text-primary/70">
+                    {[...(article.companies ?? []), ...(article.signals ?? [])].join(" · ")}
+                  </p>
+                )}
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                   <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-primary/80">relevance {article.relevanceScore}</span>
                   <a

@@ -146,7 +146,7 @@ GovCon provides recompete intelligence, with USAspending and SAM/award evidence 
 
 ### Relevant News
 
-GNews is the current Hub 1 news source. Failure or absence of its key should be handled as a provider/configuration state, not confused with Opportunity Intelligence.
+Relevant News combines GNews federal procurement coverage with APITube defense and aerospace contractor activity and budget/spending reporting. APITube uses server-side `APITUBE_NEWS_API_KEY`, `APITUBE_NEWS_API_KEY_2`, and `APITUBE_NEWS_API_KEY_3` (any nonempty key enables the provider). See `docs/apitube-news.md` for configuration and coverage. Failure of one provider preserves results from the other. News remains on this tab and is not ingested as an open solicitation.
 
 ## Runtime / Render deployment contract
 
@@ -169,6 +169,8 @@ Core configuration names that must remain aligned across code, provider definiti
 - `PARALLEL_API_KEY`
 - `GOVCON_API_KEY`
 - `GNEWS_API_KEY`
+- `APITUBE_NEWS_API_KEY_2`
+- `APITUBE_NEWS_API_KEY_3`
 - `MINIMAX_API_KEY`
 - `SOCRATA_APP_TOKEN` **or** the canonical `SOCRATA_API_KEY` + `SOCRATA_API_SECRET` pair
 

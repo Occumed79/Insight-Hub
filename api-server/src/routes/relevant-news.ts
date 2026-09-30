@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
+import { apitubeKeys, contractorNewsSignals, fetchApitubeNews, httpUrl } from "../lib/news/apitube";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,9 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
+  provider: "gnews" | "apitube";
+  companies: string[];
+  signals: string[];
 };
 
 type NewsPayload = {
@@ -40,7 +44,10 @@ type NewsPayload = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews";
+  source: "gnews" | "apitube" | "mixed";
+  sources: Array<"gnews" | "apitube">;
+  warnings: string[];
+  deduplicated: number;
   fetchedAt: string;
 };
 
@@ -134,6 +141,8 @@ export function relevantNewsScore(article: JsonRecord): number {
     .join(" ")
     .toLowerCase();
 
+  if (/\bworkers?[’']?\s+comp(?:ensation)?\b/i.test(haystack)) return 0;
+
   // Generic corporate stories about a "contract award" are not federal
   // contractor intelligence. Require both explicit U.S.-federal context and a
   // procurement/contract signal from the article text itself. Publisher names
@@ -189,11 +198,12 @@ export function relevantNewsScore(article: JsonRecord): number {
   );
 }
 
-function normalizeArticle(rawValue: unknown): NewsArticle | null {
+export function normalizeArticle(rawValue: unknown): NewsArticle | null {
   const raw = asRecord(rawValue);
   const source = asRecord(raw.source);
   const title = asString(raw.title);
-  const url = asString(raw.url);
+  const url = httpUrl(raw.url);
+  const contractorSignals = contractorNewsSignals(raw);
   if (!title || !url) return null;
 
   return {
@@ -202,14 +212,17 @@ function normalizeArticle(rawValue: unknown): NewsArticle | null {
     description: asString(raw.description),
     content: asString(raw.content),
     url,
-    image: asString(raw.image),
+    image: httpUrl(raw.image),
     publishedAt: asString(raw.publishedAt),
     source: {
       name: asString(source.name) ?? "Unknown source",
-      url: asString(source.url),
+      url: httpUrl(source.url),
       country: asString(source.country),
     },
-    relevanceScore: relevantNewsScore(raw),
+    relevanceScore: Math.max(relevantNewsScore(raw), contractorSignals.score),
+    provider: raw.provider === "apitube" ? "apitube" : "gnews",
+    companies: contractorSignals.companies,
+    signals: contractorSignals.signals,
   };
 }
 
@@ -247,10 +260,9 @@ async function requestGNews(query: string, max: number, page: number, apiKey: st
     });
 
     if (!response.ok) {
-      const details = (await response.text().catch(() => "")).slice(0, 300);
       const statusCode = response.status === 429 ? 429 : response.status === 401 ? 401 : 502;
       throw Object.assign(
-        new Error(`GNews API returned ${response.status}${details ? `: ${details}` : ""}`),
+        new Error(`GNews API returned HTTP ${response.status}`),
         { statusCode },
       );
     }
@@ -261,42 +273,75 @@ async function requestGNews(query: string, max: number, page: number, apiKey: st
   }
 }
 
-async function fetchRelevantNews(query: string, max: number, page: number, allowFallback: boolean): Promise<NewsPayload> {
+async function fetchGNewsFeed(query: string, max: number, page: number, allowFallback: boolean): Promise<unknown[]> {
   const apiKey = process.env.GNEWS_API_KEY?.trim();
-  if (!apiKey) {
-    throw Object.assign(new Error("GNEWS_API_KEY is not configured"), { statusCode: 503 });
+  if (!apiKey) throw Object.assign(new Error("GNEWS_API_KEY is not configured"), { statusCode: 503 });
+  const limit = Math.min(max, boundedInteger(process.env.GNEWS_MAX_ARTICLES, 10, 1, 100));
+  let upstream = await requestGNews(query, limit, page, apiKey);
+  if (!Array.isArray(upstream.articles)) throw new Error("GNews returned an invalid news response");
+  if (allowFallback && upstream.articles.length === 0) {
+    upstream = await requestGNews(FALLBACK_QUERY, limit, page, apiKey);
+    if (!Array.isArray(upstream.articles)) throw new Error("GNews returned an invalid news response");
   }
+  return upstream.articles;
+}
 
-  let effectiveQuery = query;
-  let upstream = await requestGNews(effectiveQuery, max, page, apiKey);
-  let rawArticles = Array.isArray(upstream.articles) ? upstream.articles : [];
-
-  if (allowFallback && rawArticles.length === 0) {
-    effectiveQuery = FALLBACK_QUERY;
-    upstream = await requestGNews(effectiveQuery, max, page, apiKey);
-    rawArticles = Array.isArray(upstream.articles) ? upstream.articles : [];
+function canonicalArticleUrl(value: string): string {
+  const url = new URL(value);
+  url.hash = "";
+  for (const key of [...url.searchParams.keys()]) {
+    if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
   }
+  url.searchParams.sort();
+  return url.href.replace(/\/$/, "");
+}
 
-  const normalized = rawArticles
-    .map(normalizeArticle)
-    .filter((article): article is NewsArticle => article !== null)
-    .filter((article) => article.relevanceScore >= 6)
-    .sort((left, right) => {
-      const dateDifference = Date.parse(right.publishedAt ?? "") - Date.parse(left.publishedAt ?? "");
-      if (Number.isFinite(dateDifference) && dateDifference !== 0) return dateDifference;
-      return right.relevanceScore - left.relevanceScore;
-    });
+export async function fetchRelevantNews(query: string, max: number, page: number, search: string | null): Promise<NewsPayload> {
+  const jobs: Array<{ provider: "gnews" | "apitube"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
+  if (process.env.GNEWS_API_KEY?.trim()) jobs.push({
+    provider: "gnews",
+    run: async () => ({ articles: await fetchGNewsFeed(query, max, page, !search && page === 1), warnings: [] }),
+  });
+  if (apitubeKeys().length) jobs.push({ provider: "apitube", run: () => fetchApitubeNews(search, max, page) });
+  if (!jobs.length) throw Object.assign(new Error("Configure an APITube news key or GNEWS_API_KEY to load relevant news"), { statusCode: 503 });
 
+  const results = await Promise.allSettled(jobs.map(job => job.run()));
+  const sources: NewsPayload["sources"] = [];
+  const warnings: string[] = [];
+  const rawArticles: unknown[] = [];
+  let failureStatus = 502;
+  for (const [index, result] of results.entries()) {
+    const provider = jobs[index]!.provider;
+    if (result.status === "fulfilled") {
+      sources.push(provider);
+      rawArticles.push(...result.value.articles);
+      warnings.push(...result.value.warnings);
+    } else {
+      failureStatus = Number(result.reason?.statusCode) || 502;
+      // Sanitized provider errors only; never forward arbitrary fetch errors.
+      warnings.push(`${provider === "gnews" ? "GNews" : "APITube"} is temporarily unavailable (HTTP ${failureStatus}).`);
+      logger.warn({ provider, statusCode: failureStatus }, "Relevant news provider unavailable");
+    }
+  }
+  if (!sources.length) throw Object.assign(new Error(warnings.join(" ")), { statusCode: failureStatus });
+  const relevant = rawArticles.map(normalizeArticle)
+    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6);
+  const unique = new Map<string, NewsArticle>();
+  for (const article of relevant) {
+    const key = canonicalArticleUrl(article.url);
+    const existing = unique.get(key);
+    if (!existing || article.relevanceScore > existing.relevanceScore) unique.set(key, article);
+  }
+  const articles = [...unique.values()].sort((left, right) => {
+    const dateDifference = (Date.parse(right.publishedAt ?? "") || 0) - (Date.parse(left.publishedAt ?? "") || 0);
+    return dateDifference || right.relevanceScore - left.relevanceScore;
+  });
   return {
-    articles: normalized,
-    totalArticles:
-      typeof upstream.totalArticles === "number" && Number.isFinite(upstream.totalArticles)
-        ? upstream.totalArticles
-        : rawArticles.length,
+    articles: articles.slice(0, max), totalArticles: articles.length,
     upstreamArticles: rawArticles.length,
-    filteredOut: Math.max(0, rawArticles.length - normalized.length),
-    query: effectiveQuery,
-    source: "gnews",
+    filteredOut: rawArticles.length - relevant.length,
+    deduplicated: relevant.length - articles.length,
+    query, source: sources.length > 1 ? "mixed" : sources[0]!, sources, warnings,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -304,11 +349,9 @@ async function fetchRelevantNews(query: string, max: number, page: number, allow
 router.get("/relevant-news", async (req, res) => {
   const userSearch = sanitizedSearch(req.query.search);
   const query = userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY;
-  const planSafeMax = boundedInteger(process.env.GNEWS_MAX_ARTICLES, 10, 1, 100);
-  const requestedMax = boundedInteger(req.query.max, planSafeMax, 1, 100);
-  const max = Math.min(requestedMax, planSafeMax);
+  const max = boundedInteger(req.query.max, 40, 1, 100);
   const page = boundedInteger(req.query.page, 1, 1, 100);
-  const cacheKey = `${query}|${max}|${page}`;
+  const cacheKey = `${query}|${max}|${page}|${Boolean(process.env.GNEWS_API_KEY?.trim())}|${apitubeKeys().length}|${process.env.GNEWS_MAX_ARTICLES}|${process.env.APITUBE_NEWS_MAX_ARTICLES}`;
 
   pruneCache();
   const cached = responseCache.get(cacheKey);
@@ -319,17 +362,17 @@ router.get("/relevant-news", async (req, res) => {
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = fetchRelevantNews(query, max, page, !userSearch && page === 1);
+      request = fetchRelevantNews(query, max, page, userSearch);
       inFlight.set(cacheKey, request);
     }
 
     const payload = await request;
-    responseCache.set(cacheKey, { payload, expiresAt: Date.now() + CACHE_TTL_MS });
+    responseCache.set(cacheKey, { payload, expiresAt: Date.now() + (payload.warnings.length ? 60_000 : CACHE_TTL_MS) });
     return res.json({ ...payload, cached: false });
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number }).statusCode) || 502;
     const message = error instanceof Error ? error.message : "Failed to retrieve relevant news";
-    logger.error({ err: error, query }, "GNews federal-contractor request failed");
+    logger.error({ statusCode, query }, "Relevant news request failed");
     return res.status(statusCode).json({ error: message });
   } finally {
     inFlight.delete(cacheKey);

@@ -55,6 +55,10 @@ services:
         sync: false
       - key: GNEWS_API_KEY
         sync: false
+      - key: APITUBE_NEWS_API_KEY_2
+        sync: false
+      - key: APITUBE_NEWS_API_KEY_3
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_KEY_2

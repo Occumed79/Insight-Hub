@@ -88,6 +88,9 @@ export const env = {
   // Hub 1 surface APIs
   GOVCON_API_KEY: process.env.GOVCON_API_KEY,
   GNEWS_API_KEY: process.env.GNEWS_API_KEY,
+  APITUBE_NEWS_API_KEY: process.env.APITUBE_NEWS_API_KEY,
+  APITUBE_NEWS_API_KEY_2: process.env.APITUBE_NEWS_API_KEY_2,
+  APITUBE_NEWS_API_KEY_3: process.env.APITUBE_NEWS_API_KEY_3,
 
   // Procurement source feature flags
   STATE_PROCUREMENT_SOURCES_ENABLED:
