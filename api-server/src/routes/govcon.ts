@@ -12,6 +12,10 @@ import {
   type GovConRelevance,
 } from "../lib/intelligence/govconIntelligence";
 import { verifyRecompete } from "../lib/intelligence/recompeteVerification";
+import {
+  fetchTangoForecasts,
+  fetchTangoForecastsForRecompete,
+} from "../lib/intelligence/tangoForecastProvider";
 import { indexVectorDocuments } from "../lib/search/vectorIndex";
 import {
   providerBudgetAvailable,
@@ -310,83 +314,101 @@ async function fetchForecasts(
   focus?: string,
 ): Promise<ForecastPayload> {
   const budgetName = `govcon:${mode}`;
-  if (!(await providerBudgetAvailable(budgetName))) {
+
+  // Resolve filters for Tango parallel fetch
+  const tangoFilters = {
+    agency: searchParams.get("agency") ?? undefined,
+    naics: searchParams.get("naics") ?? undefined,
+  };
+
+  // Fetch GovCon and Tango in parallel; GovCon failure does not block Tango
+  const [govconResult, tangoResult] = await Promise.all([
+    (async (): Promise<{ data: unknown[]; pagination: Record<string, unknown>; error: string | null }> => {
+      if (!(await providerBudgetAvailable(budgetName))) {
+        return { data: [], pagination: {}, error: `GovCon ${mode} requests are temporarily cooling down after an upstream quota or reliability failure.` };
+      }
+      const apiKey = process.env.GOVCON_API_KEY?.trim();
+      if (!apiKey) {
+        return { data: [], pagination: {}, error: "GOVCON_API_KEY is not configured" };
+      }
+      const upstreamUrl = new URL(`${GOVCON_BASE_URL}/forecasts/search`);
+      searchParams.forEach((value, key) => upstreamUrl.searchParams.set(key, value));
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(upstreamUrl, {
+          headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const details = (await response.text().catch(() => "")).slice(0, 300);
+          const msg = `GovCon API returned ${response.status}${details ? `: ${details}` : ""}`;
+          await recordProviderFailure(budgetName, new Error(msg));
+          return { data: [], pagination: {}, error: msg };
+        }
+        const upstream = asRecord(await response.json());
+        await recordProviderSuccess(budgetName, Array.isArray(upstream.data) ? (upstream.data as unknown[]).length : 0);
+        return {
+          data: Array.isArray(upstream.data) ? upstream.data as unknown[] : [],
+          pagination: asRecord(upstream.pagination),
+          error: null,
+        };
+      } catch (err) {
+        await recordProviderFailure(budgetName, err);
+        return { data: [], pagination: {}, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        clearTimeout(timer);
+      }
+    })(),
+    mode === "recompete"
+      ? fetchTangoForecastsForRecompete(focus, tangoFilters)
+      : fetchTangoForecasts(focus, tangoFilters),
+  ]);
+
+  // If both sources failed, throw so the caller gets a proper error
+  if (govconResult.error && tangoResult.error && govconResult.data.length === 0 && tangoResult.records.length === 0) {
     throw Object.assign(
-      new Error(`GovCon ${mode} requests are temporarily cooling down after an upstream quota or reliability failure.`),
-      { statusCode: 429 },
+      new Error(govconResult.error),
+      { statusCode: govconResult.error.includes("cooling down") ? 429 : govconResult.error.includes("not configured") ? 503 : 502 },
     );
   }
 
-  const apiKey = process.env.GOVCON_API_KEY?.trim();
-  if (!apiKey) {
-    throw Object.assign(new Error("GOVCON_API_KEY is not configured"), { statusCode: 503 });
-  }
+  const data = govconResult.data;
+  const pagination = govconResult.pagination;
+  const normalized = data.map(normalizeForecast);
+  const semantic = normalized.filter((record) => isGovConSemanticCandidate(record, mode));
 
-  const upstreamUrl = new URL(`${GOVCON_BASE_URL}/forecasts/search`);
-  searchParams.forEach((value, key) => upstreamUrl.searchParams.set(key, value));
+  // Merge tango records into the candidate pool before suppression/ranking
+  const allCandidates = [...semantic, ...tangoResult.records];
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const suppressions = await loadGovConSuppressions(mode).catch((error) => {
+    logger.warn({ err: error, mode }, "GovCon feedback could not be loaded; continuing without persistent suppression");
+    return { recordIds: new Set<string>(), fingerprints: new Set<string>() };
+  });
+  const unsuppressed = allCandidates.filter((record) => !isGovConRecordSuppressed(suppressions, record));
+  const ranked = await rankGovConRecords(unsuppressed, mode, focus);
+  const lowRelevanceCount = ranked.filter((record) => record.relevance.score < RELEVANCE_THRESHOLD).length;
+  const records = fitOnly
+    ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
+    : ranked;
 
-  try {
-    const response = await fetch(upstreamUrl, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const details = (await response.text().catch(() => "")).slice(0, 300);
-      const statusCode = response.status === 429 ? 429 : response.status === 401 || response.status === 403 ? 503 : 502;
-      throw Object.assign(
-        new Error(`GovCon API returned ${response.status}${details ? `: ${details}` : ""}`),
-        { statusCode },
-      );
-    }
-
-    const upstream = asRecord(await response.json());
-    const data = Array.isArray(upstream.data) ? upstream.data : [];
-    const pagination = asRecord(upstream.pagination);
-    const normalized = data.map(normalizeForecast);
-    const semantic = normalized.filter((record) => isGovConSemanticCandidate(record, mode));
-    const suppressions = await loadGovConSuppressions(mode).catch((error) => {
-      logger.warn({ err: error, mode }, "GovCon feedback could not be loaded; continuing without persistent suppression");
-      return { recordIds: new Set<string>(), fingerprints: new Set<string>() };
-    });
-    const unsuppressed = semantic.filter((record) => !isGovConRecordSuppressed(suppressions, record));
-    const ranked = await rankGovConRecords(unsuppressed, mode, focus);
-    const lowRelevanceCount = ranked.filter((record) => record.relevance.score < RELEVANCE_THRESHOLD).length;
-    const records = fitOnly
-      ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
-      : ranked;
-
-    await recordProviderSuccess(budgetName, records.length);
-
-    return {
-      records,
-      pagination: {
-        limit: asNumber(pagination.limit) ?? boundedInteger(searchParams.get("limit"), 50, 1, 100),
-        offset: asNumber(pagination.offset) ?? boundedInteger(searchParams.get("offset"), 0, 0, 100_000),
-        total: asNumber(pagination.total) ?? data.length,
-        hasNext: asBoolean(pagination.has_next),
-      },
-      sourcePageRecords: normalized.length,
-      semanticRejectedCount: normalized.length - semantic.length,
-      suppressedCount: semantic.length - unsuppressed.length,
-      lowRelevanceCount,
-      filtersApplied: asRecord(upstream.filters_applied),
-      semanticProvider: records.some((record) => record.relevance.provider === "gemini") ? "gemini" : "deterministic",
-      source: "govconapi",
-      fetchedAt: new Date().toISOString(),
-    };
-  } catch (error) {
-    await recordProviderFailure(budgetName, error);
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  return {
+    records,
+    pagination: {
+      limit: asNumber(pagination.limit) ?? boundedInteger(searchParams.get("limit"), 50, 1, 100),
+      offset: asNumber(pagination.offset) ?? boundedInteger(searchParams.get("offset"), 0, 0, 100_000),
+      total: asNumber(pagination.total) ?? (data.length + tangoResult.records.length),
+      hasNext: asBoolean(pagination.has_next),
+    },
+    sourcePageRecords: normalized.length + tangoResult.rawCount,
+    semanticRejectedCount: normalized.length - semantic.length,
+    suppressedCount: allCandidates.length - unsuppressed.length,
+    lowRelevanceCount,
+    filtersApplied: asRecord(govconResult.pagination),
+    semanticProvider: records.some((record) => record.relevance.provider === "gemini") ? "gemini" : "deterministic",
+    source: "govconapi",
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 router.get("/govcon/forecasts", async (req, res) => {

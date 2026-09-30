@@ -6,6 +6,7 @@ import {
 } from "../lib/intelligence/govconFeedback";
 import { rankGovConRecords } from "../lib/intelligence/govconIntelligence";
 import { fetchAgencyForecastLeads } from "../lib/intelligence/agencyForecastDiscovery";
+import { fetchTangoForecasts } from "../lib/intelligence/tangoForecastProvider";
 import {
   providerBudgetAvailable,
   recordProviderFailure,
@@ -31,9 +32,10 @@ type ForecastDataset = {
   lowRelevanceCount: number;
   filtersApplied: Record<string, string | undefined>;
   semanticProvider: "gemini" | "deterministic";
-  source: "govcon+official-fco";
+  source: "govcon+official-fco+tango";
   sourceBreakdown: {
     govcon: number;
+    tango: number;
     officialAgencyForecasts: number;
     agencyDiscoveryProviders: string[];
     recoveredErrors: string[];
@@ -438,22 +440,27 @@ async function buildForecastDataset(
   focus: string | undefined,
   filters: Record<string, string | undefined>,
 ): Promise<ForecastDataset> {
-  const [govcon, agency] = await Promise.all([
+  const [govcon, tango, agency] = await Promise.all([
     fetchGovConForecastPool(focus, filters),
+    fetchTangoForecasts(focus, {
+      agency: filters.agency,
+      naics: filters.naics,
+      state: filters.state,
+    }),
     fetchAgencyForecastLeads(focus),
   ]);
   const agencyFiltered = agency.records.filter((record) =>
     matchesFilters(record, filters),
   );
-  const beforeDedupe = [...govcon.records, ...agencyFiltered];
+  const beforeDedupe = [...govcon.records, ...tango.records, ...agencyFiltered];
   const combined = dedupeForecasts(beforeDedupe);
 
-  if (combined.length === 0 && govcon.error) {
+  if (combined.length === 0 && govcon.error && tango.error) {
     throw Object.assign(
       new Error("No forecast source could return usable records."),
       {
         statusCode: 502,
-        diagnostics: [govcon.error, ...agency.errors].slice(0, 6),
+        diagnostics: [govcon.error, tango.error, ...agency.errors].slice(0, 6),
       },
     );
   }
@@ -488,12 +495,13 @@ async function buildForecastDataset(
     )
       ? "gemini"
       : "deterministic",
-    source: "govcon+official-fco",
+    source: "govcon+official-fco+tango",
     sourceBreakdown: {
       govcon: govcon.records.length,
+      tango: tango.records.length,
       officialAgencyForecasts: agencyFiltered.length,
       agencyDiscoveryProviders: agency.providers,
-      recoveredErrors: [govcon.error, ...agency.errors]
+      recoveredErrors: [govcon.error, tango.error, ...agency.errors]
         .filter((value): value is string => Boolean(value)),
     },
     fetchedAt: new Date().toISOString(),

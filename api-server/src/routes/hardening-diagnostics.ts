@@ -33,6 +33,7 @@ const BASE_BUDGET_NAMES = [
   "microlink",
   "govcon:forecast",
   "govcon:recompete",
+  "tango:forecast",
   "fco:forecast",
 ] as const;
 
