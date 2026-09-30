@@ -17,6 +17,7 @@ const OpportunitiesDashboard = lazy(() => import("@/pages/portal/opportunities")
 const ForecastsPage = lazy(() => import("@/pages/portal/forecasts"));
 const RecompeteWatchPage = lazy(() => import("@/pages/portal/recompete-watch"));
 const RelevantNewsPage = lazy(() => import("@/pages/portal/relevant-news"));
+const CompanyWatchPage = lazy(() => import("@/pages/portal/company-watch"));
 const SettingsPage = lazy(() => import("@/pages/portal/settings"));
 
 installStableFetch();
@@ -63,6 +64,7 @@ function PortalRouter() {
           <Route path="/portal/forecasts" component={ForecastsPage} />
           <Route path="/portal/recompete-watch" component={RecompeteWatchPage} />
           <Route path="/portal/relevant-news" component={RelevantNewsPage} />
+          <Route path="/portal/company-watch" component={CompanyWatchPage} />
           <Route path="/portal/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>

@@ -14,6 +14,7 @@ const PORTAL_NAV_ITEMS = [
   { href: "/portal/forecasts", label: "Forecasts", icon: CalendarRange },
   { href: "/portal/recompete-watch", label: "Recompete Watch", icon: RefreshCcw },
   { href: "/portal/relevant-news", label: "Relevant News", icon: Newspaper },
+  { href: "/portal/company-watch", label: "Company Watch", icon: Search },
 ] as const;
 
 export function isPortalNavActive(pathname: string, href: string): boolean {

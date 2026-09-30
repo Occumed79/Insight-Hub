@@ -91,6 +91,7 @@ export const env = {
   APITUBE_NEWS_API_KEY: process.env.APITUBE_NEWS_API_KEY,
   APITUBE_NEWS_API_KEY_2: process.env.APITUBE_NEWS_API_KEY_2,
   APITUBE_NEWS_API_KEY_3: process.env.APITUBE_NEWS_API_KEY_3,
+  TINYFISH_API_KEY: process.env.TINYFISH_API_KEY,
 
   // Procurement source feature flags
   STATE_PROCUREMENT_SOURCES_ENABLED:

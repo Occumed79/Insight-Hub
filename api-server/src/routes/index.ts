@@ -14,6 +14,7 @@ import searchRouter from "./search";
 import govconForecastEnsembleRouter from "./govcon-forecast-ensemble";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
+import companyWatchRouter from "./company-watch";
 import transferredIntelligenceBoundaryRouter from "./transferred-intelligence-boundary";
 import rfpSourcesRuntimeRouter from "./rfp-sources-runtime";
 import rfpProviderBoundaryRouter from "../middleware/rfp-provider-boundary";
@@ -90,6 +91,7 @@ router.use(
 router.use(govconForecastEnsembleRouter);
 router.use(govconRouter);
 router.use(relevantNewsRouter);
+router.use(companyWatchRouter);
 router.use(forecastPolicyBoundaryRouter);
 router.use(searchRouter);
 
