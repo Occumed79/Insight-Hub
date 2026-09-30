@@ -282,7 +282,7 @@ export class FreeTierCredentialPool {
         .filter((value) => value > now)
         .sort((a, b) => a - b)[0];
       throw new Error(
-        `${this.id} credential pool cooling down${nextReset ? ` until ${new Date(nextReset).toISOString()}` : ""}`,
+        `${this.id} credential pool exhausted: all configured credentials cooling down${nextReset ? ` until ${new Date(nextReset).toISOString()}` : ""}`,
       );
     }
     const candidates = available;
