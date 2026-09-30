@@ -337,9 +337,10 @@ function matchesSource(article: NewsArticle, domains: string[]): boolean {
 
 export async function fetchRelevantNews(query: string, max: number, page: number, search: string | null, sourceDomains: string[] = []): Promise<NewsPayload> {
   const jobs: Array<{ provider: "gnews" | "apitube" | "tinyfish"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
+  // GNews and APITube keep their full news coverage. Only TinyFish targets monitored publications.
   // News uses only the primary key; the secondary key belongs to intelligence.
   const tinyfishKey = await resolveCredential("tinyfishApiKey", "TINYFISH_API_KEY");
-  if (tinyfishKey) jobs.push({ provider: "tinyfish", run: async () => ({ articles: await fetchTinyfishNews(query, max, sourceDomains, tinyfishKey), warnings: [] }) });
+  if (tinyfishKey && sourceDomains.length) jobs.push({ provider: "tinyfish", run: async () => ({ articles: await fetchTinyfishNews(query, max, sourceDomains, tinyfishKey), warnings: [] }) });
   if (process.env.GNEWS_API_KEY?.trim()) jobs.push({
     provider: "gnews",
     run: async () => ({ articles: await fetchGNewsFeed(query, max, page, !search && page === 1), warnings: [] }),
@@ -367,7 +368,7 @@ export async function fetchRelevantNews(query: string, max: number, page: number
   }
   if (!sources.length) throw Object.assign(new Error(warnings.join(" ")), { statusCode: failureStatus });
   const relevant = rawArticles.map(normalizeArticle)
-    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6 && matchesSource(article, sourceDomains));
+    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6 && (article.provider !== "tinyfish" || matchesSource(article, sourceDomains)));
   const unique = new Map<string, NewsArticle>();
   for (const article of relevant) {
     const key = canonicalArticleUrl(article.url);
