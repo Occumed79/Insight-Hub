@@ -116,7 +116,7 @@ type Filters = {
   offset: number;
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 24;
 const DEFAULT_NAICS = "621";
 
 const INDUSTRY_OPTIONS = [
@@ -306,7 +306,7 @@ function ForecastCard({
   };
 
   return (
-    <article className="glass-card flex h-full flex-col rounded-2xl border border-white/10 p-5 transition-colors hover:border-primary/35">
+    <article className="glass-card flex h-full flex-col rounded-2xl border border-white/10 bg-black/35 p-5 shadow-[0_18px_55px_rgba(0,0,0,0.22)] transition-colors hover:border-primary/35 hover:bg-black/45">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-primary/80">
@@ -331,10 +331,12 @@ function ForecastCard({
               href={record.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open source"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+              title="Open original forecast source"
+              aria-label={`View original source for ${record.title}`}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/25"
             >
               <ExternalLink className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">View {record.source?.toUpperCase() || "source"}</span>
             </a>
           )}
           <button
@@ -356,19 +358,19 @@ function ForecastCard({
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2.5 text-sm">
-        <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
+        <div className="rounded-lg border border-white/10 bg-black/30 p-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">NAICS / Set-Aside</p>
           <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{record.naics || "—"}{record.setAside ? ` · ${record.setAside}` : ""}</p>
         </div>
-        <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
+        <div className="rounded-lg border border-white/10 bg-black/30 p-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Estimated Value</p>
           <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{value}</p>
         </div>
-        <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
+        <div className="rounded-lg border border-white/10 bg-black/30 p-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Expected Timing</p>
           <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{timing}</p>
         </div>
-        <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
+        <div className="rounded-lg border border-white/10 bg-black/30 p-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Place of Performance</p>
           <p className="mt-1.5 flex items-center gap-1.5 line-clamp-2 font-medium text-white/90"><MapPin className="h-3 w-3 shrink-0 text-primary/65" />{record.state || "Not listed"}</p>
         </div>
@@ -405,7 +407,7 @@ function ForecastCard({
               </div>
               <p className="mt-2 text-sm leading-relaxed text-white/70">{verification.summary}</p>
               {verification.evidence.slice(0, 2).map((evidence, index) => (
-                <div key={`${evidence.source}:${evidence.awardId ?? index}`} className="mt-2 rounded-lg border border-white/8 bg-black/15 p-3 text-xs leading-relaxed text-white/70">
+                <div key={`${evidence.source}:${evidence.awardId ?? index}`} className="mt-2 rounded-lg border border-white/10 bg-black/30 p-3 text-xs leading-relaxed text-white/70">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-white/85">{evidence.source}</span>
                     <span>{evidence.matchScore}% match</span>
@@ -482,6 +484,26 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
   const records = query.data?.records ?? [];
   const visibleRecords = records.filter((record) => !hiddenIds.has(record.id));
   const hiddenOnPage = records.length - visibleRecords.length;
+  const visualSummary = useMemo(() => {
+    const count = visibleRecords.length;
+    const strong = visibleRecords.filter((record) => record.relevance.classification === "strong").length;
+    const possible = visibleRecords.filter((record) => record.relevance.classification === "possible").length;
+    const sourceLinked = visibleRecords.filter((record) => Boolean(record.sourceUrl)).length;
+    const withTiming = visibleRecords.filter((record) =>
+      Boolean(record.estimatedSolicitationDate || record.estimatedAwardQuarter || record.estimatedAwardFiscalYear),
+    ).length;
+    return {
+      count,
+      strong,
+      possible,
+      sourceLinked,
+      withTiming,
+      strongPct: count ? Math.round((strong / count) * 100) : 0,
+      possiblePct: count ? Math.round((possible / count) * 100) : 0,
+      sourcePct: count ? Math.round((sourceLinked / count) * 100) : 0,
+      timingPct: count ? Math.round((withTiming / count) * 100) : 0,
+    };
+  }, [visibleRecords]);
   const total = query.data?.pagination.total ?? 0;
   const currentStart = total === 0 ? 0 : filters.offset + 1;
   const currentEnd = Math.min(filters.offset + PAGE_SIZE, total);
@@ -557,6 +579,48 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
           </button>
         </div>
       </div>
+
+      {visibleRecords.length > 0 && (
+        <section className="rounded-2xl border border-white/10 bg-black/30 p-4 md:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/75">Current page at a glance</p>
+              <p className="mt-1 text-sm text-white/60">A visual read of fit, timing, and source coverage before you scan individual records.</p>
+            </div>
+            <span className="text-2xl font-bold text-white">{visualSummary.count}</span>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-medium text-white/80">Fit distribution</span>
+                <span className="text-white/55">{visualSummary.strong} strong · {visualSummary.possible} possible</span>
+              </div>
+              <div className="flex h-3 overflow-hidden rounded-full bg-white/5">
+                <div className="bg-emerald-300/70" style={{ width: `${visualSummary.strongPct}%` }} />
+                <div className="bg-amber-300/65" style={{ width: `${visualSummary.possiblePct}%` }} />
+              </div>
+              <div className="mt-2 flex gap-4 text-xs text-white/55">
+                <span>{visualSummary.strongPct}% strong fit</span>
+                <span>{visualSummary.possiblePct}% possible fit</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/10 bg-black/35 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">Source links</p>
+                <p className="mt-1 text-2xl font-bold text-white">{visualSummary.sourcePct}%</p>
+                <p className="mt-1 text-xs text-white/55">{visualSummary.sourceLinked} records link back to the originating source</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/35 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">Timing known</p>
+                <p className="mt-1 text-2xl font-bold text-white">{visualSummary.timingPct}%</p>
+                <p className="mt-1 text-xs text-white/55">{visualSummary.withTiming} records include forecast timing</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-2 text-xs leading-relaxed text-white/60">
         <span>{query.data?.sourcePageRecords ?? records.length} records evaluated on this source page</span>
