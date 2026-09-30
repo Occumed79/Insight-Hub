@@ -45,6 +45,8 @@ services:
         sync: false
       - key: SAM_GOV_API_KEY_2
         sync: false
+      - key: SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN
+        value: "6"
       - key: TANGO_API_KEY
         sync: false
       - key: TANGO_BASE_URL
