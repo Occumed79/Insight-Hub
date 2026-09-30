@@ -40,10 +40,11 @@ export class KeenableProvider implements DataSourceProvider {
     return { name: this.name, configured: true, healthy: true };
   }
 
-  private async headers(): Promise<Record<string, string>> {
-    const apiKey = await this.getApiKey();
+  private headers(apiKey: string | null): Record<string, string> {
     return {
       "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-Keenable-Title": "Insight Hub",
       ...(apiKey ? { "X-API-Key": apiKey } : {}),
     };
   }
@@ -58,9 +59,10 @@ export class KeenableProvider implements DataSourceProvider {
   ): Promise<KeenableSearchResult[]> {
     const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, options.signal);
     try {
-      const response = await fetch(`${KEENABLE_BASE}/search`, {
+      const apiKey = await this.getApiKey();
+      const response = await fetch(`${KEENABLE_BASE}/search${apiKey ? "" : "/public"}`, {
         method: "POST",
-        headers: await this.headers(),
+        headers: this.headers(apiKey),
         body: JSON.stringify({
           query,
           snippet_max_length: 1_500,
@@ -111,10 +113,11 @@ export class KeenableProvider implements DataSourceProvider {
   ): Promise<string | null> {
     const requestSignal = composeAbortSignal(REQUEST_TIMEOUT_MS, signal);
     try {
-      const endpoint = new URL(`${KEENABLE_BASE}/fetch`);
+      const apiKey = await this.getApiKey();
+      const endpoint = new URL(`${KEENABLE_BASE}/fetch${apiKey ? "" : "/public"}`);
       endpoint.searchParams.set("url", url);
       const response = await fetch(endpoint, {
-        headers: await this.headers(),
+        headers: this.headers(apiKey),
         signal: requestSignal.signal,
       });
       const body = await response.text();

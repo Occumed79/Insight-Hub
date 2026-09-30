@@ -3,8 +3,10 @@ import { useMutation } from "@tanstack/react-query";
 import { CircleAlert, Clock3, ExternalLink, Loader2, Plus, Search, X } from "lucide-react";
 
 type Company = { name: string };
-type Article = { id: string; title: string; url: string; snippet: string; publisher: string | null; publishedAt: string | null; provider: string; image?: string | null };
-type SearchResult = { articles: Article[]; updatedAt: string; warnings?: string[] };
+type Article = { id: string; title: string; url: string; snippet: string; publisher: string | null; publishedAt: string | null; provider: string; image?: string | null; companyNames?: string[] };
+type ProviderResult = { name: string; status: string; count: number; error?: string | null };
+type SearchResult = { articles: Article[]; updatedAt: string | null; warnings?: string[]; providers?: ProviderResult[] };
+type CompanyCheck = { updatedAt: string | null; warnings: string[]; providers: ProviderResult[] };
 const SEED=['Leidos','IAP Worldwide Services','MAG Aerospace','Camber Corporation','Trace Systems','KBR','BAE Systems','Weatherford International','Versar','Constellis','C3EL','Fluor Corporation','Clovehitch','V2X','Sierra Nevada Corporation','Valiant Integrated Services','AC Transit','Freeport-McMoRan','California Department of Corrections and Rehabilitation','Alutiiq','ManTech International','GDC','CACI International','IDS International','SOS International','ITC Defense','DataPath','SkyBridge Tactical','Amentum','American International Contractors','Anduril','APVI','ASRC Federal','Astrapi Advisors','Atlas Advisors','Bell Textron','BL Harbert International','CDAS','Dynamic Aviation','Fathom 4','GardaWorld','General Dynamics Information Technology','Group SSI','IAP','International SOS','Jacobs Technology','Leidos','Navmar Applied Science Corporation','Noblis','Olgoonik Solutions','Patriot Group International','Peraton','Platform Aerospace','Prüst Holding','S3 International','Strategic Solutions Unlimited','University of Maryland Global Campus','Vectrus','Versar Global Solutions','Westinghouse Electric Company'];
 const COMPANY_DOMAINS: Record<string,string> = { Leidos:'leidos.com', 'IAP Worldwide Services':'iapws.com', 'MAG Aerospace':'magaero.com', 'Camber Corporation':'camber.com', 'Trace Systems':'tracesystems.com', KBR:'kbr.com', 'BAE Systems':'baesystems.com', 'Weatherford International':'weatherford.com', Versar:'versar.com', Constellis:'constellis.com', C3EL:'c3el.com', 'Fluor Corporation':'fluor.com', Clovehitch:'clovehitch.com', V2X:'v2x.com', 'Sierra Nevada Corporation':'sncorp.com', 'Valiant Integrated Services':'valiantintegrated.com', 'AC Transit':'actransit.org', 'Freeport-McMoRan':'fcx.com', Alutiiq:'alutiiq.com', 'ManTech International':'mantech.com', GDC:'gdc4s.com', 'CACI International':'caci.com', 'IDS International':'idsinternational.com', 'SOS International':'internationalsos.com', 'ITC Defense':'itcdefense.com', 'DataPath':'datapath.com', 'SkyBridge Tactical':'skybridgetactical.com', Amentum:'amentum.com', Anduril:'anduril.com', 'ASRC Federal':'asrcfederal.com', 'Bell Textron':'bellflight.com', 'Dynamic Aviation':'dynamicaviation.com', 'GardaWorld':'garda.com', 'General Dynamics Information Technology':'gdit.com', 'International SOS':'internationalsos.com', 'Jacobs Technology':'jacobs.com', Noblis:'noblis.org', Peraton:'peraton.com', Vectrus:'v2x.com', 'Westinghouse Electric Company':'westinghouse.com' };
 
@@ -62,25 +64,67 @@ export default function CompanyWatchPage() {
     } catch { return ["08:00", "16:00"]; }
   });
   const [auto, setAuto] = useState(true);
+  const [checks, setChecks] = useState<Record<string, CompanyCheck>>({});
+  const [progress, setProgress] = useState<{ completed: number; total: number; company: string } | null>(null);
+  const stopSearch = useRef(false);
+  useEffect(() => () => { stopSearch.current = true; }, []);
   const lastAutomaticRun = useRef("");
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(companies.map(company => company.name))); } catch {} }, [companies]);
   useEffect(() => { try { localStorage.setItem(timesKey, JSON.stringify(times)); } catch {} }, [times]);
 
   const mutation = useMutation({
-    mutationFn: async (): Promise<SearchResult> => {
-      const response = await fetch(`${baseUrl}/api/company-watch/search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companies: companies.map(company => company.name) }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Company news search failed");
-      return payload;
-    },
-    onSuccess: result => {
-      setArticles(result.articles);
-      setUpdated(result.updatedAt);
-      setWarnings(result.warnings ?? []);
+    mutationFn: async (names: string[]): Promise<void> => {
+      stopSearch.current = false;
+      setWarnings([]);
+      let lastStarted = 0;
+      for (let index = 0; index < names.length && !stopSearch.current; index++) {
+        // Space starts to stay below TinyFish's default 30 requests/minute.
+        const delay = 2_100 - (Date.now() - lastStarted);
+        if (delay > 0) await new Promise(resolve => window.setTimeout(resolve, delay));
+        if (stopSearch.current) break;
+        const name = names[index];
+        lastStarted = Date.now();
+        setProgress({ completed: index, total: names.length, company: name });
+        try {
+          const response = await fetch(`${baseUrl}/api/company-watch/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ companies: [name] }),
+            signal: AbortSignal.timeout(40_000),
+          });
+          const result: SearchResult & { error?: string } = await response.json();
+          if (!response.ok) throw new Error(result.error || "Company news search failed");
+          const providerResults = result.providers ?? [];
+          const failed = providerResults.length > 0 && providerResults.every(provider => provider.status === "error");
+          setChecks(previous => ({ ...previous, [name]: {
+            updatedAt: failed ? previous[name]?.updatedAt ?? null : result.updatedAt,
+            warnings: result.warnings ?? [], providers: providerResults,
+          } }));
+          setWarnings(previous => [...new Set([...previous, ...(result.warnings ?? [])])]);
+          if (!failed) {
+            setArticles(previous => {
+              const merged = new Map<string, Article>();
+              for (const article of previous) {
+                const companyNames = (article.companyNames ?? []).filter(company => company !== name);
+                if (companyNames.length) merged.set(article.url, { ...article, companyNames });
+              }
+              for (const article of result.articles) {
+                const companyNames = [...new Set([...(merged.get(article.url)?.companyNames ?? []), name])];
+                merged.set(article.url, { ...article, companyNames });
+              }
+              return [...merged.values()];
+            });
+            if (result.updatedAt) setUpdated(result.updatedAt);
+          }
+        } catch (error) {
+          const message = error instanceof Error && error.name === "TimeoutError"
+            ? "Search timed out. Try this company again." : error instanceof Error ? error.message : "Search failed.";
+          setChecks(previous => ({ ...previous, [name]: { updatedAt: previous[name]?.updatedAt ?? null, warnings: [message], providers: ["tinyfish", "keenable"].map(name => ({ name, status: "error", count: 0, error: message })) } }));
+          setWarnings(previous => [...new Set([...previous, `${name}: ${message}`])]);
+        }
+        setProgress({ completed: index + 1, total: names.length, company: name });
+      }
+      setProgress(null);
     },
   });
   useEffect(() => {
@@ -91,7 +135,7 @@ export default function CompanyWatchPage() {
       const slot = `${now.toDateString()} ${time}`;
       if (times.includes(time) && lastAutomaticRun.current !== slot && !mutation.isPending) {
         lastAutomaticRun.current = slot;
-        mutation.mutate();
+        mutation.mutate(companies.map(company => company.name));
       }
     };
     const interval = window.setInterval(tick, 10_000);
@@ -112,7 +156,7 @@ export default function CompanyWatchPage() {
     const tokens = name.toLowerCase().split(/\s+/).filter(token => !["corporation", "company", "international", "services", "systems", "the", "of"].includes(token));
     return articles.filter(article => {
       const text = `${article.title} ${article.snippet}`.toLowerCase();
-      return text.includes(name.toLowerCase()) || (tokens.length > 0 && tokens.every(token => text.includes(token)));
+      return article.companyNames?.includes(name) || text.includes(name.toLowerCase()) || (tokens.length > 0 && tokens.every(token => text.includes(token)));
     });
   };
 
@@ -130,8 +174,8 @@ export default function CompanyWatchPage() {
             <input aria-label="Add a company" value={add} onChange={event => setAdd(event.target.value)} onKeyDown={event => { if (event.key === "Enter") addCompany(); }} placeholder="Add a company to watch…" className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/20 bg-black/20 px-4 text-base text-white outline-none focus:border-primary" />
             <button type="button" onClick={addCompany} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-4 text-base font-semibold text-[#09163a]"><Plus className="h-5 w-5" />Add</button>
           </div>
-          <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending || !companies.length} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-5 text-base font-semibold text-white hover:bg-primary/25 disabled:opacity-50">
-            {mutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}{mutation.isPending ? "Searching…" : "Search for Updates"}
+          <button type="button" onClick={() => mutation.mutate(companies.map(company => company.name))} disabled={mutation.isPending || !companies.length} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-5 text-base font-semibold text-white hover:bg-primary/25 disabled:opacity-50">
+            {mutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}{mutation.isPending ? "Searching…" : "Search Saved Companies"}
           </button>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/15 pt-4 text-base text-slate-200">
@@ -141,6 +185,18 @@ export default function CompanyWatchPage() {
         </div>
         <p className="mt-2 text-sm text-slate-300">Automatic searches run at these local times while this tab is open.</p>
       </section>
+
+      <div className="flex flex-wrap items-center gap-3 text-base text-slate-200" aria-live="polite">
+        <span className="font-semibold text-white">Search providers:</span>
+        {["tinyfish", "keenable"].map(name => {
+          const results = Object.values(checks).flatMap(check => check.providers).filter(provider => provider.name === name);
+          const count = results.reduce((total, result) => total + result.count, 0);
+          const failures = results.filter(result => result.status === "error").length;
+          return <span key={name} className="rounded-full border border-white/20 bg-white/5 px-3 py-2">{name === "tinyfish" ? "TinyFish" : "Keenable"} · {results.length ? `${count} results${failures ? ` · ${failures} failed` : ""}` : "Ready"}</span>;
+        })}
+        {progress && <span role="status">{progress.completed}/{progress.total} checked · Searching {progress.company}…</span>}
+        {mutation.isPending && <button type="button" onClick={() => { stopSearch.current = true; }} className="min-h-11 rounded-lg border border-white/20 px-3 text-white">Stop after this company</button>}
+      </div>
 
       {mutation.isError && <div role="alert" className="flex gap-3 rounded-2xl border border-red-300/30 bg-red-950/60 p-5 text-base text-red-100"><CircleAlert className="h-5 w-5 shrink-0" /><span>{mutation.error instanceof Error ? mutation.error.message : "Company news search failed."}</span></div>}
       {warnings.length > 0 && <div role="status" className="rounded-2xl border border-amber-300/30 bg-amber-950/60 p-5 text-base text-amber-100">{warnings.map(warning => <p key={warning}>{warning}</p>)}</div>}
@@ -153,6 +209,8 @@ export default function CompanyWatchPage() {
       <section aria-label="Watched companies" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {companies.map(company => {
           const count = matching(company.name).length;
+          const check = checks[company.name];
+          const searching = mutation.isPending && progress?.company === company.name;
           return (
             <article key={company.name} className="glass-card relative min-w-0 overflow-hidden rounded-2xl border border-white/15 transition hover:border-primary/50">
               <button type="button" aria-label={`Remove ${company.name}`} onClick={() => setCompanies(companies.filter(item => item.name !== company.name))} className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow hover:bg-red-50 hover:text-red-700"><X className="h-5 w-5" /></button>
@@ -160,13 +218,18 @@ export default function CompanyWatchPage() {
                 <CompanyImage name={company.name} />
                 <div className="p-5">
                   <h2 className="ui-break-anywhere text-2xl font-semibold leading-snug text-white">{company.name}</h2>
-                  <p className="mt-2 text-base text-slate-200">{updated ? "Updated " + ago(updated) : "Ready to search"}</p>
+                  <p className="mt-2 text-base text-slate-200">{check?.updatedAt ? "Last checked " + ago(check.updatedAt) : "Ready to search"}</p>
                   <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-4 text-base">
-                    <span className="text-slate-200">{count ? `${count} relevant update${count === 1 ? "" : "s"}` : "No updates loaded"}</span>
+                    <span className="text-slate-200">{count ? `${count} relevant update${count === 1 ? "" : "s"}` : check?.warnings.length ? "Search needs retry" : check?.updatedAt ? "No news found in the past 7 days" : "Not searched yet"}</span>
                     <span className="font-semibold text-primary">View updates →</span>
                   </div>
                 </div>
               </button>
+              <div className="px-5 pb-5">
+                <button type="button" aria-label={`Search news for ${company.name}`} onClick={() => mutation.mutate([company.name])} disabled={mutation.isPending} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 text-base font-semibold text-white hover:bg-primary/25 disabled:opacity-50">
+                  {searching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}{searching ? "Searching…" : "Search this company"}
+                </button>
+              </div>
             </article>
           );
         })}
@@ -175,14 +238,16 @@ export default function CompanyWatchPage() {
       {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="company-update-title" onClick={() => setSelected(null)}>
         <div className="max-h-[85dvh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-white/20 bg-[#102447] p-6 shadow-2xl" onClick={event => event.stopPropagation()}>
           <div className="flex items-start justify-between gap-4">
-            <div><h2 id="company-update-title" className="text-3xl font-bold text-white">{selected.name}</h2><p className="mt-2 text-base text-slate-200">{updated ? `Last updated ${ago(updated)}` : "Run Search for Updates to load current coverage."}</p></div>
+            <div><h2 id="company-update-title" className="text-3xl font-bold text-white">{selected.name}</h2><p className="mt-2 text-base text-slate-200">{checks[selected.name]?.updatedAt ? `Last checked ${ago(checks[selected.name].updatedAt)}` : "Search this company to load current coverage."}</p></div>
             <button type="button" aria-label="Close company updates" onClick={() => setSelected(null)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:bg-white/10"><X className="h-5 w-5" /></button>
           </div>
+          <button type="button" onClick={() => mutation.mutate([selected.name])} disabled={mutation.isPending} className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-5 text-base font-semibold text-[#09163a] disabled:opacity-50"><Search className="h-5 w-5" />{mutation.isPending ? "Searching…" : "Search this company"}</button>
+          {checks[selected.name]?.warnings.map(warning => <p key={warning} role="status" className="mt-3 text-base text-amber-100">{warning}</p>)}
           <div className="mt-6 grid gap-5 md:grid-cols-2">
             {matching(selected.name).map(article => <article key={article.id} className="overflow-hidden rounded-2xl border border-white/15 bg-[#152f59]">
               {article.image && <div className="aspect-[16/7] overflow-hidden bg-white/5"><img src={article.image} alt="" loading="lazy" className="h-full w-full object-cover" /></div>}
               <div className="p-5">
-                <p className="text-sm text-slate-300">{article.publisher || article.provider} · {ago(article.publishedAt)}</p>
+                <p className="text-sm text-slate-300">{article.publisher || "Source"} · {article.provider === "tinyfish" ? "TinyFish" : "Keenable"} · {ago(article.publishedAt)}</p>
                 <h3 className="mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h3>
                 {article.snippet && <p className="mt-3 text-base leading-relaxed text-slate-200">{article.snippet}</p>}
                 <a href={article.url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 text-base font-semibold text-primary">Read source <ExternalLink className="h-4 w-4" /></a>
