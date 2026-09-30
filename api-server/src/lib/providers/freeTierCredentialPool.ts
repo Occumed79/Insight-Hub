@@ -110,6 +110,14 @@ function failureOutcome(error: unknown): CredentialSlotOutcome {
   return "error";
 }
 
+function explicitCooldownUntilMs(error: unknown): number | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/SAM_GOV_COOLDOWN_UNTIL=([^\s|]+)/i);
+  if (!match?.[1]) return null;
+  const parsed = Date.parse(match[1]);
+  return Number.isFinite(parsed) && parsed > Date.now() ? parsed : null;
+}
+
 function cooldownMs(error: unknown): number {
   const outcome = failureOutcome(error);
   if (outcome === "auth") return 6 * 60 * 60 * 1_000;
@@ -268,7 +276,16 @@ export class FreeTierCredentialPool {
     const available = ordered.filter(
       ({ slot }) => (cooldowns.get(runtimeKey(this.id, slot)) ?? 0) <= now,
     );
-    const candidates = available.length > 0 ? available : ordered.slice(0, 1);
+    if (available.length === 0) {
+      const nextReset = ordered
+        .map(({ slot }) => cooldowns.get(runtimeKey(this.id, slot)) ?? 0)
+        .filter((value) => value > now)
+        .sort((a, b) => a - b)[0];
+      throw new Error(
+        `${this.id} credential pool exhausted: all configured credentials cooling down${nextReset ? ` until ${new Date(nextReset).toISOString()}` : ""}`,
+      );
+    }
+    const candidates = available;
     const errors: string[] = [];
     for (const candidate of candidates) {
       const state = slotState(this.id, candidate.slot);
@@ -297,10 +314,15 @@ export class FreeTierCredentialPool {
         state.failures += 1;
         state.lastOutcome = failureOutcome(error);
         if (!isCredentialRetryable(error)) throw error;
-        cooldowns.set(
-          runtimeKey(this.id, candidate.slot),
-          Date.now() + cooldownMs(error),
-        );
+        const explicitReset = explicitCooldownUntilMs(error);
+        const cooldownUntil = explicitReset ?? (Date.now() + cooldownMs(error));
+        cooldowns.set(runtimeKey(this.id, candidate.slot), cooldownUntil);
+        if (explicitReset) {
+          state.quotaResetAt = new Date(explicitReset).toISOString();
+          if (state.lastOutcome === "quota" || state.lastOutcome === "rate_limited") {
+            state.quotaRemaining = 0;
+          }
+        }
         errors.push(
           `${candidate.slot}: ${error instanceof Error ? error.message : String(error)}`,
         );

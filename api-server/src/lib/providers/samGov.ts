@@ -23,7 +23,9 @@ const SAM_GOV_BID_NOTICE_TYPES = ["o", "k"] as const;
 const SAM_GOV_MAX_RESULTS_PER_TITLE = 250;
 const SAM_GOV_MAX_RESULTS_PER_CLASSIFICATION = 75;
 const SAM_GOV_AUTONOMOUS_QUERY_COUNT = 2;
-const SAM_GOV_CLASSIFICATION_CONCURRENCY = 4;
+// Keep SAM requests serialized so one quota response updates the credential
+// pool before another classification query can reuse the same exhausted key.
+const SAM_GOV_CLASSIFICATION_CONCURRENCY = 1;
 const SAM_GOV_HYDRATION_LIMIT = 16;
 const SAM_GOV_HYDRATION_CONCURRENCY = 2;
 let autonomousQueryCursor = 0;
@@ -50,6 +52,31 @@ export function formatSamGovApiError(
     return `SAM_API_KEY_NOT_CONFIGURED_OR_INVALID: SAM.gov API error 401. The rejected key was loaded from the ${sourceLabel}. Falling back to official public SAM.gov opportunity pages until a valid API key is configured.`;
   }
   return `SAM.gov API error ${status}: ${snippet}`;
+}
+
+function samGovCooldownUntil(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { nextAccessTime?: unknown };
+    if (typeof parsed.nextAccessTime !== "string") return null;
+    const timestamp = Date.parse(parsed.nextAccessTime);
+    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+  } catch {
+    const match = body.match(/"nextAccessTime"\s*:\s*"([^"]+)"/i);
+    if (!match?.[1]) return null;
+    const timestamp = Date.parse(match[1]);
+    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+  }
+}
+
+function samGovQuotaError(resetTime?: string | null): Error {
+  const reset = resetTime && Number.isFinite(Date.parse(resetTime))
+    ? new Date(Date.parse(resetTime)).toISOString()
+    : null;
+  return new Error(
+    reset
+      ? `SAM.gov API error 429: quota/throttle reached. SAM_GOV_COOLDOWN_UNTIL=${reset} API access resets at ${reset}.`
+      : "SAM.gov API error 429: quota/throttle reached.",
+  );
 }
 
 export function isOfficialSamOpportunityUrl(value?: string): boolean {
@@ -101,6 +128,12 @@ export class SamGovProvider implements DataSourceProvider {
     samGovCredentials.recordRateLimitHeaders(credentialSlot, response.headers);
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      if (
+        response.status === 429 ||
+        /"code"\s*:\s*"900804"|message throttled out|exceeded your quota/i.test(text)
+      ) {
+        throw samGovQuotaError(samGovCooldownUntil(text));
+      }
       throw new Error(
         formatSamGovApiError(response.status, text, {
           source: "environment",
@@ -120,8 +153,7 @@ export class SamGovProvider implements DataSourceProvider {
       json.message?.toLowerCase().includes("throttled") ||
       json.message?.toLowerCase().includes("quota")
     ) {
-      const resetTime = json.nextAccessTime ?? "soon";
-      throw new Error(`SAM.gov daily quota exceeded. API access resets at ${resetTime}. Try again after the reset window.`);
+      throw samGovQuotaError(json.nextAccessTime ?? null);
     }
     return (json.opportunitiesData ?? [])
       .filter((opportunity) => isBidReadySamOpportunity(opportunity, today))

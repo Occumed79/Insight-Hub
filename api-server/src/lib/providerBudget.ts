@@ -281,12 +281,24 @@ export function isOrchestrationCancellation(error: unknown): boolean {
   );
 }
 
+function explicitSamCooldownMs(message: string): number | null {
+  const match = message.match(/SAM_GOV_COOLDOWN_UNTIL=([^\s|]+)/i);
+  if (!match?.[1]) return null;
+  const reset = Date.parse(match[1]);
+  if (!Number.isFinite(reset) || reset <= Date.now()) return null;
+  return reset - Date.now();
+}
+
 function classifyFailure(error: unknown): {
   outcome: ProviderBudgetOutcome;
   cooldownMs: number;
   message: string;
 } {
   const message = error instanceof Error ? error.message : String(error);
+  const explicitSamCooldown = explicitSamCooldownMs(message);
+  if (explicitSamCooldown != null) {
+    return { outcome: "rate_limited", cooldownMs: explicitSamCooldown, message };
+  }
   if (/budget exhausted/i.test(message)) {
     return { outcome: "budget_exhausted", cooldownMs: HOUR, message };
   }
@@ -331,27 +343,30 @@ async function recordBudgetMutation(
 
 async function synchronizeSamCredentialFingerprint(): Promise<void> {
   const { resolveCredential } = await import("./config/providerConfig");
-  const credential = await resolveCredential("samApiKey", "SAM_GOV_API_KEY");
-  if (!credential) return;
+  const primary = await resolveCredential("samApiKey", "SAM_GOV_API_KEY");
+  const secondary = process.env.SAM_GOV_API_KEY_2?.trim() || null;
+  const credentials = [primary, secondary].filter(
+    (value): value is string => !!value,
+  );
+  if (credentials.length === 0) return;
 
   const fingerprint = `sha256:${createHash("sha256")
-    .update(credential)
+    .update(credentials.join("\0"))
     .digest("hex")
     .slice(0, 16)}`;
   let changed = false;
-  let authCooldownCleared = false;
+  let cooldownCleared = false;
 
   await recordBudgetMutation("samGov", (state, now) => {
     if (state.credentialFingerprint === fingerprint) return state;
     changed = true;
-    authCooldownCleared =
-      state.lastOutcome === "auth" && state.cooldownUntil > now.getTime();
+    cooldownCleared = state.cooldownUntil > now.getTime();
     return {
       ...state,
       credentialFingerprint: fingerprint,
-      cooldownUntil: authCooldownCleared ? 0 : state.cooldownUntil,
-      lastOutcome: authCooldownCleared ? undefined : state.lastOutcome,
-      lastError: authCooldownCleared ? undefined : state.lastError,
+      cooldownUntil: cooldownCleared ? 0 : state.cooldownUntil,
+      lastOutcome: cooldownCleared ? undefined : state.lastOutcome,
+      lastError: cooldownCleared ? undefined : state.lastError,
     };
   });
 
@@ -360,7 +375,8 @@ async function synchronizeSamCredentialFingerprint(): Promise<void> {
       JSON.stringify({
         event: "provider_credential_fingerprint_changed",
         provider: "samGov",
-        authCooldownCleared,
+        credentialCount: credentials.length,
+        cooldownCleared,
       }),
     );
   }
