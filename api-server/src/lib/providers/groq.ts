@@ -94,7 +94,7 @@ export class GroqProvider implements DataSourceProvider {
 
   async generateSearchQueries(customKeywords?: string): Promise<string[]> {
     const QUERY_YEAR = new Date().getFullYear();
-    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.\n\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.\n${customKeywords ? `User focus: ${customKeywords}` : ""}\n\nGenerate exactly 8 targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.\n\nRules:\n- Google search strings only (not URLs)\n- Include year ${QUERY_YEAR} in each query\n- Mix different Occu-Med service lines\n- Use terms: RFP, solicitation, bid, contract, procurement\n\nRespond ONLY with a JSON array: ["query1", ..., "query8"]`;
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.\n\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.\n${customKeywords ? `User focus: ${customKeywords}` : ""}\n\nGenerate exactly 8 targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.\n\nRules:\n- Google search strings only (not URLs)\n- Include year ${QUERY_YEAR} in each query\n- Mix different Occu-Med service lines\n- Use terms: RFP, solicitation, bid, contract, procurement\n\nRespond ONLY with a JSON array: ["query1", ..., "query8"]`;
 
     try {
       const text = await this.complete(prompt, 600);

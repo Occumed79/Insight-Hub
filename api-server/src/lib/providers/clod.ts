@@ -91,7 +91,7 @@ export class ClodProvider implements DataSourceProvider {
     const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.
 
 Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
-They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.
+They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.
 ${customKeywords ? `User focus: ${customKeywords}` : ""}
 
 Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.

@@ -248,6 +248,8 @@ function buildReviewPrompt(records: NormalizedOpportunity[]): string {
 Today is ${new Date().toISOString().slice(0, 10)}.
 
 Approve only when the PRIMARY PURCHASED SCOPE is a real, currently open procurement for services Occu-Med can perform or coordinate: occupational health, employment or deployment medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluation or fit testing, vaccinations, fitness-for-duty evaluations, or provider-network program management.
+SCOPE RULES: Workers' compensation treatment and claims administration are NOT in scope. Do NOT reject solely because workers' comp is mentioned — approve if the RFP also contains Occu-Med services. Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+IMPORTANT: Workers' compensation treatment, claims administration, and MPN/provider-panel enrollment are OUT OF SCOPE. However, do NOT reject an RFP solely because it mentions workers' compensation — if it also contains genuine Occu-Med services, approve it. Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
 
 Reject expired, awarded, cancelled, closed, construction, IT, equipment, pharmaceuticals, treatment-only care, general clinical staffing, insurance administration, grants, jobs, news, and records where medical language is incidental boilerplate. Do not approve an unknown deadline unless the record contains clear evidence that responses are currently being accepted.
 

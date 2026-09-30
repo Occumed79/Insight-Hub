@@ -332,7 +332,8 @@ function scoreForecastItem(o: any): number {
   const text = `${o.title ?? ""} ${o.description ?? ""} ${o.fullParentPathName ?? ""}`.toLowerCase();
   let score = 20;
   if (["department of defense", "department of homeland security", "department of state", "department of justice", "department of health"].some(a => text.includes(a))) score += 25;
-  if (["occupational health", "occupational medicine", "medical surveillance", "drug testing", "fit for duty", "workers comp", "physical exam", "dot physical", "osha", "industrial hygiene", "employee health", "health services", "medical services"].some(t => text.includes(t))) score += 35;
+  // "workers comp" removed — it is an excluded service area, not a positive signal
+  if (["occupational health", "occupational medicine", "medical surveillance", "drug testing", "fit for duty", "physical exam", "dot physical", "osha", "industrial hygiene", "employee health", "health services", "medical services", "pre-employment", "fitness for duty", "audiometric", "spirometry", "deployment medical"].some(t => text.includes(t))) score += 35;
   if (text.includes("621111") || text.includes("621999") || text.includes("621610")) score += 20;
   return Math.min(score, 100);
 }

@@ -70,7 +70,9 @@ const HARD_REJECT_SIGNALS = [
   // Blanket / consulting noise
   "blanket purchase agreement", "regional medical consultant", "medical consultant",
   "disability adjudication", "disability determination", "social security disability",
-  "independent medical examination", "ime panel",
+  // NOTE: "independent medical examination" removed — Occu-Med performs employment-related IME / fitness-for-duty.
+  // Only workers' comp claim panels are excluded, handled contextually below.
+  "ime panel",
   // Pharmacy / dispensing / lab
   "pharmacy", "pharmaceutical", "marijuana", "cannabis", "dispensary",
   "phlebotomist", "perfusion", "ray tech", "x-ray tech", "radiology technologist",
@@ -715,7 +717,7 @@ function cleanJsonResponse(text: string): string {
     .trim();
 }
 
-function buildSummaryPrompt(opp: any, extractedContent: string | null): string {
+function buildSummaryPrompt(opp: any, extractedContent: string | null, companyContext?: string): string {
   const due = toDateString(opp.responseDeadline);
   const posted = toDateString(opp.postedDate);
   const value = formatCurrency(opp.estimatedValue ?? opp.awardAmount ?? opp.ceilingValue ?? opp.floorValue);
@@ -724,19 +726,16 @@ function buildSummaryPrompt(opp: any, extractedContent: string | null): string {
   const score = opp.relevance?.score ?? opp.relevanceScore ?? null;
   const reasons = opp.relevance?.reasons?.join(" · ") ?? (typeof opp.notes === "string" ? opp.notes : "");
 
-  return `You are an RFP analyst for Occu-Med, an occupational health and medical exam coordination company.
+  const companyBlock = companyContext ??
+    "Occu-Med is an occupational health and medical exam coordination company providing: " +
+    "pre-employment physicals, DOT physicals, drug and alcohol testing, medical surveillance, " +
+    "audiograms, spirometry/PFT, respirator fit testing, vaccines/titers/TB testing, deployment medical exams, " +
+    "fitness-for-duty and return-to-work evaluations, and provider-network program management.";
 
-Occu-Med services include:
-- occupational health exams
-- pre-employment physicals
-- DOT physicals
-- drug and alcohol testing
-- PFT/spirometry
-- respirator fit testing
-- audiograms
-- vaccines/titers/TB testing
-- deployment medical exams
-- medical surveillance
+  return `You are an RFP analyst for Occu-Med. ${companyBlock}
+
+Workers' compensation treatment and claims administration are NOT Occu-Med services. However, do not reject an RFP solely because it mentions workers' comp — flag it as out-of-scope if present alongside relevant services.
+Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
 
 Analyze the opportunity below and produce a concise procurement brief.
 

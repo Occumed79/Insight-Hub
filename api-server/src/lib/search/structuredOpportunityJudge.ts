@@ -228,6 +228,11 @@ Occu-Med can perform: ${ORG_SERVICES}.
 Source being reviewed: ${providerName}.
 Today: ${new Date().toISOString().slice(0, 10)}.
 
+IMPORTANT SCOPE RULES:
+- Workers' compensation treatment, claims administration, and MPN/provider-panel enrollment are OUT OF SCOPE.
+- Do NOT reject an entire RFP solely because it mentions workers' compensation — if it also contains Occu-Med-relevant services, vote YES and note the out-of-scope component.
+- Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+
 A YES verdict requires all of the following:
 1. The record is a real procurement notice that is currently open for responses.
 2. The PRIMARY PURCHASED SCOPE—not incidental boilerplate—requires occupational health, employee medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluations or fit testing, vaccinations, deployment medical screening, fitness-for-duty evaluations, or management of a provider network delivering those services.

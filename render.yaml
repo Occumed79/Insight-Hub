@@ -53,6 +53,8 @@ services:
         sync: false
       - key: GOVCON_API_KEY
         sync: false
+      - key: OCCU_MED_AWARE_DATABASE_URL
+        sync: false
       - key: GNEWS_API_KEY
         sync: false
       - key: APITUBE_NEWS_API_KEY_2

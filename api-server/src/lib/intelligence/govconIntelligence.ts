@@ -1,5 +1,5 @@
 import { embedTexts } from "../search/embeddings";
-import { OCCUMED_SEMANTIC_PROFILE } from "../search/semanticRerank";
+import { getOccuMedSemanticProfile } from "../search/semanticRerank";
 
 export type GovConIntelligenceMode = "forecast" | "recompete";
 
@@ -167,11 +167,10 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
         documentResult.vectors.length === records.length
       ) {
         const profileText = [
-          OCCUMED_SEMANTIC_PROFILE,
+          await getOccuMedSemanticProfile(focus),
           mode === "recompete"
             ? "Prioritize expiring or incumbent federal contracts that Occu-Med could credibly compete for."
             : "Prioritize future procurements that Occu-Med could credibly perform.",
-          focus?.trim() ? `Current user focus: ${focus.trim()}.` : "",
         ]
           .filter(Boolean)
           .join(" ");

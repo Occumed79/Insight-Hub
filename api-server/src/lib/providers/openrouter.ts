@@ -78,7 +78,7 @@ export class OpenRouterProvider implements DataSourceProvider {
 
   async generateSearchQueries(customKeywords?: string): Promise<string[]> {
     const year = new Date().getFullYear();
-    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}.\n${customKeywords ? `User-specified focus: ${customKeywords}` : ""}\nGenerate exactly 8 highly targeted search queries to find ACTIVE RFPs and solicitations for ${year}. Respond ONLY with a JSON array.`;
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.\n${customKeywords ? `User-specified focus: ${customKeywords}` : ""}\nGenerate exactly 8 highly targeted search queries to find ACTIVE RFPs and solicitations for ${year}. Respond ONLY with a JSON array.`;
     try {
       const text = await this.complete(prompt, 600);
       const queries = JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());
