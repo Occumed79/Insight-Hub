@@ -10,6 +10,9 @@ import { classifyOpportunityQuality } from "../opportunityQuality";
 import { normalizedToDbRecord } from "../search/normalization";
 
 const now = new Date("2026-07-21T19:00:00Z");
+// Persistence mapping reads the real clock, so the deadline must be relative
+// to today or this fixture silently expires and the tests start failing.
+const futureDeadline = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 const complete: NormalizedOpportunity = {
   externalId: "sam-1",
   title: "RFP Occupational Health Services",
@@ -17,7 +20,7 @@ const complete: NormalizedOpportunity = {
   type: "Solicitation",
   status: "active",
   postedDate: new Date("2026-07-01"),
-  responseDeadline: new Date("2026-08-15"),
+  responseDeadline: futureDeadline,
   description:
     "Official structured solicitation for occupational health services and drug testing.",
   sourceUrl: "https://sam.gov/opp/abc/view",
@@ -62,7 +65,7 @@ describe("centralized opportunity evidence normalization", () => {
   it("preserves buyer and deadline provenance in the stored shape", () => {
     const db = normalizedToDbRecord(complete) as any;
     assert.equal(db.agency, "City of Example Health Department");
-    assert.deepEqual(db.responseDeadline, new Date("2026-08-15"));
+    assert.deepEqual(db.responseDeadline, futureDeadline);
     assert.match(db.notes, /buyer=official_structured/);
     assert.match(db.notes, /deadline=official_structured/);
   });

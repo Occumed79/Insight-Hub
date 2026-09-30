@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
 import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -240,7 +241,11 @@ function extractionFromObject(
 
 const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
 
-function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
+export function buildBatchPrompt(
+  items: BatchExtractInput[],
+  today: string,
+  profileContext = "",
+): string {
   const blocks = items
     .map((item, index) => {
       const semantic =
@@ -254,7 +259,7 @@ function buildBatchPrompt(items: BatchExtractInput[], today: string): string {
   return `You are the primary procurement intelligence engine for Occu-Med.
 Occu-Med services: ${ORG_SERVICES}.
 Today's date: ${today}.
-
+${profileContext ? `\n${profileContext}\n` : ""}
 Cloudflare Workers AI has already semantically prioritized this batch. Its score is supporting evidence only; independently verify the page itself.
 
 Analyze EVERY indexed item. Determine whether it is a CURRENTLY OPEN procurement opportunity that Occu-Med could realistically pursue. Understand semantic equivalents such as workforce health, employee medical surveillance, pre-placement examinations, respiratory protection programs, audiometric conservation, deployment medical screening, occupational testing, and provider-network administration.
@@ -291,6 +296,7 @@ function buildCrossCheckPrompt(
     preliminary: AiExtraction;
   }>,
   today: string,
+  profileContext = "",
 ): string {
   const blocks = items
     .map(
@@ -301,7 +307,7 @@ function buildCrossCheckPrompt(
 
   return `Cross-check the following ambiguous ACCEPT decisions from the primary procurement analysis.
 Today: ${today}.
-Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
+${profileContext ? `\n${profileContext}\n` : ""}Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
 
 ${blocks}`;
 }
@@ -463,6 +469,7 @@ export async function extractOpportunitiesBatch(
       buildBatchPrompt(
         group.map((entry) => entry.input),
         today,
+        renderPromptContext(await getOccuMedPromptContext()),
       ),
       MAX_OUTPUT_TOKENS,
       undefined,
@@ -506,7 +513,7 @@ export async function extractOpportunitiesBatch(
           : [cerebrasProvider, ...CROSS_CHECK_PROVIDERS];
       const review = await runProviderChain(
         reviewers,
-        buildCrossCheckPrompt(reviewItems, today),
+        buildCrossCheckPrompt(reviewItems, today, renderPromptContext(await getOccuMedPromptContext())),
         REVIEW_OUTPUT_TOKENS,
         primary.scorer,
         signal,

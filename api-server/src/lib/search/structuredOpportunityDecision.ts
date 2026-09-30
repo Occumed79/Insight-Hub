@@ -1,5 +1,6 @@
 import type { NormalizedOpportunity } from "../providers/types";
 import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch";
+import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
 import { geminiProvider } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -222,7 +223,10 @@ export function distinctProviderVotes(
   return [...unique.values()];
 }
 
-function buildReviewPrompt(records: NormalizedOpportunity[]): string {
+export function buildReviewPrompt(
+  records: NormalizedOpportunity[],
+  profileContext = "",
+): string {
   const items = records
     .map(
       (record, index) =>
@@ -246,12 +250,13 @@ function buildReviewPrompt(records: NormalizedOpportunity[]): string {
 
   return `You are one independent judge in a procurement relevance panel for Occu-Med.
 Today is ${new Date().toISOString().slice(0, 10)}.
-
-Approve only when the PRIMARY PURCHASED SCOPE is a real, currently open procurement for services Occu-Med can perform or coordinate: occupational health, employment or deployment medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluation or fit testing, vaccinations, fitness-for-duty evaluations, or provider-network program management.
+${profileContext ? `\n${profileContext}\n` : ""}
+Approve only when the PRIMARY PURCHASED SCOPE is a real, currently open procurement for services Occu-Med can perform or coordinate: occupational health, employment or deployment medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluation or fit testing, vaccinations, fitness-for-duty evaluations, or management of a provider network that delivers those services (enrolling providers into workers' compensation MPN/provider panels is NOT in scope).
 SCOPE RULES: Workers' compensation treatment and claims administration are NOT in scope. Do NOT reject solely because workers' comp is mentioned — approve if the RFP also contains Occu-Med services. Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
-IMPORTANT: Workers' compensation treatment, claims administration, and MPN/provider-panel enrollment are OUT OF SCOPE. However, do NOT reject an RFP solely because it mentions workers' compensation — if it also contains genuine Occu-Med services, approve it. Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
 
 Reject expired, awarded, cancelled, closed, construction, IT, equipment, pharmaceuticals, treatment-only care, general clinical staffing, insurance administration, grants, jobs, news, and records where medical language is incidental boilerplate. Do not approve an unknown deadline unless the record contains clear evidence that responses are currently being accepted.
+
+Score relevance 0-100 and be conservative: 85+ only when the primary scope is core Occu-Med services and the deadline is open; 70-84 for clear but partial fit; below 70 when unsure. isOpportunity must be false for anything you would score below 70.
 
 Judge independently. Do not assume another model will correct you. Return only JSON in this shape and exactly one row per item:
 {"results":[{"index":0,"isOpportunity":true,"relevanceScore":86,"reason":"Core scope purchases employee medical examinations and testing; deadline is open."}]}
@@ -327,7 +332,10 @@ async function reviewAmbiguous(
     number,
     Array<{ provider: string; vote: ReviewVote }>
   >();
-  const prompt = buildReviewPrompt(records);
+  const prompt = buildReviewPrompt(
+    records,
+    renderPromptContext(await getOccuMedPromptContext()),
+  );
 
   for (const provider of selected) {
     const budgetName = `judge:${provider.name}`;

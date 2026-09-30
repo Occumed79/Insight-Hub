@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
 import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch";
+import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
 import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -214,9 +215,10 @@ function recordText(record: NormalizedOpportunity): string {
     .join("\n");
 }
 
-function buildPrompt(
+export function buildPrompt(
   providerName: string,
   records: NormalizedOpportunity[],
+  profileContext = "",
 ): string {
   const items = records
     .map((record, index) => `[${index}]\n${recordText(record)}`)
@@ -227,7 +229,7 @@ function buildPrompt(
 Occu-Med can perform: ${ORG_SERVICES}.
 Source being reviewed: ${providerName}.
 Today: ${new Date().toISOString().slice(0, 10)}.
-
+${profileContext ? `\n${profileContext}\n` : ""}
 IMPORTANT SCOPE RULES:
 - Workers' compensation treatment, claims administration, and MPN/provider-panel enrollment are OUT OF SCOPE.
 - Do NOT reject an entire RFP solely because it mentions workers' compensation — if it also contains Occu-Med-relevant services, vote YES and note the out-of-scope component.
@@ -338,7 +340,7 @@ async function runJudgeBatch(
 ): Promise<Map<number, StructuredJudgeVote>> {
   const text = await completeWithTimeout(
     provider,
-    buildPrompt(providerName, records),
+    buildPrompt(providerName, records, renderPromptContext(await getOccuMedPromptContext())),
     signal,
   );
   const rows = parseJsonArray(text);

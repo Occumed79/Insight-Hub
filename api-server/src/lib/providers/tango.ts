@@ -20,6 +20,8 @@ const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_RETRIES = 2;
 const MAX_RECORD_LIMIT = 500;
 const MAX_PAGE_SIZE = 100;
+const TANGO_SEMANTIC_QUERY =
+  "occupational health employee medical examinations drug and alcohol testing medical surveillance fitness for duty audiometry respirator fit testing deployment medical screening";
 
 interface TangoOpportunity {
   opportunity_id: string;
@@ -234,6 +236,38 @@ export class TangoProvider implements DataSourceProvider {
     throw new Error("Tango API request failed after retry limit");
   }
 
+  /**
+   * Targeted queries instead of one unfiltered pull of every active federal
+   * notice. Tango supports server-side naics/psc filters (multi-value with "|")
+   * and a vector-backed search, so each query asks for what Occu-Med buys.
+   * Codes come from the Occu-Med reference profile merged with the built-in
+   * taxonomy. Set TANGO_CODE_QUERIES=false to fall back to a single query.
+   */
+  private async buildQueries(
+    keywords: string | undefined,
+  ): Promise<Array<{ label: string; params: Record<string, string> }>> {
+    const focus = keywords?.trim();
+    if (focus) return [{ label: "keywords", params: { search: focus } }];
+    if (process.env.TANGO_CODE_QUERIES === "false") {
+      return [{ label: "unfiltered", params: {} }];
+    }
+    try {
+      const { getOccuMedSearchProfile } = await import("../search/occumedSearchProfile");
+      const profile = await getOccuMedSearchProfile();
+      const queries: Array<{ label: string; params: Record<string, string> }> = [];
+      if (profile.naics.length > 0) queries.push({ label: "naics", params: { naics: profile.naics.join("|") } });
+      if (profile.psc.length > 0) queries.push({ label: "psc", params: { psc: profile.psc.join("|") } });
+      const phrases = profile.directPhrases.slice(0, 3);
+      queries.push({
+        label: "semantic",
+        params: { search: [TANGO_SEMANTIC_QUERY, ...phrases].join(" ").slice(0, 300) },
+      });
+      return queries;
+    } catch {
+      return [{ label: "semantic", params: { search: TANGO_SEMANTIC_QUERY } }];
+    }
+  }
+
   async fetch(options: FetchOptions): Promise<ProviderFetchResult> {
     const apiKey = await this.getApiKey();
     if (!apiKey) {
@@ -304,75 +338,85 @@ export class TangoProvider implements DataSourceProvider {
     endpoint.searchParams.set("limit", String(pageSize));
     endpoint.searchParams.set("page", "1");
     endpoint.searchParams.set("ordering", "-first_notice_date");
-    if (options.keywords?.trim()) {
-      endpoint.searchParams.set("search", options.keywords.trim());
-    }
+
+    const queries = await this.buildQueries(options.keywords);
+    const pagesPerQuery = Math.max(1, Math.ceil(maxPages / queries.length));
 
     const records: NormalizedOpportunity[] = [];
     const errors: string[] = [];
     const seenOpportunityIds = new Set<string>();
-    const seenPageUrls = new Set<string>();
-    let currentUrl: URL | null = endpoint;
-    let pageNumber = 0;
+    const queryStats: Array<{ label: string; returned: number; added: number; pages: number }> = [];
     let reportedTotal = 0;
+    let firstError: unknown = null;
 
-    while (
-      currentUrl &&
-      pageNumber < maxPages &&
-      records.length < recordLimit
-    ) {
-      const pageKey = currentUrl.toString();
-      if (seenPageUrls.has(pageKey)) {
-        errors.push("Tango pagination stopped because the API repeated a page URL.");
-        break;
+    for (const query of queries) {
+      if (records.length >= recordLimit) break;
+      const first = new URL(endpoint.toString());
+      for (const [key, value] of Object.entries(query.params)) first.searchParams.set(key, value);
+
+      const seenPageUrls = new Set<string>();
+      let currentUrl: URL | null = first;
+      let pageNumber = 0;
+      let returned = 0;
+      let added = 0;
+
+      while (currentUrl && pageNumber < pagesPerQuery && records.length < recordLimit) {
+        const pageKey = currentUrl.toString();
+        if (seenPageUrls.has(pageKey)) {
+          errors.push(`Tango ${query.label} pagination stopped because the API repeated a page URL.`);
+          break;
+        }
+        seenPageUrls.add(pageKey);
+        pageNumber += 1;
+
+        let page: TangoListResponse;
+        try {
+          page = await this.fetchPage(currentUrl, apiKey, allowedOrigin, timeoutMs, maxRetries);
+        } catch (error) {
+          firstError ??= error;
+          errors.push(
+            `Tango ${query.label} query page ${pageNumber} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          break;
+        }
+
+        reportedTotal = Math.max(reportedTotal, page.count || 0);
+        for (const opportunity of page.results) {
+          if (!opportunity?.opportunity_id) continue;
+          returned += 1;
+          if (seenOpportunityIds.has(opportunity.opportunity_id)) continue;
+          seenOpportunityIds.add(opportunity.opportunity_id);
+          const record = this.normalize(opportunity, pageNumber);
+          record.rawData = { ...(record.rawData ?? {}), tangoQuery: query.label };
+          records.push(record);
+          added += 1;
+          if (records.length >= recordLimit) break;
+        }
+
+        currentUrl =
+          page.next && records.length < recordLimit
+            ? new URL(page.next, currentUrl)
+            : null;
       }
-      seenPageUrls.add(pageKey);
-      pageNumber += 1;
-
-      let page: TangoListResponse;
-      try {
-        page = await this.fetchPage(
-          currentUrl,
-          apiKey,
-          allowedOrigin,
-          timeoutMs,
-          maxRetries,
-        );
-      } catch (error) {
-        if (records.length === 0) throw error;
-        errors.push(
-          `Tango page ${pageNumber} failed after ${records.length} records were retained: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        break;
-      }
-
-      reportedTotal = Math.max(reportedTotal, page.count || 0);
-      for (const opportunity of page.results) {
-        if (!opportunity?.opportunity_id) continue;
-        if (seenOpportunityIds.has(opportunity.opportunity_id)) continue;
-        seenOpportunityIds.add(opportunity.opportunity_id);
-        records.push(this.normalize(opportunity, pageNumber));
-        if (records.length >= recordLimit) break;
-      }
-
-      currentUrl =
-        page.next && records.length < recordLimit
-          ? new URL(page.next, currentUrl)
-          : null;
+      queryStats.push({ label: query.label, returned, added, pages: pageNumber });
     }
 
-    if (currentUrl && pageNumber >= maxPages) {
-      errors.push(
-        `Tango pagination stopped at the configured ${maxPages}-page limit.`,
-      );
-    }
+    // Every query failed and nothing was retained: surface the real error so
+    // the provider budget and cooldown logic see it (e.g. a 429).
+    if (records.length === 0 && firstError) throw firstError;
 
     return {
       records,
       total: reportedTotal || records.length,
       errors,
+      diagnostics: {
+        queryCount: queries.length,
+        queries: queryStats.map((stat) => stat.label),
+        tangoQueryStats: queryStats,
+        targetedQueries: queries.every((query) => query.label !== "unfiltered"),
+      },
     };
   }
 

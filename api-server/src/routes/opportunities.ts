@@ -237,9 +237,24 @@ function buildRelevanceView(opp: any) {
   const storedScore = opp.relevanceScore != null ? parseFloat(opp.relevanceScore) : NaN;
   const score = Number.isFinite(storedScore) ? Math.round(storedScore) : cls.score;
 
-  const storedReasons = typeof opp.notes === "string"
-    ? opp.notes.split(/;|·/).map((s: string) => s.trim()).filter(Boolean)
-    : [];
+  const notesText = typeof opp.notes === "string" ? opp.notes : "";
+  const whyMatch = notesText.match(/\[why:\s*([^\]]+?)(?:\s*\|\s*via:\s*([\w-]+))?\s*\]/);
+  const why: string | null = whyMatch?.[1]?.trim() || null;
+  const tagSet = parseTags(opp.tags);
+  const decisionMethod: "rule" | "ai-panel" | "ai-judge" | null =
+    tagSet.includes("deterministic-approved") || whyMatch?.[2] === "deterministic"
+      ? "rule"
+      : tagSet.includes("panel-ai-reviewed") || whyMatch?.[2] === "panel-ai-review"
+        ? "ai-panel"
+        : tagSet.includes("single-ai-reviewed") || whyMatch?.[2] === "single-ai-review"
+          ? "ai-judge"
+          : null;
+  // Provenance text ("Evidence direct-structured; adapter=...") is not a reason.
+  const storedReasons = notesText
+    .replace(/\[why:[^\]]*\]/g, " ")
+    .split(/;|·/)
+    .map((s: string) => s.trim())
+    .filter((s: string) => s && !/^Evidence\b|\b(?:adapter|buyer|deadline|status|description|directUrl)=/i.test(s));
   const baseReasons = storedReasons.length ? storedReasons : cls.reasons;
 
   // Feedback-learned signal (from graded opportunities) folded into ranking.
@@ -263,6 +278,8 @@ function buildRelevanceView(opp: any) {
   return {
     score,
     reasons,
+    why,
+    decisionMethod,
     category: cls.category,
     dateUnknown,
     stale,

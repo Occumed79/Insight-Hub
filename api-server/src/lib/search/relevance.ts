@@ -213,6 +213,26 @@ function rejected(
   };
 }
 
+// Phrases the Occu-Med team curated in the reference profile as DIRECT evidence
+// of a relevant procurement. Loaded at runtime by occumedSearchProfile; empty
+// until then, in which case only the built-in categories apply.
+let profileDirectPhrases: string[] = [];
+export function setProfileDirectPhrases(phrases: string[]): void {
+  profileDirectPhrases = Array.from(
+    new Set(
+      phrases
+        .map((phrase) => phrase.toLowerCase().replace(/\s+/g, " ").trim())
+        .filter((phrase) => phrase.length >= 8),
+    ),
+  ).slice(0, 200);
+}
+export function getProfileDirectPhrases(): readonly string[] {
+  return profileDirectPhrases;
+}
+
+const NON_MEDICAL_PRIMARY_SCOPE_RE =
+  /\b(corrosion|repaint\w*|painting|roofing|paving|resurfacing|hvac|chillers?|plumbing|elevators?|snow removal|janitorial|custodial|landscap\w+|grounds maintenance|construction|renovation|demolition|abatement|installation of|repair of|repairs to|help desk|software development|network infrastructure|cabling|fencing|parking garage)\b/i;
+
 export function classifyResult(input: RelevanceInput): RelevanceResult {
   const haystack = norm(
     [input.title, input.snippet, input.description].filter(Boolean).join(" "),
@@ -230,6 +250,29 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       [REASON_CODES.hardReject],
       { negativeSignals: [hard] },
     );
+  // The purchased scope is named in the title. When the title describes
+  // physical/IT work and names no Occu-Med service, medical words elsewhere in
+  // the notice are contract boilerplate (e.g. a painting job that mentions a
+  // worker medical surveillance clause), not the thing being bought.
+  if (NON_MEDICAL_PRIMARY_SCOPE_RE.test(titleNorm)) {
+    const titleServiceTerms = matchTerms(
+      titleNorm,
+      SERVICE_CATEGORIES.flatMap((c) => [
+        ...c.explicitPhrases,
+        ...(c.highIntentPhrases ?? []),
+        ...c.componentTerms,
+        ...(c.regulatoryTerms ?? []),
+      ]),
+    );
+    if (titleServiceTerms.length === 0) {
+      return rejected(
+        "Primary purchased scope is non-medical work; medical wording is incidental boilerplate",
+        input,
+        [REASON_CODES.hardReject],
+        { negativeSignals: ["non_medical_primary_scope"] },
+      );
+    }
+  }
   const matchedProcurementSignals = matchTerms(haystack, PROCUREMENT_SIGNALS);
   const matchedWorkforceSignals = matchTerms(haystack, WORKFORCE_SIGNALS);
   const matchedRegulatorySignals = matchTerms(
@@ -257,6 +300,11 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       matchedRegulatorySignals.push(...reg);
       if (c.adjacentOnly) adjacentOnly = true;
     }
+  }
+  const profilePhraseHits = matchTerms(haystack, profileDirectPhrases);
+  if (profilePhraseHits.length > 0) {
+    matchedServiceCategories.push("Occu-Med profile phrase");
+    matchedExplicitPhrases.push(...profilePhraseHits);
   }
   const negativeSignals: string[] = [];
   let conditionalPenalty = 0;

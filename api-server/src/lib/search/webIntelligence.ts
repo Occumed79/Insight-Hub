@@ -163,7 +163,10 @@ function buildWebOpportunity(
     agency: fields.agency,
     type: "Solicitation",
     status: "active",
-    postedDate: cls.publishedDate ?? new Date(),
+    // Never invent a posted date. When the source states none, use the epoch
+    // sentinel the rest of the app treats as "unknown" (paired with the
+    // date-unknown tag) instead of stamping the fetch time as if it were real.
+    postedDate: cls.publishedDate ?? new Date(0),
     responseDeadline: fields.deadline,
     description: fields.description,
     placeOfPerformance: fields.location,
@@ -229,6 +232,10 @@ export async function webIntelligenceFetch(options: {
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   throwIfAborted(options.signal);
+  // Load the Occu-Med profile phrases the relevance gate reads synchronously.
+  await import("./occumedSearchProfile")
+    .then((module) => module.getOccuMedSearchProfile())
+    .catch(() => undefined);
   const errors: string[] = [];
   const dateRangeDays = boundedDateRange(options.dateRange);
   const publishedAfter = new Date(Date.now() - dateRangeDays * DAY_MS);

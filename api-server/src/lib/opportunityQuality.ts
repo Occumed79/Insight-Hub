@@ -54,11 +54,13 @@ const DISCOVERY_PROVIDERS = new Set([
   "websearch",
   "aiDiscovery",
   "rssAggregator",
-  "tango",
 ]);
 const TRUSTED_DIRECT_PROVIDERS = new Set([
   "samGov",
   "sam_gov",
+  // Tango is a direct structured API (dates, buyer, deadline from the source).
+  // Its results are screened by code-targeted queries and the relevance gate.
+  "tango",
   "internationalPublicPortals",
   "eunaBonfire",
   "texasEsbd",

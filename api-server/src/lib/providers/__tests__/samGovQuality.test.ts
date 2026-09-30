@@ -173,14 +173,21 @@ describe("SAM.gov bid-ready query policy", () => {
       const classificationQueries = buildSamGovClassificationQueries();
       const result = await new SamGovProvider().fetch({ dateRange: 30, limit: 1000 });
 
-      assert.equal(samRequests.length, 2 + classificationQueries.length);
+      // One run rotates a bounded window of the taxonomy (default 6 codes) so a
+      // single Fetch cannot burn a small daily SAM.gov quota; coverage comes
+      // from the cursor advancing across runs, not from firing every code.
+      const perRun = Math.min(
+        classificationQueries.length,
+        Math.max(1, Math.min(12, Number(process.env.SAM_GOV_CLASSIFICATION_QUERIES_PER_RUN ?? 6) || 6)),
+      );
+      assert.equal(samRequests.length, 2 + perRun);
       const titleRequests = samRequests.filter((request) => new URL(request).searchParams.has("title"));
       const classificationRequests = samRequests.filter((request) => {
         const params = new URL(request).searchParams;
         return params.has("ncode") || params.has("ccode");
       });
       assert.equal(titleRequests.length, 2);
-      assert.equal(classificationRequests.length, classificationQueries.length);
+      assert.equal(classificationRequests.length, perRun);
 
       for (const request of titleRequests) {
         const params = new URL(request).searchParams;
