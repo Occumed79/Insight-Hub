@@ -61,6 +61,8 @@ services:
         sync: false
       - key: TINYFISH_API_KEY
         sync: false
+      - key: LOGO_DEV_TOKEN
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_KEY_2
