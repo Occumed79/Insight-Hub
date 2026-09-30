@@ -1,4 +1,5 @@
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
+import { verifySamPublicRecords } from "./samGovPageVerification";
 import { resolveCredential, type ResolvedCredential } from "../config/providerConfig";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 import { rfpDb as db } from "@workspace/db";
@@ -255,7 +256,7 @@ export class SamGovProvider implements DataSourceProvider {
         discoveryPoolId: "sam-gov-zero-result-recovery",
         signal: options.signal,
       });
-      const records = result.opportunities
+      const candidates = result.opportunities
         .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
         .map((record) => ({
           ...record,
@@ -268,6 +269,12 @@ export class SamGovProvider implements DataSourceProvider {
             samGovFallbackReason: "structured-zero-results",
           },
         }));
+      // Search hits carry no trustworthy dates or agency; keep only notices
+      // whose posted date and status are confirmed on the SAM.gov page itself.
+      const { verified: records } = await verifySamPublicRecords(candidates, {
+        dateRangeDays: Math.max(1, Math.min(364, options.dateRange ?? 30)),
+        signal: options.signal,
+      });
       if (records.length > 0) {
         console.warn(JSON.stringify({ event: "sam_gov_zero_result_recovered", titleQueries, recovered: records.length }));
       }

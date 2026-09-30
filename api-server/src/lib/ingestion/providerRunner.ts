@@ -3,6 +3,7 @@ import type {
   ProviderProgressEvent,
 } from "../providers/types";
 import { partitionProviderRecordsForQuery } from "../providers/providerQueryMatch";
+import { summarizeSamVerification, verifySamPublicRecords } from "../providers/samGovPageVerification";
 import { filterExpiredOpportunities } from "./opportunityExpiration";
 import {
   calculateCompletenessScore,
@@ -320,7 +321,7 @@ async function fetchSamGovPublicSearchFallback(
     discoveryPoolId: "sam-gov-public-search",
     signal: options.signal,
   });
-  const records = result.opportunities
+  const candidates = result.opportunities
     .filter((record) => isOfficialSamOpportunityUrl(record.sourceUrl))
     .map((record) => ({
       ...record,
@@ -332,6 +333,14 @@ async function fetchSamGovPublicSearchFallback(
         samGovKeylessFallback: true,
       },
     }));
+  // Search hits carry no trustworthy dates or agency. Read each page and keep
+  // only notices whose posted date and status are confirmed on it.
+  const verification = await verifySamPublicRecords(candidates, {
+    dateRangeDays: Math.max(1, Math.min(364, options.dateRange ?? 30)),
+    signal: options.signal,
+  });
+  const records = verification.verified;
+  const verificationNotes = summarizeSamVerification(verification);
   if (records.length === 0) return null;
   const diagnostics = {
     queryCount: 1,
@@ -339,13 +348,16 @@ async function fetchSamGovPublicSearchFallback(
     targetedQueries: true,
     recoveryUsed: true,
     recovered: records.length,
+    recoveryCandidates: candidates.length,
+    recoveryDropped: verification.dropped.length,
     aiScorers: result.stats.aiScorers,
   };
   const guarded = await applyStructuredFederalDecision(
     "samGov",
     records,
     [
-      `SAM.gov structured API unavailable; recovered ${records.length} official SAM.gov public pages through renewable web discovery.`,
+      `SAM.gov structured API unavailable; recovered ${records.length} page-verified SAM.gov notices through renewable web discovery.`,
+      ...verificationNotes,
       ...result.errors,
     ],
     options,
