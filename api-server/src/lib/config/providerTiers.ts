@@ -40,6 +40,7 @@ export const PROVIDER_TIERS: Record<ProviderName, ProviderTierConfig> = {
   emailNotifications: config("emailNotifications", "tier1", false, false, "Explicit procurement-alert inbox input", 8),
 
   keenable: config("keenable", "tier2", false, false, "Keyless-first search/fetch with optional higher-rate key", 1),
+  tinyfish: config("tinyfish", "tier2", true, false, "Hourly-renewing web search with provider-level budget", 1.5),
   you: config("you", "tier2", true, false, "Daily-renewing search with two independent accounts", 2),
   browserbase: config("browserbase", "tier2", true, false, "Managed search/fetch with two independent accounts", 3),
   parallel: config("parallel", "tier2", true, false, "Monthly-renewable web discovery API", 4),

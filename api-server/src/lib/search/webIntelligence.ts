@@ -163,7 +163,10 @@ function buildWebOpportunity(
     agency: fields.agency,
     type: "Solicitation",
     status: "active",
-    postedDate: cls.publishedDate ?? new Date(),
+    // Never invent a posted date. When the source states none, use the epoch
+    // sentinel the rest of the app treats as "unknown" (paired with the
+    // date-unknown tag) instead of stamping the fetch time as if it were real.
+    postedDate: cls.publishedDate ?? new Date(0),
     responseDeadline: fields.deadline,
     description: fields.description,
     placeOfPerformance: fields.location,
