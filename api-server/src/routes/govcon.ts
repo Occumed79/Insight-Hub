@@ -496,4 +496,37 @@ router.post("/govcon/recompete-verify", async (req, res) => {
   }
 });
 
+router.post("/govcon/budget-reset", async (req, res) => {
+  const { adminReadAllowed } = await import("../middleware/api-hardening");
+  if (!adminReadAllowed(req)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const { rfpDb, settingsTable } = await import("@workspace/db");
+    const { inArray } = await import("drizzle-orm");
+    const { clearProviderBudgetMemory } = await import("../lib/providerBudget");
+
+    const keys = [
+      "provider-budget:v2:govcon:forecast",
+      "provider-budget:v2:govcon:recompete",
+    ];
+    const result = await rfpDb
+      .delete(settingsTable)
+      .where(inArray(settingsTable.key, keys));
+    clearProviderBudgetMemory();
+    responseCache.clear();
+    logger.info({ deleted: result.rowCount ?? 0 }, "GovCon budget cooldown reset");
+    return res.json({
+      ok: true,
+      deleted: result.rowCount ?? 0,
+      message: "GovCon budget cooldown cleared. Retry the Recompete Watch page.",
+    });
+  } catch (error) {
+    logger.error({ err: error }, "GovCon budget reset failed");
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Reset failed",
+    });
+  }
+});
+
 export default router;
