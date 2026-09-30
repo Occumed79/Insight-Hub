@@ -277,3 +277,30 @@
     background-image: linear-gradient(90deg, hsl(205, 82%, 70%) 0%, hsl(215, 88%, 78%) 100%);
   }
 }
+
+/* Readability is scoped to the intelligence workspaces. */
+.portal-readable {
+  --muted-foreground: 215 40% 84%;
+}
+.portal-readable .glass-card {
+  background: linear-gradient(155deg, rgba(29, 57, 101, 0.96), rgba(14, 34, 70, 0.96));
+}
+.portal-readable .glass-card:hover {
+  background: linear-gradient(155deg, rgba(35, 66, 112, 0.97), rgba(18, 42, 83, 0.97));
+}
+.portal-readable :is([class~="text-xs"], [class~="text-sm"]) {
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.portal-readable :is([class~="text-[10px]"], [class~="text-[11px]"], [class~="text-[12px]"]) {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.portal-readable :is(
+  [class~="text-white/25"], [class~="text-white/30"], [class~="text-white/35"],
+  [class~="text-white/40"], [class~="text-white/45"], [class~="text-white/50"],
+  [class~="text-white/55"], [class~="text-white/60"], [class~="text-white/65"],
+  [class~="text-white/70"]
+) {
+  color: #dfe8f7;
+}

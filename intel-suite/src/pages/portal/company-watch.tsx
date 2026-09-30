@@ -1,26 +1,197 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Clock3, ExternalLink, Minus, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { CircleAlert, Clock3, ExternalLink, Loader2, Plus, Search, X } from "lucide-react";
 
-type Company={name:string; logo?:string}; type Article={id:string;title:string;url:string;snippet:string;publisher:string|null;publishedAt:string|null;provider:string};
+type Company = { name: string };
+type Article = { id: string; title: string; url: string; snippet: string; publisher: string | null; publishedAt: string | null; provider: string; image?: string | null };
+type SearchResult = { articles: Article[]; updatedAt: string; warnings?: string[] };
 const SEED=['Leidos','IAP Worldwide Services','MAG Aerospace','Camber Corporation','Trace Systems','KBR','BAE Systems','Weatherford International','Versar','Constellis','C3EL','Fluor Corporation','Clovehitch','V2X','Sierra Nevada Corporation','Valiant Integrated Services','AC Transit','Freeport-McMoRan','California Department of Corrections and Rehabilitation','Alutiiq','ManTech International','GDC','CACI International','IDS International','SOS International','ITC Defense','DataPath','SkyBridge Tactical','Amentum','American International Contractors','Anduril','APVI','ASRC Federal','Astrapi Advisors','Atlas Advisors','Bell Textron','BL Harbert International','CDAS','Dynamic Aviation','Fathom 4','GardaWorld','General Dynamics Information Technology','Group SSI','IAP','International SOS','Jacobs Technology','Leidos','Navmar Applied Science Corporation','Noblis','Olgoonik Solutions','Patriot Group International','Peraton','Platform Aerospace','Prüst Holding','S3 International','Strategic Solutions Unlimited','University of Maryland Global Campus','Vectrus','Versar Global Solutions','Westinghouse Electric Company'];
-const key='insight-hub.company-watch.companies'; const timesKey='insight-hub.company-watch.times';
-const COMPANY_DOMAINS: Record<string,string> = { Leidos:'leidos.com', 'IAP Worldwide Services':'iapws.com', 'MAG Aerospace':'magaero.com', 'Camber Corporation':'camber.com', 'Trace Systems':'tracesystems.com', KBR:'kbr.com', 'BAE Systems':'baesystems.com', 'Weatherford International':'weatherford.com', Versar:'versar.com', Constellis:'constellis.com', C3EL:'c3el.com', 'Fluor Corporation':'fluor.com', Clovehitch:'clovehitch.com', V2X:'v2x.com', 'Sierra Nevada Corporation':'sncorp.com', 'Valiant Integrated Services':'valiantintegrated.com', 'AC Transit':'actransit.org', 'Freeport-McMoRan':'fcx.com', Alutiiq:'alutiiq.com', 'ManTech International':'mantech.com', GDC:'gdc4s.com', 'CACI International':'caci.com', 'IDS International':'idsinternational.com', 'SOS International':'internationalsos.com', 'ITC Defense':'itcdefense.com', 'DataPath':'datapath.com', 'SkyBridge Tactical':'skybridgetactical.com', Amentum:'amentum.com', Anduril:'anduril.com', 'ASRC Federal':'asrcfederal.com', 'Bell Textron':'bellflight.com', 'Dynamic Aviation':'dynamicaviation.com', 'GardaWorld':'garda.com', 'General Dynamics Information Technology':'gdit.com', 'International SOS':'internationalsos.com', 'Jacobs Technology':'jacobs.com', Leidos:'leidos.com', Noblis:'noblis.org', Peraton:'peraton.com', Vectrus:'v2x.com', 'Westinghouse Electric Company':'westinghouse.com' };
-function unique(names:string[]){return [...new Map(names.map(n=>[n.trim().toLowerCase(),n.trim()])).values()].filter(Boolean)}
-function ago(v:string|null){if(!v)return 'Date unavailable'; const d=new Date(v); return Number.isNaN(d.getTime())?v:new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)}
-export default function CompanyWatchPage(){
- const [companies,setCompanies]=useState<Company[]>(()=>{try{return unique(JSON.parse(localStorage.getItem(key)||'[]')).map(name=>({name})).length?unique(JSON.parse(localStorage.getItem(key)||'[]')).map(name=>({name})):unique(SEED).map(name=>({name}))}catch{return SEED.map(name=>({name}))}});
- const [add,setAdd]=useState(''); const [selected,setSelected]=useState<Company|null>(null); const [articles,setArticles]=useState<Article[]>([]); const [updated,setUpdated]=useState<string|null>(null); const [times,setTimes]=useState(()=>{try{return JSON.parse(localStorage.getItem(timesKey)||'["08:00","16:00"]')}catch{return ['08:00','16:00']}}); const [auto,setAuto]=useState(true);
- useEffect(()=>localStorage.setItem(key,JSON.stringify(companies.map(c=>c.name))),[companies]); useEffect(()=>localStorage.setItem(timesKey,JSON.stringify(times)),[times]);
- const mutation=useMutation({mutationFn:async()=>{const r=await fetch('/api/company-watch/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companies:companies.map(c=>c.name)})}); const j=await r.json(); if(!r.ok)throw new Error(j.error||'Search failed'); return j as {articles:Article[];updatedAt:string}},onSuccess:j=>{setArticles(j.articles);setUpdated(j.updatedAt)}});
- useEffect(()=>{if(!auto)return; const tick=()=>{const now=new Date(); const t=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; if(times.includes(t)&&now.getSeconds()<10&&!mutation.isPending)mutation.mutate()}; const id=window.setInterval(tick,10000); return()=>clearInterval(id)},[auto,times,mutation]);
- const addCompany=()=>{const names=unique([...companies.map(c=>c.name),add]); if(add.trim())setCompanies(names.map(name=>({name})));setAdd('')}; const remove=(name:string)=>setCompanies(companies.filter(c=>c.name!==name));
- const logo=(name:string)=>`/api/company-watch/logo/${encodeURIComponent(COMPANY_DOMAINS[name] ?? name.toLowerCase().replace(/\b(inc|corporation|company|international|services|systems|technologies|group|llc|ltd)\b/g, "").replace(/[^a-z0-9]+/g, "").slice(0,40)+".com")}`; const matching=(name:string)=>articles.filter(a=>`${a.title} ${a.snippet}`.toLowerCase().includes(name.toLowerCase().split(' ')[0]));
- return <div className="space-y-7"><header><p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Company Intelligence</p><h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">Company Watch</h1><p className="mt-3 max-w-3xl text-base leading-relaxed text-white/50">Track contractor activity, awards, acquisitions, spending, facilities, and workforce news for the companies you choose.</p></header>
- <section className="glass-card rounded-2xl border border-white/10 p-4 sm:p-5"><div className="flex flex-col gap-3 lg:flex-row"><div className="flex min-w-0 flex-1 gap-2"><input aria-label="Add a company" value={add} onChange={e=>setAdd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCompany()} placeholder="Add a company to watch…" className="min-h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-primary/50"/><button onClick={addCompany} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white"><Plus className="h-4 w-4"/>Add</button></div><button onClick={()=>mutation.mutate()} disabled={mutation.isPending||!companies.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"><Search className="h-4 w-4"/>{mutation.isPending?'Searching…':'Search for Updates'}</button></div>
- <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/10 pt-4 text-xs text-white/55"><Clock3 className="h-4 w-4 text-primary"/><span>Automatic searches</span>{times.map((t,i)=><label key={i} className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">{i+1}<input type="time" value={t} onChange={e=>setTimes(times.map((x,j)=>j===i?e.target.value:x))} className="bg-transparent text-white"/></label>)}<label className="ml-auto inline-flex items-center gap-2"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)}/> enabled</label></div></section>
- <div className="flex items-center justify-between gap-3 text-sm text-white/45"><span>{companies.length} companies watched{updated&&` · last search ${ago(updated)}`}</span><button onClick={()=>setCompanies([])} className="text-red-200/60 hover:text-red-100">Remove all</button></div>
- <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{companies.map(c=>{const count=matching(c.name).length; return <article key={c.name} className="glass-card group relative overflow-hidden rounded-2xl border border-white/10 p-5 transition hover:border-primary/40"><button aria-label={`Remove ${c.name}`} onClick={()=>remove(c.name)} className="absolute right-3 top-3 rounded-full p-1 text-white/30 hover:bg-red-400/10 hover:text-red-200"><X className="h-4 w-4"/></button><button onClick={()=>setSelected(c)} className="block w-full text-left"><div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-sm font-bold text-primary"><img src={logo(c.name)} alt="" className="h-full w-full object-contain p-2" onError={e=>{e.currentTarget.style.display="none"}} />{c.name.slice(0,2).toUpperCase()}</div><div className="min-w-0 pr-6"><h2 className="ui-break-anywhere text-lg font-semibold text-white">{c.name}</h2><p className="mt-1 text-xs text-white/40">{updated?'Updated '+ago(updated):'Ready to search'}</p></div></div><div className="mt-6 flex items-center justify-between border-t border-white/10 pt-3 text-xs"><span className={count?'text-primary':'text-white/45'}>{count?`${count} relevant update${count===1?'':'s'}`:'No updates loaded'}</span><span className="text-primary/70">Open window →</span></div></button></article>})}</section>
- {selected&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true"><div className="max-h-[85dvh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-white/20 bg-[#102c59]/90 p-6 shadow-2xl backdrop-blur-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.2em] text-primary/80">Company update window</p><h2 className="mt-2 text-3xl font-bold text-white">{selected.name}</h2><p className="mt-2 text-sm text-white/45">{updated?`Last updated ${ago(updated)}`:'Run Search for Updates to load current coverage.'}</p></div><button onClick={()=>setSelected(null)} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-5 w-5"/></button></div><div className="mt-6 space-y-3">{matching(selected.name).map(a=><a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="block rounded-2xl border border-white/10 bg-black/15 p-4 transition hover:border-primary/40"><div className="flex items-center justify-between gap-3 text-xs uppercase tracking-wider text-white/35"><span>{a.publisher||a.provider}</span><span>{ago(a.publishedAt)}</span></div><h3 className="mt-2 text-lg font-semibold text-white">{a.title}</h3>{a.snippet&&<p className="mt-2 text-sm leading-relaxed text-white/55">{a.snippet}</p>}<span className="mt-3 inline-flex items-center gap-1 text-xs text-primary">Read source <ExternalLink className="h-3 w-3"/></span></a>)}{!matching(selected.name).length&&<div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-sm text-white/45">No relevant updates loaded for this company yet.</div>}</div></div></div>}
- </div>
+const COMPANY_DOMAINS: Record<string,string> = { Leidos:'leidos.com', 'IAP Worldwide Services':'iapws.com', 'MAG Aerospace':'magaero.com', 'Camber Corporation':'camber.com', 'Trace Systems':'tracesystems.com', KBR:'kbr.com', 'BAE Systems':'baesystems.com', 'Weatherford International':'weatherford.com', Versar:'versar.com', Constellis:'constellis.com', C3EL:'c3el.com', 'Fluor Corporation':'fluor.com', Clovehitch:'clovehitch.com', V2X:'v2x.com', 'Sierra Nevada Corporation':'sncorp.com', 'Valiant Integrated Services':'valiantintegrated.com', 'AC Transit':'actransit.org', 'Freeport-McMoRan':'fcx.com', Alutiiq:'alutiiq.com', 'ManTech International':'mantech.com', GDC:'gdc4s.com', 'CACI International':'caci.com', 'IDS International':'idsinternational.com', 'SOS International':'internationalsos.com', 'ITC Defense':'itcdefense.com', 'DataPath':'datapath.com', 'SkyBridge Tactical':'skybridgetactical.com', Amentum:'amentum.com', Anduril:'anduril.com', 'ASRC Federal':'asrcfederal.com', 'Bell Textron':'bellflight.com', 'Dynamic Aviation':'dynamicaviation.com', 'GardaWorld':'garda.com', 'General Dynamics Information Technology':'gdit.com', 'International SOS':'internationalsos.com', 'Jacobs Technology':'jacobs.com', Noblis:'noblis.org', Peraton:'peraton.com', Vectrus:'v2x.com', 'Westinghouse Electric Company':'westinghouse.com' };
+
+const key = "insight-hub.company-watch.companies";
+const timesKey = "insight-hub.company-watch.times";
+const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+function unique(names: string[]) {
+  return [...new Map(names.map(name => [name.trim().toLowerCase(), name.trim()])).values()].filter(Boolean);
+}
+function ago(value: string | null) {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(date);
+}
+function CompanyImage({ name }: { name: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const domain = COMPANY_DOMAINS[name];
+  return (
+    <div className="relative flex aspect-[16/7] items-center justify-center overflow-hidden border-b border-white/15 bg-white">
+      {!loaded && <span className="px-6 text-center text-4xl font-bold text-[#183a68]" aria-hidden="true">{name.split(/\s+/).slice(0, 2).map(part => part[0]).join("")}</span>}
+      {domain && !failed && <img
+        src={`${baseUrl}/api/company-watch/logo/${encodeURIComponent(domain)}?size=512`}
+        alt={`${name} logo`}
+        className={`absolute inset-0 h-full w-full object-contain p-7 ${loaded ? "opacity-100" : "opacity-0"}`}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+      />}
+    </div>
+  );
+}
+
+export default function CompanyWatchPage() {
+  const [companies, setCompanies] = useState<Company[]>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      const names: unknown = saved === null ? SEED : JSON.parse(saved);
+      return unique(Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : SEED).map(name => ({ name }));
+    } catch { return unique(SEED).map(name => ({ name })); }
+  });
+  const [add, setAdd] = useState("");
+  const [selected, setSelected] = useState<Company | null>(null);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [updated, setUpdated] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [times, setTimes] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(timesKey) || "null");
+      return Array.isArray(saved) && saved.length === 2 && saved.every(time => typeof time === "string" && /^\d{2}:\d{2}$/.test(time)) ? saved : ["08:00", "16:00"];
+    } catch { return ["08:00", "16:00"]; }
+  });
+  const [auto, setAuto] = useState(true);
+  const lastAutomaticRun = useRef("");
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(companies.map(company => company.name))); } catch {} }, [companies]);
+  useEffect(() => { try { localStorage.setItem(timesKey, JSON.stringify(times)); } catch {} }, [times]);
+
+  const mutation = useMutation({
+    mutationFn: async (): Promise<SearchResult> => {
+      const response = await fetch(`${baseUrl}/api/company-watch/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies: companies.map(company => company.name) }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Company news search failed");
+      return payload;
+    },
+    onSuccess: result => {
+      setArticles(result.articles);
+      setUpdated(result.updatedAt);
+      setWarnings(result.warnings ?? []);
+    },
+  });
+  useEffect(() => {
+    if (!auto || !companies.length) return;
+    const tick = () => {
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const slot = `${now.toDateString()} ${time}`;
+      if (times.includes(time) && lastAutomaticRun.current !== slot && !mutation.isPending) {
+        lastAutomaticRun.current = slot;
+        mutation.mutate();
+      }
+    };
+    const interval = window.setInterval(tick, 10_000);
+    return () => window.clearInterval(interval);
+  }, [auto, times, companies.length, mutation]);
+  useEffect(() => {
+    if (!selected) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selected]);
+
+  const addCompany = () => {
+    if (add.trim()) setCompanies(unique([...companies.map(company => company.name), add]).map(name => ({ name })));
+    setAdd("");
+  };
+  const matching = (name: string) => {
+    const tokens = name.toLowerCase().split(/\s+/).filter(token => !["corporation", "company", "international", "services", "systems", "the", "of"].includes(token));
+    return articles.filter(article => {
+      const text = `${article.title} ${article.snippet}`.toLowerCase();
+      return text.includes(name.toLowerCase()) || (tokens.length > 0 && tokens.every(token => text.includes(token)));
+    });
+  };
+
+  return (
+    <div className="portal-readable space-y-7">
+      <header>
+        <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">Company Intelligence</p>
+        <h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">Company Watch</h1>
+        <p className="mt-3 max-w-3xl text-lg leading-relaxed text-slate-200">Track contractor activity, awards, acquisitions, spending, facilities, and workforce news for the companies you choose.</p>
+      </header>
+
+      <section className="glass-card rounded-2xl border border-white/15 p-5">
+        <div className="flex flex-col gap-3 lg:flex-row">
+          <div className="flex min-w-0 flex-1 gap-2">
+            <input aria-label="Add a company" value={add} onChange={event => setAdd(event.target.value)} onKeyDown={event => { if (event.key === "Enter") addCompany(); }} placeholder="Add a company to watch…" className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/20 bg-black/20 px-4 text-base text-white outline-none focus:border-primary" />
+            <button type="button" onClick={addCompany} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-4 text-base font-semibold text-[#09163a]"><Plus className="h-5 w-5" />Add</button>
+          </div>
+          <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending || !companies.length} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-5 text-base font-semibold text-white hover:bg-primary/25 disabled:opacity-50">
+            {mutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}{mutation.isPending ? "Searching…" : "Search for Updates"}
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/15 pt-4 text-base text-slate-200">
+          <Clock3 className="h-5 w-5 text-primary" /><span>Automatic searches</span>
+          {times.map((time, index) => <label key={index} className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2"><span className="sr-only">Search time {index + 1}</span><input type="time" value={time} onChange={event => setTimes(times.map((value, position) => position === index ? event.target.value : value))} className="bg-transparent text-white" /></label>)}
+          <label className="ml-auto inline-flex items-center gap-2"><input type="checkbox" checked={auto} onChange={event => setAuto(event.target.checked)} /> enabled</label>
+        </div>
+        <p className="mt-2 text-sm text-slate-300">Automatic searches run at these local times while this tab is open.</p>
+      </section>
+
+      {mutation.isError && <div role="alert" className="flex gap-3 rounded-2xl border border-red-300/30 bg-red-950/60 p-5 text-base text-red-100"><CircleAlert className="h-5 w-5 shrink-0" /><span>{mutation.error instanceof Error ? mutation.error.message : "Company news search failed."}</span></div>}
+      {warnings.length > 0 && <div role="status" className="rounded-2xl border border-amber-300/30 bg-amber-950/60 p-5 text-base text-amber-100">{warnings.map(warning => <p key={warning}>{warning}</p>)}</div>}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-base text-slate-200" aria-live="polite">
+        <span>{companies.length} companies watched{updated && ` · last search ${ago(updated)}`}</span>
+        <button type="button" onClick={() => setCompanies([])} className="min-h-11 px-2 text-red-200 hover:text-white">Remove all</button>
+      </div>
+
+      <section aria-label="Watched companies" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {companies.map(company => {
+          const count = matching(company.name).length;
+          return (
+            <article key={company.name} className="glass-card relative min-w-0 overflow-hidden rounded-2xl border border-white/15 transition hover:border-primary/50">
+              <button type="button" aria-label={`Remove ${company.name}`} onClick={() => setCompanies(companies.filter(item => item.name !== company.name))} className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow hover:bg-red-50 hover:text-red-700"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setSelected(company)} className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <CompanyImage name={company.name} />
+                <div className="p-5">
+                  <h2 className="ui-break-anywhere text-2xl font-semibold leading-snug text-white">{company.name}</h2>
+                  <p className="mt-2 text-base text-slate-200">{updated ? "Updated " + ago(updated) : "Ready to search"}</p>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-4 text-base">
+                    <span className="text-slate-200">{count ? `${count} relevant update${count === 1 ? "" : "s"}` : "No updates loaded"}</span>
+                    <span className="font-semibold text-primary">View updates →</span>
+                  </div>
+                </div>
+              </button>
+            </article>
+          );
+        })}
+      </section>
+
+      {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="company-update-title" onClick={() => setSelected(null)}>
+        <div className="max-h-[85dvh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-white/20 bg-[#102447] p-6 shadow-2xl" onClick={event => event.stopPropagation()}>
+          <div className="flex items-start justify-between gap-4">
+            <div><h2 id="company-update-title" className="text-3xl font-bold text-white">{selected.name}</h2><p className="mt-2 text-base text-slate-200">{updated ? `Last updated ${ago(updated)}` : "Run Search for Updates to load current coverage."}</p></div>
+            <button type="button" aria-label="Close company updates" onClick={() => setSelected(null)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:bg-white/10"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            {matching(selected.name).map(article => <article key={article.id} className="overflow-hidden rounded-2xl border border-white/15 bg-[#152f59]">
+              {article.image && <div className="aspect-[16/7] overflow-hidden bg-white/5"><img src={article.image} alt="" loading="lazy" className="h-full w-full object-cover" /></div>}
+              <div className="p-5">
+                <p className="text-sm text-slate-300">{article.publisher || article.provider} · {ago(article.publishedAt)}</p>
+                <h3 className="mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h3>
+                {article.snippet && <p className="mt-3 text-base leading-relaxed text-slate-200">{article.snippet}</p>}
+                <a href={article.url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 text-base font-semibold text-primary">Read source <ExternalLink className="h-4 w-4" /></a>
+              </div>
+            </article>)}
+            {!matching(selected.name).length && <p className="rounded-2xl border border-dashed border-white/25 p-8 text-center text-base text-slate-200 md:col-span-2">No relevant updates loaded for this company yet.</p>}
+          </div>
+        </div>
+      </div>}
+    </div>
+  );
 }

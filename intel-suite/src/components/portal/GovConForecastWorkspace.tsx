@@ -487,7 +487,7 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
   const currentEnd = Math.min(filters.offset + PAGE_SIZE, total);
 
   return (
-    <div className="space-y-7">
+    <div className="portal-readable space-y-7">
       <section>
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">GovCon Forward Intelligence</p>
         <h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">{isRecompete ? "Recompete Watch" : "Forecasts"}</h1>

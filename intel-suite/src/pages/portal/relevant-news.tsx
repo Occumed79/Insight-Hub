@@ -32,7 +32,7 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
-  provider?: "gnews" | "apitube";
+  provider?: "gnews" | "apitube" | "tinyfish";
   companies?: string[];
   signals?: string[];
 };
@@ -43,8 +43,8 @@ type NewsResponse = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews" | "apitube" | "mixed";
-  sources?: Array<"gnews" | "apitube">;
+  source: "gnews" | "apitube" | "tinyfish" | "mixed";
+  sources?: Array<"gnews" | "apitube" | "tinyfish">;
   warnings?: string[];
   deduplicated?: number;
   fetchedAt: string;
@@ -131,13 +131,13 @@ export default function RelevantNewsPage() {
   const upstreamArticles = query.data?.upstreamArticles ?? 0;
   const filteredOut = query.data?.filteredOut ?? 0;
   const providers = (query.data?.sources ?? (query.data?.source === "mixed" ? ["gnews", "apitube"] : query.data?.source ? [query.data.source] : []))
-    .map(provider => provider === "apitube" ? "APITube" : "GNews").join(" + ") || "news providers";
+    .map(provider => provider === "apitube" ? "APITube" : provider === "tinyfish" ? "TinyFish" : "GNews").join(" + ") || "news providers";
   const statusText = query.isFetching
     ? "Refreshing relevant news"
     : `${articles.length.toLocaleString("en-US")} articles shown`;
 
   return (
-    <div className="ui-page-shell space-y-7" aria-busy={query.isFetching}>
+    <div className="portal-readable ui-page-shell space-y-7" aria-busy={query.isFetching}>
       <section aria-labelledby="relevant-news-title">
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Defense & Aerospace Contractor Intelligence</p>
         <h1 id="relevant-news-title" className="text-4xl font-bold tracking-tight text-white md:text-5xl">Relevant News</h1>
@@ -254,7 +254,7 @@ export default function RelevantNewsPage() {
               )}
               <div className="min-w-0 p-5">
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.15em] text-white/35">
-                  <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "apitube" ? "APITube" : "GNews"}`}</span>
+                  <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "apitube" ? "APITube" : article.provider === "tinyfish" ? "TinyFish" : "GNews"}`}</span>
                   <time dateTime={article.publishedAt ?? undefined}>{displayDate(article.publishedAt)}</time>
                 </div>
                 <h2 className="ui-break-anywhere mt-3 text-xl font-semibold leading-snug text-white">{article.title}</h2>

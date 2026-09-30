@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { resolveCredential } from "../lib/config/providerConfig";
 import { logger } from "../lib/logger";
 import { apitubeKeys, contractorNewsSignals, fetchApitubeNews, httpUrl } from "../lib/news/apitube";
 
@@ -13,7 +14,7 @@ const MAX_CACHE_ENTRIES = 30;
 // Occu-Med-specific relevance scoring locally. GNews treats publisher country as
 // the source location, not the subject of the article, so no country filter is used.
 const BASE_QUERY =
-  '("federal contract" OR "government contract" OR "defense contract" OR "contract award" OR "federal procurement" OR "government acquisition" OR recompete OR "GSA contract")';
+  '("federal contract" OR "defense contract" OR "contract award" OR recompete)';
 const FALLBACK_QUERY =
   '("contract award" OR "federal contract" OR "government procurement" OR recompete)';
 
@@ -33,7 +34,7 @@ type NewsArticle = {
     country: string | null;
   };
   relevanceScore: number;
-  provider: "gnews" | "apitube";
+  provider: "gnews" | "apitube" | "tinyfish";
   companies: string[];
   signals: string[];
 };
@@ -44,8 +45,8 @@ type NewsPayload = {
   upstreamArticles: number;
   filteredOut: number;
   query: string;
-  source: "gnews" | "apitube" | "mixed";
-  sources: Array<"gnews" | "apitube">;
+  source: "gnews" | "apitube" | "tinyfish" | "mixed";
+  sources: Array<"gnews" | "apitube" | "tinyfish">;
   warnings: string[];
   deduplicated: number;
   fetchedAt: string;
@@ -220,7 +221,7 @@ export function normalizeArticle(rawValue: unknown): NewsArticle | null {
       country: asString(source.country),
     },
     relevanceScore: Math.max(relevantNewsScore(raw), contractorSignals.score),
-    provider: raw.provider === "apitube" ? "apitube" : "gnews",
+    provider: raw.provider === "tinyfish" ? "tinyfish" : raw.provider === "apitube" ? "apitube" : "gnews",
     companies: contractorSignals.companies,
     signals: contractorSignals.signals,
   };
@@ -240,7 +241,8 @@ function pruneCache(): void {
 
 async function requestGNews(query: string, max: number, page: number, apiKey: string): Promise<JsonRecord> {
   const upstreamUrl = new URL(GNEWS_SEARCH_URL);
-  upstreamUrl.searchParams.set("q", query.slice(0, 200));
+  if (query.length > 200) throw new Error("News search query exceeds the GNews limit");
+  upstreamUrl.searchParams.set("q", query);
   upstreamUrl.searchParams.set("lang", "en");
   upstreamUrl.searchParams.set("max", String(max));
   upstreamUrl.searchParams.set("page", String(page));
@@ -296,14 +298,54 @@ function canonicalArticleUrl(value: string): string {
   return url.href.replace(/\/$/, "");
 }
 
-export async function fetchRelevantNews(query: string, max: number, page: number, search: string | null): Promise<NewsPayload> {
-  const jobs: Array<{ provider: "gnews" | "apitube"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
+
+async function fetchTinyfishNews(query: string, max: number, sourceDomains: string[], apiKey: string): Promise<unknown[]> {
+  const url = new URL("https://api.search.tinyfish.ai");
+  url.searchParams.set("query", query);
+  url.searchParams.set("domain_type", "news");
+  url.searchParams.set("language", "en");
+  url.searchParams.set("location", "US");
+  url.searchParams.set("recency_minutes", "10080");
+  url.searchParams.set("include_thumbnail", "true");
+  if (sourceDomains.length) url.searchParams.set("include_domains", sourceDomains.join(","));
+  const response = await fetch(url, {
+    headers: { "X-API-Key": apiKey, Accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw Object.assign(new Error("TinyFish news request failed"), { statusCode: response.status });
+  const data = asRecord(await response.json());
+  if (!Array.isArray(data.results)) throw new Error("TinyFish returned an invalid news response");
+  return data.results.slice(0, max).map(value => {
+    const row = asRecord(value);
+    const articleUrl = httpUrl(row.url);
+    let domain = "";
+    if (articleUrl) domain = new URL(articleUrl).hostname;
+    return {
+      title: row.title, url: articleUrl, description: row.snippet,
+      image: row.thumbnail_url ?? row.image, publishedAt: row.date ?? row.publishedAt,
+      source: { name: asString(row.publisher) ?? domain, url: domain ? `https://${domain}` : null },
+      provider: "tinyfish",
+    };
+  });
+}
+
+function matchesSource(article: NewsArticle, domains: string[]): boolean {
+  if (!domains.length) return true;
+  const hostname = new URL(article.url).hostname.toLowerCase();
+  return domains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
+export async function fetchRelevantNews(query: string, max: number, page: number, search: string | null, sourceDomains: string[] = []): Promise<NewsPayload> {
+  const jobs: Array<{ provider: "gnews" | "apitube" | "tinyfish"; run: () => Promise<{ articles: unknown[]; warnings: string[] }> }> = [];
+  // News uses only the primary key; the secondary key belongs to intelligence.
+  const tinyfishKey = await resolveCredential("tinyfishApiKey", "TINYFISH_API_KEY");
+  if (tinyfishKey) jobs.push({ provider: "tinyfish", run: async () => ({ articles: await fetchTinyfishNews(query, max, sourceDomains, tinyfishKey), warnings: [] }) });
   if (process.env.GNEWS_API_KEY?.trim()) jobs.push({
     provider: "gnews",
     run: async () => ({ articles: await fetchGNewsFeed(query, max, page, !search && page === 1), warnings: [] }),
   });
   if (apitubeKeys().length) jobs.push({ provider: "apitube", run: () => fetchApitubeNews(search, max, page) });
-  if (!jobs.length) throw Object.assign(new Error("Configure an APITube news key or GNEWS_API_KEY to load relevant news"), { statusCode: 503 });
+  if (!jobs.length) throw Object.assign(new Error("Configure TINYFISH_API_KEY, an APITube news key, or GNEWS_API_KEY to load relevant news"), { statusCode: 503 });
 
   const results = await Promise.allSettled(jobs.map(job => job.run()));
   const sources: NewsPayload["sources"] = [];
@@ -319,13 +361,13 @@ export async function fetchRelevantNews(query: string, max: number, page: number
     } else {
       failureStatus = Number(result.reason?.statusCode) || 502;
       // Sanitized provider errors only; never forward arbitrary fetch errors.
-      warnings.push(`${provider === "gnews" ? "GNews" : "APITube"} is temporarily unavailable (HTTP ${failureStatus}).`);
+      warnings.push(`${provider === "tinyfish" ? "TinyFish news" : provider === "gnews" ? "GNews" : "APITube"} is temporarily unavailable (HTTP ${failureStatus}).`);
       logger.warn({ provider, statusCode: failureStatus }, "Relevant news provider unavailable");
     }
   }
   if (!sources.length) throw Object.assign(new Error(warnings.join(" ")), { statusCode: failureStatus });
   const relevant = rawArticles.map(normalizeArticle)
-    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6);
+    .filter((article): article is NewsArticle => article !== null && article.relevanceScore >= 6 && matchesSource(article, sourceDomains));
   const unique = new Map<string, NewsArticle>();
   for (const article of relevant) {
     const key = canonicalArticleUrl(article.url);
@@ -348,12 +390,12 @@ export async function fetchRelevantNews(query: string, max: number, page: number
 
 router.get("/relevant-news", async (req, res) => {
   const userSearch = sanitizedSearch(req.query.search);
-  const sourceDomains = typeof req.query.sources === "string" ? req.query.sources.split(",").map(value => value.trim().replace(/^www\./, "")).filter(value => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)).slice(0, 20) : [];
-  const sourceQuery = sourceDomains.length ? ` (${sourceDomains.map(domain => `site:${domain}`).join(" OR ")})` : "";
-  const query = (userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY) + sourceQuery;
+  const sourceDomains = typeof req.query.sources === "string" ? req.query.sources.split(",").map(value => value.trim().toLowerCase().replace(/^www\./, "")).filter(value => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)).slice(0, 20) : [];
+  const query = (userSearch ? `(${BASE_QUERY}) AND "${userSearch}"` : BASE_QUERY);
   const max = boundedInteger(req.query.max, 40, 1, 100);
   const page = boundedInteger(req.query.page, 1, 1, 100);
-  const cacheKey = `${query}|${max}|${page}|${Boolean(process.env.GNEWS_API_KEY?.trim())}|${apitubeKeys().length}|${process.env.GNEWS_MAX_ARTICLES}|${process.env.APITUBE_NEWS_MAX_ARTICLES}`;
+  const newsKeyConfigured = Boolean(await resolveCredential("tinyfishApiKey", "TINYFISH_API_KEY"));
+  const cacheKey = `${newsKeyConfigured}|${sourceDomains.join(",")}|${query}|${max}|${page}|${Boolean(process.env.GNEWS_API_KEY?.trim())}|${apitubeKeys().length}|${process.env.GNEWS_MAX_ARTICLES}|${process.env.APITUBE_NEWS_MAX_ARTICLES}`;
 
   pruneCache();
   const cached = responseCache.get(cacheKey);
@@ -364,7 +406,7 @@ router.get("/relevant-news", async (req, res) => {
   try {
     let request = inFlight.get(cacheKey);
     if (!request) {
-      request = fetchRelevantNews(query, max, page, userSearch);
+      request = fetchRelevantNews(query, max, page, userSearch, sourceDomains);
       inFlight.set(cacheKey, request);
     }
 
