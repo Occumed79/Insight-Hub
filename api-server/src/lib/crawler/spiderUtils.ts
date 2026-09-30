@@ -124,7 +124,8 @@ export function makeCrawlerOpportunity(options: {
     agency: options.agency?.trim() || options.source.agencyName,
     type: options.type?.trim() || "Solicitation",
     status: "active",
-    postedDate: options.postedDate ?? new Date(),
+    // Never invent a posted date: unknown stays the epoch sentinel.
+    postedDate: options.postedDate ?? new Date(0),
     responseDeadline: options.responseDeadline,
     location: options.location ?? (inferredLocation || undefined),
     description: options.description?.trim(),
@@ -138,6 +139,7 @@ export function makeCrawlerOpportunity(options: {
       sourceName: options.source.agencyName,
       portalPlatform: options.source.portalPlatform,
       crawlerGenerated: true,
+      ...(options.postedDate ? {} : { dateUnknown: true }),
       ...(options.rawData ?? {}),
     },
   };

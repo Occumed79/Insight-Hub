@@ -21,17 +21,18 @@ const directLookingRecord = {
 };
 
 describe("Tango result isolation", () => {
-  it("keeps Tango out of Bid-ready & Verified even when its metadata looks complete", () => {
+  it("treats Tango as a structured API that must still pass the relevance gate", () => {
+    // Tango returns structured federal records (real agency, dates, NAICS), so
+    // it is a trusted direct provider. Garbage is stopped by the relevance gate
+    // and the targeted NAICS/PSC queries, not by hiding every Tango row.
     const quality = classifyOpportunityQuality(
       { ...directLookingRecord, providerName: "tango" },
       now,
     );
 
-    assert.equal(quality.classification, "discovery-only");
-    assert.equal(quality.actionable, false);
-    assert.equal(quality.summaryEligible, false);
-    assert.equal(quality.sourceVerified, false);
-    assert.equal(quality.sourceType, "search-discovery");
+    assert.equal(quality.classification, "verified-open");
+    assert.equal(quality.actionable, true);
+    assert.notEqual(quality.sourceType, "search-discovery");
   });
 
   it("leaves SAM.gov direct records eligible for verified-open", () => {

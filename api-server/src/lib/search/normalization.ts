@@ -79,8 +79,13 @@ export function normalizedToDbRecord(
   const tagList = Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [];
   const postedDate = record.postedDate instanceof Date && Number.isFinite(record.postedDate.getTime())
     ? record.postedDate
-    : new Date();
-  const postedDateUnknown = postedDate !== record.postedDate;
+    : new Date(0);
+  // An invalid date, the epoch sentinel, or a provider's own dateUnknown flag all
+  // mean "the source did not state a posted date"; it is never replaced by now.
+  const postedDateUnknown =
+    postedDate !== record.postedDate ||
+    postedDate.getTime() <= 0 ||
+    rawData.dateUnknown === true;
   const providerName =
     typeof rawData.providerName === "string" && rawData.providerName.trim()
       ? rawData.providerName.trim()

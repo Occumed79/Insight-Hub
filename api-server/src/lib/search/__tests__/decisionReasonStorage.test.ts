@@ -36,3 +36,24 @@ describe("decision reason storage", () => {
     assert.doesNotMatch(db.notes ?? "", /\[why:/);
   });
 });
+
+describe("unknown posted dates", () => {
+  const base = {
+    externalId: "d-1", title: "Occupational Health Services", agency: "VA", type: "Solicitation",
+    status: "active" as const, description: "x", sourceUrl: "https://sam.gov/opp/d-1/view", source: "tango" as const,
+  };
+  it("never replaces an invalid or missing posted date with today", () => {
+    const db = normalizedToDbRecord({ ...base, postedDate: new Date("not a date") }) as any;
+    assert.equal(db.postedDate.getTime(), 0);
+    assert.match(db.tags, /date-unknown/);
+  });
+  it("tags the epoch sentinel as date-unknown", () => {
+    const db = normalizedToDbRecord({ ...base, postedDate: new Date(0) }) as any;
+    assert.match(db.tags, /date-unknown/);
+  });
+  it("leaves real dates alone", () => {
+    const db = normalizedToDbRecord({ ...base, postedDate: new Date("2026-09-10") }) as any;
+    assert.equal(db.postedDate.toISOString().slice(0, 10), "2026-09-10");
+    assert.doesNotMatch(db.tags, /date-unknown/);
+  });
+});
