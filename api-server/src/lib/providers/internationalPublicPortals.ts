@@ -9,6 +9,8 @@ import type {
 } from "./types";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { classifyResult } from "../search/relevance";
+import { verifyCanadaBuysRecords } from "./canadaBuysPageVerification";
+import { summarizeSamVerification } from "./samGovPageVerification";
 
 const TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search";
 const TED_NOTICE_BASE = "https://ted.europa.eu/en/notice/-/detail";
@@ -310,7 +312,7 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
     discoveryPoolId: "canada-buys-official",
     signal: options.signal,
   });
-  const records = result.opportunities
+  const candidates = result.opportunities
     .filter((record) => isOfficialCanadaBuysTenderUrl(record.sourceUrl))
     .map((record) => ({
       ...record,
@@ -329,10 +331,20 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
         sourceConfidence: "high",
       },
     }));
+  // Search hits carry no trustworthy dates or buyer. Read each tender page and
+  // keep only tenders confirmed open on the CanadaBuys page itself.
+  const verification = await verifyCanadaBuysRecords(candidates, {
+    dateRangeDays: Math.max(1, Math.min(364, options.dateRange ?? 30)),
+    signal: options.signal,
+  });
+  const records = verification.verified;
   return {
     records,
     total: records.length,
-    errors: result.errors,
+    errors: [
+      ...result.errors,
+      ...summarizeSamVerification(verification).map((note) => note.replace("SAM.gov public-page recovery", "CanadaBuys page verification")),
+    ],
     diagnostics: {
       internationalSource: "canadaBuys",
       mode: "official-domain-renewable-discovery",
@@ -340,6 +352,7 @@ async function fetchCanadaBuys(options: FetchOptions): Promise<ProviderFetchResu
       queries,
       candidates: result.stats.totalCandidates,
       accepted: records.length,
+      pageVerificationDropped: verification.dropped.length,
       aiScorers: result.stats.aiScorers,
     },
   };
