@@ -306,20 +306,20 @@ function ForecastCard({
   };
 
   return (
-    <article className="glass-card flex h-full flex-col rounded-2xl border border-white/10 p-4 transition-colors hover:border-primary/35">
+    <article className="glass-card flex h-full flex-col rounded-2xl border border-white/10 p-5 transition-colors hover:border-primary/35">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-primary/65">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-primary/80">
             <span>{record.source?.toUpperCase() || "GOVCON"}</span>
-            {record.status && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">{record.status}</span>}
-            {record.isRecompete && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 text-amber-100/80">Recompete</span>}
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${relevanceClass(record.relevance)}`}>
+            {record.status && <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/75">{record.status}</span>}
+            {record.isRecompete && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-amber-100/90">Recompete</span>}
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 ${relevanceClass(record.relevance)}`}>
               {record.relevance.provider === "gemini" && <Sparkles className="h-3 w-3" />}
               {record.relevance.score}% fit
             </span>
           </div>
-          <h2 className="line-clamp-2 text-lg font-semibold leading-snug text-white">{record.title}</h2>
-          <div className="mt-2 flex items-start gap-2 text-xs text-white/55">
+          <h2 className="line-clamp-2 text-xl font-semibold leading-snug text-white md:text-2xl">{record.title}</h2>
+          <div className="mt-2.5 flex items-start gap-2 text-sm text-white/75">
             <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
             <span className="line-clamp-2">{record.agency}{record.subAgency ? ` · ${record.subAgency}` : ""}</span>
           </div>
@@ -349,48 +349,48 @@ function ForecastCard({
         </div>
       </div>
 
-      {description && <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-white/45">{description}</p>}
+      {description && <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-white/70">{description}</p>}
 
       {record.relevance.reasons.length > 0 && (
-        <p className="mt-2 line-clamp-1 text-[10px] text-primary/55">{record.relevance.reasons.join(" · ")}</p>
+        <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-primary/70">{record.relevance.reasons.join(" · ")}</p>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+      <div className="mt-4 grid grid-cols-2 gap-2.5 text-sm">
         <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
-          <p className="text-[9px] uppercase tracking-[0.14em] text-white/35">NAICS / Set-Aside</p>
-          <p className="mt-1 line-clamp-1 text-white/75">{record.naics || "—"}{record.setAside ? ` · ${record.setAside}` : ""}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">NAICS / Set-Aside</p>
+          <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{record.naics || "—"}{record.setAside ? ` · ${record.setAside}` : ""}</p>
         </div>
         <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
-          <p className="text-[9px] uppercase tracking-[0.14em] text-white/35">Estimated Value</p>
-          <p className="mt-1 line-clamp-1 text-white/75">{value}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Estimated Value</p>
+          <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{value}</p>
         </div>
         <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
-          <p className="text-[9px] uppercase tracking-[0.14em] text-white/35">Expected Timing</p>
-          <p className="mt-1 line-clamp-1 text-white/75">{timing}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Expected Timing</p>
+          <p className="mt-1.5 line-clamp-2 font-medium text-white/90">{timing}</p>
         </div>
         <div className="rounded-lg border border-white/8 bg-black/15 p-2.5">
-          <p className="text-[9px] uppercase tracking-[0.14em] text-white/35">Place of Performance</p>
-          <p className="mt-1 flex items-center gap-1.5 line-clamp-1 text-white/75"><MapPin className="h-3 w-3 shrink-0 text-primary/65" />{record.state || "Not listed"}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">Place of Performance</p>
+          <p className="mt-1.5 flex items-center gap-1.5 line-clamp-2 font-medium text-white/90"><MapPin className="h-3 w-3 shrink-0 text-primary/65" />{record.state || "Not listed"}</p>
         </div>
       </div>
 
       {mode === "recompete" && (
         <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-medium text-amber-100/85">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-100/90">
               <ShieldCheck className="h-3.5 w-3.5" /> Incumbent position
             </div>
             <button
               type="button"
               onClick={() => void runVerification()}
               disabled={verifying}
-              className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-200/10 px-2.5 py-1.5 text-[10px] text-amber-100/80 transition-colors hover:bg-amber-200/15 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-medium text-amber-100/90 transition-colors hover:bg-amber-200/15 disabled:opacity-50"
             >
               {verifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
               {verification ? "Recheck official awards" : "Verify official awards"}
             </button>
           </div>
-          <div className="mt-1.5 space-y-0.5 text-xs text-white/55">
+          <div className="mt-2 space-y-1 text-sm text-white/75">
             <p className="line-clamp-1">{record.incumbentName || record.incumbentAward?.recipientName || "Incumbent not published"}</p>
             {(currentValue || expirationDate) && <p>{currentValue ? `Current value: ${currentValue}` : ""}{currentValue && expirationDate ? " · " : ""}{expirationDate ? `Expires: ${expirationDate}` : ""}</p>}
           </div>
@@ -398,16 +398,16 @@ function ForecastCard({
           {verification && (
             <div className="mt-3 border-t border-amber-200/10 pt-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-wider ${verificationClass(verification.confidence)}`}>
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${verificationClass(verification.confidence)}`}>
                   {verification.confidence} · {verification.confidenceScore}%
                 </span>
-                {verification.cached && <span className="text-[10px] text-white/35">cached verification</span>}
+                {verification.cached && <span className="text-xs text-white/55">cached verification</span>}
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-white/55">{verification.summary}</p>
+              <p className="mt-2 text-sm leading-relaxed text-white/70">{verification.summary}</p>
               {verification.evidence.slice(0, 2).map((evidence, index) => (
-                <div key={`${evidence.source}:${evidence.awardId ?? index}`} className="mt-2 rounded-lg border border-white/8 bg-black/15 p-2.5 text-[11px] text-white/55">
+                <div key={`${evidence.source}:${evidence.awardId ?? index}`} className="mt-2 rounded-lg border border-white/8 bg-black/15 p-3 text-xs leading-relaxed text-white/70">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-white/70">{evidence.source}</span>
+                    <span className="font-semibold text-white/85">{evidence.source}</span>
                     <span>{evidence.matchScore}% match</span>
                   </div>
                   <p className="mt-1 line-clamp-1">{evidence.recipientName || "Recipient unavailable"}{evidence.awardId ? ` · ${evidence.awardId}` : ""}</p>
@@ -418,7 +418,7 @@ function ForecastCard({
             </div>
           )}
 
-          {verificationError && <p className="mt-2 text-xs text-red-200/75">{verificationError}</p>}
+          {verificationError && <p className="mt-2 text-sm text-red-200/85">{verificationError}</p>}
         </div>
       )}
     </article>
@@ -500,65 +500,65 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
 
       <form onSubmit={submitFilters} className="glass-card grid gap-3 rounded-2xl border border-white/10 p-4 md:grid-cols-[1fr_1fr_260px_auto]">
         <label className="space-y-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">Keywords</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Keywords</span>
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3">
             <Search className="h-4 w-4 text-white/30" />
             <input
               value={draftKeywords}
               onChange={(event) => setDraftKeywords(event.target.value)}
               placeholder="occupational health, exams, medical..."
-              className="h-11 w-full bg-transparent text-sm text-white outline-none placeholder:text-white/25"
+              className="h-11 w-full bg-transparent text-base text-white outline-none placeholder:text-white/40"
             />
           </div>
         </label>
         <label className="space-y-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">Agency</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Agency</span>
           <input
             value={draftAgency}
             onChange={(event) => setDraftAgency(event.target.value)}
             placeholder="DHS, HHS, VA, DoD..."
-            className="h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-primary/40"
+            className="h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-base text-white outline-none placeholder:text-white/40 focus:border-primary/40"
           />
         </label>
         <label className="space-y-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">Industry Focus</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Industry Focus</span>
           <select
             value={draftNaics}
             onChange={(event) => setDraftNaics(event.target.value)}
-            className="h-11 w-full rounded-xl border border-white/10 bg-[hsl(207,72%,10%)] px-3 text-sm text-white/80 outline-none focus:border-primary/40"
+            className="h-11 w-full rounded-xl border border-white/10 bg-[hsl(207,72%,10%)] px-3 text-base text-white/90 outline-none focus:border-primary/40"
           >
             {INDUSTRY_OPTIONS.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-        <button type="submit" className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/15 px-5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25">
+        <button type="submit" className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/15 px-5 text-base font-semibold text-primary transition-colors hover:bg-primary/25">
           <Search className="h-4 w-4" /> Search
         </button>
       </form>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-white/45">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-white/65">
           {query.isFetching ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <CalendarDays className="h-4 w-4 text-primary/70" />}
           <span>{query.isFetching ? "Refreshing GovCon data…" : `${visibleRecords.length.toLocaleString("en-US")} shown from ${total.toLocaleString("en-US")} source matches`}</span>
-          {query.data?.semanticProvider === "gemini" && <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] uppercase tracking-wider text-primary/80"><Sparkles className="h-3 w-3" /> Gemini ranked</span>}
-          {query.data?.cached && <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wider">cached</span>}
+          {query.data?.semanticProvider === "gemini" && <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-primary/90"><Sparkles className="h-3 w-3" /> Gemini ranked</span>}
+          {query.data?.cached && <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-white/70">cached</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm font-medium text-white/75">
             <input type="checkbox" checked={fitOnly} onChange={(event) => setFitOnly(event.target.checked)} className="accent-[hsl(var(--primary))]" />
             Occu-Med fit only
           </label>
           {hiddenIds.size > 0 && (
-            <button type="button" onClick={restoreHidden} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60 hover:text-white">
+            <button type="button" onClick={restoreHidden} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm font-medium text-white/75 hover:text-white">
               <RotateCcw className="h-3.5 w-3.5" /> Restore {hiddenIds.size} hidden
             </button>
           )}
-          <button onClick={() => query.refetch()} disabled={query.isFetching} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55 transition-colors hover:text-white disabled:opacity-50">
+          <button onClick={() => query.refetch()} disabled={query.isFetching} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm font-medium text-white/75 transition-colors hover:text-white disabled:opacity-50">
             <RefreshCcw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 text-[11px] text-white/40">
+      <div className="flex flex-wrap gap-2 text-xs leading-relaxed text-white/60">
         <span>{query.data?.sourcePageRecords ?? records.length} records evaluated on this source page</span>
         {fitOnly && (query.data?.lowRelevanceCount ?? 0) > 0 && <span>· {query.data?.lowRelevanceCount} low-fit result{query.data?.lowRelevanceCount === 1 ? "" : "s"} suppressed by server ranking</span>}
         {(query.data?.suppressedCount ?? 0) > 0 && <span>· {query.data?.suppressedCount} previously marked not relevant</span>}
@@ -566,7 +566,7 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
       </div>
 
       {feedbackError && (
-        <div className="rounded-xl border border-red-300/20 bg-red-300/10 p-3 text-xs text-red-100/75">{feedbackError}</div>
+        <div className="rounded-xl border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-100/85">{feedbackError}</div>
       )}
 
       {query.isError && (
@@ -580,15 +580,15 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
       )}
 
       {!query.isLoading && !query.isError && records.length === 0 && (
-        <div className="glass-card rounded-2xl border border-white/10 p-10 text-center text-white/45">No matching {isRecompete ? "recompetes" : "forecasts"}. Choose All industries, turn off Occu-Med fit only, or broaden the search terms.</div>
+        <div className="glass-card rounded-2xl border border-white/10 p-10 text-center text-base text-white/65">No matching {isRecompete ? "recompetes" : "forecasts"}. Choose All industries, turn off Occu-Med fit only, or broaden the search terms.</div>
       )}
 
       {!query.isLoading && !query.isError && records.length > 0 && visibleRecords.length === 0 && (
-        <div className="glass-card rounded-2xl border border-white/10 p-8 text-center text-white/45">
+        <div className="glass-card rounded-2xl border border-white/10 p-8 text-center text-base text-white/65">
           <p>No visible records remain on this page.</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {fitOnly && <button type="button" onClick={() => setFitOnly(false)} className="rounded-full border border-primary/25 bg-primary/10 px-4 py-2 text-xs text-primary hover:bg-primary/20">Show all source matches</button>}
-            {hiddenIds.size > 0 && <button type="button" onClick={restoreHidden} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/65 hover:text-white">Restore hidden records</button>}
+            {fitOnly && <button type="button" onClick={() => setFitOnly(false)} className="rounded-full border border-primary/25 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20">Show all source matches</button>}
+            {hiddenIds.size > 0 && <button type="button" onClick={restoreHidden} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 hover:text-white">Restore hidden records</button>}
           </div>
         </div>
       )}
@@ -598,7 +598,7 @@ export function GovConForecastWorkspace({ mode }: { mode: GovConWorkspaceMode })
       </section>
 
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/15 p-3 text-sm text-white/50">
+        <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/15 p-4 text-base text-white/70">
           <span>Source page {currentStart.toLocaleString("en-US")}–{currentEnd.toLocaleString("en-US")} of {total.toLocaleString("en-US")}</span>
           <div className="flex gap-2">
             <button disabled={filters.offset === 0 || query.isFetching} onClick={() => setFilters((current) => ({ ...current, offset: Math.max(0, current.offset - PAGE_SIZE) }))} className="rounded-lg border border-white/10 px-3 py-2 transition-colors hover:text-white disabled:opacity-35">Previous</button>
