@@ -301,6 +301,28 @@ export class SamGovProvider implements DataSourceProvider {
     }
   }
 
+  /**
+   * Codes the Occu-Med team keeps in the reference profile are searched first,
+   * ahead of the built-in taxonomy, so a profile edit changes what is queried.
+   */
+  private async withProfileCodes(
+    queries: SamGovClassificationQuery[],
+  ): Promise<SamGovClassificationQuery[]> {
+    try {
+      const { getOccuMedSearchProfile } = await import("../search/occumedSearchProfile");
+      const profile = await getOccuMedSearchProfile();
+      if (!profile.loaded) return queries;
+      const known = new Set(queries.map((query) => `${query.parameter}:${query.code}`));
+      const extra: SamGovClassificationQuery[] = [
+        ...profile.naics.map((code) => ({ parameter: "ncode" as const, code, title: "Occu-Med profile NAICS", tier: "registered" as const, effect: "include" as const })),
+        ...profile.psc.map((code) => ({ parameter: "ccode" as const, code, title: "Occu-Med profile PSC", tier: "registered" as const, effect: "include" as const })),
+      ].filter((query) => !known.has(`${query.parameter}:${query.code}`));
+      return [...extra, ...queries];
+    } catch {
+      return queries;
+    }
+  }
+
   private classificationQueriesForRun(
     queries: SamGovClassificationQuery[],
   ): SamGovClassificationQuery[] {
@@ -387,7 +409,7 @@ export class SamGovProvider implements DataSourceProvider {
     const normalized: NormalizedOpportunity[] = [];
     const seen = new Set<string>();
     const titleQueries = this.titleQueriesForRun(options.keywords);
-    const allClassificationQueries = buildSamGovClassificationQueries();
+    const allClassificationQueries = await this.withProfileCodes(buildSamGovClassificationQueries());
     const classificationQueries = this.classificationQueriesForRun(allClassificationQueries);
     const titleErrors: string[] = [];
     let samCapacityExhausted = false;

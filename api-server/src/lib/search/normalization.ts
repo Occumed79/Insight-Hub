@@ -85,10 +85,20 @@ export function normalizedToDbRecord(
     typeof rawData.providerName === "string" && rawData.providerName.trim()
       ? rawData.providerName.trim()
       : record.source;
-  const notes =
+  const providerNote =
     typeof rawData.notes === "string" && rawData.notes.trim()
       ? rawData.notes.trim()
-      : relevanceReason;
+      : undefined;
+  // The decision reason is stored in its own marked segment so the API can show
+  // "why this passed" without mixing it with provenance text; a provider note
+  // no longer overwrites it.
+  const decisionMethod =
+    typeof rawData.opportunityDecisionMethod === "string"
+      ? rawData.opportunityDecisionMethod
+      : undefined;
+  const whyNote = relevanceReason?.trim()
+    ? `[why: ${relevanceReason.replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 400)}${decisionMethod ? ` | via: ${decisionMethod}` : ""}]`
+    : undefined;
   const rawConfidence =
     typeof rawData.sourceConfidence === "string"
       ? rawData.sourceConfidence
@@ -157,7 +167,8 @@ export function normalizedToDbRecord(
           ? "Official portal discovery — parser enrichment pending."
           : null,
         evidence.notes,
-        notes,
+        whyNote,
+        providerNote,
       ]
         .filter(Boolean)
         .join(" ") || null,

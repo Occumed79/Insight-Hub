@@ -173,6 +173,10 @@ async function applyStructuredFederalDecision(
   options: ProviderRunnerOptions,
   diagnostics?: Record<string, unknown>,
 ): Promise<ProviderRunResult> {
+  // Load the Occu-Med profile phrases the relevance gate reads synchronously.
+  await import("../search/occumedSearchProfile")
+    .then((module) => module.getOccuMedSearchProfile())
+    .catch(() => undefined);
   const guarded = applyProviderGuards(
     provider,
     records,

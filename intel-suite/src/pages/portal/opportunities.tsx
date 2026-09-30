@@ -614,6 +614,8 @@ export default function OpportunitiesDashboard() {
   };
 
   const getSummaryHint = (opp: any): string | null => {
+    const why = opp.relevance?.why;
+    if (typeof why === "string" && why.trim()) return why.trim();
     const reasons = opp.relevance?.reasons ?? opp.matchReasons ?? [];
     if (reasons.length > 0) return reasons.slice(0, 2).join(" · ");
     return null;
@@ -1173,7 +1175,19 @@ export default function OpportunitiesDashboard() {
                       <h3 className="text-sm font-semibold leading-snug text-white line-clamp-3 group-hover:text-primary transition-colors">
                         {opp.title}
                       </h3>
-                      <p className="text-[11px] text-primary/80 leading-snug line-clamp-2">
+                      <p
+                        className="text-[11px] text-primary/80 leading-snug line-clamp-3"
+                        title={hint}
+                      >
+                        {opp.relevance?.decisionMethod && (
+                          <span className="mr-1.5 rounded border border-primary/30 px-1 py-px text-[9px] uppercase tracking-wide text-primary/70">
+                            {opp.relevance.decisionMethod === "rule"
+                              ? "Rule match"
+                              : opp.relevance.decisionMethod === "ai-panel"
+                                ? "AI panel"
+                                : "AI judge"}
+                          </span>
+                        )}
                         {hint}
                       </p>
                       <div className="text-[11px] text-white/70">

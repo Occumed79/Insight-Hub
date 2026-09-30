@@ -232,6 +232,10 @@ export async function webIntelligenceFetch(options: {
   signal?: AbortSignal;
 }): Promise<WebIntelligenceResult> {
   throwIfAborted(options.signal);
+  // Load the Occu-Med profile phrases the relevance gate reads synchronously.
+  await import("./occumedSearchProfile")
+    .then((module) => module.getOccuMedSearchProfile())
+    .catch(() => undefined);
   const errors: string[] = [];
   const dateRangeDays = boundedDateRange(options.dateRange);
   const publishedAfter = new Date(Date.now() - dateRangeDays * DAY_MS);
