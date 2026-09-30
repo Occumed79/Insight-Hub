@@ -4,6 +4,7 @@ import { exaProvider } from "../providers/exa";
 import { firecrawlProvider } from "../providers/firecrawl";
 import { jinaProvider } from "../providers/jina";
 import { keenableProvider } from "../providers/keenable";
+import { tinyfishProvider } from "../providers/tinyfish";
 import { browserbaseProvider } from "../providers/browserbase";
 import { microlinkProvider } from "../providers/microlink";
 import { youProvider } from "../providers/you";
@@ -38,6 +39,7 @@ type SearchCandidateProvider =
   | "you"
   | "browserbase"
   | "keenable"
+  | "tinyfish"
   | "parallel"
   | "exa"
   | "firecrawl"
@@ -84,6 +86,7 @@ export interface WebIntelligenceResult {
     youResults: number;
     browserbaseResults: number;
     keenableResults: number;
+    tinyfishResults: number;
     parallelResults: number;
     exaResults: number;
     firecrawlResults: number;
@@ -210,6 +213,7 @@ export async function webIntelligenceFetch(options: {
   useFirecrawl?: boolean;
   useYou?: boolean;
   useKeenable?: boolean;
+  useTinyfish?: boolean;
   useBrowserbase?: boolean;
   useLangsearch?: boolean;
   useParallel?: boolean;
@@ -234,6 +238,7 @@ export async function webIntelligenceFetch(options: {
     youResults: 0,
     browserbaseResults: 0,
     keenableResults: 0,
+    tinyfishResults: 0,
     parallelResults: 0,
     exaResults: 0,
     firecrawlResults: 0,
@@ -266,6 +271,7 @@ export async function webIntelligenceFetch(options: {
   const useFirecrawl = options.useFirecrawl === true;
   const useYou = options.useYou === true;
   const useKeenable = options.useKeenable === true;
+  const useTinyfish = options.useTinyfish === true;
   const useBrowserbase = options.useBrowserbase === true;
   const useLangsearch = options.useLangsearch === true;
   const useParallel = options.useParallel === true;
@@ -381,6 +387,21 @@ export async function webIntelligenceFetch(options: {
         content: result.title,
         sourceProvider: "browserbase" as const,
         dateRaw: result.publishedDate,
+      })),
+    });
+
+    if (useTinyfish) attempts.push({
+      name: "tinyfish",
+      isConfigured: () => tinyfishProvider.isConfigured(),
+      run: async (attemptSignal) => (await tinyfishProvider.search(query, {
+        publishedAfter: publishedAfterIso,
+        signal: attemptSignal ?? options.signal,
+      })).map(result => ({
+        title: result.title,
+        url: result.url,
+        content: result.snippet || result.title,
+        sourceProvider: "tinyfish" as const,
+        dateRaw: result.publishedAt,
       })),
     });
 

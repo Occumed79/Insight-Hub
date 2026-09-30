@@ -188,6 +188,7 @@ router.get("/providers/telemetry", async (req, res) => {
       "you",
       "browserbase",
       "keenable",
+      "tinyfish",
       "parallel",
       "exa",
       "firecrawl",

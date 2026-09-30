@@ -17,6 +17,7 @@ export type ProviderName =
   | "firecrawl"
   | "browserbase"
   | "keenable"
+  | "tinyfish"
   | "microlink"
   | "openrouter"
   | "groq"
@@ -66,6 +67,7 @@ export const RFP_INGESTION_PROVIDER_NAMES = [
   "you",
   "browserbase",
   "keenable",
+  "tinyfish",
   "parallel",
   "exa",
   "firecrawl",
@@ -286,6 +288,17 @@ export const PROVIDER_DEFINITIONS: Record<RfpProviderName, ProviderDefinition> =
     "active",
     "Managed search and page-fetch fallback with two independent account slots.",
   ),
+  tinyfish: {
+    ...provider(
+      "tinyfish", "TinyFish Intelligence", "search", "web_discovery",
+      [secretField("tinyfishApiKey2", "TINYFISH_API_KEY_2", "Intelligence API Key (secondary)")],
+      ["Web opportunity discovery", "Dedicated intelligence key"],
+      "active",
+      "Uses a separate secondary TinyFish key for Fetch Intelligence. The original TINYFISH_API_KEY remains news-only.",
+    ),
+    docsUrl: "https://docs.tinyfish.ai/search-api/reference",
+    signupUrl: "https://agent.tinyfish.ai/",
+  },
   keenable: {
     ...provider(
       "keenable",

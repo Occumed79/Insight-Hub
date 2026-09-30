@@ -24,6 +24,7 @@ export const INSIGHT_SOURCE_ARCHITECTURE: InsightSourceDefinition[] = [
 
   { name: "you", role: "browser_discovery", active: true, purpose: "Daily-renewing web opportunity discovery with independent account failover" },
   { name: "browserbase", role: "browser_discovery", active: true, purpose: "Managed web search plus page-fetch fallback with independent account failover" },
+  { name: "tinyfish", role: "browser_discovery", active: true, purpose: "Free web search for opportunity discovery and contractor news" },
   { name: "keenable", role: "browser_discovery", active: true, purpose: "Managed indexed web search and fetch" },
   { name: "exa", role: "browser_discovery", active: true, purpose: "Semantic web opportunity discovery with independent account failover" },
   { name: "langsearch", role: "browser_discovery", active: true, purpose: "Four-account web opportunity discovery pool" },

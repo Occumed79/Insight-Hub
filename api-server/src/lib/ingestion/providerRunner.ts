@@ -65,6 +65,7 @@ const DEFAULT_MANUAL_PROVIDERS = [
   "aiDiscovery",
 ] as const;
 const DISCOVERY_PROVIDER_ORDER = [
+  "tinyfish",
   "keenable",
   "you",
   "browserbase",
@@ -305,6 +306,7 @@ async function fetchSamGovPublicSearchFallback(
     useYou: true,
     useBrowserbase: true,
     useKeenable: true,
+    useTinyfish: true,
     useExa: true,
     useLangsearch: true,
     useParallel: true,
@@ -499,6 +501,7 @@ async function loadDiscoveryRuntime() {
     firecrawl,
     browserbase,
     keenable,
+    tinyfish,
     intelligence,
   ] = await Promise.all([
     import("../providers/exa"),
@@ -511,6 +514,7 @@ async function loadDiscoveryRuntime() {
     import("../providers/firecrawl"),
     import("../providers/browserbase"),
     import("../providers/keenable"),
+    import("../providers/tinyfish"),
     import("../search/webIntelligence"),
   ]);
   return {
@@ -524,6 +528,7 @@ async function loadDiscoveryRuntime() {
     firecrawlProvider: firecrawl.firecrawlProvider,
     browserbaseProvider: browserbase.browserbaseProvider,
     keenableProvider: keenable.keenableProvider,
+    tinyfishProvider: tinyfish.tinyfishProvider,
     webIntelligenceFetch: intelligence.webIntelligenceFetch,
   };
 }
@@ -580,6 +585,7 @@ function discoveryOptions(provider: DiscoveryProvider) {
     useYou: provider === "you",
     useBrowserbase: provider === "browserbase",
     useKeenable: provider === "keenable",
+    useTinyfish: provider === "tinyfish",
     useExa: provider === "exa",
     useLangsearch: provider === "langsearch",
     useParallel: provider === "parallel",
@@ -599,6 +605,7 @@ async function fetchConfiguredAiDiscovery(
   const runtime = await loadDiscoveryRuntime();
   const configuredChecks: Record<DiscoveryProvider, () => Promise<boolean>> = {
     keenable: () => runtime.keenableProvider.isConfigured(),
+    tinyfish: () => runtime.tinyfishProvider.isConfigured(),
     you: () => runtime.youProvider.isConfigured(),
     browserbase: () => runtime.browserbaseProvider.isConfigured(),
     parallel: () => runtime.parallelProvider.isConfigured(),
@@ -814,6 +821,7 @@ export async function fetchOneProvider(
       useYou: provider === "you",
       useBrowserbase: provider === "browserbase",
       useKeenable: provider === "keenable",
+    useTinyfish: provider === "tinyfish",
       useExa: provider === "exa",
       useLangsearch: provider === "langsearch",
       useParallel: provider === "parallel",

@@ -20,6 +20,7 @@ export * from "./bidnet";
 export * from "./firecrawl";
 export * from "./browserbase";
 export * from "./keenable";
+export * from "./tinyfish";
 export * from "./microlink";
 export * from "./jina";
 export * from "./openrouter";
@@ -59,6 +60,7 @@ import { bidnetProvider } from "./bidnet";
 import { firecrawlProvider } from "./firecrawl";
 import { browserbaseProvider } from "./browserbase";
 import { keenableProvider } from "./keenable";
+import { tinyfishProvider } from "./tinyfish";
 import { microlinkProvider } from "./microlink";
 import { jinaProvider } from "./jina";
 import { openrouterProvider } from "./openrouter";
@@ -114,6 +116,7 @@ export const providerRegistry: Record<ProviderName, DataSourceProvider> = {
   firecrawl: firecrawlProvider,
   browserbase: browserbaseProvider,
   keenable: keenableProvider,
+  tinyfish: tinyfishProvider,
   microlink: microlinkProvider,
   jina: jinaProvider,
   openrouter: openrouterProvider,

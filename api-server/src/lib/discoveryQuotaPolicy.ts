@@ -25,6 +25,13 @@ export interface DiscoveryQuotaPolicy {
  */
 export const DISCOVERY_QUOTA_POLICIES: readonly DiscoveryQuotaPolicy[] = [
   {
+    provider: "tinyfish",
+    renewal: "hourly",
+    priority: 4,
+    purpose: "discovery",
+    note: "Free Search API with a configured key; rate-limit cooldowns apply.",
+  },
+  {
     provider: "keenable",
     renewal: "hourly",
     priority: 5,
