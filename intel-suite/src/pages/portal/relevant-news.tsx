@@ -103,6 +103,22 @@ function NewsSkeleton() {
   );
 }
 
+function ArticlePhoto({ article }: { article: NewsArticle }) {
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [usePublisher, setUsePublisher] = useState(!article.image);
+  const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+  if (failed) return null;
+  const image = !usePublisher && article.image ? article.image : `${baseUrl}/api/news/article-image?${new URLSearchParams({ url: article.url })}`;
+  return (
+    <div className={`aspect-[16/7] overflow-hidden border-b border-white/10 bg-black/20 ${loaded ? "" : "ui-skeleton"}`}>
+      <img src={image} alt={article.title} loading="lazy" decoding="async"
+        className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+        onLoad={() => setLoaded(true)} onError={() => { if (!usePublisher) { setUsePublisher(true); setLoaded(false); } else setFailed(true); }} />
+    </div>
+  );
+}
+
 export default function RelevantNewsPage() {
   const [draftSearch, setDraftSearch] = useState("");
   const [search, setSearch] = useState("");
@@ -241,17 +257,7 @@ export default function RelevantNewsPage() {
         <section aria-label="Relevant news results" className="grid min-w-0 gap-4 md:grid-cols-2">
           {articles.map((article) => (
             <article key={article.id} className="glass-card min-w-0 overflow-hidden rounded-2xl border border-white/10 transition-colors hover:border-primary/35">
-              {article.image && (
-                <div className="aspect-[16/7] overflow-hidden border-b border-white/10 bg-black/20">
-                  <img
-                    src={article.image}
-                    alt={article.title}
-                    className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
-              )}
+              <ArticlePhoto key={`${article.url}|${article.image ?? "publisher"}`} article={article} />
               <div className="min-w-0 p-5">
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.15em] text-white/35">
                   <span className="ui-break-anywhere">{article.source.name}{article.provider && ` · ${article.provider === "keenable" ? "Keenable" : article.provider === "apitube" ? "APITube" : article.provider === "tinyfish" ? "TinyFish" : "GNews"}`}</span>

@@ -3,8 +3,18 @@ import { resolveCredential } from "../lib/config/providerConfig";
 import { keenableProvider } from "../lib/providers/keenable";
 import { logger } from "../lib/logger";
 import { apitubeKeys, contractorNewsSignals, fetchApitubeNews, httpUrl } from "../lib/news/apitube";
+import { publisherImage } from "../lib/news/articleImages";
 
 const router: IRouter = Router();
+
+// Load missing publication photos separately so metadata never delays the news feed.
+router.get("/news/article-image", async (req, res) => {
+  const url = typeof req.query.url === "string" ? req.query.url.slice(0, 4096) : "";
+  const image = await publisherImage(url);
+  res.setHeader("Cache-Control", image ? "public, max-age=86400" : "public, max-age=900");
+  if (!image) return res.status(404).end();
+  return res.redirect(image);
+});
 
 const GNEWS_SEARCH_URL = "https://gnews.io/api/v4/search";
 const REQUEST_TIMEOUT_MS = 12_000;
