@@ -184,3 +184,13 @@ Loader reads the new term types, rule scope/triggers, facts and policies; the cl
 - 003 applied: 22 rules, all `draft`; `v_current_rules` still returns the original 4.
 - Bug found and fixed by validation: in 002, `coalesce(g->6,'{}')` treated JSON `null` as a value, so metadata became an array for 934 rows. Now `case when jsonb_typeof(g->6)='object' ...`.
 - 004 (facts/policies) NOT yet loaded on the branch. Constraints checked: fact_key unique (74), priorities 0-100, status `draft` allowed, no category CHECK.
+
+## 11. Owner decisions applied (2026-10-03)
+
+1. **Staffing:** `rv_cond_treatment_staffing_only` removed. New hard rule `rv_staffing_labor_supply` rejects staffing/locum/clinical labor supply/ambulance operations as the purchased service. Bare nurse/EMT/paramedic/firefighter/first responder are not triggers (they identify the served workforce). Remaining non-staffing treatment/plan terms stay conditional as `rv_cond_treatment_plan_admin`. Review terms "clinical staffing" and "health-unit staffing" dropped from terms.
+2. **Thresholds:** the 8 legacy thresholds are not migrated. Two canonical facts defined once: `relevance.accept_min`=72, `relevance.review_min`=55. These are initial values to calibrate with the regression probe set before activation; all other hard-coded thresholds are removed in the consumer refactor.
+3. **GovCon:** uses the shared Neon-backed logic. Useful weights live only as `govcon_weight` term metadata; the penalty map is in rule scope `rv_cond_unrelated_procurement`. No separate GovCon weighting survives the refactor.
+4. **Commodity/equipment supply:** new canonical rule `rv_commodity_raw_material_supply` (title-scoped), kept alongside policy `rfp_commodity_and_equipment_supply`.
+5. **Authority:** `900_activate.sql` now also sets `authority_level='canonical'`.
+
+Expected counts now: terms 1001 (checksum `4aa4e1cec238d6da2573fb1fae2157e0`, verified on branch), rules 24, facts 68, policies 5. Activation tested on the branch: 1059 active terms, 28 current rules, all canonical.
