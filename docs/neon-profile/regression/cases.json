@@ -1,0 +1,951 @@
+[
+ {
+  "group": "known_good",
+  "id": "good01",
+  "title": "OSHA Lead and Asbestos Medical Surveillance Solicitation",
+  "description": "Procurement for employee medical surveillance related to lead, asbestos, and silica exposure including physical examinations and laboratory testing.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good02",
+  "title": "RFP - Occupational Health and Medical Surveillance Services",
+  "description": "Request for proposal for employee occupational medicine examinations, medical surveillance, and fitness-for-duty services.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good03",
+  "title": "Solicitation for Drug and Alcohol Testing Services",
+  "description": "The agency seeks a contractor to provide workforce drug testing, urine collections, MRO support, and breath alcohol testing.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good04",
+  "title": "Audiometric Testing and Hearing Conservation RFP",
+  "description": "Competitive procurement for employee audiograms, audiometric testing, and occupational hearing conservation program support.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good05",
+  "title": "Respiratory Protection Medical Evaluation and Fit Testing RFQ",
+  "description": "Request for quote for employee respirator medical evaluations, quantitative fit testing, and spirometry services.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good06",
+  "title": "Pre-Employment Physical Examination Services Solicitation",
+  "description": "Agency procurement for pre-employment physical exams, fitness-for-duty examinations, vision screening, and laboratory testing.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good07",
+  "title": "Deployment Medical Screening Services RFP",
+  "description": "The government requests proposals for pre-deployment medical examinations, immunizations, medical screening, and readiness services for contractor personnel.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good08",
+  "title": "Employee Health Vaccination and TB Testing Contract",
+  "description": "Invitation to bid for workforce health vaccinations, immunizations, titers, tuberculosis testing, and occupational health clinic support.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good09",
+  "title": "Occupational Health Provider Network Management RFP",
+  "description": "Request for proposals to manage a nationwide provider network delivering medical examinations, drug testing, reporting, and occupational health services.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good10",
+  "title": "DOT Physical and Drug Testing Services Bid",
+  "description": "Competitive bid for DOT medical examinations, 49 CFR Part 40 collections, breath alcohol testing, and employee health services.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good11",
+  "title": "NFPA 1582 Firefighter Medical Examination RFP",
+  "description": "Solicitation for NFPA 1582 annual physical examinations, laboratory testing, audiograms, spirometry, and fitness-for-duty medical evaluations.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good12",
+  "title": "Occupational Medicine PFT and Spirometry Services RFQ",
+  "description": "Request for quotation for pulmonary function testing, spirometry, respirator clearance, and occupational medicine services for employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good13",
+  "title": "Fitness for Duty Evaluations for Transit Operators",
+  "description": "Request for proposals: fitness for duty and return to work medical evaluations for bus operators and safety-sensitive employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good14",
+  "title": "Embassy Contractor Medical Clearance Examinations",
+  "description": "Request for quotation for medical clearance examinations and immunizations for embassy contractor personnel and local national employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good15",
+  "title": "Employee Physicals and Pre-Placement Medical Examinations",
+  "description": "Invitation for bid: pre-placement physical examinations, post-offer medical examinations, and periodic employee physicals for county applicants.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "known_good",
+  "id": "good16",
+  "title": "Occupational Health Clinic Services for Public Works Employees",
+  "description": "Solicitation for onsite occupational health services, hearing tests, respirator fit testing and annual medical monitoring for public works employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus01",
+  "title": "Blood Lead Level Monitoring for Public Works Crews",
+  "description": "Request for proposal for medical surveillance of employees exposed to lead: blood lead testing, periodic medical monitoring and physician review.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus02",
+  "title": "Mobile Hearing Test Van for Municipal Employees",
+  "description": "Invitation to bid for mobile audiometric testing, annual audiograms and hearing conservation program support for employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus03",
+  "title": "Respirator Questionnaire Review and Fit Test - Fire Department",
+  "description": "Request for quotation: PLHCP review of OSHA respirator questionnaires, respirator clearance and qualitative fit testing for firefighters.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus04",
+  "title": "Annual Employee Health Screens (Bid 24-118)",
+  "description": "Invitation for bid for annual employee health screening services, medical examination services and vision and hearing screening for city employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus05",
+  "title": "Workforce Readiness Evaluations - Overseas Contractor Personnel",
+  "description": "Request for proposals: deployment medical readiness services, OCONUS medical clearance and medical screening and vaccination for contractor personnel.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus06",
+  "title": "Safety-Sensitive Position Testing Program",
+  "description": "Solicitation for pre-employment drug testing, random drug testing, post-accident testing and specimen collection for safety-sensitive employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus07",
+  "title": "Pre-Placement Evaluations for Correctional Officer Candidates",
+  "description": "Request for proposal for pre-placement medical examinations, correctional officer medical examination and psychological screening of applicants.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus08",
+  "title": "Immunization Clinic for Employees - Hep B and TB Titers",
+  "description": "Request for quotes for onsite vaccination clinic, hepatitis B immunizations, titers and tuberculosis testing for employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus09",
+  "title": "Physician Review and Medical Determinations for Job Fitness",
+  "description": "Request for proposal for medical suitability determinations, essential job functions evaluation and defensible placement recommendation for applicants.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus10",
+  "title": "CDL Driver Qualification Program",
+  "description": "Solicitation for DOT medical examinations, CDL medical examination, random drug testing and consortium services for commercial drivers.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus11",
+  "title": "Wellness Clinic Services",
+  "description": "Request for proposals to operate a wellness clinic providing employee physicals, medical surveillance examinations and occupational health services.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus12",
+  "title": "Hazmat Team Annual Medicals",
+  "description": "Bid opportunity: HAZMAT examination, HAZWOPER medical examination and medical monitoring for hazardous-materials workers.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus13",
+  "title": "Medical Services - Police Recruits",
+  "description": "Request for proposal for police officer medical examination, law enforcement medical screening and pre-employment physical of applicants.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "unusual_title",
+  "id": "unus14",
+  "title": "Nuclear Facility Worker Qualification Exams",
+  "description": "Request for proposals: radiation medical surveillance, respirator clearance examination and periodic medical monitoring for regulated employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf01",
+  "title": "Registered Nurse Staffing Solicitation",
+  "description": "Agency seeks temporary registered nurses and clinical staffing personnel for inpatient units. Nurse staffing services request for proposal.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf02",
+  "title": "Locum Tenens Physician Services",
+  "description": "Request for proposals for locum tenens physician coverage for the county jail and clinics.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf03",
+  "title": "EMT Staffing for Special Events",
+  "description": "Request for quotation: EMT staffing and paramedic staffing for stadium events.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf04",
+  "title": "Ambulance and Emergency Medical Services RFP",
+  "description": "Request for proposals for ambulance transport, ambulance operations, EMT staffing, and emergency response services.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf05",
+  "title": "Medical Staff Augmentation - VA Medical Center",
+  "description": "Solicitation for medical staffing and staff augmentation of physicians, nurses and technicians for the medical center.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf06",
+  "title": "Clinical Staffing Services for Correctional Health",
+  "description": "Invitation to bid for clinical staffing: per diem staff, nurses and providers for correctional health clinics.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf07",
+  "title": "Temporary Staffing Services - Healthcare",
+  "description": "Request for proposals for temporary staffing services including nurses, therapists and medical assistants.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf08",
+  "title": "Paramedic Staffing Contract",
+  "description": "Request for proposals for paramedic staffing and ambulance services for fire district.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf09",
+  "title": "Physician and Provider Staffing for Urgent Care",
+  "description": "Solicitation for physician staffing and provider staffing, contract staffing services for urgent care clinics.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_fp",
+  "id": "stf10",
+  "title": "Contract Nurses - Employee Health Unit Coverage",
+  "description": "Request for quotation for contract staffing of nurses to cover the employee health unit. Staffing services.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx01",
+  "title": "Pre-Employment Physicals for Paramedic and EMT Applicants",
+  "description": "Request for proposals for pre-employment physical examinations and drug testing for paramedic and EMT applicants of the fire district.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx02",
+  "title": "Annual Medical Examinations for Firefighters and First Responders",
+  "description": "Solicitation for annual medical examinations, NFPA 1582 physical examination and fitness-for-duty evaluations for firefighters and first responders.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx03",
+  "title": "Hospital Employee Health: Respirator Clearance and Fit Testing for Nurses",
+  "description": "Request for quotation for respirator clearance examination and quantitative fit testing for registered nurses and healthcare workers.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx04",
+  "title": "Drug Testing for Registered Nurse Applicants",
+  "description": "Invitation to bid: pre-employment drug testing services and specimen collection for registered nurse applicants and employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx05",
+  "title": "Fitness-for-Duty Exams for EMS Personnel",
+  "description": "Request for proposals for fitness for duty medical evaluation, medical examination and return to work evaluations for EMS personnel.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "staffing_context_keep",
+  "id": "ctx06",
+  "title": "Employee Health Services for Nursing Staff",
+  "description": "Request for proposals for occupational health services, TB testing and immunizations for nursing staff and employees of the hospital.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com01",
+  "title": "Bulk Diesel Fuel Supply",
+  "description": "Invitation to bid for bulk diesel fuel delivery. Contractor employees must pass pre-employment drug testing.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com02",
+  "title": "Steel Pipe and Fittings Purchase",
+  "description": "Request for quotation for steel pipe and fittings. Delivery drivers must comply with DOT drug and alcohol testing requirements.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com03",
+  "title": "Lumber and Raw Materials for Public Works Shop",
+  "description": "Invitation for bid: lumber and raw materials purchase for the shop.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com04",
+  "title": "Gravel and Aggregate Delivery",
+  "description": "Request for bids for gravel and aggregate delivery to road maintenance yards.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com05",
+  "title": "Asphalt Procurement - Annual Contract",
+  "description": "Solicitation for asphalt supply. Vendor must maintain a drug testing policy for employees.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com06",
+  "title": "Aluminum Sheet Raw Material",
+  "description": "Request for quotation for aluminum raw material in sheet and coil.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com07",
+  "title": "Bulk Cement Purchase",
+  "description": "Invitation to bid for bulk cement and concrete aggregate.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com08",
+  "title": "Polymer Resin Raw Material Supply",
+  "description": "Request for proposals for resin and chemical raw materials.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com09",
+  "title": "Bulk Fertilizer and Grain Purchase",
+  "description": "Invitation for bid for bulk fertilizer and grain for the farm program.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com10",
+  "title": "Replacement Parts for Fleet Vehicles",
+  "description": "Request for quotation for spare parts and replacement parts for fleet vehicles.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com11",
+  "title": "Copper Wire and Scrap Metal Purchase",
+  "description": "Solicitation for copper wire purchase and scrap metal recycling services.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com12",
+  "title": "Gasoline and Diesel Fuel Card Program",
+  "description": "Request for proposals for fuel card program for gasoline and diesel purchases.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk01",
+  "title": "Fuel Handler Medical Surveillance Services",
+  "description": "Request for proposals for medical surveillance and periodic medical monitoring examinations for fuel handling employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk02",
+  "title": "Grain Elevator Workers Respirator Medical Evaluations",
+  "description": "Request for quotation for respirator medical evaluation, respirator clearance examination and fit testing for grain elevator employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk03",
+  "title": "Steel Mill Employee Hearing Conservation and Audiometric Testing",
+  "description": "Request for proposals for audiometric testing, annual audiograms and hearing conservation program for steel mill employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth01",
+  "title": "Electronic Health Record Software Implementation RFP",
+  "description": "Procurement for EHR software licenses, cloud hosting, cybersecurity, and implementation services.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth02",
+  "title": "Medical Equipment and Pharmaceutical Supplies Bid",
+  "description": "Invitation to bid for diagnostic equipment, pharmaceuticals, medication dispensing supplies, and consumables.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth03",
+  "title": "Healthcare Facility Construction Solicitation",
+  "description": "Request for proposals to construct and renovate a clinic building. Contractor employees must comply with drug testing requirements.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth04",
+  "title": "Behavioral Health Treatment Program RFP",
+  "description": "Procurement for psychotherapy, crisis intervention, addiction treatment, and inpatient behavioral health care.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth05",
+  "title": "Employee Health Insurance Benefits Administration RFP",
+  "description": "Request for proposals for health insurance enrollment, claims administration, COBRA, and employee benefits administration.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth06",
+  "title": "Notice of Award - Occupational Health Services",
+  "description": "Contract awarded to the selected vendor. This notice publishes the award result and is not accepting proposals.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth07",
+  "title": "Occupational Health Nurse Manager Job Opening",
+  "description": "Now hiring an occupational health nurse manager. Submit your resume and apply now.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth08",
+  "title": "Janitorial Services Contract RFP",
+  "description": "Request for proposals for custodial, cleaning, landscaping, and facility maintenance services.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth09",
+  "title": "News: Agency Expands Workplace Health Program",
+  "description": "Press release and news article describing an existing employee wellness initiative. No solicitation is open.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth10",
+  "title": "General IT Staff Augmentation RFP",
+  "description": "Request for proposal for software developers, project managers, help desk staff, and IT support. Vendor personnel must pass pre-employment drug screening.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth11",
+  "title": "Disability Determination Medical Consultant Panel",
+  "description": "Request for proposals for regional medical consultant services for social security disability adjudication.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "other_reject",
+  "id": "oth12",
+  "title": "Starlink Satellite Terminals Purchase",
+  "description": "Request for quotation for Starlink satellite terminals and information technology equipment.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv01",
+  "title": "Workplace Health and Safety Training Services RFP",
+  "description": "Request for proposals for workplace health and safety training, safety consulting and policy development for county staff.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv02",
+  "title": "N95 Respirator and Mask Purchase",
+  "description": "Invitation to bid for bulk purchase of N95 respirators, disposable masks and face shields for stockpile.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv03",
+  "title": "Pre-Employment Background Screening Services",
+  "description": "Request for proposals for pre-employment background checks, fingerprinting, criminal history and employment verification.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv04",
+  "title": "Audiometric Equipment Purchase",
+  "description": "Request for quotation for audiometric equipment purchase and calibration of audiometers.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv05",
+  "title": "Vaccination Supplies - Bulk Influenza Vaccine",
+  "description": "Invitation to bid for purchase of influenza vaccine doses and vaccination supplies for the health department.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv06",
+  "title": "Health Services Consulting for Hospital Strategic Plan",
+  "description": "Request for proposals for health services strategic planning and consulting for the hospital district.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv07",
+  "title": "Physical Therapy Services for Injured Patients",
+  "description": "Request for proposals for physical therapy and rehabilitation clinic services for patients.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv08",
+  "title": "Clinic Laboratory Equipment Maintenance",
+  "description": "Request for quotation for maintenance of clinic laboratory equipment and analyzers.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv09",
+  "title": "Employee Wellness Gym Membership Program",
+  "description": "Request for proposals: employee wellness program vendor for gym memberships and fitness challenges.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "adversarial_reject",
+  "id": "adv10",
+  "title": "Titer Reagents and Test Kits Purchase",
+  "description": "Request for quotation to purchase laboratory reagents, titer assays and test kits.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "loose-phrase guard"
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk01",
+  "title": "Medical Provider Network Management",
+  "description": "Request for proposals to manage a network of medical providers delivering physical examinations and testing.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk02",
+  "title": "Occupational Medicine Services",
+  "description": "Request for proposals for occupational medicine services.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "thin_evidence_good",
+  "id": "wk03",
+  "title": "Medical Services",
+  "description": "Request for proposals for professional medical services including medical examination and surveillance.",
+  "expect": "not_reject",
+  "url": "https://example.org/x",
+  "deadline": false,
+  "note": "thin wording (no procurement signal / <2 components); legacy classifier decides identically"
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk04",
+  "title": "Lead Medical Surveillance",
+  "description": "Solicitation for medical surveillance covering lead.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk05",
+  "title": "Hearing Conservation Program",
+  "description": "Request for quote for hearing conservation including audiometric testing.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "thin_evidence_good",
+  "id": "wk06",
+  "title": "Applicant Medical Screening Services",
+  "description": "Bid for medical examination and vision screening for applicants.",
+  "expect": "not_reject",
+  "url": "https://example.org/x",
+  "deadline": false,
+  "note": "thin wording (no procurement signal / <2 components); legacy classifier decides identically"
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk07",
+  "title": "Respirator Medical Clearance",
+  "description": "Request for quotation for respiratory protection medical evaluation.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk08",
+  "title": "DOT Collection Services",
+  "description": "Request for proposals for DOT Part 40 collection services.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk09",
+  "title": "Pre-Hire Physicals",
+  "description": "Invitation to bid for pre-hire physical examinations.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk10",
+  "title": "Employee Immunization Services",
+  "description": "Request for quotes for immunization services and tuberculosis testing.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "stale_dated_legit",
+  "id": "old01",
+  "title": "Pre-Employment Physical Examination Services",
+  "description": "Request for proposals for pre-employment physical examination services for employees.",
+  "expect": "not_reject",
+  "url": "https://example.org/x",
+  "date": "2022-03-01",
+  "deadline": false
+ },
+ {
+  "group": "stale_dated_legit",
+  "id": "old02",
+  "title": "Occupational Health Services RFP",
+  "description": "Request for proposals for occupational health services for employees and applicants.",
+  "expect": "not_reject",
+  "url": "https://example.org/x",
+  "date": "2022-03-01",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr01",
+  "title": "Medical Waste Disposal Services RFP",
+  "description": "Request for proposals for medical waste pickup and disposal for clinics and employee health facilities.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr02",
+  "title": "Immunization Registry Software Hosting",
+  "description": "Request for proposals for immunization registry software hosting and support for the health department.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr03",
+  "title": "Hospital Laboratory Information System Upgrade",
+  "description": "Invitation to bid for laboratory information system upgrade and clinic software for employees.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr04",
+  "title": "Dental Services for Inmates",
+  "description": "Request for proposals for dental clinic services for inmates and detainees.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr05",
+  "title": "Ambulance Billing and Collections Services",
+  "description": "Request for proposals for ambulance billing, claims processing and collections.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr06",
+  "title": "Clinic Vital Signs Monitors Purchase",
+  "description": "Request for quotation for vital signs monitors and blood pressure cuffs for clinics.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr07",
+  "title": "Health Fair Vendor Booth Rental",
+  "description": "Invitation for vendors to rent booths at the employee health fair; screening services not procured.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "borderline_reject",
+  "id": "bwr08",
+  "title": "Patient Transportation Services",
+  "description": "Request for proposals for non-emergency patient transportation and wheelchair vans.",
+  "expect": "not_accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk03b",
+  "title": "Medical Services",
+  "description": "Request for proposals for professional medical services including medical examination, vision screening and drug testing for employees.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ },
+ {
+  "group": "weak_fresh_good",
+  "id": "wk06b",
+  "title": "Applicant Medical Screening Services",
+  "description": "Invitation to bid for medical examination and vision screening for applicants.",
+  "expect": "accept",
+  "url": "https://example.org/x",
+  "deadline": false
+ }
+]

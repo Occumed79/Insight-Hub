@@ -194,3 +194,24 @@ Loader reads the new term types, rule scope/triggers, facts and policies; the cl
 5. **Authority:** `900_activate.sql` now also sets `authority_level='canonical'`.
 
 Expected counts now: terms 1001 (checksum `4aa4e1cec238d6da2573fb1fae2157e0`, verified on branch), rules 24, facts 68, policies 5. Activation tested on the branch: 1059 active terms, 28 current rules, all canonical.
+
+## 12. Test-branch completion (all of 001-004 loaded, then activated on the branch only)
+
+Branch state matches the files byte-for-byte by checksum: terms 1002, rules 24, facts 68, policies 5 (see `expected_counts.json`). Branch after activation: 1060 active terms, 28 current rules, 86 current facts, 16 active policies, all migrated rows canonical.
+
+**Fact count 74 -> 68:** the 8 legacy `relevance_threshold` facts were removed and 2 canonical ones added (74 - 8 + 2 = 68). Verified by key-diff of the two committed versions of 004; no other fact changed.
+
+**Defects found by the regression suite and fixed in the data (not in code):**
+1. Migration loosened acceptance. 93 bare phrases migrated from ranking/search vocabularies (gemini keywords, GovCon, route gate, state/forecast patterns) were `direct`, so a news item, an N95-mask purchase, a vaccine purchase and an audiometer purchase were accepted; the unmodified classifier rejects all of them. Those phrases are now `review`; `direct` is limited to phrases already direct in the app's ontology or already direct in Neon (`regression/demote_loose_direct.py`).
+2. `rv_staffing_labor_supply` contained the trigger "nursing staff", which matched the workforce being served ("Employee Health Services for Nursing Staff"). Removed.
+3. Added review term "medical surveillance" (anchor of the surveillance program rules) so a title like "Fuel Handler Medical Surveillance Services" is rescued from the commodity title rule.
+
+**Calibrated thresholds:** accept_min 70, review_min 45 (`regression/CALIBRATION.md`). review_min is a cost/recall tradeoff flagged for owner confirmation.
+
+**Regression suite** (`regression/run_regression.mts`, 105 relevance cases + 9 stale/expired): 108/114... see section 13 for the final table.
+
+## 13. Final regression table and activation caveat
+
+(See the conversation summary; the machine-readable output is `regression/results.json`.)
+
+**Activation must wait for the loader refactor.** The current loader (`occumedAware/loader.ts`) reads every active `rfp_search_terms` row, caps classifier phrases at 200 (`setProfileDirectPhrases`, ordered alphabetically by SQL) and caps prompt rules/policies at 20/12 by priority. Activating now would push 270 direct phrases through the 200 cap and drop about 15 curated Neon phrases (for example "spirometry", "urine drug testing", "pulmonary function testing"), and crowd the prompt rule list. Apply 001-004 (inactive/draft, no behavior change) first; run 900 together with the loader/consumer refactor.
