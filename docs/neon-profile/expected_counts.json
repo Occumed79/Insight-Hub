@@ -1,0 +1,17 @@
+{
+ "terms": 1003,
+ "terms_checksum": "41d0f50cc6a2e353219adc0d99709d4c",
+ "rules": 22,
+ "facts": 74,
+ "policies": 5,
+ "by_type": {
+  "procurement_phrase": 333,
+  "component_term": 382,
+  "regulatory_reference": 46,
+  "workforce_signal": 37,
+  "procurement_stage_signal": 62,
+  "delivery_network_term": 62,
+  "buyer_sector_signal": 57,
+  "title_signal": 24
+ }
+}
