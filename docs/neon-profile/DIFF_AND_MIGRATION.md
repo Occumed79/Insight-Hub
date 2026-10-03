@@ -208,10 +208,29 @@ Branch state matches the files byte-for-byte by checksum: terms 1002, rules 24, 
 
 **Calibrated thresholds:** accept_min 70, review_min 45 (`regression/CALIBRATION.md`). review_min is a cost/recall tradeoff flagged for owner confirmation.
 
-**Regression suite** (`regression/run_regression.mts`, 105 relevance cases + 9 stale/expired): 108/114... see section 13 for the final table.
+**Regression suite** (`regression/run_regression.mts`): 105/105 relevance cases pass; stale/expired 6/9 (3 fail on the current app code, see section 13).
 
 ## 13. Final regression table and activation caveat
 
-(See the conversation summary; the machine-readable output is `regression/results.json`.)
+| Group | Pass |
+|---|---|
+| Known-good occupational health | 16/16 |
+| Unusual-title legitimate | 14/14 |
+| Weak-evidence legitimate (fresh) | 10/10 |
+| Thin-evidence legitimate (must not be rejected) | 2/2 (both routed to adjudication) |
+| Stale-dated legitimate | 2/2 |
+| Staffing false positives (hard reject) | 10/10 |
+| Staffing words naming the served workforce (must accept) | 6/6 |
+| Commodity/raw-material false positives (hard reject) | 12/12 |
+| Commodity words in a legitimate OH title (must accept) | 3/3 |
+| Other non-OH (not accepted) | 12/12 (1 routed to adjudication) |
+| Adversarial loose-phrase guards (not accepted) | 10/10 (4 routed to adjudication) |
+| Borderline wrong (not accepted) | 8/8 (3 routed to adjudication) |
+| **Relevance total** | **105/105** |
+| Stale/expired records | **6/9** |
+
+The 3 stale failures are an app-code bug, independent of the Neon data: `mergeSourceRefresh` lets a same-provider or higher-authority rediscovery flip an archived record back to `active` (stale01 same provider, stale03 higher-authority provider, stale05 rediscovery with no deadline). Lower-authority rediscovery, past-deadline expiry and awarded-status expiry pass. Fix belongs in the consumer refactor. The cross-provider decision-invariance test is not run here because it needs the refactored provider paths; the suite runs one shared decision path.
+
+Machine-readable output: `regression/results.json`.
 
 **Activation must wait for the loader refactor.** The current loader (`occumedAware/loader.ts`) reads every active `rfp_search_terms` row, caps classifier phrases at 200 (`setProfileDirectPhrases`, ordered alphabetically by SQL) and caps prompt rules/policies at 20/12 by priority. Activating now would push 270 direct phrases through the 200 cap and drop about 15 curated Neon phrases (for example "spirometry", "urine drug testing", "pulmonary function testing"), and crowd the prompt rule list. Apply 001-004 (inactive/draft, no behavior change) first; run 900 together with the loader/consumer refactor.
