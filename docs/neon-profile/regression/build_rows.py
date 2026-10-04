@@ -32,7 +32,7 @@ for blk in blocks('007_additional_terms.sql'):
 existing = json.load(open(os.path.join(here, 'neon_existing_terms.json')))
 for key, ttype, strength in (('direct_procurement_phrases','procurement_phrase','direct'),
                              ('review_procurement_phrases','procurement_phrase','review'),
-                             ('regulatory_references','regulatory_reference','review'),
+                             ('regulatory_references','regulatory_reference','direct'),
                              ('standard_references','standard_reference','review')):
     for p in existing[key]:
         terms.append(dict(phrase=p, term_type=ttype, match_strength=strength, target_keys=[], metadata={}, active=True))

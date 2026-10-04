@@ -13796,7 +13796,7 @@
 {
 "phrase": "14 CFR Part 67",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13804,7 +13804,7 @@
 {
 "phrase": "29 CFR 1910.1001",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13812,7 +13812,7 @@
 {
 "phrase": "29 CFR 1910.1025",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13820,7 +13820,7 @@
 {
 "phrase": "29 CFR 1910.1030",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13828,7 +13828,7 @@
 {
 "phrase": "29 CFR 1910.1053",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13836,7 +13836,7 @@
 {
 "phrase": "29 CFR 1910.120",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13844,7 +13844,7 @@
 {
 "phrase": "29 CFR 1910.134",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13852,7 +13852,7 @@
 {
 "phrase": "29 CFR 1910.95",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13860,7 +13860,7 @@
 {
 "phrase": "49 CFR 391.41-391.49",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13868,7 +13868,7 @@
 {
 "phrase": "49 CFR Part 40",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
@@ -13876,7 +13876,7 @@
 {
 "phrase": "5 CFR Part 339",
 "term_type": "regulatory_reference",
-"match_strength": "review",
+"match_strength": "direct",
 "target_keys": [],
 "metadata": {},
 "active": true
