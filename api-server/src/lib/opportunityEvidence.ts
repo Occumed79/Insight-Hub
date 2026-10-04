@@ -1,4 +1,5 @@
 import type { NormalizedOpportunity } from "./providers/types";
+import { isServiceNameNotBuyer } from "./search/profileServiceName";
 import {
   deadlineEndForComparison,
   isLikelySnippet,
@@ -76,8 +77,9 @@ export const ADAPTER_EVIDENCE_CLASS: Record<string, OpportunityEvidenceType> = {
   websearch: "discovery",
 };
 
+// Placeholder buyer names only; a service line posing as a buyer is detected from the profile (isServiceNameNotBuyer).
 const GENERIC_BUYER_RE =
-  /^(unknown|unknown organization|government|government agency|state agency|official public rfp portal|procurement portal|occupational health|drug & alcohol screening|medical surveillance)$/i;
+  /^(unknown|unknown organization|government|government agency|state agency|official public rfp portal|procurement portal)$/i;
 const AGGREGATOR_HOSTS =
   /highergov\.com|govtribe\.com|starbridge\.ai|rfpmart\.com|sweetspotgov\.com|fedscout\.com|bidbanana\.thebidlab\.com|tenderimpulse\.com|demandstar\.com/i;
 const LANDING_RE =
@@ -190,7 +192,9 @@ export function normalizeOpportunityEvidence(
         ? "search_snippet"
         : "unknown";
   const buyerKnown = Boolean(
-    record.agency?.trim() && !GENERIC_BUYER_RE.test(record.agency.trim()),
+    record.agency?.trim() &&
+      !GENERIC_BUYER_RE.test(record.agency.trim()) &&
+      !isServiceNameNotBuyer(record.agency.trim()),
   );
   const deadline = deadlineEndForComparison(record.responseDeadline);
   const futureDeadline = Boolean(

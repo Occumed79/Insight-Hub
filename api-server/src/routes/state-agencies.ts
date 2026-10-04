@@ -19,6 +19,8 @@ import {
 } from "@workspace/db/schema";
 import type { StateAgencyBucket, StateIntelChannel } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
+import { assessIntelText } from "../lib/intelligence/profileIntelRelevance";
+import { profileLeadQueries, quotedOr } from "../lib/providers/profileQueryTerms";
 
 const router = Router();
 
@@ -135,24 +137,44 @@ const STATE_URLS: Record<string, Partial<typeof stateProfilesTable.$inferSelect>
 
 // ── Bucket search query factory ───────────────────────────────────────────────
 
+// Bucket topics (legislature, medical board, FEMA ...) are defined here; the Occu-Med service phrases inside the
+// queries come from the relevance profile's lead queries at call time (`service(n)` = the n-th group of phrases).
+const SERVICE_GROUPS = 3;
+
+function service(groupIndex: number): string {
+  const leads = profileLeadQueries();
+  const size = Math.max(1, Math.ceil(leads.length / SERVICE_GROUPS));
+  const group = leads.slice(groupIndex * size, groupIndex * size + size);
+  return group.length > 0 ? `(${quotedOr(group)})` : "";
+}
+
+function years(): string {
+  const year = new Date().getUTCFullYear();
+  return `${year} OR ${year + 1}`;
+}
+
+function compact(queries: string[]): string[] {
+  return queries.map((query) => query.replace(/\s+/g, " ").trim());
+}
+
 const BUCKET_QUERIES: Record<StateAgencyBucket, (state: string) => string[]> = {
-  procurement: (s) => [
-    `"${s}" state procurement RFP "occupational health" OR "employee health" OR "drug testing" 2025 OR 2026`,
-    `"${s}" state RFP bid "CDL medical" OR "DOT physical" OR "pre-employment exam" OR "workers comp medical"`,
-    `"${s}" state contract "public safety medical" OR "corrections health" OR "mobile medical" OR "fitness for duty"`,
-    `"${s}" NASPO cooperative contract occupational medicine health services 2025`,
-  ],
-  legislature: (s) => [
-    `"${s}" state legislature bill occupational health workers compensation medical examination 2025 OR 2026`,
+  procurement: (s) => compact([
+    `"${s}" state procurement RFP ${service(0)} ${years()}`,
+    `"${s}" state RFP bid ${service(1)}`,
+    `"${s}" state contract ${service(2)}`,
+    `"${s}" NASPO cooperative contract ${service(0)} ${years()}`,
+  ]),
+  legislature: (s) => compact([
+    `"${s}" state legislature bill ${service(0)} ${years()}`,
     `"${s}" state legislation OSHA workplace safety bill proposed law 2025 2026`,
-    `"${s}" state bill telehealth CDL DOT drug testing medical examination law`,
+    `"${s}" state bill ${service(1)} law`,
     `"${s}" NCSL state legislation health workforce occupational licensing bill tracking`,
-  ],
-  governor_agencies: (s) => [
+  ]),
+  governor_agencies: (s) => compact([
     `"${s}" governor executive order health safety workforce 2025 2026`,
-    `"${s}" state agency announcement occupational health medical services press release`,
+    `"${s}" state agency announcement ${service(0)} press release`,
     `site:usa.gov "${s}" state government agencies directory`,
-  ],
+  ]),
   health_dept: (s) => [
     `"${s}" state health department alert bulletin outbreak notice 2025 OR 2026`,
     `"${s}" department of health immunization vaccination policy update guidance`,
@@ -199,7 +221,7 @@ const BUCKET_QUERIES: Record<StateAgencyBucket, (state: string) => string[]> = {
     `"${s}" FMCSA DOT medical examiner certification CDL commercial driver physical 2025`,
     `"${s}" DOT medical certificate CMV driver physical exam requirement 2025`,
     `FMCSA "${s}" enforcement action carrier violation medical certification`,
-    `"${s}" CDL drug testing FMCSA clearinghouse commercial vehicle 2025`,
+    `"${s}" FMCSA clearinghouse commercial vehicle ${service(1)} 2025`,
   ],
   post_guidelines: (s) => [
     `"${s}" POST commission law enforcement physical fitness medical standards 2025`,
@@ -210,19 +232,25 @@ const BUCKET_QUERIES: Record<StateAgencyBucket, (state: string) => string[]> = {
   dot: (s) => [
     `"${s}" department of transportation DOT infrastructure contract bid 2025 2026`,
     `"${s}" DOT highway construction project contract award 2025`,
-    `"${s}" state DOT occupational health safety worker construction`,
-    `"${s}" transportation department RFP medical safety services 2025`,
+    `"${s}" state DOT worker construction ${service(0)}`,
+    `"${s}" transportation department RFP ${service(2)} 2025`,
   ],
 };
 
 // ── Cross-state intel search queries ─────────────────────────────────────────
+
+function intelQueries(channel: StateIntelChannel): string[] | undefined {
+  const lead = profileLeadQueries(1)[0];
+  const focus = lead ? `"${lead}"` : "";
+  return INTEL_QUERIES[channel]?.map((query) => query.replace("{service}", focus).replace(/\s+/g, " ").trim());
+}
 
 const INTEL_QUERIES: Record<StateIntelChannel, string[]> = {
   public_health: [
     "CDC Health Alert Network HAN notice public health alert 2025 2026",
     "site:emergency.cdc.gov health alert notice 2025",
     "state health alert network outbreak communicable disease alert 2025",
-    "CDC CAHAN public health emergency occupational health alert 2025",
+    "CDC CAHAN public health emergency {service} alert 2025",
   ],
   travel_advisory: [
     "CDC travel notice advisory health warning destination 2025 2026",
@@ -232,7 +260,7 @@ const INTEL_QUERIES: Record<StateIntelChannel, string[]> = {
   ],
   fda_recalls: [
     "FDA MedWatch safety alert medical device recall 2025 OR 2026",
-    "FDA drug recall medication safety alert occupational health 2025",
+    "FDA drug recall medication safety alert {service} 2025",
     "site:fda.gov recall safety alert 2025 medical device drug",
     "FDA medical product safety communication 2025 urgent",
   ],
@@ -246,21 +274,9 @@ const INTEL_QUERIES: Record<StateIntelChannel, string[]> = {
 
 // ── Relevance scorer ──────────────────────────────────────────────────────────
 
-const HIGH_VALUE_KEYWORDS = [
-  "occupational health", "occumed", "occu-med", "employee health", "drug testing",
-  "pre-employment", "CDL", "DOT physical", "medical examination", "fit for duty",
-  "workers comp", "workers compensation", "clinic", "mobile medical", "FMCSA",
-  "POST physical", "nurse", "physician", "industrial hygiene", "EHS",
-  "contract", "RFP", "RFI", "bid", "award", "procurement", "solicitation",
-];
-
+/** Relevance is the profile's classifier score (service terms, rules and weights all live in the Neon profile). */
 function scoreRelevance(title: string, snippet: string): number {
-  const combined = `${title} ${snippet}`.toLowerCase();
-  let score = 0;
-  for (const kw of HIGH_VALUE_KEYWORDS) {
-    if (combined.includes(kw.toLowerCase())) score += 10;
-  }
-  return Math.min(score, 100);
+  return assessIntelText({ title, text: snippet }).score;
 }
 
 // ── Seed states if not already present ────────────────────────────────────────
@@ -430,7 +446,7 @@ router.post("/state-agencies/intel/refresh", async (req, res) => {
   if (!channel) return res.status(400).json({ error: "channel required" });
 
   try {
-    const queries = INTEL_QUERIES[channel];
+    const queries = intelQueries(channel);
     if (!queries) return res.status(400).json({ error: "Unknown channel" });
 
     const errors: string[] = [];

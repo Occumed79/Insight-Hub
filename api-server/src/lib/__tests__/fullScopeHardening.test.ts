@@ -199,5 +199,5 @@ test("query contexts remain distinct and service scope fallback is stable", () =
     description: "Employee hearing conservation and audiogram services",
   });
   assert.match(context, /scope:/);
-  assert.match(context, /audiometry|occupational-health/);
+  assert.match(context, /hearing-audiometry|occupational-employee-medical/);
 });

@@ -19,7 +19,9 @@ import {
   finalizeSemanticPriority,
   titleTokenJaccard,
 } from "../candidateSemanticPriority";
-import { OCCUMED_SEMANTIC_PROFILE } from "../semanticRerank";
+import { occumedSemanticProfile } from "../semanticRerank";
+import { getRelevanceProfile } from "../relevanceProfile";
+import { profileClientTypes, profileServiceLabels } from "../profileText";
 
 function accepted(overrides: Partial<AiExtraction> = {}): AiExtraction {
   return {
@@ -236,10 +238,16 @@ describe("coordinated AI search intelligence stack", () => {
     assert.equal(ordered[4]?.candidate.sourceProvider, "exa");
   });
 
-  it("uses the full Occu-Med service profile for semantic search", () => {
-    assert.match(OCCUMED_SEMANTIC_PROFILE, /occupational health/i);
-    assert.match(OCCUMED_SEMANTIC_PROFILE, /audiograms/i);
-    assert.match(OCCUMED_SEMANTIC_PROFILE, /respirator/i);
-    assert.match(OCCUMED_SEMANTIC_PROFILE, /deployment medical/i);
+  it("renders the semantic search profile from the relevance profile's service lines and buyers", () => {
+    const profile = getRelevanceProfile();
+    const text = occumedSemanticProfile(profile);
+    for (const label of profileServiceLabels(profile)) assert.ok(text.includes(label), label);
+    for (const buyer of profileClientTypes(profile)) assert.ok(text.includes(buyer), buyer);
+  });
+
+  it("cross-checks accepted records scoring below the canonical accept threshold", () => {
+    const { acceptMin } = getRelevanceProfile().thresholds;
+    assert.equal(shouldCrossCheckExtraction(accepted({ relevanceScore: acceptMin - 1 })), true);
+    assert.equal(shouldCrossCheckExtraction(accepted({ relevanceScore: acceptMin })), false);
   });
 });

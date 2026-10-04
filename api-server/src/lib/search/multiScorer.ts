@@ -2,7 +2,7 @@
  * Multi-Scorer Engine
  *
  * Runs Gemini, Groq, and OpenRouter in parallel to score each opportunity candidate.
- * Uses a consensus/union approach: if ANY scorer says it's relevant (score >= threshold),
+ * Uses a consensus/union approach: if ANY scorer says it's relevant (score >= the canonical accept threshold),
  * the result is kept. Each scorer's verdict is stored for transparency in the UI.
  *
  * Scoring modes:
@@ -11,11 +11,12 @@
  *  - "union":     ANY scorer says yes → keep it (most permissive)
  */
 
-import { geminiProvider } from "../providers/gemini";
+import { geminiProvider, occumedProfileView } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
-import { OCCUMED_PROFILE } from "../providers/gemini";
+import { getRelevanceProfile } from "./relevanceProfile";
+import { judgeScopeBlock } from "./profileText";
 
 export type ScoringMode = "consensus" | "majority" | "union";
 
@@ -33,10 +34,21 @@ export interface MultiScorerResult {
   winnerScorer: string;     // which scorer gave the highest score
 }
 
-const ORG_CONTEXT = `${OCCUMED_PROFILE.company}: ${OCCUMED_PROFILE.services.slice(0, 6).join(", ")}. Serves ${OCCUMED_PROFILE.clientTypes.slice(0, 4).join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.`;
-
-const MIN_INDIVIDUAL_SCORE = 55;   // a scorer's score must be >= this to "vote yes"
-const FINAL_PASS_SCORE = 50;        // final averaged score must be >= this
+/**
+ * Organization context handed to every scorer, rendered from the Neon profile on each call (the profile can
+ * refresh while the process runs). Scope rules come from the profile's rules and policies.
+ */
+function orgContext(): string {
+  const view = occumedProfileView();
+  const { acceptMin } = getRelevanceProfile().thresholds;
+  return [
+    `${view.company}: ${view.services.join(", ")}. Serves ${view.clientTypes.join(", ")}.`,
+    judgeScopeBlock(),
+    `Scores of ${acceptMin} or above mean the opportunity is relevant; anything lower is not.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 /**
  * Score a single opportunity using all available AI scorers in parallel.
@@ -47,6 +59,8 @@ export async function scoreWithMultipleAIs(
   description: string,
   mode: ScoringMode = "majority"
 ): Promise<MultiScorerResult> {
+  const { acceptMin, reviewMin } = getRelevanceProfile().thresholds;
+  const ORG_CONTEXT = orgContext();
   const [geminiResult, groqResult, openrouterResult, minimaxResult] = await Promise.allSettled([
     geminiProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
     groqProvider.scoreRelevance(title, description, ORG_CONTEXT).catch(() => null),
@@ -62,7 +76,7 @@ export async function scoreWithMultipleAIs(
         scorer: name,
         score: result.value.score,
         explanation: result.value.explanation,
-        passed: result.value.score >= MIN_INDIVIDUAL_SCORE,
+        passed: result.value.score >= acceptMin,
       });
     }
     // If scorer failed/unavailable: simply omit — don't penalize
@@ -74,9 +88,9 @@ export async function scoreWithMultipleAIs(
   addVote("minimax", minimaxResult);
 
   if (votes.length === 0) {
-    // All scorers failed — default pass with low score so we don't silently drop things
+    // All scorers failed: default pass at the canonical review floor so we don't silently drop things
     return {
-      finalScore: 40,
+      finalScore: reviewMin,
       votes: [],
       passed: true,
       winnerScorer: "fallback",
@@ -107,7 +121,8 @@ export async function scoreWithMultipleAIs(
   return {
     finalScore: avgScore,
     votes,
-    passed: passed && avgScore >= FINAL_PASS_SCORE,
+    // Each vote already applies the canonical accept threshold; the mode decides how votes combine.
+    passed,
     winnerScorer: best.scorer,
   };
 }
@@ -134,6 +149,7 @@ export async function extractWithMultipleAIs(
   winnerScorer?: string;
   reason?: string;
 } | null> {
+  const { acceptMin, reviewMin } = getRelevanceProfile().thresholds;
   const [geminiResult, groqResult, minimaxExtractResult] = await Promise.allSettled([
     geminiProvider.extractOpportunityFromWebResult(title, url, content).catch(() => null),
     groqProvider.extractOpportunityFromWebResult(title, url, content).catch(() => null),
@@ -191,9 +207,9 @@ export async function extractWithMultipleAIs(
   // Build votes for UI transparency
   const votes: ScorerVote[] = results.map((r) => ({
     scorer: r.scorer,
-    score: r.data.relevanceScore ?? 50,
+    score: r.data.relevanceScore ?? reviewMin,
     explanation: r.data.relevanceReason ?? "",
-    passed: (r.data.relevanceScore ?? 0) >= MIN_INDIVIDUAL_SCORE,
+    passed: (r.data.relevanceScore ?? 0) >= acceptMin,
   }));
 
   return {

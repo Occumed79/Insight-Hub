@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildOccuMedSearchQueries } from "../../search/occumedProcurementOntology";
+import { buildProfileSearchQueries } from "../../search/profileQueries";
 import { ENRICHED_DIRECT_RFP_PORTALS } from "../directRfpPortalRelevanceCatalog";
 import {
   buildPortalEvidenceScanPlan,
@@ -24,7 +24,7 @@ describe("portal evidence scanner", () => {
     assert.equal(plan.diagnostics.deferredPortalCount, 0);
     assert.equal(
       plan.diagnostics.totalQueryCount,
-      portalIds.length * buildOccuMedSearchQueries().length,
+      portalIds.length * buildProfileSearchQueries().length,
     );
     assert.equal(
       plan.diagnostics.selectedQueryCount,

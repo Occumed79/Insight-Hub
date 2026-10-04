@@ -16,6 +16,8 @@ import { eq, ilike, or, and, gte, gt } from "drizzle-orm";
 import type { Opportunity } from "@workspace/db/schema";
 import { classifyOpportunityQuality, plainSummaryIneligibilityReason, summaryIneligibilityReason, type OpportunityQualityView, type SummaryIneligibilityReason } from "../opportunityQuality";
 import { meaningfulLocalSearchTerms } from "./localSearchPolicy";
+import { matchedServiceLines } from "./profileServiceLines";
+import { getRelevanceProfile } from "./relevanceProfile";
 
 export { meaningfulLocalSearchTerms } from "./localSearchPolicy";
 
@@ -110,15 +112,8 @@ function compact(value: unknown, max = 170): string | null {
 }
 
 function serviceLines(opp: Opportunity): string[] {
-  const text = `${opp.title} ${opp.description ?? ""} ${opp.notes ?? ""} ${opp.naicsDescription ?? ""}`.toLowerCase();
-  const lines: string[] = [];
-  if (/\b(occupational health|occupational medicine|medical surveillance|employee health|deployment medical|periodic health assessment)\b/.test(text)) lines.push("Occupational health / medical surveillance");
-  if (/\b(physical|medical exam|fitness for duty|fit for duty|return to work|pre[- ]employment|pre[- ]placement|dot exam|dot physical)\b/.test(text)) lines.push("Physical exams / fitness for duty");
-  if (/\b(testing|screening|dot program|breath alcohol|random program)\b/.test(text)) lines.push("Workplace testing / DOT program support");
-  if (/\b(respirator|fit test|fit testing|pft|spirometry|pulmonary function)\b/.test(text)) lines.push("Respirator / PFT / fit testing");
-  if (/\b(audiogram|audiometric|hearing conservation|hearing test)\b/.test(text)) lines.push("Audiograms / hearing conservation");
-  if (/\b(vaccine|vaccination|immunization|titer|tb test|tuberculosis|ppd|quantiferon)\b/.test(text)) lines.push("Vaccines / titers / TB testing");
-  return Array.from(new Set(lines)).slice(0, 3);
+  // Service lines are the profile categories the record's text evidences; none are defined here.
+  return matchedServiceLines(`${opp.title} ${opp.description ?? ""} ${opp.notes ?? ""} ${opp.naicsDescription ?? ""}`, { max: 3 });
 }
 
 function cardReasons(opp: Opportunity, score: number, keywordReasons: string[]): string[] {
@@ -129,7 +124,7 @@ function cardReasons(opp: Opportunity, score: number, keywordReasons: string[]):
   const buyer = opp.agency && opp.agency !== "Unknown" ? opp.agency : "Unknown buyer";
   const source = providerLabel(opp);
   const hasUrl = Boolean(opp.samUrl);
-  const confidence = opp.sourceConfidence || (score >= 75 && lines.length ? "high" : lines.length ? "medium" : "low");
+  const confidence = opp.sourceConfidence || (score >= getRelevanceProfile().thresholds.acceptMin && lines.length ? "high" : lines.length ? "medium" : "low");
   const decision = lines.length >= 2
     ? "Strong review candidate"
     : lines.length === 1

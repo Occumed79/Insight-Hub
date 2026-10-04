@@ -12,6 +12,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import { resolveCredential } from "../config/providerConfig";
+import { profileSemanticQuery } from "./profileQueryTerms";
 
 const TANGO_DEFAULT_BASE = "https://tango.makegov.com/api/";
 const UNKNOWN_POSTED_DATE = new Date(0);
@@ -20,8 +21,7 @@ const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_RETRIES = 2;
 const MAX_RECORD_LIMIT = 500;
 const MAX_PAGE_SIZE = 100;
-const TANGO_SEMANTIC_QUERY =
-  "occupational health employee medical examinations drug and alcohol testing medical surveillance fitness for duty audiometry respirator fit testing deployment medical screening";
+const TANGO_SEMANTIC_QUERY_MAX_CHARS = 300;
 
 interface TangoOpportunity {
   opportunity_id: string;
@@ -240,8 +240,8 @@ export class TangoProvider implements DataSourceProvider {
    * Targeted queries instead of one unfiltered pull of every active federal
    * notice. Tango supports server-side naics/psc filters (multi-value with "|")
    * and a vector-backed search, so each query asks for what Occu-Med buys.
-   * Codes come from the Occu-Med reference profile merged with the built-in
-   * taxonomy. Set TANGO_CODE_QUERIES=false to fall back to a single query.
+   * Codes and search text come from the Occu-Med relevance profile, read at
+   * call time (no vocabulary lives here). Set TANGO_CODE_QUERIES=false to fall back to a single query.
    */
   private async buildQueries(
     keywords: string | undefined,
@@ -260,11 +260,11 @@ export class TangoProvider implements DataSourceProvider {
       const phrases = profile.directPhrases.slice(0, 3);
       queries.push({
         label: "semantic",
-        params: { search: [TANGO_SEMANTIC_QUERY, ...phrases].join(" ").slice(0, 300) },
+        params: { search: [profileSemanticQuery(TANGO_SEMANTIC_QUERY_MAX_CHARS), ...phrases].join(" ").trim().slice(0, TANGO_SEMANTIC_QUERY_MAX_CHARS) },
       });
       return queries;
     } catch {
-      return [{ label: "semantic", params: { search: TANGO_SEMANTIC_QUERY } }];
+      return [{ label: "semantic", params: { search: profileSemanticQuery(TANGO_SEMANTIC_QUERY_MAX_CHARS) } }];
     }
   }
 

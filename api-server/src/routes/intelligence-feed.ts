@@ -20,6 +20,7 @@ import {
 } from "@workspace/db/schema";
 import { grantsGovProvider } from "../lib/providers/grantsGov";
 import type { NormalizedOpportunity } from "../lib/providers/types";
+import { assessIntelText } from "../lib/intelligence/profileIntelRelevance";
 import {
   fetchStateIntelligence,
   STATE_NAMES,
@@ -83,22 +84,14 @@ function grantSignalType(record: NormalizedOpportunity): IntelSignalType {
   return "grant_program";
 }
 
+/** Grant relevance is the profile's classifier score (no local service patterns or agency list). */
 function grantRelevanceScore(record: NormalizedOpportunity): number {
-  const text = `${record.title} ${record.description ?? ""} ${record.agency ?? ""}`.toLowerCase();
-  const signalGroups = [
-    /occupational health|occupational medicine|employee health/,
-    /drug test|drug screen|alcohol test|substance abuse testing/,
-    /pre[- ]employment|fitness for duty|fit for duty|medical examination/,
-    /medical surveillance|health surveillance|workplace health/,
-    /audiometric|hearing conservation|spirometry|pulmonary function|respirator fit/,
-    /deployment medical|periodic health assessment|military physical/,
-  ];
-  const matchedGroups = signalGroups.filter((pattern) => pattern.test(text)).length;
-  const priorityAgency =
-    /department of labor|occupational safety|cdc|hrsa|department of defense|veterans affairs|homeland security/.test(
-      text,
-    );
-  return Math.min(95, 55 + matchedGroups * 7 + (priorityAgency ? 5 : 0));
+  return assessIntelText({
+    title: record.title,
+    text: record.description,
+    agency: record.agency,
+    date: safeDate(record.postedDate),
+  }).score;
 }
 
 function formatFunding(value: number | undefined): string | null {

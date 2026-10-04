@@ -9,6 +9,15 @@ import {
   serperProvider,
   type SerperSearchResult,
 } from "../providers/serper";
+import { getRelevanceProfile } from "../search/relevanceProfile";
+import { assessIntelText } from "./profileIntelRelevance";
+import {
+  profileLeadQueries,
+  profilePolicyTerms,
+  profileProcurementTerms,
+  quotedOr,
+  termRegex,
+} from "../providers/profileQueryTerms";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_RESULTS = 100;
@@ -68,24 +77,35 @@ export const STATE_NAMES: Record<string, string> = {
   WY: "Wyoming",
 };
 
-const SERVICE_EXPRESSION =
-  '("occupational health" OR "occupational medicine" OR "employee health" OR "medical surveillance" OR "fitness for duty" OR "pre-employment physical" OR "drug testing" OR "alcohol testing" OR audiometric OR spirometry OR "respirator fit testing")';
-const PROCUREMENT_EXPRESSION =
-  "(RFP OR RFQ OR bid OR solicitation OR procurement OR contract opportunity)";
-const POLICY_EXPRESSION =
-  '(grant OR funding OR budget OR regulation OR rulemaking OR guidance OR enforcement OR "workplace health")';
+// Search expressions are assembled per call from the Neon-backed relevance profile: service phrases from its
+// search-bundle lead queries, procurement wording from the bundles' procurement terms, and policy wording from
+// the profile's policy bundle. Nothing here defines Occu-Med vocabulary.
+const MAX_SERVICE_PHRASES = 8;
+const MAX_PROCUREMENT_TERMS = 6;
+const MAX_POLICY_TERMS = 8;
 
-const SERVICE_PATTERNS = [
-  /occupational health|occupational medicine|employee health/i,
-  /drug test|drug screen|alcohol test|substance abuse testing/i,
-  /pre[- ]employment|fitness for duty|fit for duty|medical examination/i,
-  /medical surveillance|health surveillance|workplace health/i,
-  /audiometric|hearing conservation|spirometry|pulmonary function|respirator fit/i,
-  /deployment medical|periodic health assessment|military physical/i,
-];
+interface SearchExpressions {
+  service: string;
+  procurement: string;
+  policy: string;
+  /** Wording that makes a non-portal result a procurement or policy signal (profile procurement signals + policy terms). */
+  signalPattern: RegExp | null;
+}
 
+function searchExpressions(): SearchExpressions {
+  const profile = getRelevanceProfile();
+  const paren = (expression: string) => (expression ? `(${expression})` : "");
+  return {
+    service: paren(quotedOr(profileLeadQueries(MAX_SERVICE_PHRASES, profile))),
+    procurement: paren(profileProcurementTerms(MAX_PROCUREMENT_TERMS, profile).join(" OR ")),
+    policy: paren(profilePolicyTerms(MAX_POLICY_TERMS, profile).map((term) => (/\s/.test(term) ? `"${term}"` : term)).join(" OR ")),
+    signalPattern: termRegex([...profile.procurementSignals, ...profilePolicyTerms(Infinity, profile)]),
+  };
+}
+
+// Notice lifecycle (already awarded / closed / cancelled) is expiration handling, not relevance.
 const REJECT_PATTERN =
-  /\b(award notice|intent to award|contract awarded|bid tabulation|closed solicitation|cancelled solicitation|job opening|now hiring|career opportunity)\b/i;
+  /\b(award notice|intent to award|contract awarded|bid tabulation|closed solicitation|cancelled solicitation)\b/i;
 
 interface DiscoveredStateResult extends SerperSearchResult {
   discoveryQuery: string;
@@ -205,10 +225,6 @@ function hasStaleYearOnly(text: string): boolean {
   return years.some((year) => year < CURRENT_YEAR) && !hasCurrentOrFuture;
 }
 
-function matchesOccuMedServices(text: string): boolean {
-  return SERVICE_PATTERNS.some((pattern) => pattern.test(text));
-}
-
 function classifySignal(
   text: string,
   portal: DirectRfpPortal | undefined,
@@ -240,19 +256,6 @@ function classifySignal(
   return "industry_trend";
 }
 
-function relevanceScore(
-  text: string,
-  portal: DirectRfpPortal | undefined,
-  publishedDate: Date | null,
-  now: Date,
-): number {
-  const serviceMatches = SERVICE_PATTERNS.filter((pattern) => pattern.test(text)).length;
-  const portalBonus = portal ? 10 : 0;
-  const recentBonus =
-    publishedDate && now.getTime() - publishedDate.getTime() <= 30 * DAY_MS ? 5 : 0;
-  return Math.min(95, 50 + serviceMatches * 7 + portalBonus + recentBonus);
-}
-
 function buildQueries(
   stateCode: string,
   stateName: string,
@@ -260,6 +263,7 @@ function buildQueries(
   keywords?: string,
 ): Array<{ query: string; mode: DiscoveredStateResult["discoveryMode"]; type?: "news" }> {
   const keywordExpression = keywords?.trim() ? ` (${keywords.trim()})` : "";
+  const { service, procurement, policy } = searchExpressions();
   const queries: Array<{
     query: string;
     mode: DiscoveredStateResult["discoveryMode"];
@@ -270,24 +274,24 @@ function buildQueries(
   if (portalDomains.length > 0) {
     const domains = portalDomains.map((domain) => `site:${domain}`).join(" OR ");
     queries.push({
-      query: `(${domains}) ${SERVICE_EXPRESSION} ${PROCUREMENT_EXPRESSION}${keywordExpression} -awarded -closed`,
+      query: `(${domains}) ${service} ${procurement}${keywordExpression} -awarded -closed`,
       mode: "portal",
     });
   }
 
   queries.push({
-    query: `"${stateName}" ${SERVICE_EXPRESSION} ${POLICY_EXPRESSION}${keywordExpression} site:.gov`,
+    query: `"${stateName}" ${service} ${policy}${keywordExpression} site:.gov`,
     mode: "government",
   });
   queries.push({
-    query: `"${stateName}" ${SERVICE_EXPRESSION} (procurement OR grant OR regulation OR guidance)${keywordExpression}`,
+    query: `"${stateName}" ${service} ${[procurement, policy].filter(Boolean).join(" OR ")}${keywordExpression}`,
     mode: "news",
     type: "news",
   });
 
   if (stateCode === "DC") {
     queries.push({
-      query: `"District of Columbia" ${SERVICE_EXPRESSION} ${PROCUREMENT_EXPRESSION}${keywordExpression} site:dc.gov`,
+      query: `"District of Columbia" ${service} ${procurement}${keywordExpression} site:dc.gov`,
       mode: "government",
     });
   }
@@ -310,12 +314,12 @@ function resultToRecord(
 
   const text = `${result.title} ${result.snippet} ${result.link}`;
   if (REJECT_PATTERN.test(text) || hasStaleYearOnly(text)) return null;
-  if (!matchesOccuMedServices(text)) return null;
-  if (
-    !portal &&
-    !/\b(rfp|rfq|bid|solicitation|procurement|grant|funding|budget|regulation|rulemaking|guidance|enforcement|workplace health)\b/i.test(text)
-  ) {
-    return null;
+  // Occu-Med relevance is the profile's: the text must name a profile service term (classifier evidence).
+  const assessment = assessIntelText({ title: result.title, text: result.snippet, url: result.link, date: result.date });
+  if (!assessment.topical) return null;
+  if (!portal) {
+    const { signalPattern } = searchExpressions();
+    if (signalPattern && !signalPattern.test(text)) return null;
   }
 
   const publishedDate = parsePublishedDate(result.date, now);
@@ -339,7 +343,7 @@ function resultToRecord(
     summary: result.snippet.trim() || null,
     sourceUrl: result.link,
     publishedDate,
-    relevanceScore: relevanceScore(text, portal, publishedDate, now),
+    relevanceScore: assessment.score,
     rawData: {
       stateName,
       portalId: portal?.id ?? null,

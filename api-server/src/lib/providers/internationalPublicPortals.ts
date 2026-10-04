@@ -11,6 +11,13 @@ import { webIntelligenceFetch } from "../search/webIntelligence";
 import { classifyResult } from "../search/relevance";
 import { decideRelevance, matchDiscoveryCode } from "../search/relevanceDecision";
 import { verifyCanadaBuysRecords } from "./canadaBuysPageVerification";
+import {
+  profileCodesFor,
+  profileLeadQueries,
+  profileProcurementTerms,
+  profileSearchPhrases,
+  quotedOr,
+} from "./profileQueryTerms";
 import { summarizeSamVerification } from "./samGovPageVerification";
 
 const TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search";
@@ -20,24 +27,9 @@ const DEFAULT_LIMIT = 100;
 const TED_PAGE_LIMIT = 100;
 const UNKNOWN_POSTED_DATE = new Date(0);
 
-const OCCUMED_SERVICE_TERMS = [
-  "occupational health",
-  "occupational medicine",
-  "employee health",
-  "medical surveillance",
-  "fitness for duty",
-  "fitness-for-duty",
-  "pre-employment physical",
-  "pre employment medical",
-  "drug testing",
-  "alcohol testing",
-  "audiometric",
-  "audiometry",
-  "spirometry",
-  "respirator fit testing",
-  "health surveillance",
-  "company health services",
-];
+// Search phrases for CanadaBuys and the TED CPV anchor come from the Neon-backed relevance profile at call time.
+const CANADA_BUYS_SERVICE_PHRASES = 16;
+const CANADA_BUYS_FIRST_QUERY_PHRASES = 10;
 
 function normalizedHost(value: string): string {
   return value.toLowerCase().replace(/^www\./, "");
@@ -56,27 +48,38 @@ export function isOfficialCanadaBuysTenderUrl(value?: string): boolean {
   }
 }
 
-function serviceExpression(): string {
-  return OCCUMED_SERVICE_TERMS.map((term) => `"${term}"`).join(" OR ");
+function procurementExpression(): string {
+  const terms = profileProcurementTerms(6).map((term) => (/\s/.test(term) ? `"${term}"` : term));
+  return terms.length > 0 ? ` (${terms.join(" OR ")})` : "";
 }
 
 export function buildCanadaBuysQueries(keywords?: string): string[] {
   const focus = keywords?.trim();
-  const service = serviceExpression();
+  const phrases = profileSearchPhrases(CANADA_BUYS_SERVICE_PHRASES);
+  const first = phrases.slice(0, CANADA_BUYS_FIRST_QUERY_PHRASES);
+  const rest = phrases.slice(CANADA_BUYS_FIRST_QUERY_PHRASES);
+  const second = rest.length > 0 ? rest : phrases.slice(0, 6);
   const extra = focus ? ` (${focus})` : "";
+  const procurement = procurementExpression();
   return [
-    `site:${CANADA_BUYS_HOST}/en/tender-opportunities (${service}) (tender OR solicitation OR RFP OR RFQ OR procurement)${extra} -award -awarded`,
-    `site:${CANADA_BUYS_HOST}/en/tender-opportunities ("medical surveillance" OR "fitness for duty" OR "drug testing" OR audiometry OR spirometry OR "respirator fit testing")${extra} -award -awarded`,
+    `site:${CANADA_BUYS_HOST}/en/tender-opportunities (${quotedOr(first)})${procurement}${extra} -award -awarded`,
+    `site:${CANADA_BUYS_HOST}/en/tender-opportunities (${quotedOr(second)})${extra} -award -awarded`,
   ];
 }
 
-function tedQueryForKeywords(keywords?: string): string {
+/** TED expert query: the profile's CPV discovery codes (or its lead phrases when it has none), plus caller keywords. */
+export function buildTedQuery(keywords?: string): string {
   const focus = keywords?.trim();
+  const cpvCodes = profileCodesFor("CPV").filter((code) => /^\d{8}(?:-\d)?$/.test(code));
+  const clauses = cpvCodes.map((code) => `classification-cpv=${code}`);
+  if (clauses.length === 0) {
+    clauses.push(...profileLeadQueries(3).map((phrase) => `FT~"${phrase.replace(/"/g, "")}"`));
+  }
   if (focus) {
     const escaped = focus.replace(/"/g, "").slice(0, 120);
-    return `(classification-cpv=85147000 OR FT~"${escaped}")`;
+    clauses.push(`FT~"${escaped}"`);
   }
-  return "classification-cpv=85147000";
+  return clauses.length > 1 ? `(${clauses.join(" OR ")})` : clauses[0] ?? "";
 }
 
 function firstString(value: unknown): string | undefined {
@@ -227,7 +230,7 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
 }
 
 async function fetchTed(options: FetchOptions): Promise<ProviderFetchResult> {
-  const query = tedQueryForKeywords(options.keywords);
+  const query = buildTedQuery(options.keywords);
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), TED_PAGE_LIMIT);
   const response = await fetch(TED_SEARCH_URL, {
     method: "POST",

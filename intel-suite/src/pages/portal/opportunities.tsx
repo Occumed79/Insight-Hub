@@ -343,6 +343,24 @@ export default function OpportunitiesDashboard() {
     }
   };
 
+  // Suggested discovery queries come from the server's relevance profile (Neon search bundles).
+  const [searchPresets, setSearchPresets] = useState<
+    Array<{ key: string; label: string; query: string }>
+  >([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    fetch(`${baseUrl}/api/relevance-profile/search-presets`, {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.presets)) setSearchPresets(data.presets);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -595,22 +613,10 @@ export default function OpportunitiesDashboard() {
     importMutation.mutate({ data: { file: importFile } });
   };
 
-  const getServiceFitLabel = (opp: any): string => {
-    const text = `${opp.title ?? ""} ${opp.description ?? ""} ${opp.matchReasons?.join(" ") ?? ""}`.toLowerCase();
-    if (/(drug test|drug screen|alcohol test|substance abuse)/.test(text)) {
-      return "Drug testing / occupational health";
-    }
-    if (/(respirator fit|fit test|pft|spirometry)/.test(text)) {
-      return "PFT / fit testing";
-    }
-    if (
-      /(pre-employment physical|pre employment physical|medical testing|fitness for duty)/.test(
-        text,
-      )
-    ) {
-      return "Pre-employment medical testing";
-    }
-    return "General occupational health";
+  // Service line label comes from the server's relevance view (Neon profile category); the UI never infers it.
+  const getServiceFitLabel = (opp: any): string | null => {
+    const category = opp.relevance?.category;
+    return typeof category === "string" && category.trim() ? category.trim() : null;
   };
 
   const getSummaryHint = (opp: any): string | null => {
@@ -806,24 +812,19 @@ export default function OpportunitiesDashboard() {
       ? (extractAgencyHint(opp.title) ?? "—")
       : (opp.agency ?? "—");
   const opportunities = oppsData?.data ?? [];
-  const getOpportunityCategory = (opp: any): string => {
-    const text = [opp.title, opp.description, opp.type, opp.serviceType, ...(opp.matchReasons ?? []), ...(opp.serviceLines ?? [])]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (/(pre[- ]employment|pre[- ]placement|new hire|hiring physical)/.test(text)) return "Pre-Employment / Pre-Placement";
-    if (/(annual physical|periodic physical|periodic exam|annual exam|recurring medical)/.test(text)) return "Annual / Periodic Physicals";
-    if (/(drug|alcohol|substance|urine screen|drug[- ]free)/.test(text) && /(test|screen|testing|program|collection)/.test(text)) return "Drug & Alcohol Testing";
-    if (/(psychological|psychiatric|behavioral health|mental health|psychometric)/.test(text)) return "Psychological Testing";
-    if (/(full physical|medical examination|medical exam|occupational physical|fitness[- ]for[- ]duty|physical examination)/.test(text)) return "Full Physical / Medical Examination";
-    if (/(audiometr|hearing conservation|hearing test|noise monitoring)/.test(text)) return "Hearing / Audiometry";
-    if (/(respirator|fit test|spirometr|pulmonary function|pft)/.test(text)) return "Respiratory / Fit Testing";
-    if (/(laboratory|blood test|lab testing|diagnostic|x[- ]ray|radiolog|ekg|ecg)/.test(text)) return "Laboratory / Diagnostic Testing";
-    if (/(vaccin|immuniz|titer|titres)/.test(text)) return "Vaccinations / Immunizations";
-    return "General Occupational Health";
-  };
-  const categoryOrder = ["Pre-Employment / Pre-Placement", "Annual / Periodic Physicals", "Drug & Alcohol Testing", "Psychological Testing", "Full Physical / Medical Examination", "Hearing / Audiometry", "Respiratory / Fit Testing", "Laboratory / Diagnostic Testing", "Vaccinations / Immunizations", "General Occupational Health"];
-  const groupedOpportunities = categoryOrder
-    .map((category) => [category, opportunities.filter((opp: any) => getOpportunityCategory(opp) === category)] as const)
-    .filter(([, items]) => items.length > 0);
+  // Group by the server-assigned profile category, in first-seen (rank) order.
+  const getOpportunityCategory = (opp: any): string =>
+    getServiceFitLabel(opp) ?? "Uncategorized";
+  const groupedOpportunities = (() => {
+    const groups = new Map<string, any[]>();
+    for (const opp of opportunities) {
+      const category = getOpportunityCategory(opp);
+      const items = groups.get(category);
+      if (items) items.push(opp);
+      else groups.set(category, [opp]);
+    }
+    return Array.from(groups.entries()) as Array<readonly [string, any[]]>;
+  })();
   const currentRunIsStale = Boolean(
     currentRun &&
       isOpportunityRunActive(currentRun.status) &&
@@ -1116,17 +1117,21 @@ export default function OpportunitiesDashboard() {
                   (typeof opp.relevanceScore === "number"
                     ? Math.round(opp.relevanceScore)
                     : null);
+                // Tone follows the canonical verdict from the server, not a local score cutoff.
                 const relTone =
                   relScore == null
                     ? ""
-                    : relScore >= 75
+                    : opp.relevance?.verdict === "accept"
                       ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
-                      : relScore >= 50
+                      : opp.relevance?.verdict === "review"
                         ? "bg-sky-500/10 text-sky-300 border-sky-500/25"
-                        : "bg-amber-500/10 text-amber-300 border-amber-500/25";
+                        : opp.relevance?.verdict === "reject"
+                          ? "bg-amber-500/10 text-amber-300 border-amber-500/25"
+                          : "bg-white/5 text-muted-foreground border-white/10";
+                const serviceFit = getServiceFitLabel(opp);
                 const hint =
                   getSummaryHint(opp) ??
-                  `${getServiceFitLabel(opp)} opportunity.`;
+                  (serviceFit ? `${serviceFit} opportunity.` : "");
                 const dateLabel = opp.responseDeadline ? "Due" : "Posted";
                 const dateValue = opp.responseDeadline
                   ? format(new Date(opp.responseDeadline), "MMM d, yyyy")
@@ -1203,7 +1208,7 @@ export default function OpportunitiesDashboard() {
                         {dateValue}
                       </div>
                       <div className="text-[11px] text-primary/70 font-medium">
-                        {getServiceFitLabel(opp)} · {getSourceTypeLabel(opp)}
+                        {[serviceFit, getSourceTypeLabel(opp)].filter(Boolean).join(" · ")}
                       </div>
                     </div>
 
@@ -1585,19 +1590,15 @@ export default function OpportunitiesDashboard() {
                     />
                   </div>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {[
-                      "occupational health services",
-                      "drug and alcohol testing",
-                      "pre-employment physical examinations",
-                      "medical surveillance and audiometric testing",
-                    ].map((preset) => (
+                    {searchPresets.map((preset) => (
                       <button
-                        key={preset}
+                        key={preset.key}
                         type="button"
-                        onClick={() => setFetchQuery(preset)}
+                        title={preset.query}
+                        onClick={() => setFetchQuery(preset.query)}
                         className="text-[10px] px-2 py-1 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80"
                       >
-                        {preset}
+                        {preset.label}
                       </button>
                     ))}
                   </div>

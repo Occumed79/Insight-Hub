@@ -6,7 +6,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import { resolveCredential } from "../config/providerConfig";
-import { OCCUMED_PROFILE, OCCUMED_DEFAULT_QUERIES } from "./gemini";
+import { occumedDefaultQueries, occumedExtractionGuidance, occumedScopeSummary } from "./gemini";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
@@ -78,13 +78,13 @@ export class OpenRouterProvider implements DataSourceProvider {
 
   async generateSearchQueries(customKeywords?: string): Promise<string[]> {
     const year = new Date().getFullYear();
-    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.\n${customKeywords ? `User-specified focus: ${customKeywords}` : ""}\nGenerate exactly 8 highly targeted search queries to find ACTIVE RFPs and solicitations for ${year}. Respond ONLY with a JSON array.`;
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find relevant government contracting opportunities.\n${occumedScopeSummary()}\n${customKeywords ? `User-specified focus: ${customKeywords}` : ""}\nGenerate exactly 8 highly targeted search queries to find ACTIVE RFPs and solicitations for ${year}. Respond ONLY with a JSON array.`;
     try {
       const text = await this.complete(prompt, 600);
       const queries = JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());
       if (Array.isArray(queries) && queries.length > 0) return queries as string[];
     } catch {}
-    return OCCUMED_DEFAULT_QUERIES;
+    return occumedDefaultQueries(year);
   }
 
   async extractOpportunityFromWebResult(
@@ -93,7 +93,7 @@ export class OpenRouterProvider implements DataSourceProvider {
     content: string,
   ): Promise<any | null> {
     const today = new Date().toISOString().split("T")[0];
-    const prompt = `You are a procurement intelligence analyst for Occu-Med. Today: ${today}. Analyze whether this is an ACTIVE, OPEN solicitation relevant to occupational health. Title: ${title}\nURL: ${url}\nContent: ${content.slice(0, 2500)}\nReturn JSON only with isOpportunity, title, agency, description, deadline, estimatedValue, location, relevanceScore, relevanceReason, or reason.`;
+    const prompt = `You are a procurement intelligence analyst for Occu-Med. Today: ${today}. Analyze whether this is an ACTIVE, OPEN solicitation for a service Occu-Med provides.\n${occumedExtractionGuidance()}\nTitle: ${title}\nURL: ${url}\nContent: ${content.slice(0, 2500)}\nReturn JSON only with isOpportunity, title, agency, description, deadline, estimatedValue, location, relevanceScore, relevanceReason, or reason.`;
     try {
       const text = await this.complete(prompt, 512);
       return JSON.parse(text.replace(/```json\n?/g, "").replace(/```/g, "").trim());

@@ -3,7 +3,7 @@ import {
   type EnrichedDirectRfpPortal,
 } from "./directRfpPortalRelevanceCatalog";
 import { serperProvider, type SerperSearchResult } from "./serper";
-import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
+import { buildProfileSearchQueries } from "../search/profileQueries";
 import {
   classifyResult,
   hostFromUrl,
@@ -171,7 +171,7 @@ function buildPortalEvidenceQueries(
   years: number[],
 ): PortalEvidencePlannedQuery[] {
   return years.flatMap((year) =>
-    buildOccuMedSearchQueries(year).map((query, queryIndex) => ({
+    buildProfileSearchQueries(year).map((query, queryIndex) => ({
       portalId: portal.id,
       portalName: portal.name,
       portalDomain: portal.domain,

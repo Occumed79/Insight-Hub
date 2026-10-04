@@ -139,6 +139,10 @@ function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
   const globalAdjustment = feedbackAdjustment(opp.userConfidence);
   return {
     score,
+    // Canonical accept/review/reject decision and the thresholds it applied (Neon profile). The UI renders
+    // these; it never compares scores to cutoffs of its own.
+    verdict: decision.verdict,
+    thresholds: decision.thresholds,
     reasons: classification.reasons.slice(0, 4),
     category: classification.category,
     dateUnknown,

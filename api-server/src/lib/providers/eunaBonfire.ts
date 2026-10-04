@@ -11,22 +11,17 @@ import { serperProvider, type SerperSearchResult } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import { classifyResult } from "../search/relevance";
 import { decideRelevance } from "../search/relevanceDecision";
+import {
+  profileExclusionOperators,
+  profileProcurementExpression,
+  profileServiceQueryGroups,
+} from "../search/profileQueries";
+import { getRelevanceProfile } from "../search/relevanceProfile";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_RESULT_LIMIT = 50;
 const UNKNOWN_POSTED_DATE = new Date(0);
 const EUNA_DOMAIN_EXPRESSION = "(site:bonfirehub.com OR site:bonfirehub.ca)";
-const PROCUREMENT_EXPRESSION = "(RFP OR RFQ OR bid OR solicitation OR tender OR procurement)";
-
-const DEFAULT_SERVICE_QUERIES = [
-  '("occupational health services" OR "occupational medicine services" OR "employee health services")',
-  '("pre-employment physical" OR "medical examination services" OR "fitness for duty")',
-  '("drug and alcohol testing" OR "drug testing services" OR "medical review officer")',
-  '("medical surveillance" OR "respirator fit testing" OR "audiometric testing")',
-  '("firefighter physical" OR "public safety physical" OR "NFPA 1582")',
-  '("deployment medical" OR "post deployment health assessment" OR "employee health screening")',
-];
-
 const BLOCKED_VENDOR_PATHS = [
   "/dashboard",
   "/settings",
@@ -78,7 +73,6 @@ function isUsefulResult(result: SerperSearchResult): boolean {
 
   if (!isEunaHost(parsed.hostname) || isBlockedPrivatePath(parsed)) return false;
 
-  const raw = `${result.title} ${result.snippet} ${result.link}`;
   const classification = classifyResult({
     title: result.title,
     snippet: result.snippet,
@@ -87,7 +81,8 @@ function isUsefulResult(result: SerperSearchResult): boolean {
   });
 
   if (decideRelevance(classification).verdict === "reject") return false;
-  return isLikelyOpportunityPath(parsed) || /\b(rfp|rfq|bid|solicitation|tender|procurement)\b/i.test(raw);
+  // Procurement wording comes from the profile's stage signals, as matched by the classifier.
+  return isLikelyOpportunityPath(parsed) || classification.matchedProcurementSignals.length > 0;
 }
 
 function titleCase(value: string): string {
@@ -184,13 +179,22 @@ function resultToOpportunity(result: SerperSearchResult): NormalizedOpportunity 
 }
 
 export function buildEunaBonfireSearchQueries(keywords?: string): string[] {
+  const profile = getRelevanceProfile();
+  const procurement = profileProcurementExpression(profile);
+  const exclusions = profileExclusionOperators(profile, []);
+  const tail = (...parts: string[]) => parts.filter(Boolean).join(" ");
   const custom = keywords?.trim()
-    ? [`${EUNA_DOMAIN_EXPRESSION} (${keywords.trim()}) ${PROCUREMENT_EXPRESSION} -awarded -\"award notice\"`]
+    ? [tail(EUNA_DOMAIN_EXPRESSION, `(${keywords.trim()})`, procurement, exclusions)]
     : [];
 
-  const defaults = DEFAULT_SERVICE_QUERIES.map(
-    (serviceQuery) =>
-      `${EUNA_DOMAIN_EXPRESSION} ${serviceQuery} ${PROCUREMENT_EXPRESSION} (${CURRENT_YEAR} OR ${CURRENT_YEAR + 1}) -awarded -\"award notice\"`,
+  const defaults = profileServiceQueryGroups(profile).map((serviceQuery) =>
+    tail(
+      EUNA_DOMAIN_EXPRESSION,
+      serviceQuery,
+      procurement,
+      `(${CURRENT_YEAR} OR ${CURRENT_YEAR + 1})`,
+      exclusions,
+    ),
   );
 
   return [...custom, ...defaults];

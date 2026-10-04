@@ -10,7 +10,7 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
-import { OCCUMED_PROFILE } from "./gemini";
+import { occumedExtractionGuidance } from "./gemini";
 
 const MINIMAX_BASE = "https://api.minimaxi.chat/v1";
 const DEFAULT_MODEL = "MiniMax-Text-01";
@@ -98,8 +98,9 @@ JSON only: {"score":<0-100>,"explanation":"1-2 sentences"}`;
     content: string
   ): Promise<{ isOpportunity: boolean; title?: string; agency?: string; description?: string; deadline?: string | null; estimatedValue?: number | null; location?: string | null; relevanceScore?: number; relevanceReason?: string; reason?: string } | null> {
     const today = new Date().toISOString().split("T")[0];
-    const prompt = `Procurement analyst for Occu-Med (occupational health). Today: ${today}
+    const prompt = `Procurement analyst for Occu-Med. Today: ${today}
 Is this an ACTIVE open solicitation Occu-Med could bid on?
+${occumedExtractionGuidance()}
 Title: ${title}
 URL: ${url}
 Content: ${content.slice(0, 2000)}

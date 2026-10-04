@@ -11,7 +11,7 @@ import {
   parserForPortalSource,
   type PortalCandidateOpportunity,
 } from "./portal-parsers";
-import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
+import { buildProfileSearchQueries } from "../search/profileQueries";
 import { classifyResult } from "../search/relevance";
 import { decideRelevance } from "../search/relevanceDecision";
 import {
@@ -234,7 +234,7 @@ export function buildPublicPortalSearchPlan(
 ): PublicPortalSearchPlan {
   const portals = eligiblePortals(options.includeTier3 ?? true);
   const domainGroups = buildDomainGroups(portals);
-  const queryBundles = buildOccuMedSearchQueries(runtimeYear());
+  const queryBundles = buildProfileSearchQueries(runtimeYear());
   const allQueries = domainGroups.flatMap((group) =>
     queryBundles.map((bundle, index) =>
       makePlannedQuery(group, bundle, index, options.keywords),

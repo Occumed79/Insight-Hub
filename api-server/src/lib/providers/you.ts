@@ -15,6 +15,8 @@ import type {
   ProviderStatus,
 } from "./types";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
+import { getRelevanceProfile } from "../search/relevanceProfile";
+import { keywordQueries, profileNaturalQueries, spreadSample } from "../search/profileWebQueries";
 
 const YOU_BASE = "https://api.ydc-index.io";
 
@@ -98,7 +100,8 @@ export class YouProvider implements DataSourceProvider {
             source: "you" as const,
             providerName: "You.com",
             status: "active" as const,
-            relevanceScore: 50,
+            // Unscored search hit: the canonical review floor, so only the relevance gate can promote it.
+            relevanceScore: getRelevanceProfile().thresholds.reviewMin,
             rawData: { query, hit },
           });
         }
@@ -112,17 +115,10 @@ export class YouProvider implements DataSourceProvider {
 
   private buildQueries(keywords?: string): string[] {
     const year = new Date().getFullYear();
+    // Query text comes from the profile at call time; fetch() runs the first few, so spread them across bundles.
     return keywords
-      ? [
-          `${keywords} RFP solicitation ${year}`,
-          `${keywords} government contract bid ${year}`,
-        ]
-      : [
-          `occupational health services RFP solicitation ${year}`,
-          `drug testing DOT physicals government contract ${year}`,
-          `employee wellness occupational medicine RFP ${year}`,
-          `audiometric pulmonary testing solicitation ${year}`,
-        ];
+      ? keywordQueries(keywords, year).slice(0, 2)
+      : spreadSample(profileNaturalQueries(year), 4);
   }
 
   async getStatus(): Promise<ProviderStatus> {

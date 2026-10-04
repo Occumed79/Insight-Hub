@@ -238,7 +238,7 @@ A YES verdict requires all of the following:
 3. Occu-Med could realistically bid as the prime or a meaningful subcontractor.
 
 Return ONLY JSON in this shape:
-{"results":[{"index":0,"isOpportunity":true,"relevanceScore":92,"reason":"The core scope purchases occupational medical examinations and drug testing."}]}
+{"results":[{"index":0,"isOpportunity":true,"relevanceScore":92,"reason":"The core scope purchases ${profileServiceLabels()[0] ?? "a listed service"}."}]}
 
 Return exactly one result for every numbered item. Keep each reason under 25 words. Do not include markdown.
 ${scoreGuidance()} Be conservative.

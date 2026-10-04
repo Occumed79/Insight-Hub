@@ -3,32 +3,28 @@ import { cloudflareWorkersAi } from "../providers/cloudflareWorkersAi";
 import { cohereProvider } from "../providers/cohere";
 import { embedTexts, type EmbeddingProviderName } from "./embeddings";
 import { runLimitedProviderPool } from "../limitedProviderPool";
-
-// Describes the kind of opportunity Occu-Med wants to find.
-// This is the static fallback profile used when OCCU_MED_AWARE is not available.
-// The live profile is generated from the merged reference model via getOccuMedSemanticProfile().
-export const OCCUMED_SEMANTIC_PROFILE = [
-  "Open government request for proposal or solicitation for occupational health services,",
-  "medical screening, drug and alcohol testing, DOT physicals, pre-employment physical exams,",
-  "medical surveillance, audiograms, respirator clearance, pulmonary function testing, and",
-  "fitness-for-duty and return-to-work evaluations. Includes deployment medical screening,",
-  "clinic/provider-network agreements, and federal, state, local, and international procurement opportunities.",
-].join(" ");
+import { getRelevanceProfile, type RelevanceProfile } from "./relevanceProfile";
+import { profileClientTypes, profileServiceLabels } from "./profileText";
 
 /**
- * Returns the Occu-Med semantic profile string.
- * Uses the merged reference model when OCCU_MED_AWARE is configured;
- * falls back to the static profile otherwise.
+ * Describes the kind of opportunity Occu-Med wants to find, rendered from the Neon relevance profile on every call
+ * (service lines and buyer types are profile rows; the profile can refresh while the process runs).
  */
+export function occumedSemanticProfile(profile: RelevanceProfile = getRelevanceProfile()): string {
+  const services = profileServiceLabels(profile);
+  const buyers = profileClientTypes(profile);
+  return [
+    `Open government request for proposal or solicitation for: ${services.join("; ")}.`,
+    buyers.length ? `Buyers include ${buyers.join("; ")}.` : "",
+    "Includes federal, state, local, and international procurement opportunities.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The Occu-Med semantic profile string, with an optional search focus appended. */
 export async function getOccuMedSemanticProfile(focus?: string): Promise<string> {
-  let base = OCCUMED_SEMANTIC_PROFILE;
-  try {
-    const { getOccuMedReference } = await import("../occumedAware/index");
-    const ref = await getOccuMedReference();
-    if (ref.awareLoaded) base = ref.semanticProfile;
-  } catch {
-    // fall through to static profile
-  }
+  const base = occumedSemanticProfile();
   const normalized = focus?.trim();
   return normalized ? `${base} Current search focus: ${normalized}.` : base;
 }
@@ -59,13 +55,6 @@ function cosine(a: number[], b: number[]): number {
   }
   if (na === 0 || nb === 0) return 0;
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
-
-function semanticQuery(focus?: string): string {
-  const normalized = focus?.trim();
-  return normalized
-    ? `${OCCUMED_SEMANTIC_PROFILE} Current search focus: ${normalized}.`
-    : OCCUMED_SEMANTIC_PROFILE;
 }
 
 /** Async version that fetches the live profile from the reference model. */

@@ -3,6 +3,8 @@ import { eq, inArray } from "drizzle-orm";
 import { rfpDb, rfpPool, settingsTable } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import type { FeedbackGrade } from "./feedbackModel";
+import { classifyResult } from "../search/relevance";
+import { getRelevanceProfile } from "../search/relevanceProfile";
 
 const PREFIX = "feedback-context:v1:";
 const MAX_ADJUSTMENT = 20;
@@ -76,37 +78,20 @@ function parseTags(raw: unknown): string[] {
   }
 }
 
+/**
+ * Service-line scopes of a notice: the profile categories the one classifier matches in its text.
+ * Scope keys are the profile category ids (underscores hyphenated), so they follow the Neon profile.
+ */
 function serviceScopes(text: string): string[] {
-  const scopes: string[] = [];
-  const checks: Array<[string, RegExp]> = [
-    [
-      "occupational-health",
-      /occupational health|occupational medicine|employee health|workforce health/i,
-    ],
-    [
-      "medical-exams",
-      /medical exam|physical exam|pre-employment|pre placement|fitness for duty|deployment medical/i,
-    ],
-    [
-      "drug-alcohol",
-      /drug test|drug screen|alcohol test|urine drug|substance testing/i,
-    ],
-    ["audiometry", /audiogram|audiometric|hearing conservation|hearing test/i],
-    ["respiratory", /spirometry|pulmonary function|respirator|fit testing|pft\b/i],
-    [
-      "vaccines-labs",
-      /vaccin|immuniz|titer|tuberculosis|tb test|laboratory testing/i,
-    ],
-    ["surveillance", /medical surveillance|health surveillance|hazmat|bloodborne/i],
-    [
-      "provider-network",
-      /provider network|clinic network|medical network|network management/i,
-    ],
-  ];
-  for (const [scope, pattern] of checks) {
-    if (pattern.test(text)) scopes.push(scope);
+  const profile = getRelevanceProfile();
+  const labelToId = new Map(profile.categories.map((c) => [c.label, c.id]));
+  const result = classifyResult({ title: text, allowHistorical: true });
+  const scopes = new Set<string>();
+  for (const label of result.matchedServiceCategories) {
+    const id = labelToId.get(label);
+    if (id) scopes.add(id.replace(/_/g, "-"));
   }
-  return scopes;
+  return [...scopes];
 }
 
 export function deriveOpportunityContext(
@@ -136,7 +121,7 @@ export function deriveOpportunityContext(
   const fallback = normalizeQueryContext(
     `${opportunity.title ?? ""} ${opportunity.naicsCode ?? ""}`,
   );
-  return `scope:${fallback ?? "general-occupational-health"}`;
+  return `scope:${fallback ?? "general"}`;
 }
 
 export function contextHash(context: string): string {

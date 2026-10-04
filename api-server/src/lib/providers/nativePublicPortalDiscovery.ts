@@ -1,4 +1,6 @@
 import { createHash } from "crypto";
+import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 
 export type NativeDiscoveryMethod =
   | "dedicated_adapter"
@@ -290,16 +292,20 @@ function looksProcurementPath(c: NativeDiscoveryCandidate): boolean {
   );
 }
 
-function isRelevantProcurement(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (/award notice|awarded to|bid tab|closed|expired|cancelled/.test(lower))
-    return false;
-  return (
-    /(rfp|request for proposal|solicitation|bid|quote|proposal)/.test(lower) &&
-    /(occupational|employee health|medical surveillance|drug test|physicals?|fit for duty|clinic|health services)/.test(
-      lower,
-    )
-  );
+/**
+ * Page status is checked here (closed / expired / cancelled listings are not live opportunities); whether the
+ * content is Occu-Med-relevant procurement is the profile's decision, via the one classifier + decision.
+ */
+function isRelevantProcurement(c: NativeDiscoveryCandidate): boolean {
+  const text = `${c.title ?? ""} ${c.url} ${c.snippet ?? ""}`;
+  if (/closed|expired|cancelled/.test(text.toLowerCase())) return false;
+  const result = classifyResult({
+    title: c.title ?? "",
+    snippet: c.snippet ?? "",
+    url: c.url,
+    allowHistorical: true,
+  });
+  return decideRelevance(result).verdict !== "reject";
 }
 
 async function readLimited(res: Response, maxBytes: number): Promise<string> {
@@ -526,7 +532,7 @@ export async function discoverNativePortal(
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .slice(0, 500);
-      if (isRelevantProcurement(`${c.title ?? ""} ${c.url} ${c.snippet}`)) {
+      if (isRelevantProcurement(c)) {
         c.state = "relevant_candidate";
         c.confidence = "medium";
         diagnostics.candidatesVerifiedFromDirectOfficialContent += 1;

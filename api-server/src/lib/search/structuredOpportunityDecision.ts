@@ -3,7 +3,7 @@ import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch
 import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
 import { decideRelevance } from "./relevanceDecision";
 import { getRelevanceProfile } from "./relevanceProfile";
-import { SCOPE_BLOCK_HEADER, judgeScopeBlock, scoreGuidance } from "./profileText";
+import { SCOPE_BLOCK_HEADER, judgeScopeBlock, profileServiceLabels, scoreGuidance } from "./profileText";
 import { geminiProvider } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -256,7 +256,7 @@ A record is approved only when it is a real procurement notice that is currently
 ${scoreGuidance()}
 
 Judge independently. Do not assume another model will correct you. Return only JSON in this shape and exactly one row per item:
-{"results":[{"index":0,"isOpportunity":true,"relevanceScore":86,"reason":"Core scope purchases employee medical examinations and testing; deadline is open."}]}
+{"results":[{"index":0,"isOpportunity":true,"relevanceScore":86,"reason":"Core scope purchases ${profileServiceLabels()[0] ?? "a listed service"}; deadline is open."}]}
 
 ITEMS:
 ${items}`;

@@ -25,6 +25,8 @@ import {
   summaryIneligibilityReason,
 } from "../lib/opportunityQuality";
 import { mergeSummaryWithVerifiedFacts } from "../lib/summaryEvidence";
+import { matchedServiceLines } from "../lib/search/profileServiceLines";
+import { judgeScopeBlock, profileServiceLabels } from "../lib/search/profileText";
 
 const router = Router();
 const summaryCache = new Map<string, any>();
@@ -83,36 +85,9 @@ function sourceUrl(opp: any): string | null {
   return opp.samUrl || opp.sourceUrl || opp.url || null;
 }
 
+/** Service lines the text evidences, as profile category labels (no service vocabulary lives in this route). */
 function findServiceLines(text: string): string[] {
-  const t = text.toLowerCase();
-  const lines: string[] = [];
-  if (
-    /\b(pre[- ]employment|pre[- ]placement|dot|fitness for duty|physical exam|medical exam)\b/.test(
-      t,
-    )
-  )
-    lines.push("Physical exams / fitness for duty");
-  if (
-    /\b(screening|alcohol testing|substance testing|urine screen|bat)\b/.test(t)
-  )
-    lines.push("Substance / alcohol testing");
-  if (/\b(respirator|fit test|pft|spirometry|pulmonary function)\b/.test(t))
-    lines.push("Respirator / PFT / fit testing");
-  if (/\b(audiogram|audiometric|hearing conservation|hearing test)\b/.test(t))
-    lines.push("Audiograms / hearing conservation");
-  if (
-    /\b(vaccine|immunization|titer|tb test|tuberculosis|ppd|quantiferon)\b/.test(
-      t,
-    )
-  )
-    lines.push("Vaccines / titers / TB testing");
-  if (
-    /\b(occupational health|occupational medicine|medical surveillance|employee health)\b/.test(
-      t,
-    )
-  )
-    lines.push("Occupational health / medical surveillance");
-  return Array.from(new Set(lines));
+  return matchedServiceLines(text);
 }
 
 function baseBrief(opp: any, extracted: string | null) {
@@ -187,14 +162,9 @@ function jsonOnly(text: string): any {
   );
 }
 
-function vague(value: unknown): boolean {
-  return /\b(may fit|might fit|could fit|possibly|general occupational health|specific services?)\b/i.test(
-    String(value ?? ""),
-  );
-}
-
 function promptFor(opp: any, base: any, extracted: string | null): string {
-  return `Write a practical bid/no-bid brief for Occu-Med. Occu-Med coordinates occupational exam and testing services through clinic networks. Be direct and evidence-based. Do not invent missing dates, values, buyers, or scope. Avoid vague language.
+  return `Write a practical bid/no-bid brief for Occu-Med. Occu-Med provides: ${profileServiceLabels().join("; ")}. Be direct and evidence-based. Do not invent missing dates, values, buyers, or scope. Avoid vague language.
+${judgeScopeBlock()}
 
 Rule-check verdict: ${base.fitVerdict}
 Rule-check confidence: ${base.confidence}

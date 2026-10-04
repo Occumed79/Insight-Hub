@@ -5,8 +5,10 @@ import {
   DIRECT_RFP_PORTAL_RELEVANCE_RECORDS,
   ENRICHED_DIRECT_RFP_PORTALS,
   enrichedDirectRfpPortalsForOccuMedSearch,
+  buildDirectRfpPortalRelevanceRecords,
   validateDirectRfpPortalRelevanceCatalog,
 } from "../directRfpPortalRelevanceCatalog";
+import { getRelevanceProfile } from "../../search/relevanceProfile";
 
 describe("direct RFP portal relevance catalog", () => {
   it("classifies every combined portal exactly once", () => {
@@ -70,5 +72,25 @@ describe("direct RFP portal relevance catalog", () => {
           (rank.get(sorted[index].occumedFit) ?? 99),
       );
     }
+  });
+
+  it("derives buyer propensity and service categories from the relevance profile", () => {
+    const profile = getRelevanceProfile();
+    const likely = DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.filter((r) => r.occumedFit === "likely");
+    assert.ok(likely.length > 0);
+    const labels = new Set(profile.categories.map((c) => c.label));
+    for (const record of likely) {
+      assert.ok(record.occumedServiceCategories.length > 0);
+      for (const label of record.occumedServiceCategories) assert.ok(labels.has(label), label);
+    }
+    // With no high-propensity buyers in the profile, nothing is "likely": the vocabulary is not kept here.
+    const noBuyers = buildDirectRfpPortalRelevanceRecords({
+      ...profile,
+      buyerSectors: profile.buyerSectors.map((b) => ({ ...b, propensity: "medium" })),
+    });
+    assert.equal(noBuyers.filter((r) => r.occumedFit === "likely").length, 0);
+    // Verified portals' categories come from classifying their official evidence statement.
+    const verified = DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.filter((r) => r.occumedFit === "verified_high");
+    for (const record of verified) for (const label of record.occumedServiceCategories) assert.ok(labels.has(label), label);
   });
 });

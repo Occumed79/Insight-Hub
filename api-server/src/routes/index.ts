@@ -11,6 +11,7 @@ import opportunityFeedbackRouter from "./opportunity-feedback";
 import settingsRouter from "./settings";
 import forecastPolicyBoundaryRouter from "./forecast-policy-boundary";
 import searchRouter from "./search";
+import relevanceProfileRouter from "./relevanceProfile";
 import govconForecastEnsembleRouter from "./govcon-forecast-ensemble";
 import govconRouter from "./govcon";
 import relevantNewsRouter from "./relevant-news";
@@ -94,5 +95,6 @@ router.use(relevantNewsRouter);
 router.use(companyWatchRouter);
 router.use(forecastPolicyBoundaryRouter);
 router.use(searchRouter);
+router.use(relevanceProfileRouter);
 
 export default router;
