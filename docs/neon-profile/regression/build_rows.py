@@ -33,10 +33,14 @@ for fn in ('003_rules.sql', '005_notice_wording_rules.sql'):
         for r in blk:
             rules.append(dict(rule_key=r[0], category=r[1], title=r[2], rule_text=r[3], machine_action=r[4],
                               hard_rule=bool(r[5]), priority=r[6], scope=r[7], search_triggers=r[8], status='current'))
+pre = json.load(open(os.path.join(here, 'neon_existing_rules_policies.json')))
+for r in pre['rules']:
+    rules.append(dict(rule_key=r['rule_key'], category=r['category'], title=r['title'], rule_text=r['rule_text'], machine_action=r['machine_action'],
+                      hard_rule=r['hard_rule'], priority=r['priority'], scope=r['scope'], search_triggers=r['search_triggers'], status='current'))
 b4 = blocks('004_facts_and_policies.sql')
 facts = [dict(fact_key=f[0], category=f[1], predicate=f[2], value_text=f[3], value_json=(None if f[4] == 'null' else f[4]),
               value_numeric=f[5], status='current') for f in b4[0] if (f[3] is not None or f[4] is not None or f[5] is not None)]
-policies = [dict(policy_key=p[0], applies_to=p[1], title=p[2], instruction=p[3], priority=p[4], must_follow=True) for p in b4[1]]
+policies = [dict(policy_key=p[0], applies_to=p[1], title=p[2], instruction=p[3], priority=p[4], must_follow=True) for p in b4[1]] + pre['policies']
 rows = dict(terms=terms, rules=rules, facts=facts, policies=policies)
 json.dump(rows, open(os.path.join(here, 'rows.json'), 'w'), indent=0)
 cols = dict(terms=('phrase','term_type','match_strength','target_keys','metadata'),

@@ -80,6 +80,16 @@ function penaltyFor(rule: ProfileRule, hits: string[]): number {
   return Number(rule.scope.penalty ?? 0);
 }
 
+/**
+ * A rule is machine-evaluated against notice text only when its scope declares how to match
+ * (`match: any_trigger | title_any_trigger`). Rules without a declared match are policy text for judges and
+ * prompts, not text matchers: e.g. "workers' compensation is excluded from Occu-Med's service scope" excludes
+ * workers' comp as a SERVICE; it must not hard-reject a notice that merely mentions it next to real exams.
+ */
+function declaresMatch(rule: ProfileRule): boolean {
+  return rule.scope.match === "any_trigger" || rule.scope.match === "title_any_trigger";
+}
+
 export function evaluateRules(profile: RelevanceProfile, ctx: RuleContext): RuleEvaluation {
   const out: RuleEvaluation = { hardReject: null, conditionalPenalty: 0, negativeSignals: [], softPenalties: [], programMatches: [], networkServiceEvidence: false };
   const titleService = () => matchEvidence(ctx.title, profile.allServiceTerms);
@@ -88,7 +98,7 @@ export function evaluateRules(profile: RelevanceProfile, ctx: RuleContext): Rule
       case "reject_not_a_procurement":
       case "reject_post_award_notice":
       case "reject_as_out_of_scope": {
-        if (out.hardReject) break;
+        if (out.hardReject || !declaresMatch(rule)) break;
         const hit = matchTriggers(ctx.haystack, rule.triggers)[0];
         if (hit)
           out.hardReject = {

@@ -53,8 +53,9 @@ describe("Occu-Med prompt context", () => {
     assert.match(block, /fitness for duty evaluation/);
     assert.match(block, /541612/);
     assert.match(block, /Q301/);
-    assert.match(block, /HARD RULES:[\s\S]*No equipment or fuel/);
-    assert.match(block, /POLICIES YOU MUST FOLLOW:[\s\S]*Open only/);
+    // Rules and policies are rendered once, from the Neon profile, by judgeScopeBlock (not from the legacy reference model).
+    assert.doesNotMatch(block, /HARD RULES:/);
+    assert.doesNotMatch(block, /No equipment or fuel/);
     assert.match(block, /Overseas clinic coordination/);
   });
 
@@ -82,10 +83,13 @@ describe("Occu-Med prompt context", () => {
       assert.match(prompt, /OCCU-MED REFERENCE PROFILE/);
       assert.match(prompt, /EXAMPLES GRADED BY THE OCCU-MED TEAM/);
       assert.match(prompt, /ITEMS:/);
+      assert.equal((prompt.match(/OCCU-MED SCOPE RULES AND POLICIES/g) ?? []).length, 1);
+      assert.match(prompt, /HARD RULES:[\s\S]*POLICIES YOU MUST FOLLOW:/);
     }
     for (const prompt of [buildReviewPrompt([record]), buildPrompt("tango", [record])]) {
       assert.doesNotMatch(prompt, /OCCU-MED REFERENCE PROFILE/);
-      assert.match(prompt, /Workers' compensation/);
+      assert.match(prompt, /Workers[’']? compensation/);
+      assert.equal((prompt.match(/OCCU-MED SCOPE RULES AND POLICIES/g) ?? []).length, 1);
     }
   });
 

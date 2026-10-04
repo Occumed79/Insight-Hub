@@ -1,6 +1,9 @@
 import type { NormalizedOpportunity } from "../providers/types";
 import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch";
 import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
+import { decideRelevance } from "./relevanceDecision";
+import { getRelevanceProfile } from "./relevanceProfile";
+import { SCOPE_BLOCK_HEADER, judgeScopeBlock, scoreGuidance } from "./profileText";
 import { geminiProvider } from "../providers/gemini";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
@@ -58,10 +61,6 @@ const REVIEW_PROVIDERS: ReviewProvider[] = [
   deepseekProvider,
 ];
 
-const DETERMINISTIC_ACCEPT_SCORE = 78;
-const PANEL_ACCEPT_SCORE = 72;
-const SINGLE_JUDGE_ACCEPT_SCORE = 82;
-const AMBIGUOUS_MIN_SCORE = 55;
 const DEFAULT_REVIEW_LIMIT = 3;
 const REVIEW_DESCRIPTION_CHARS = 1_200;
 const REVIEW_OUTPUT_TOKENS = 700;
@@ -131,9 +130,8 @@ export function isDeterministicallyActionable(
 ): boolean {
   const relevance = classifyProviderRecordRelevance(record);
   return (
-    !relevance.rejected &&
+    decideRelevance(relevance).verdict === "accept" &&
     hasFutureDeadline(record, now) &&
-    relevance.score >= DETERMINISTIC_ACCEPT_SCORE &&
     (relevance.confidence === "verified_explicit" ||
       relevance.confidence === "strong_combination")
   );
@@ -251,12 +249,11 @@ export function buildReviewPrompt(
   return `You are one independent judge in a procurement relevance panel for Occu-Med.
 Today is ${new Date().toISOString().slice(0, 10)}.
 ${profileContext ? `\n${profileContext}\n` : ""}
-Approve only when the PRIMARY PURCHASED SCOPE is a real, currently open procurement for services Occu-Med can perform or coordinate: occupational health, employment or deployment medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluation or fit testing, vaccinations, fitness-for-duty evaluations, or management of a provider network that delivers those services (enrolling providers into workers' compensation MPN/provider panels is NOT in scope).
-SCOPE RULES: Workers' compensation treatment and claims administration are NOT in scope. Do NOT reject solely because workers' comp is mentioned — approve if the RFP also contains Occu-Med services. Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+${profileContext.includes(SCOPE_BLOCK_HEADER) ? "" : judgeScopeBlock()}
 
-Reject expired, awarded, cancelled, closed, construction, IT, equipment, pharmaceuticals, treatment-only care, general clinical staffing, insurance administration, grants, jobs, news, and records where medical language is incidental boilerplate. Do not approve an unknown deadline unless the record contains clear evidence that responses are currently being accepted.
+A record is approved only when it is a real procurement notice that is currently open for responses and the PRIMARY PURCHASED SCOPE (not incidental boilerplate) is within the scope policies above. Reject expired, awarded, cancelled or closed notices. Do not approve an unknown deadline unless the record contains clear evidence that responses are currently being accepted.
 
-Score relevance 0-100 and be conservative: 85+ only when the primary scope is core Occu-Med services and the deadline is open; 70-84 for clear but partial fit; below 70 when unsure. isOpportunity must be false for anything you would score below 70.
+${scoreGuidance()}
 
 Judge independently. Do not assume another model will correct you. Return only JSON in this shape and exactly one row per item:
 {"results":[{"index":0,"isOpportunity":true,"relevanceScore":86,"reason":"Core scope purchases employee medical examinations and testing; deadline is open."}]}
@@ -381,7 +378,7 @@ async function reviewAmbiguous(
         positive.reduce((sum, row) => sum + row.vote.relevanceScore, 0) /
           positive.length,
       );
-      if (score < PANEL_ACCEPT_SCORE) continue;
+      if (score < getRelevanceProfile().thresholds.acceptMin) continue;
       decisions.push({
         index,
         isOpportunity: true,
@@ -393,14 +390,16 @@ async function reviewAmbiguous(
       continue;
     }
 
-    // If only one judge is available, preserve continuity but require a much
-    // stronger score than a panel decision. One weak model can never outvote a
-    // second negative judge.
+    // If only one judge is available it may confirm a record the Neon evidence
+    // rules already accept (for example to verify an open deadline), at the
+    // canonical accept threshold. A record in the review band needs a panel, and
+    // one weak model can never outvote a second negative judge.
     if (
       distinctRows.length === 1 &&
       positive.length === 1 &&
       negative.length === 0 &&
-      positive[0]!.vote.relevanceScore >= SINGLE_JUDGE_ACCEPT_SCORE
+      decideRelevance(classifyProviderRecordRelevance(records[index]!)).verdict === "accept" &&
+      positive[0]!.vote.relevanceScore >= getRelevanceProfile().thresholds.acceptMin
     ) {
       decisions.push({
         ...positive[0]!.vote,
@@ -430,7 +429,7 @@ export async function decideStructuredOpportunities(
 
   for (const record of records) {
     const relevance = classifyProviderRecordRelevance(record);
-    if (relevance.rejected || relevance.score < AMBIGUOUS_MIN_SCORE) {
+    if (decideRelevance(relevance).verdict === "reject") {
       rejected += 1;
       continue;
     }

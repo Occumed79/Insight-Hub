@@ -68,6 +68,7 @@ export interface ProfileCategory {
 export interface ProfileRule {
   key: string;
   title: string;
+  text: string;
   action: string;
   hard: boolean;
   priority: number;
@@ -234,6 +235,7 @@ export function buildProfile(rows: ProfileRows, source: "neon" | "snapshot" = "n
     .map((r) => ({
       key: r.rule_key,
       title: r.title,
+      text: r.rule_text,
       action: r.machine_action ?? "",
       hard: r.hard_rule,
       priority: r.priority,

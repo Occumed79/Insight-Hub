@@ -947,5 +947,41 @@
   "expect": "accept",
   "url": "https://example.org/x",
   "deadline": false
+ },
+ {
+  "group": "workers_comp_context",
+  "id": "wc01",
+  "title": "Occupational Health Services: Pre-Employment Physicals and Drug Testing",
+  "description": "Request for proposals for pre-employment physical examinations, drug testing and medical surveillance for county employees. Vendors must not provide workers compensation claims management; that is handled separately.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "mention of workers comp next to real services must not reject"
+ },
+ {
+  "group": "workers_comp_context",
+  "id": "wc02",
+  "title": "Workers Compensation Claims Management and Utilization Review Services",
+  "description": "Request for proposals for workers compensation claims management, utilization review and managed care for injured employees.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "workers comp as the purchased service"
+ },
+ {
+  "group": "workers_comp_context",
+  "id": "wc03",
+  "title": "Third Party Administrator for Employee Claims Administration",
+  "description": "Request for proposals for a third-party administrator to provide claims administration and provider panel enrollment.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "TPA as the purchased service"
+ },
+ {
+  "group": "workers_comp_context",
+  "id": "wc04",
+  "title": "Fitness for Duty and Return to Work Evaluations",
+  "description": "Request for proposals for employment-related fitness for duty and return to work medical evaluations. Evaluations are not for workers' compensation benefit determinations.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": "IME context distinction"
  }
 ]
