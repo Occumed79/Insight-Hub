@@ -185,6 +185,14 @@ async function bootstrap(): Promise<void> {
   );
 
   logger.info("Automatic crawler scheduler disabled; ingestion is manual-only");
+
+  // Load the Neon relevance profile for the classifier, and keep it fresh. Best-effort: until a complete
+  // profile loads, the classifier uses the snapshot and marks its results accordingly.
+  const { ensureRelevanceProfile } = await import("./lib/occumedAware/relevanceProfileLoader");
+  void ensureRelevanceProfile(true).then((result) =>
+    logger.info({ applied: result.applied, source: result.source, missing: result.missing, error: result.error }, "Relevance profile load"),
+  );
+  setInterval(() => void ensureRelevanceProfile(true), 10 * 60_000).unref();
 }
 
 bootstrap().catch((error) => {

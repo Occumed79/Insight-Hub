@@ -225,6 +225,8 @@ export async function buildOccuMedReferenceModel(): Promise<OccuMedReferenceMode
   if (!isOccuMedAwareConfigured()) return staticFallback();
   try {
     const aware = await loadFromAware();
+    // The relevance profile rides the same refresh cycle as the reference model.
+    void import("./relevanceProfileLoader").then((m) => m.ensureRelevanceProfile());
     return {
       builtAt: new Date().toISOString(),
       awareLoaded: true,

@@ -34,7 +34,7 @@ for ttype, strength, role, cat, _src, phrases, meta in terms:
     elif ttype == 'procurement_phrase' and strength == 'direct': P['generalExplicit'] += ph
     elif ttype == 'component_term': P['generalExplicit'] += []  # uncategorised review terms: not evidence on their own
 P['generalExplicit'] += [low(p) for p in existing['direct_procurement_phrases'] if len(p) >= 8]
-P['regulatory'] += [low(p) for p in existing['regulatory_references']]
+P['regulatory'] += [low(p) for p in existing['regulatory_references'] + existing['standard_references']]
 for r in rules:
     P['rules'].append(dict(key=r[0], action=r[4], hard=r[5], priority=r[6], scope=r[7], triggers=[low(t) for t in r[8]]))
 for f in facts:

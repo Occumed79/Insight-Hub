@@ -1,17 +1,8 @@
 /** Shared Occu-Med opportunity relevance engine powered by the procurement ontology. */
-import {
-  ALL_SERVICE_TERMS,
-  BUYER_SECTOR_SIGNALS,
-  CONDITIONAL_NEGATIVE_GROUPS,
-  HARD_REJECT_TERMS,
-  PROCUREMENT_SIGNALS,
-  REASON_CODES,
-  REGULATORY_STANDARDS_TERMS,
-  SERVICE_CATEGORIES,
-  WORKFORCE_SIGNALS,
-} from "./occumedProcurementOntology";
+import { REASON_CODES } from "./occumedProcurementOntology";
+import { getRelevanceProfile } from "./relevanceProfile";
+import { evaluateRules } from "./profileRules";
 
-export { HARD_REJECT_TERMS, PROCUREMENT_SIGNALS, SERVICE_CATEGORIES };
 export const CURRENT_YEAR = new Date().getFullYear();
 export const BLOCKED_DOMAINS = [
   "indeed.com",
@@ -40,19 +31,6 @@ export const BLOCKED_DOMAINS = [
   "mayoclinic.org",
   "wikihow.com",
 ];
-export const SOFT_PENALTY_TERMS = [
-  "news",
-  "press release",
-  "blog",
-  "article",
-  "webinar",
-  "podcast",
-  "definition",
-  "what is",
-  "how to",
-  "guide to",
-  "overview of",
-];
 const PROCUREMENT_DOMAINS = [
   ".gov",
   "sam.gov",
@@ -68,29 +46,6 @@ const PROCUREMENT_DOMAINS = [
   "merx.com",
   "govwin.com",
 ];
-const PRIME_CONTRACTOR_SIGNALS = BUYER_SECTOR_SIGNALS.flatMap(
-  (s) => s.phrases,
-).concat([
-  "logcap",
-  "afcap",
-  "v2x",
-  "amentum",
-  "kbr",
-  "fluor",
-  "pae",
-  "vectrus",
-  "dyncorp",
-  "leidos",
-  "qtc",
-  "international sos",
-  "workcare",
-  "concentra",
-  "premise health",
-  "prime contractor",
-  "subcontractor",
-  "teaming partner",
-]);
-
 function norm(s: string | null | undefined): string {
   return ` ${(s ?? "").toLowerCase().replace(/[\s\n\r]+/g, " ")} `;
 }
@@ -183,6 +138,8 @@ export interface RelevanceResult {
   negativeSignals: string[];
   reasonCodes: string[];
   confidence: RelevanceConfidence;
+  /** Which relevance profile produced this result ("snapshot" = the live Neon profile was unavailable or incomplete). */
+  profileSource: "neon" | "snapshot";
 }
 
 function rejected(
@@ -209,31 +166,13 @@ function rejected(
     negativeSignals: [],
     reasonCodes,
     confidence: "rejected",
+    profileSource: getRelevanceProfile().source,
     ...extras,
   };
 }
 
-// Phrases the Occu-Med team curated in the reference profile as DIRECT evidence
-// of a relevant procurement. Loaded at runtime by occumedSearchProfile; empty
-// until then, in which case only the built-in categories apply.
-let profileDirectPhrases: string[] = [];
-export function setProfileDirectPhrases(phrases: string[]): void {
-  profileDirectPhrases = Array.from(
-    new Set(
-      phrases
-        .map((phrase) => phrase.toLowerCase().replace(/\s+/g, " ").trim())
-        .filter((phrase) => phrase.length >= 8),
-    ),
-  ).slice(0, 200);
-}
-export function getProfileDirectPhrases(): readonly string[] {
-  return profileDirectPhrases;
-}
-
-const NON_MEDICAL_PRIMARY_SCOPE_RE =
-  /\b(corrosion|repaint\w*|painting|roofing|paving|resurfacing|hvac|chillers?|plumbing|elevators?|snow removal|janitorial|custodial|landscap\w+|grounds maintenance|construction|renovation|demolition|abatement|installation of|repair of|repairs to|help desk|software development|network infrastructure|cabling|fencing|parking garage)\b/i;
-
 export function classifyResult(input: RelevanceInput): RelevanceResult {
+  const profile = getRelevanceProfile();
   const haystack = norm(
     [input.title, input.snippet, input.description].filter(Boolean).join(" "),
   );
@@ -242,57 +181,40 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
   const reasonCodes: string[] = [];
   if (isBlockedDomain(input.url))
     return rejected("Excluded: job board / non-procurement domain", input);
-  const hard = firstMatch(haystack, HARD_REJECT_TERMS);
-  if (hard)
+  const matchedProcurementSignals = matchTerms(
+    haystack,
+    profile.procurementSignals,
+  );
+  const hasProc = matchedProcurementSignals.length > 0;
+  // Every hard reject, scope rule, conditional penalty, soft penalty and program
+  // combination below comes from the Neon rules; none is defined in this file.
+  const rules = evaluateRules(profile, {
+    title: titleNorm,
+    haystack,
+    hasProcurementSignal: hasProc,
+  });
+  if (rules.hardReject)
     return rejected(
-      `Excluded due to non-biddable/job/off-topic wording ("${hard.trim()}")`,
+      rules.hardReject.reason,
       input,
       [REASON_CODES.hardReject],
-      { negativeSignals: [hard] },
+      { negativeSignals: [`${rules.hardReject.ruleKey}: ${rules.hardReject.trigger}`] },
     );
-  // The purchased scope is named in the title. When the title describes
-  // physical/IT work and names no Occu-Med service, medical words elsewhere in
-  // the notice are contract boilerplate (e.g. a painting job that mentions a
-  // worker medical surveillance clause), not the thing being bought.
-  if (NON_MEDICAL_PRIMARY_SCOPE_RE.test(titleNorm)) {
-    const titleServiceTerms = matchTerms(
-      titleNorm,
-      SERVICE_CATEGORIES.flatMap((c) => [
-        ...c.explicitPhrases,
-        ...(c.highIntentPhrases ?? []),
-        ...c.componentTerms,
-        ...(c.regulatoryTerms ?? []),
-      ]),
-    );
-    if (titleServiceTerms.length === 0) {
-      return rejected(
-        "Primary purchased scope is non-medical work; medical wording is incidental boilerplate",
-        input,
-        [REASON_CODES.hardReject],
-        { negativeSignals: ["non_medical_primary_scope"] },
-      );
-    }
-  }
-  const matchedProcurementSignals = matchTerms(haystack, PROCUREMENT_SIGNALS);
-  const matchedWorkforceSignals = matchTerms(haystack, WORKFORCE_SIGNALS);
-  const matchedRegulatorySignals = matchTerms(
-    haystack,
-    REGULATORY_STANDARDS_TERMS,
-  );
+  const matchedWorkforceSignals = matchTerms(haystack, profile.workforceSignals);
+  const matchedRegulatorySignals = matchTerms(haystack, profile.regulatory);
   const matchedExplicitPhrases: string[] = [];
   const matchedComponentTerms: string[] = [];
   const matchedServiceCategories: string[] = [];
+  const adjacentTerms = new Set(
+    profile.categories
+      .filter((c) => c.adjacentOnly)
+      .flatMap((c) => c.component.concat(c.explicit)),
+  );
   let adjacentOnly = false;
-  for (const c of SERVICE_CATEGORIES) {
-    const ex = matchTerms(
-      haystack,
-      c.explicitPhrases.concat(c.highIntentPhrases ?? []),
-    );
-    const comp = matchTerms(
-      haystack,
-      c.componentTerms.concat(c.supportingTerms ?? []),
-    );
-    const reg = matchTerms(haystack, c.regulatoryTerms ?? []);
+  for (const c of profile.categories) {
+    const ex = matchTerms(haystack, c.explicit);
+    const comp = matchTerms(haystack, c.component);
+    const reg = matchTerms(haystack, c.regulatory);
     if (ex.length || comp.length || reg.length) {
       matchedServiceCategories.push(c.label);
       matchedExplicitPhrases.push(...ex);
@@ -301,106 +223,43 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
       if (c.adjacentOnly) adjacentOnly = true;
     }
   }
-  const profilePhraseHits = matchTerms(haystack, profileDirectPhrases);
+  const profilePhraseHits = matchTerms(haystack, profile.generalExplicit);
   if (profilePhraseHits.length > 0) {
     matchedServiceCategories.push("Occu-Med profile phrase");
     matchedExplicitPhrases.push(...profilePhraseHits);
   }
-  const negativeSignals: string[] = [];
-  let conditionalPenalty = 0;
-  for (const g of CONDITIONAL_NEGATIVE_GROUPS) {
-    const neg = matchTerms(haystack, g.terms);
-    if (neg.length && !hasAny(haystack, g.requiresOneOf)) {
-      negativeSignals.push(`${g.id}: ${neg.join(", ")}`);
-      conditionalPenalty +=
-        g.id === "incidental_requirement" ||
-        g.id === "employee_benefits" ||
-        g.id === "background_only"
-          ? 45
-          : 25;
-      reasonCodes.push(REASON_CODES.negative);
-    }
-  }
-  const hasProc = matchedProcurementSignals.length > 0;
+  const negativeSignals: string[] = [...rules.negativeSignals];
+  const conditionalPenalty = rules.conditionalPenalty;
+  if (negativeSignals.length) reasonCodes.push(REASON_CODES.negative);
   const explicit =
-    matchedExplicitPhrases.filter(
-      (p) =>
-        !SERVICE_CATEGORIES.find(
-          (c) => c.id === "adjacent_bundled",
-        )?.componentTerms.includes(p),
-    ).length > 0;
+    matchedExplicitPhrases.filter((p) => !adjacentTerms.has(p)).length > 0;
   const componentCount = uniq(
-    matchedComponentTerms.filter(
-      (t) =>
-        !SERVICE_CATEGORIES.find(
-          (c) => c.id === "adjacent_bundled",
-        )?.componentTerms.includes(t),
-    ),
+    matchedComponentTerms.filter((t) => !adjacentTerms.has(t)),
   ).length;
   const hasWorkOrReg =
     matchedWorkforceSignals.length > 0 || matchedRegulatorySignals.length > 0;
-  const hasNetwork = matchedServiceCategories.includes(
-    "Provider network / program management / reporting",
-  );
-  const regulatoryProgram =
-    (hasAny(haystack, ["medical surveillance"]) &&
-      hasAny(haystack, ["lead", "asbestos", "silica"])) ||
-    (hasAny(haystack, ["hearing conservation"]) &&
-      hasAny(haystack, ["audiometric testing", "audiogram"])) ||
-    (hasAny(haystack, ["respiratory protection", "respirator"]) &&
-      hasAny(haystack, [
-        "medical evaluation",
-        "medical clearance",
-        "fit testing",
-      ])) ||
-    (hasAny(haystack, ["NFPA 1582"]) &&
-      hasAny(haystack, ["medical examination", "physical"])) ||
-    (hasAny(haystack, ["DOT Part 40", "49 CFR Part 40"]) &&
-      hasAny(haystack, ["collection", "MRO", "BAT"])) ||
-    (hasAny(haystack, ["CENTCOM"]) &&
-      hasAny(haystack, ["medical screening", "vaccination"])) ||
-    (hasAny(haystack, ["essential job functions"]) &&
-      hasAny(haystack, ["medical examination", "medical evaluation"]));
-  
-  // Require explicit medical terms in title for pathB (component-based matching)
-  // This prevents false positives from general procurement terms
-  const titleHasMedical = hasAny(titleNorm, [
-    "medical", "health", "physical", "examination", "screening",
-    "surveillance", "occupational", "wellness", "clinic", "drug", "audiometric",
-    "respiratory", "hearing", "vision", "immunization", "vaccination",
-    "physiologic", "vascular", "fit test"
-  ]);
-  
+  const networkLabel =
+    profile.categories.find((c) => c.id === profile.networkCategoryId)?.label ??
+    null;
+  const hasNetwork =
+    networkLabel !== null && matchedServiceCategories.includes(networkLabel);
+  const regulatoryProgram = rules.programMatches.length > 0;
+
+  // Require a medical word in the title for the component-based path, so that
+  // general procurement wording cannot carry a notice on its own.
+  const titleHasMedical = hasAny(titleNorm, profile.titleMedical);
+
   const pathA = hasProc && explicit;
-  const pathB = hasProc && componentCount >= 2 && hasWorkOrReg;
   const pathC = hasProc && regulatoryProgram;
   const pathD =
-    hasProc &&
-    hasNetwork &&
-    titleHasMedical &&
-    hasAny(haystack, [
-      "medical examination",
-      "surveillance",
-      "testing",
-      "occupational health",
-      "deployment",
-      "drug testing",
-      "physical",
-    ]);
-  
-  const pathBStrict = hasProc && componentCount >= 2 && hasWorkOrReg && titleHasMedical;
-  
+    hasProc && hasNetwork && titleHasMedical && rules.networkServiceEvidence;
+  const pathBStrict =
+    hasProc && componentCount >= 2 && hasWorkOrReg && titleHasMedical;
   const pathE =
     hasProc &&
-    hasAny(titleNorm, [
-      "wellness clinic",
-      "medical services",
-      "health-unit services",
-      "screening services",
-      "professional medical services",
-    ]) &&
+    hasAny(titleNorm, profile.genericTitle) &&
     (explicit || pathBStrict || pathC || pathD);
-  
+
   const accepted =
     (pathA || pathBStrict || pathC || pathD || pathE) && conditionalPenalty < 40;
   if (pathA) {
@@ -451,7 +310,7 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
   if (matchedWorkforceSignals.length) score += 5;
   if (matchedRegulatorySignals.length) score += 5;
   if (input.deadlineInFuture) score += 8;
-  if (hasAny(haystack, PRIME_CONTRACTOR_SIGNALS)) score += 6;
+  if (hasAny(haystack, profile.prime)) score += 6;
   if (adjacentOnly && !explicit && componentCount < 2) score -= 25;
   const host = hostFromUrl(input.url);
   if (
@@ -476,19 +335,9 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     score -= 3;
     reasons.push("Date unknown");
   }
-  const noise = firstMatch(haystack, SOFT_PENALTY_TERMS);
-  if (noise && !hasProc) {
-    score -= 12;
-    reasons.push(`Lower priority informational wording ("${noise.trim()}")`);
-  }
-  if (
-    /\b(nurse|technician|coordinator|assistant|director|manager)\b/.test(
-      titleNorm,
-    ) &&
-    !hasProc
-  ) {
-    score -= 30;
-    reasons.push("Job-title wording without procurement signal");
+  for (const soft of rules.softPenalties) {
+    score -= soft.penalty;
+    reasons.push(`${soft.reason} ("${soft.trigger.trim()}")`);
   }
   score = Math.max(0, Math.min(100, score - conditionalPenalty));
   const confidence: RelevanceConfidence = !accepted
@@ -522,6 +371,7 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     negativeSignals: uniq(negativeSignals),
     reasonCodes: uniq(reasonCodes),
     confidence,
+    profileSource: profile.source,
   };
 }
 export function isRfpCandidate(
