@@ -1055,5 +1055,50 @@
   "expect": "not_accept",
   "url": "https://example.gov/rfp/x",
   "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk08",
+  "title": "Annual Contract for Coal Mine Employee Physical Examinations",
+  "description": "Request for proposals for annual pre-employment and periodic physical examinations and medical surveillance for coal mine employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk09",
+  "title": "Annual Contract - Diesel Technician Audiometric Testing",
+  "description": "Request for proposals for annual audiometric testing and hearing conservation services for employees.",
+  "expect": "not_reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_mixed",
+  "id": "cmx03",
+  "title": "Annual Contract: Natural Gas Delivery and Employee Physical Examinations",
+  "description": "Request for proposals covering delivery of natural gas and physical examinations for employees.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com17",
+  "title": "Annual Contract for Road Salt Supply",
+  "description": "Supply of bulk road salt, delivered per ton.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com18",
+  "title": "Propane Purchase for Facilities",
+  "description": "Purchase of propane delivered by the gallon.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
  }
 ]

@@ -1,3 +1,4 @@
+import "../../search/__tests__/support/useFixtureProfile";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {

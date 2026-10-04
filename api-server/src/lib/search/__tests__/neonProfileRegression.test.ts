@@ -102,14 +102,16 @@ describe("Neon relevance profile: real application path", () => {
     }
   });
 
-  it("an incomplete Neon profile is not applied and the snapshot is used and labelled", async () => {
+  it("an incomplete Neon profile is not applied; with nothing else loaded the app fails closed", async () => {
     setRelevanceProfile(null);
     const partial: ProfileRows = { ...ROWS, facts: ROWS.facts.filter((f) => f.category !== "relevance_threshold") };
     const r = await refreshRelevanceProfile(neonTransport(partial));
     assert.equal(r.applied, false);
     assert.ok(r.missing.includes("canonical thresholds"));
-    assert.equal(getRelevanceProfile().source, "snapshot");
-    assert.equal(classifyResult({ title: "Pre-Employment Physical Examination Services", description: "Request for proposals for employees." }).profileSource, "snapshot");
+    assert.equal(getRelevanceProfile().source, "unavailable");
+    const input = { title: "Pre-Employment Physical Examination Services", description: "Request for proposals for employees." };
+    assert.equal(classifyResult(input).profileSource, "unavailable");
+    assert.equal(decideRelevance(classifyResult(input)).verdict, "review");
     await refreshRelevanceProfile(neonTransport(ROWS));
     assert.equal(getRelevanceProfile().source, "neon");
   });

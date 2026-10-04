@@ -11,7 +11,7 @@ export interface RelevanceThresholds {
 }
 
 export function useRelevanceThresholds(): RelevanceThresholds {
-  const { data } = useQuery<{ acceptMin: number; reviewMin: number }>({
+  const { data } = useQuery<{ acceptMin: number | null; reviewMin: number | null }>({
     queryKey: ["relevance-profile", "thresholds"],
     queryFn: () =>
       fetch(`${import.meta.env.BASE_URL?.replace(/\/$/, "") ?? ""}/api/relevance-profile/thresholds`).then((r) => {
@@ -20,7 +20,7 @@ export function useRelevanceThresholds(): RelevanceThresholds {
       }),
     staleTime: 10 * 60 * 1000,
   });
-  return data
+  return data && data.acceptMin != null && data.reviewMin != null
     ? { acceptMin: data.acceptMin, reviewMin: data.reviewMin, ready: true }
     : { acceptMin: Number.POSITIVE_INFINITY, reviewMin: Number.POSITIVE_INFINITY, ready: false };
 }

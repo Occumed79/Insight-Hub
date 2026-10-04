@@ -2,8 +2,8 @@
  * The Occu-Med search profile: the NAICS/PSC codes and direct RFP phrases that
  * steer lookups. Every value comes from the Neon relevance profile (discovery
  * codes and curated phrases) plus the registered codes in the reference facts,
- * so a profile edit changes what is searched without a code change. Best-effort:
- * if the live profile is unavailable the snapshot of it is used.
+ * so a profile edit changes what is searched without a code change. If the profile is
+ * unavailable (fail closed) no codes or phrases are emitted.
  */
 import { getRelevanceProfile, type RelevanceProfile } from "./relevanceProfile";
 
@@ -48,7 +48,7 @@ export function mergeSearchProfile(
     naics: uniq([...(reference?.naics ?? []), ...base.naics]).slice(0, MAX_CODES),
     psc: uniq([...(reference?.psc ?? []), ...base.psc]).slice(0, MAX_CODES),
     directPhrases: profileDirectPhrases(profile),
-    loaded: reference != null || profile.source === "neon",
+    loaded: reference != null || profile.source !== "unavailable",
   };
 }
 

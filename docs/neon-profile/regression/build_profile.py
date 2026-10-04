@@ -7,6 +7,8 @@ here = os.path.dirname(os.path.abspath(__file__)); up = os.path.dirname(here)
 def payload(path, pat):
     return json.loads(re.search(pat, open(os.path.join(up, path)).read(), re.S).group(1))
 terms = payload('002_terms.sql', r'jsonb_array_elements\(\$j\$(\[\[.*?\]\])\$j\$::jsonb\) g')
+# 007 adds terms as [type, strength, role, category, [phrases], meta]; reshape to the 002 group layout (source slot unused)
+terms += [[g[0], g[1], g[2], g[3], None, g[4], g[5]] for g in payload('007_additional_terms.sql', r'jsonb_array_elements\(\$j\$(\[\[.*?\]\])\$j\$::jsonb\) g')]
 rules = payload('003_rules.sql', r'\$j\$(\[.*\])\$j\$')
 s4 = open(os.path.join(up, '004_facts_and_policies.sql')).read()
 ms = list(re.finditer(r'\$j\$(\[.*?\])\$j\$', s4, re.S))

@@ -2,7 +2,7 @@
  * OCCU_MED_AWARE reference loader.
  * Builds the merged OccuMedReferenceModel. Identity / scale / registration values fall back to static company
  * facts when the DB is unreachable; every service, buyer-type and scope-instruction value is derived from the
- * relevance profile (live Neon profile, or its snapshot), never from vocabulary kept in this file.
+ * relevance profile (live Neon profile, or its verified cache; empty when unavailable), never from vocabulary kept in this file.
  */
 
 import type { AwareAgentPolicy, AwareRule, AwareRfpSearchTerm, OccuMedReferenceModel } from "./types";

@@ -1,3 +1,4 @@
+import { fixtureProfile, installFixtureProfile } from "./support/useFixtureProfile";
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { occumedDefaultQueries, occumedProfileView, occumedScopeSummary, geminiProvider } from "../../providers/gemini";
@@ -16,14 +17,14 @@ import {
   spreadSample,
 } from "../profileWebQueries";
 import { judgeScopeBlock, profileClientTypes, profileDefaultQueries, profileServiceLabels } from "../profileText";
-import { getRelevanceProfile, setRelevanceProfile, snapshotRelevanceProfile, type RelevanceProfile } from "../relevanceProfile";
+import { getRelevanceProfile, setRelevanceProfile, type RelevanceProfile } from "../relevanceProfile";
 
 afterEach(() => {
-  setRelevanceProfile(null);
+  installFixtureProfile();
 });
 
 function withThresholds(acceptMin: number, reviewMin: number): RelevanceProfile {
-  const base = snapshotRelevanceProfile();
+  const base = fixtureProfile();
   return { ...base, thresholds: { acceptMin, reviewMin } };
 }
 
@@ -43,7 +44,7 @@ describe("provider prompts are rendered from the relevance profile", () => {
   });
 
   it("reads the profile at call time, not at module load", () => {
-    const base = snapshotRelevanceProfile();
+    const base = fixtureProfile();
     const custom: RelevanceProfile = {
       ...base,
       categories: base.categories.map((c, i) => (i === 0 ? { ...c, label: "Zebra Wellness Line" } : c)),
@@ -133,7 +134,7 @@ describe("multi-scorer uses the canonical thresholds", () => {
 describe("service lines and web queries come from the profile", () => {
   it("detects service lines as profile category labels", () => {
     const labels = new Set(profileServiceLabels());
-    const category = snapshotRelevanceProfile().categories.find((c) => !c.adjacentOnly && c.explicit.length > 0)!;
+    const category = fixtureProfile().categories.find((c) => !c.adjacentOnly && c.explicit.length > 0)!;
     const lines = matchedServiceLines(`Request for the ${category.explicit[0]} for county employees`);
     assert.ok(lines.includes(category.label));
     assert.ok(lines.every((l) => labels.has(l)));
@@ -141,7 +142,7 @@ describe("service lines and web queries come from the profile", () => {
   });
 
   it("matches plurals but not mid-word hits", () => {
-    const p = snapshotRelevanceProfile();
+    const p = fixtureProfile();
     const custom: RelevanceProfile = {
       ...p,
       categories: [{ id: "x", label: "Audio line", adjacentOnly: false, explicit: ["audiogram"], component: [], regulatory: [] }],
@@ -151,7 +152,7 @@ describe("service lines and web queries come from the profile", () => {
   });
 
   it("builds one boolean and one natural query per service bundle from the bundles", () => {
-    const profile = snapshotRelevanceProfile();
+    const profile = fixtureProfile();
     const bundles = profile.searchBundles.filter((b) => b.serviceTerms.length > 0);
     const boolean = profileBooleanQueries(2030);
     const natural = profileNaturalQueries(2030);

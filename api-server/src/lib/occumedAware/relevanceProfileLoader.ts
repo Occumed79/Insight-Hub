@@ -19,6 +19,7 @@ import {
   type RelevanceProfile,
 } from "../search/relevanceProfile";
 import { isOccuMedAwareConfigured, queryOccuMedAware } from "./db";
+import { readProfileCache, writeProfileCache } from "./relevanceProfileCache";
 
 export type QueryFn = <T = Record<string, unknown>>(sql: string, params?: unknown[], timeoutMs?: number) => Promise<T[]>;
 
@@ -48,26 +49,51 @@ export async function fetchProfileRows(query: QueryFn): Promise<ProfileRows> {
 export interface ProfileRefreshResult {
   applied: boolean;
   source: RelevanceProfile["source"];
+  version: string;
   missing: string[];
   error?: string;
 }
 
+function result(applied: boolean, missing: string[], error?: string): ProfileRefreshResult {
+  const p = getRelevanceProfile();
+  return { applied, source: p.source, version: p.version, missing, ...(error ? { error } : {}) };
+}
+
 /**
- * Fetch, build and publish. An incomplete profile (for example before the migration is activated) is not
- * applied; the classifier then keeps using the snapshot and marks results `profileSource: "snapshot"`.
+ * Fallback when Neon cannot supply a complete profile: keep what is already published (a live or cached profile);
+ * otherwise try the verified last-known-good cache; otherwise stay "unavailable" (fail closed, see relevanceProfile.ts).
+ */
+function fallBack(reason: string): void {
+  if (getRelevanceProfile().source !== "unavailable") return;
+  const cached = readProfileCache();
+  if (!cached.ok) {
+    console.warn(JSON.stringify({ event: "relevance_profile_unavailable", reason, cache: cached.reason }));
+    return;
+  }
+  const applied = setRelevanceProfile(buildProfile(cached.rows, "cache"));
+  console.warn(JSON.stringify({ event: "relevance_profile_from_cache", reason, fetchedAt: cached.fetchedAt, applied: applied.applied, version: cached.version }));
+}
+
+/**
+ * Fetch, build and publish. A complete Neon profile is applied and written to the verified cache. An incomplete one
+ * (for example before the migration is activated) or a Neon failure is not applied; see `fallBack`.
  */
 export async function refreshRelevanceProfile(query: QueryFn = queryOccuMedAware as QueryFn): Promise<ProfileRefreshResult> {
   try {
-    const profile = buildProfile(await fetchProfileRows(query), "neon");
-    const applied = setRelevanceProfile(profile);
+    const rows = await fetchProfileRows(query);
+    const applied = setRelevanceProfile(buildProfile(rows, "neon"));
     if (!applied.applied) {
       console.warn(JSON.stringify({ event: "relevance_profile_incomplete", missing: applied.missing, using: getRelevanceProfile().source }));
+      fallBack("incomplete");
+      return result(false, applied.missing);
     }
-    return { applied: applied.applied, source: getRelevanceProfile().source, missing: applied.missing };
+    writeProfileCache(rows);
+    return result(true, []);
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : String(error);
     console.warn(JSON.stringify({ event: "relevance_profile_load_failed", error: message, using: getRelevanceProfile().source }));
-    return { applied: false, source: getRelevanceProfile().source, missing: [], error: message };
+    fallBack("neon_error");
+    return result(false, [], message);
   }
 }
 
@@ -78,11 +104,11 @@ let inflight: Promise<ProfileRefreshResult> | null = null;
 /** Refresh at most once per TTL; safe to call from hot paths. */
 export function ensureRelevanceProfile(force = false): Promise<ProfileRefreshResult> {
   if (!isOccuMedAwareConfigured()) {
-    return Promise.resolve({ applied: false, source: getRelevanceProfile().source, missing: ["OCCU_MED_AWARE_DATABASE_URL not configured"] });
+    return Promise.resolve(result(false, ["OCCU_MED_AWARE_DATABASE_URL not configured"]));
   }
   if (inflight) return inflight;
   if (!force && Date.now() - lastAttemptAt < REFRESH_TTL_MS) {
-    return Promise.resolve({ applied: getRelevanceProfile().source === "neon", source: getRelevanceProfile().source, missing: [] });
+    return Promise.resolve(result(getRelevanceProfile().source === "neon", []));
   }
   lastAttemptAt = Date.now();
   inflight = refreshRelevanceProfile().finally(() => {

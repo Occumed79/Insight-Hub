@@ -8,13 +8,18 @@
  *   - agent_policies    -> judge/extract instructions
  *
  * `buildProfile` is a pure function of those rows (no caps, no embedded vocabulary), so the same
- * rows always give the same profile. The classifier, decision layer, providers and prompts all read it.
+ * rows always give the same profile; `version` is a SHA-256 of the rows, so every decision can be tied to
+ * the exact profile that made it. The classifier, decision layer, providers and prompts all read it.
  *
- * Fallback: if the live Neon profile is missing or incomplete, a snapshot generated from the migration
- * files is used and every result carries `source: "snapshot"`. The snapshot is data, not a second source
- * of truth, and is retired once the Neon profile is active.
+ * Failure mode (deliberate, no embedded copy of the vocabulary anywhere in the source):
+ *   1. "neon":        loaded live from Neon.
+ *   2. "cache":       Neon unreachable -> the last-known-good profile the loader itself wrote from Neon, accepted
+ *                     only if its checksum verifies and it is not older than the maximum age.
+ *   3. "unavailable": neither -> FAIL CLOSED. The profile is empty, nothing can be accepted automatically
+ *                     (decideRelevance returns "review", ingestion quarantines), nothing is discarded, and
+ *                     query builders emit nothing.
  */
-import { SNAPSHOT_ROWS } from "./relevanceProfile.snapshot.generated";
+import { createHash } from "node:crypto";
 
 export interface ProfileTermRow {
   phrase: string;
@@ -92,8 +97,12 @@ export interface ProfileSearchBundle {
   procurementTerms: string[];
   exclusions: string[];
 }
+export type ProfileSource = "neon" | "cache" | "unavailable";
+
 export interface RelevanceProfile {
-  source: "neon" | "snapshot";
+  source: ProfileSource;
+  /** SHA-256 of the rows this profile was built from ("unavailable" for the fail-closed profile). */
+  version: string;
   categories: ProfileCategory[];
   /** Direct phrases that are evidence of a relevant procurement but belong to no named category. */
   generalExplicit: string[];
@@ -140,8 +149,25 @@ function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+const stable = (_k: string, v: unknown): unknown =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+    : v;
+
+/** SHA-256 of the rows, independent of row order and object key order. */
+export function profileVersion(rows: ProfileRows): string {
+  const order = <T>(items: T[], key: (t: T) => string): T[] => [...items].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  const canonical = {
+    terms: order(rows.terms, (t) => `${t.term_type}\u0000${t.phrase}`),
+    rules: order(rows.rules, (r) => r.rule_key),
+    facts: order(rows.facts, (f) => f.fact_key),
+    policies: order(rows.policies, (x) => x.policy_key),
+  };
+  return createHash("sha256").update(JSON.stringify(canonical, stable)).digest("hex");
+}
+
 /** Pure: rows in, profile out. */
-export function buildProfile(rows: ProfileRows, source: "neon" | "snapshot" = "neon"): RelevanceProfile {
+export function buildProfile(rows: ProfileRows, source: ProfileSource = "neon"): RelevanceProfile {
   const categories = new Map<string, ProfileCategory>();
   for (const f of rows.facts) {
     if (f.category !== "relevance_category") continue;
@@ -157,6 +183,7 @@ export function buildProfile(rows: ProfileRows, source: "neon" | "snapshot" = "n
   }
   const p: RelevanceProfile = {
     source,
+    version: profileVersion(rows),
     categories: [],
     generalExplicit: [],
     regulatory: [],
@@ -287,7 +314,7 @@ export function buildProfile(rows: ProfileRows, source: "neon" | "snapshot" = "n
 
 /**
  * A profile is complete when it can make every decision the classifier needs. An incomplete profile is
- * never used silently: the caller falls back to the snapshot and marks results accordingly.
+ * never used: the caller falls back to the verified cache, or fails closed.
  */
 export function profileCompleteness(p: RelevanceProfile): { complete: boolean; missing: string[] } {
   const missing: string[] = [];
@@ -303,16 +330,25 @@ export function profileCompleteness(p: RelevanceProfile): { complete: boolean; m
   return { complete: missing.length === 0, missing };
 }
 
-let snapshotProfile: RelevanceProfile | null = null;
-export function snapshotRelevanceProfile(): RelevanceProfile {
-  if (!snapshotProfile) snapshotProfile = buildProfile(SNAPSHOT_ROWS, "snapshot");
-  return snapshotProfile;
+/**
+ * The fail-closed profile: no vocabulary, no rules, and thresholds above the score range so no numeric comparison
+ * can pass. `decideRelevance` additionally returns "review" for it, so nothing is accepted and nothing is lost.
+ */
+function unavailableProfile(): RelevanceProfile {
+  const p = buildProfile({ terms: [], rules: [], facts: [], policies: [] }, "unavailable");
+  p.version = "unavailable";
+  p.thresholds = { acceptMin: 101, reviewMin: 101 };
+  return p;
 }
+const UNAVAILABLE: RelevanceProfile = unavailableProfile();
 
 let current: RelevanceProfile | null = null;
-/** The profile every relevance decision reads. Falls back to the snapshot until a live profile is set. */
+/** The profile every relevance decision reads: the live/cached Neon profile, or the fail-closed empty profile. */
 export function getRelevanceProfile(): RelevanceProfile {
-  return current ?? snapshotRelevanceProfile();
+  return current ?? UNAVAILABLE;
+}
+export function isProfileAvailable(profile: RelevanceProfile = getRelevanceProfile()): boolean {
+  return profile.source !== "unavailable";
 }
 /** Publish a profile. Rejects (returns false) an incomplete one so a half-loaded Neon profile never takes effect. */
 export function setRelevanceProfile(profile: RelevanceProfile | null): { applied: boolean; missing: string[] } {

@@ -1,6 +1,6 @@
 /** Shared Occu-Med opportunity relevance engine powered by the procurement ontology. */
 import { REASON_CODES } from "./relevanceReasonCodes";
-import { getRelevanceProfile } from "./relevanceProfile";
+import { getRelevanceProfile, type ProfileSource } from "./relevanceProfile";
 import { evaluateRules } from "./profileRules";
 
 export const CURRENT_YEAR = new Date().getFullYear();
@@ -138,8 +138,10 @@ export interface RelevanceResult {
   negativeSignals: string[];
   reasonCodes: string[];
   confidence: RelevanceConfidence;
-  /** Which relevance profile produced this result ("snapshot" = the live Neon profile was unavailable or incomplete). */
-  profileSource: "neon" | "snapshot";
+  /** Which relevance profile produced this result: live Neon, the verified cache, or "unavailable" (fail closed). */
+  profileSource: ProfileSource;
+  /** SHA-256 version of the profile rows that produced this result. */
+  profileVersion: string;
 }
 
 function rejected(
@@ -167,6 +169,7 @@ function rejected(
     reasonCodes,
     confidence: "rejected",
     profileSource: getRelevanceProfile().source,
+    profileVersion: getRelevanceProfile().version,
     ...extras,
   };
 }
@@ -372,6 +375,7 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
     reasonCodes: uniq(reasonCodes),
     confidence,
     profileSource: profile.source,
+    profileVersion: profile.version,
   };
 }
 export function isRfpCandidate(

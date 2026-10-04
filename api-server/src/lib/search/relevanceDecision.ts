@@ -8,17 +8,17 @@
  * The decision depends on the notice and the profile only. It never looks at which provider found it.
  */
 import type { RelevanceResult } from "./relevance";
-import { getRelevanceProfile, type RelevanceProfile } from "./relevanceProfile";
+import { getRelevanceProfile, type ProfileSource, type RelevanceProfile } from "./relevanceProfile";
 
 export type RelevanceVerdict = "accept" | "review" | "reject";
 
 export interface RelevanceDecision {
   verdict: RelevanceVerdict;
   score: number;
-  /** "rules": rejected by evidence rules. "threshold": decided by the canonical thresholds. */
-  basis: "rules" | "threshold";
+  /** "rules": rejected by evidence rules. "threshold": decided by the canonical thresholds. "unavailable": no canonical profile loaded. */
+  basis: "rules" | "threshold" | "unavailable";
   reason: string;
-  profileSource: RelevanceProfile["source"];
+  profileSource: ProfileSource;
   thresholds: RelevanceProfile["thresholds"];
 }
 
@@ -28,6 +28,11 @@ export function decideRelevance(
 ): RelevanceDecision {
   const { acceptMin, reviewMin } = profile.thresholds;
   const base = { score: result.score, profileSource: profile.source, thresholds: profile.thresholds };
+  // Fail closed: with no canonical profile (Neon unreachable, no verified cache) nothing is accepted and nothing is
+  // discarded. Everything waits for review until the profile loads.
+  if (profile.source === "unavailable") {
+    return { ...base, verdict: "review", basis: "unavailable", reason: "Canonical relevance profile unavailable; held for review" };
+  }
   if (result.rejected) {
     // Evidence incomplete but not contradicted: adjudicate when the score reaches the review floor.
     if (result.confidence === "insufficient" && result.score >= reviewMin) {

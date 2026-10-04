@@ -13384,6 +13384,48 @@
 "active": true
 },
 {
+"phrase": "employee health screening",
+"term_type": "procurement_phrase",
+"match_strength": "direct",
+"target_keys": [
+"category:occupational_employee_medical"
+],
+"metadata": {
+"role": "explicit",
+"migration": "relevance_vocabulary_20261003",
+"category": "occupational_employee_medical"
+},
+"active": true
+},
+{
+"phrase": "police physical",
+"term_type": "procurement_phrase",
+"match_strength": "direct",
+"target_keys": [
+"category:public_safety_medical"
+],
+"metadata": {
+"role": "explicit",
+"migration": "relevance_vocabulary_20261003",
+"category": "public_safety_medical"
+},
+"active": true
+},
+{
+"phrase": "public safety medical exams",
+"term_type": "procurement_phrase",
+"match_strength": "direct",
+"target_keys": [
+"category:public_safety_medical"
+],
+"metadata": {
+"role": "explicit",
+"migration": "relevance_vocabulary_20261003",
+"category": "public_safety_medical"
+},
+"active": true
+},
+{
 "phrase": "Annual medical examinations",
 "term_type": "procurement_phrase",
 "match_strength": "direct",
@@ -14712,8 +14754,7 @@
 "wholesale",
 "fuel card",
 "card program",
-"fob",
-"annual contract"
+"fob"
 ],
 "unit_terms": [
 "ton",
