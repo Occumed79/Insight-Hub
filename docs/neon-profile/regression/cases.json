@@ -983,5 +983,77 @@
   "expect": "accept",
   "url": "https://example.gov/rfp/x",
   "note": "IME context distinction"
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com13",
+  "title": "Supply of Diesel Fuel for Fleet Operations",
+  "description": "Annual requirements contract for bulk diesel delivery to fleet depots.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com14",
+  "title": "Bulk Steel Plate Purchase",
+  "description": "Purchase of structural steel plate for bridge repair.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com15",
+  "title": "Gravel Delivery per ton FOB Yard",
+  "description": "Contractor shall deliver crushed gravel by the ton.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_fp",
+  "id": "com16",
+  "title": "Propane Supply and Delivery",
+  "description": "Supply of propane to county facilities.",
+  "expect": "reject",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk04",
+  "title": "Asphalt Plant Worker Physicals",
+  "description": "Request for proposals for pre-employment physical examinations and periodic medical evaluations for asphalt plant workers.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk05",
+  "title": "Steelworker Audiometry Program",
+  "description": "RFP for audiometric testing and hearing conservation services for steelworkers.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk06",
+  "title": "Grain Dust Respiratory Medical Evaluation Program",
+  "description": "Solicitation for OSHA respirator medical evaluations and pulmonary function testing for grain handling employees.",
+  "expect": "accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
+ },
+ {
+  "group": "commodity_word_keep",
+  "id": "cwk07",
+  "title": "Diesel Fuel Delivery and Employee Physical Examinations",
+  "description": "Combined solicitation: bulk diesel delivery to depots and pre-employment physical exams for drivers.",
+  "expect": "not_accept",
+  "url": "https://example.gov/rfp/x",
+  "note": ""
  }
 ]

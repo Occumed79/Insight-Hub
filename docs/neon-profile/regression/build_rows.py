@@ -33,6 +33,13 @@ for fn in ('003_rules.sql', '005_notice_wording_rules.sql'):
         for r in blk:
             rules.append(dict(rule_key=r[0], category=r[1], title=r[2], rule_text=r[3], machine_action=r[4],
                               hard_rule=bool(r[5]), priority=r[6], scope=r[7], search_triggers=r[8], status='current'))
+# 006 updates draft rules in place (same rule_key): later files override earlier rows
+for blk in blocks('006_commodity_scope_rule.sql'):
+    for r in blk:
+        for i, old in enumerate(rules):
+            if old['rule_key'] == r[0]:
+                rules[i] = dict(rule_key=r[0], category=r[1], title=r[2], rule_text=r[3], machine_action=r[4],
+                                hard_rule=bool(r[5]), priority=r[6], scope=r[7], search_triggers=r[8], status='current')
 pre = json.load(open(os.path.join(here, 'neon_existing_rules_policies.json')))
 for r in pre['rules']:
     rules.append(dict(rule_key=r['rule_key'], category=r['category'], title=r['title'], rule_text=r['rule_text'], machine_action=r['machine_action'],

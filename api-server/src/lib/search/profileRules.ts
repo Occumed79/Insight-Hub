@@ -44,6 +44,75 @@ export function matchEvidence(text: string, terms: readonly string[]): string[] 
   return terms.filter((t) => t && evidenceRegex(t).test(text));
 }
 
+/** Lowercase alphanumeric word tokens of a text, in order. */
+function words(text: string): string[] {
+  return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/** Token positions at which a (possibly multi-word) term occurs in `tokens`. */
+function termPositions(tokens: string[], term: string): number[] {
+  const t = words(term);
+  if (t.length === 0) return [];
+  const out: number[] = [];
+  for (let i = 0; i + t.length <= tokens.length; i++) {
+    if (t.every((w, k) => tokens[i + k] === w)) out.push(i);
+  }
+  return out;
+}
+
+export interface CommodityScope {
+  /** Commodity/raw-material terms found in the title. */
+  commodities: string[];
+  /** The purchase frame or unit that ties a commodity to being what is bought, if any. */
+  frame: string | null;
+  /** The title names a workforce or a medical subject (handler, employees, medical wording...) rather than just a material. */
+  workforceContext: boolean;
+  purchased: boolean;
+}
+
+/**
+ * Decides whether a commodity/raw material is the PURCHASED SCOPE of the title, rather than merely a material
+ * name appearing in it. All vocabulary is read from the rule (`search_triggers` = commodity terms; `scope`
+ * = purchase frames, unit terms, window) and from the profile (workforce signals); this function is mechanics only.
+ *
+ *  - purchased: a commodity term sits within `window_words` of a purchase frame or unit term
+ *    ("Supply of Diesel Fuel", "Gravel Delivery per ton"), or the title is commodity wording with no workforce
+ *    or medical context at all ("Replacement Parts for Fleet Vehicles").
+ *  - not purchased: a commodity term with a workforce or medical context and no purchase frame/unit
+ *    ("Fuel Handler ...", "Steel Mill Employee ...", "Grain Dust Respiratory Program"): the material only
+ *    describes who or what the service is for.
+ */
+export function commodityPurchasedScope(
+  rule: ProfileRule,
+  title: string,
+  workforceSignals: readonly string[],
+  medicalTitleSignals: readonly string[] = [],
+): CommodityScope {
+  const tokens = words(title);
+  const commodities = rule.triggers.filter((c) => termPositions(tokens, c).length > 0);
+  if (commodities.length === 0) return { commodities, frame: null, workforceContext: false, purchased: false };
+  const window = Number(rule.scope.window_words ?? 3);
+  const frames = [...stringList(rule.scope.purchase_frames), ...stringList(rule.scope.unit_terms)];
+  const commodityPositions = commodities.flatMap((c) => termPositions(tokens, c));
+  let frame: string | null = null;
+  for (const f of frames) {
+    const fp = termPositions(tokens, f);
+    if (fp.some((a) => commodityPositions.some((b) => Math.abs(a - b) <= window))) {
+      frame = f;
+      break;
+    }
+  }
+  const workforceContext =
+    matchEvidence(title, [...workforceSignals, ...stringList(rule.scope.context_terms)]).length > 0 ||
+    matchEvidence(title, [...medicalTitleSignals]).length > 0;
+  return {
+    commodities,
+    frame,
+    workforceContext,
+    purchased: frame !== null || !workforceContext,
+  };
+}
+
 export interface RuleContext {
   title: string;
   /** title + snippet + description */
@@ -119,6 +188,24 @@ export function evaluateRules(profile: RelevanceProfile, ctx: RuleContext): Rule
             trigger: hit,
             reason: "Primary purchased scope is non-medical work; medical wording is incidental boilerplate",
           };
+        break;
+      }
+      case "reject_commodity_purchased_scope": {
+        if (out.hardReject) break;
+        const scope = commodityPurchasedScope(rule, ctx.title, profile.workforceSignals, profile.titleMedical);
+        if (!scope.purchased) break;
+        if (titleService().length === 0) {
+          out.hardReject = {
+            ruleKey: rule.key,
+            action: rule.action,
+            trigger: scope.commodities[0] ?? "",
+            reason: `Purchased scope is a commodity/raw material ("${scope.commodities[0]}"${scope.frame ? `, "${scope.frame}"` : ""}), not an Occu-Med service`,
+          };
+        } else if (scope.frame) {
+          // The title names an Occu-Med service AND buys a commodity: mixed scope. Never auto-accept; adjudicate.
+          out.negativeSignals.push(`${rule.key}: mixed commodity and service scope (${scope.commodities[0]}, ${scope.frame})`);
+          out.conditionalPenalty += Number(rule.scope.mixed_scope_penalty ?? 0);
+        }
         break;
       }
       case "conditional_reject_unless_service_evidence": {

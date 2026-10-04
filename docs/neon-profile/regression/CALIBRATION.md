@@ -1,6 +1,6 @@
 # Calibration of relevance.accept_min / relevance.review_min
 
-Corpus: `cases.json` (105 relevance cases). Scores come from the app's real `classifyResult` running on the Neon profile vocabulary (see `run_regression.mts`). Reproduce: `cd api-server && node --import tsx ../docs/neon-profile/regression/run_regression.mts`; sweep with `ACCEPT_MIN=.. REVIEW_MIN=..`.
+Corpus: `cases.json` (105 relevance cases). Scores come from the app's real `classifyResult` running on the Neon profile vocabulary (real application path: `api-server/src/lib/search/__tests__/neonProfileRegression.test.ts`; the old test-only adapter `run_regression.mts` was retired). Reproduce: `cd api-server && node --import tsx --test src/lib/search/__tests__/neonProfileRegression.test.ts src/lib/search/__tests__/consumerParity.test.ts`.
 
 ## Observed scores
 - Legitimate notices passing the evidence rules: fresh weak-evidence cases [76, 79, 79, 79, 79, 79, 82, 84, 84, 84]; dated/stale-but-legit cases [72, 72]; fuller cases 84-100.
