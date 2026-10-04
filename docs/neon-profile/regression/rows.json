@@ -16275,6 +16275,181 @@
 "value_json": null,
 "value_numeric": 45,
 "status": "current"
+},
+{
+"fact_key": "fsa_occupational_health",
+"category": "feedback_scope_alias",
+"predicate": "occupational-health",
+"value_text": "Legacy learned-feedback scope 'occupational-health' -> occupational_employee_medical",
+"value_json": {
+"categories": [
+"occupational_employee_medical"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_medical_exams",
+"category": "feedback_scope_alias",
+"predicate": "medical-exams",
+"value_text": "Legacy learned-feedback scope 'medical-exams' -> pre_employment_exams",
+"value_json": {
+"categories": [
+"pre_employment_exams"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_drug_alcohol",
+"category": "feedback_scope_alias",
+"predicate": "drug-alcohol",
+"value_text": "Legacy learned-feedback scope 'drug-alcohol' -> drug_alcohol",
+"value_json": {
+"categories": [
+"drug_alcohol"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_audiometry",
+"category": "feedback_scope_alias",
+"predicate": "audiometry",
+"value_text": "Legacy learned-feedback scope 'audiometry' -> hearing_audiometry",
+"value_json": {
+"categories": [
+"hearing_audiometry"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_respiratory",
+"category": "feedback_scope_alias",
+"predicate": "respiratory",
+"value_text": "Legacy learned-feedback scope 'respiratory' -> respiratory_fit_testing",
+"value_json": {
+"categories": [
+"respiratory_fit_testing"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_vaccines_labs",
+"category": "feedback_scope_alias",
+"predicate": "vaccines-labs",
+"value_text": "Legacy learned-feedback scope 'vaccines-labs' -> immunizations_travel",
+"value_json": {
+"categories": [
+"immunizations_travel"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_surveillance",
+"category": "feedback_scope_alias",
+"predicate": "surveillance",
+"value_text": "Legacy learned-feedback scope 'surveillance' -> medical_surveillance",
+"value_json": {
+"categories": [
+"medical_surveillance"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "fsa_provider_network",
+"category": "feedback_scope_alias",
+"predicate": "provider-network",
+"value_text": "Legacy learned-feedback scope 'provider-network' -> network_program_management",
+"value_json": {
+"categories": [
+"network_program_management"
+],
+"note": "legacy learned-feedback scope key; carried to the canonical category by the one-time feedback migration"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "agency_usaspending_awarding_filter",
+"category": "target_agency",
+"predicate": "usaspending_awarding_filter",
+"value_text": "USAspending awarding-agency request filter",
+"value_json": {
+"names": [
+"Department of Defense",
+"Department of Homeland Security",
+"Department of State",
+"Department of Justice",
+"Department of Health and Human Services"
+],
+"effect": "request_filter_only",
+"relevance_effect": "none"
+},
+"value_numeric": null,
+"status": "current"
+},
+{
+"fact_key": "agency_search_priority_terms",
+"category": "target_agency",
+"predicate": "search_priority_terms",
+"value_text": "Agencies to prefer when ordering search work and results",
+"value_json": {
+"terms": [
+"department of defense",
+"department of the army",
+"department of the navy",
+"department of the air force",
+"defense health agency",
+"department of veterans affairs",
+"veterans affairs",
+"department of homeland security",
+"homeland security",
+"department of labor",
+"occupational safety and health administration",
+"occupational safety",
+"centers for disease control",
+"health resources and services administration",
+"department of state",
+"department of justice",
+"department of health and human services",
+"cdc",
+"hrsa",
+"osha",
+"dhs",
+"dod",
+"hhs",
+"opm",
+"bop",
+"cbp",
+"uscis",
+"fmcsa",
+"faa"
+],
+"effect": "search_priority_only",
+"relevance_effect": "none",
+"match": "whole_word"
+},
+"value_numeric": null,
+"status": "current"
 }
 ],
 "policies": [

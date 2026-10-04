@@ -1,3 +1,4 @@
+import { agencyPriority } from "../search/agencyPriority";
 import { embedTexts } from "../search/embeddings";
 import { getOccuMedSemanticProfile } from "../search/semanticRerank";
 import { classifyResult } from "../search/relevance";
@@ -57,7 +58,7 @@ function deterministicScore(record: GovConRankableRecord, mode: GovConIntelligen
 } {
   const result = classifyResult({
     title: record.title,
-    snippet: [record.agency, record.subAgency, record.description, record.naics, record.setAside].filter(Boolean).join(" "),
+    snippet: [record.description, record.naics, record.setAside].filter(Boolean).join(" "),
     allowHistorical: true,
   });
   const decision = decideRelevanceWithCodes(result, [{ system: "NAICS 2022", code: record.naics }]);
@@ -168,6 +169,8 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
       return (
         rank(right.relevance) - rank(left.relevance) ||
         right.relevance.score - left.relevance.score ||
+        // Search priority only (Neon): preferred agencies first among equally relevant records.
+        agencyPriority(String((right as { agency?: unknown }).agency ?? "")) - agencyPriority(String((left as { agency?: unknown }).agency ?? "")) ||
         (right.relevance.semanticSimilarity ?? 0) - (left.relevance.semanticSimilarity ?? 0)
       );
     });

@@ -273,7 +273,6 @@ export function decideOpportunityQuality(
       record.type,
       record.solicitationNumber,
       record.description,
-      record.agency,
       ...samTaxonomyEvidence,
     ]
       .filter(Boolean)

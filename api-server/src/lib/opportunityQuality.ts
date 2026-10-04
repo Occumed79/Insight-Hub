@@ -281,8 +281,6 @@ export function classifyOpportunityQuality(
       opp.type,
       opp.solicitationNumber,
       opp.description,
-      opp.agency,
-      opp.subAgency,
       opp.naicsCode,
       opp.naicsDescription,
     ]
@@ -439,7 +437,7 @@ export function calculateOpportunityRank(
 ): OpportunityRankBreakdown {
   const judged = classifyResult({
     title: String(opp.title ?? ""),
-    snippet: [opp.type, opp.description, opp.agency, opp.solicitationNumber]
+    snippet: [opp.type, opp.description, opp.solicitationNumber]
       .filter(Boolean).join(" "),
     url: String(opp.samUrl ?? opp.sourceUrl ?? opp.url ?? ""),
     date: opp.postedDate,

@@ -106,8 +106,6 @@ function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
       opp.type,
       opp.solicitationNumber,
       opp.description,
-      opp.agency,
-      opp.subAgency,
     ]
       .filter(Boolean)
       .join(" "),

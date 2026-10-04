@@ -12,6 +12,7 @@ import { eq, desc, and, count as countFn } from "drizzle-orm";
 import { intelDb as db } from "@workspace/db";
 import { federalIntelItemsTable, type FederalIntelBucket } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
+import { awardingAgencyNames } from "../lib/search/agencyPriority";
 import { assessIntelText, type IntelAssessment } from "../lib/intelligence/profileIntelRelevance";
 import { profileLeadQueries, profileNaicsCodes, profileSemanticQuery, quotedOr } from "../lib/providers/profileQueryTerms";
 import type { RelevanceVerdict } from "../lib/search/relevanceDecision";
@@ -177,8 +178,10 @@ const MAX_NAICS_FILTER = 8;
 
 const VERDICT_TAG: Record<RelevanceVerdict, ActionTag> = { accept: "pursue", review: "monitor", reject: "wait" };
 
-function assess(title: string | null | undefined, text?: string | null, agency?: string | null, date?: string | Date | null): IntelAssessment {
-  return assessIntelText({ title, text, agency, date });
+// `_issuer` is accepted so call sites keep naming who published the item, but it is deliberately not passed on:
+// relevance is agency-neutral (agency targeting is search-priority metadata, see search/agencyPriority.ts).
+function assess(title: string | null | undefined, text?: string | null, _issuer?: string | null, date?: string | Date | null): IntelAssessment {
+  return assessIntelText({ title, text, date });
 }
 
 /** Feed items that are not procurement notices: topical items get the brief tag, the rest stay on watch. */
@@ -674,11 +677,14 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
 // ── Incumbent Tracker: USAspending NAICS awards at priority agencies ──────────
 
 async function fetchIncumbentTracker(): Promise<IntelItem[]> {
+  // Awarding-agency request filter: search-priority metadata from Neon (not relevance). Empty = unfiltered.
+  const awardingAgencies = awardingAgencyNames().map((name) => ({ type: "awarding", tier: "toptier", name }));
   const body = {
     filters: {
       naics_codes: await profileNaicsCodes(MAX_NAICS_FILTER),
       award_type_codes: ["A", "B", "C", "D"],
       time_period: [{ start_date: "2022-01-01", end_date: new Date().toISOString().slice(0, 10) }],
+      ...(awardingAgencies.length > 0 ? { agencies: awardingAgencies } : {}),
     },
     fields: ["Award ID", "Recipient Name", "Award Amount", "Awarding Agency", "Awarding Sub Agency", "Start Date", "End Date", "Description", "NAICS Code", "NAICS Description"],
     sort: "Award Amount",

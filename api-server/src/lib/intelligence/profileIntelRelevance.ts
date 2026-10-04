@@ -8,6 +8,8 @@
  *   hard-reject rules (job postings, award notices). Use it for non-procurement documents such as job
  *   postings where "does this talk about Occu-Med services" is the question.
  *
+ * Agency-neutral by construction: the input has no agency field, so who issued an item cannot change its score or
+ * verdict. (Agency targeting is search-priority metadata in agencyPriority.ts and never reaches relevance.)
  * No vocabulary, agency list or threshold is defined in this file.
  */
 import { classifyResult } from "../search/relevance";
@@ -26,14 +28,13 @@ export interface IntelAssessment {
 export function assessIntelText(input: {
   title?: string | null;
   text?: string | null;
-  agency?: string | null;
   url?: string | null;
   date?: string | Date | null;
   deadlineInFuture?: boolean;
 }): IntelAssessment {
   const result = classifyResult({
     title: input.title ?? "",
-    snippet: [input.text, input.agency].filter(Boolean).join(" "),
+    snippet: input.text ?? "",
     url: input.url ?? null,
     date: input.date ?? null,
     deadlineInFuture: input.deadlineInFuture,

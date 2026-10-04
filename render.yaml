@@ -6,7 +6,16 @@ services:
     plan: starter
     buildCommand: pnpm install && pnpm run build:prod
     startCommand: pnpm run start:prod
+    # Persistent disk for the relevance-profile cache (last-known-good copy of the Neon profile, used only when
+    # Neon is unreachable). Render's filesystem is otherwise ephemeral; only files under mountPath survive
+    # restarts and deploys. Disks need a paid plan, and prevent zero-downtime deploys and multi-instance scaling.
+    disk:
+      name: relevance-cache
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
+      - key: RELEVANCE_PROFILE_CACHE_PATH
+        value: /var/data/relevance/occumed-relevance-profile-cache.json
       - key: NODE_ENV
         value: production
       - key: PORT

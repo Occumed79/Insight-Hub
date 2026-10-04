@@ -54,8 +54,9 @@ for r in pre['rules']:
     rules.append(dict(rule_key=r['rule_key'], category=r['category'], title=r['title'], rule_text=r['rule_text'], machine_action=r['machine_action'],
                       hard_rule=r['hard_rule'], priority=r['priority'], scope=r['scope'], search_triggers=r['search_triggers'], status='current'))
 b4 = blocks('004_facts_and_policies.sql')
+_extra = [f for fn in ('008_feedback_scope_aliases.sql', '009_agency_search_priority.sql') for blk in blocks(fn) for f in blk]
 facts = [dict(fact_key=f[0], category=f[1], predicate=f[2], value_text=f[3], value_json=(None if f[4] == 'null' else f[4]),
-              value_numeric=f[5], status='current') for f in b4[0] if (f[3] is not None or f[4] is not None or f[5] is not None)]
+              value_numeric=f[5], status='current') for f in b4[0] + _extra if (f[3] is not None or f[4] is not None or f[5] is not None)]
 policies = [dict(policy_key=p[0], applies_to=p[1], title=p[2], instruction=p[3], priority=p[4], must_follow=True) for p in b4[1]] + pre['policies']
 rows = dict(terms=terms, rules=rules, facts=facts, policies=policies)
 json.dump(rows, open(os.path.join(here, 'rows.json'), 'w'), indent=0)

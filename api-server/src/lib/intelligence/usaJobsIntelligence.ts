@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 
+import { agencyPriority } from "../search/agencyPriority";
 import { profileLeadQueries } from "../providers/profileQueryTerms";
 import { evidenceScore, profileEvidence } from "./profileIntelRelevance";
 
@@ -323,6 +324,9 @@ export async function fetchUsaJobsWorkforceIntelligence(options: {
   records.sort((a, b) => {
     const scoreDifference = b.relevanceScore - a.relevanceScore;
     if (scoreDifference !== 0) return scoreDifference;
+    // Search priority only (Neon): preferred agencies first among equally relevant postings.
+    const priorityDifference = agencyPriority(b.agency) - agencyPriority(a.agency);
+    if (priorityDifference !== 0) return priorityDifference;
     return (b.publishedDate?.getTime() ?? 0) - (a.publishedDate?.getTime() ?? 0);
   });
 

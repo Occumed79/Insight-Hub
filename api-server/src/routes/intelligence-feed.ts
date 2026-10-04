@@ -89,7 +89,6 @@ function grantRelevanceScore(record: NormalizedOpportunity): number {
   return assessIntelText({
     title: record.title,
     text: record.description,
-    agency: record.agency,
     date: safeDate(record.postedDate),
   }).score;
 }

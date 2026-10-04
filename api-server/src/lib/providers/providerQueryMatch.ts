@@ -112,8 +112,6 @@ export function classifyProviderRecordRelevance(
       record.type,
       record.solicitationNumber,
       record.description,
-      record.agency,
-      record.subAgency,
       record.naicsDescription,
     ]
       .filter(Boolean)

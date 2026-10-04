@@ -125,6 +125,13 @@ export interface RelevanceProfile {
   targetBuyerTypes: string[];
   /** Per-phrase GovCon weights kept as term metadata. */
   govconWeights: Record<string, number>;
+  /**
+   * Agency targeting: SEARCH-PRIORITY metadata only (which agencies to query first / filter provider requests by).
+   * It is NOT relevance: the classifier and decideRelevance never read it, and no score or verdict depends on it.
+   */
+  searchPriority: { agencyCodes: string[]; awardingAgencies: string[]; agencyTerms: string[] };
+  /** Legacy learned-feedback scope key -> canonical category ids (Neon facts `feedback_scope_alias`). */
+  feedbackScopeAliases: Record<string, string[]>;
   policies: ProfilePolicyRow[];
   /** Every term a title can name to rescue a scope rule: all category evidence terms. */
   allServiceTerms: string[];
@@ -201,6 +208,8 @@ export function buildProfile(rows: ProfileRows, source: ProfileSource = "neon"):
     searchBundles: [],
     targetBuyerTypes: [],
     govconWeights: {},
+    searchPriority: { agencyCodes: [], awardingAgencies: [], agencyTerms: [] },
+    feedbackScopeAliases: {},
     policies: rows.policies,
     allServiceTerms: [],
   };
@@ -306,6 +315,15 @@ export function buildProfile(rows: ProfileRows, source: ProfileSource = "neon"):
         break;
       case "target_buyer_type":
         p.targetBuyerTypes.push(...strings(f.value_json));
+        break;
+      case "target_agency":
+        if (!j) break;
+        if (f.predicate === "tango_forecast_default") p.searchPriority.agencyCodes.push(...strings(j.agency_codes));
+        if (f.predicate === "usaspending_awarding_filter") p.searchPriority.awardingAgencies.push(...strings(j.names));
+        if (f.predicate === "search_priority_terms") p.searchPriority.agencyTerms.push(...strings(j.terms).map(low));
+        break;
+      case "feedback_scope_alias":
+        if (j) p.feedbackScopeAliases[f.predicate] = strings(j.categories);
         break;
     }
   }

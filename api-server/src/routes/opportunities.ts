@@ -86,8 +86,6 @@ function shouldShowOpportunity(opp: any): boolean {
       opp.type,
       opp.solicitationNumber,
       opp.description,
-      opp.agency,
-      opp.subAgency,
       opp.naicsDescription,
       ...samGovOpportunityClassificationEvidence(opp),
     ].filter(Boolean).join(" "),

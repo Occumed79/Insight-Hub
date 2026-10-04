@@ -9,6 +9,7 @@
  * API reference: https://docs.makegov.com/api-reference/forecasts/
  */
 
+import { forecastAgencyCodes } from "../search/agencyPriority";
 import {
   providerBudgetAvailable,
   recordProviderFailure,
@@ -250,12 +251,13 @@ export async function fetchTangoForecasts(
   endpoint.searchParams.set("is_active", "true");
   endpoint.searchParams.set("ordering", "anticipated_award_date");
 
-  // Restrict to agencies most relevant to occupational health / Occu-Med
-  const OCCUMED_AGENCIES = ["HHS", "DHS", "VA", "DOD", "DOL", "DOT", "USDA", "GSA"];
+  // Agency request filter: an explicit filter wins, otherwise the Neon search-priority agency codes (not relevance;
+  // empty = unfiltered).
+  const priorityAgencies = forecastAgencyCodes();
   if (filters.agency) {
     endpoint.searchParams.set("agency", filters.agency.toUpperCase());
-  } else {
-    endpoint.searchParams.set("agency", OCCUMED_AGENCIES.join("|"));
+  } else if (priorityAgencies.length > 0) {
+    endpoint.searchParams.set("agency", priorityAgencies.join("|"));
   }
 
   if (filters.naics) {
