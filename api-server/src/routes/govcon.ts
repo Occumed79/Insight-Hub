@@ -30,7 +30,6 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 40;
-const RELEVANCE_THRESHOLD = 44;
 const DAY_MS = 86_400_000;
 
 type JsonRecord = Record<string, unknown>;
@@ -387,9 +386,9 @@ async function fetchForecasts(
   });
   const unsuppressed = allCandidates.filter((record) => !isGovConRecordSuppressed(suppressions, record));
   const ranked = await rankGovConRecords(unsuppressed, mode, focus);
-  const lowRelevanceCount = ranked.filter((record) => record.relevance.score < RELEVANCE_THRESHOLD).length;
+  const lowRelevanceCount = ranked.filter((record) => record.relevance.verdict === "reject").length;
   const records = fitOnly
-    ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
+    ? ranked.filter((record) => record.relevance.verdict !== "reject")
     : ranked;
 
   return {

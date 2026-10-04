@@ -10,7 +10,7 @@
 
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
-import { OCCUMED_PROFILE, OCCUMED_DEFAULT_QUERIES } from "./gemini";
+import { occumedDefaultQueries, occumedExtractionGuidance, occumedScopeSummary } from "./gemini";
 
 const CLOD_BASE = "https://api.clod.io/v1";
 const DEFAULT_MODEL = "claude-sonnet-4-5";
@@ -90,8 +90,7 @@ export class ClodProvider implements DataSourceProvider {
 
     const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.
 
-Occu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.
-They serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.
+${occumedScopeSummary()}
 ${customKeywords ? `User focus: ${customKeywords}` : ""}
 
 Generate exactly 8 highly targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.
@@ -113,7 +112,7 @@ Respond ONLY with a JSON array of 8 strings: ["query1", ..., "query8"]`;
       // fall through to defaults
     }
 
-    return OCCUMED_DEFAULT_QUERIES;
+    return occumedDefaultQueries(QUERY_YEAR);
   }
 
   /**
@@ -137,10 +136,11 @@ Respond ONLY with a JSON array of 8 strings: ["query1", ..., "query8"]`;
   } | null> {
     const today = new Date().toISOString().split("T")[0];
 
-    const prompt = `You are a procurement intelligence analyst for Occu-Med (occupational health services).
+    const prompt = `You are a procurement intelligence analyst for Occu-Med.
 Today: ${today}
 
 Is this an ACTIVE, OPEN solicitation Occu-Med could bid on?
+${occumedExtractionGuidance()}
 
 Title: ${title}
 URL: ${url}

@@ -1,3 +1,4 @@
+import "../../search/__tests__/support/useFixtureProfile";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
@@ -7,7 +8,8 @@ import {
   RobotsRules,
   classifyPortalFamily,
 } from "../nativePublicPortalDiscovery";
-import { buildOccuMedSearchQueries } from "../../search/occumedProcurementOntology";
+import { buildProfileSearchQueries } from "../../search/profileQueries";
+import { getRelevanceProfile } from "../../search/relevanceProfile";
 import {
   buildPublicPortalSearchPlan,
   PublicPortalDiscovery,
@@ -270,11 +272,19 @@ describe("native public portal discovery", () => {
   });
 
   it("adds prior-year, no-year, PSC/NAICS and occupational-health query variants without requiring a year", () => {
-    const queries = buildOccuMedSearchQueries(2026);
+    const queries = buildProfileSearchQueries(2026);
     assert.ok(queries.some((q) => q.includes("2025 still open")));
-    assert.ok(queries.some((q) => q.includes("PSC Q201")));
-    assert.ok(queries.some((q) => q.includes("NAICS 621111")));
-    assert.ok(queries.some((q) => q.includes("employee health")));
+    const profile = getRelevanceProfile();
+    const psc = profile.discoveryCodes.find((d) => d.system === "PSC" && d.tier === "registered");
+    const naics = profile.discoveryCodes.find((d) => d.system.startsWith("NAICS") && d.match === "exact" && d.tier === "capability");
+    assert.ok(psc && naics, "profile supplies PSC and NAICS discovery codes");
+    assert.ok(queries.some((q) => q.includes(`PSC ${psc.code}`)));
+    assert.ok(queries.some((q) => q.includes("NAICS ") && q.includes(naics.code)));
+    const leadTerm = profile.searchBundles.find((b) => b.serviceTerms.length > 0)!.serviceTerms[0];
+    assert.ok(queries.some((q) => q.includes(` OR `) && q.includes(leadTerm)));
+    // exclusions come from the profile's post-award rule, not from code
+    const postAward = profile.rules.find((r) => r.action === "reject_post_award_notice")!;
+    assert.ok(queries.every((q) => q.includes(`-"${postAward.triggers[0]}"`) || q.includes(`-${postAward.triggers[0]}`)));
     assert.ok(queries.some((q) => !/\b20\d{2}\b/.test(q)));
   });
 

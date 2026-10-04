@@ -12,6 +12,10 @@ import { eq, desc, and, count as countFn } from "drizzle-orm";
 import { intelDb as db } from "@workspace/db";
 import { federalIntelItemsTable, type FederalIntelBucket } from "@workspace/db/schema";
 import { serperProvider } from "../lib/providers/serper";
+import { awardingAgencyNames } from "../lib/search/agencyPriority";
+import { assessIntelText, type IntelAssessment } from "../lib/intelligence/profileIntelRelevance";
+import { profileLeadQueries, profileNaicsCodes, profileSemanticQuery, quotedOr } from "../lib/providers/profileQueryTerms";
+import type { RelevanceVerdict } from "../lib/search/relevanceDecision";
 
 const router = Router();
 
@@ -165,6 +169,31 @@ type IntelItem = Omit<typeof federalIntelItemsTable.$inferInsert, "id" | "create
 
 interface SourceLogEntry { source: string; count: number; ok: boolean }
 
+// Relevance for every item comes from the Neon-backed relevance profile (classifier score + the canonical
+// accept/review/reject decision). Nothing in this file defines service vocabulary, agency lists or thresholds.
+type ActionTag = "monitor" | "pursue" | "brief" | "contact" | "wait";
+
+// Bounded size of the NAICS filter sent to SAM.gov / USAspending (the codes themselves come from the profile).
+const MAX_NAICS_FILTER = 8;
+
+const VERDICT_TAG: Record<RelevanceVerdict, ActionTag> = { accept: "pursue", review: "monitor", reject: "wait" };
+
+// `_issuer` is accepted so call sites keep naming who published the item, but it is deliberately not passed on:
+// relevance is agency-neutral (agency targeting is search-priority metadata, see search/agencyPriority.ts).
+function assess(title: string | null | undefined, text?: string | null, _issuer?: string | null, date?: string | Date | null): IntelAssessment {
+  return assessIntelText({ title, text, date });
+}
+
+/** Feed items that are not procurement notices: topical items get the brief tag, the rest stay on watch. */
+function topicTag(assessment: IntelAssessment, topical: ActionTag = "brief", other: ActionTag = "monitor"): ActionTag {
+  return assessment.topical ? topical : other;
+}
+
+/** Short query text for free-text government search endpoints, from the profile's search bundles. */
+function profileQueryText(maxChars: number): string {
+  return profileSemanticQuery(maxChars);
+}
+
 /**
  * Fetch items and compute a per-source breakdown from the returned items'
  * sourceType field. Provides observability without threading params through
@@ -224,8 +253,9 @@ async function fetchForecast(): Promise<IntelItem[]> {
         ptype: "p",
         limit: "50",
         offset: "0",
-        naics: "621111,621999,621610,561612,611519",
       });
+      const naicsCodes = await profileNaicsCodes(MAX_NAICS_FILTER);
+      if (naicsCodes.length > 0) params.set("naics", naicsCodes.join(","));
 
       const resp = await fetch(`https://api.sam.gov/opportunities/v2/search?${params}`, {
         signal: AbortSignal.timeout(15000),
@@ -235,7 +265,7 @@ async function fetchForecast(): Promise<IntelItem[]> {
         if (json.code !== "900804" && !json.message?.toLowerCase().includes("quota")) {
           for (const o of (json.opportunitiesData ?? []).slice(0, 40)) {
             const parts = (o.fullParentPathName ?? "").split(".");
-            const score = scoreForecastItem(o);
+            const assessment = assess(o.title, o.description, o.fullParentPathName, o.postedDate);
             items.push({
               bucket: "forecast" as const,
               sourceType: "sam_gov" as const,
@@ -247,8 +277,8 @@ async function fetchForecast(): Promise<IntelItem[]> {
               datePosted: o.postedDate ? new Date(o.postedDate) : null,
               status: o.active === "Yes" ? "active" : "closed",
               relatedRef: o.solicitationNumber ?? null,
-              occuMedScore: score,
-              actionTag: score >= 70 ? "pursue" : score >= 45 ? "monitor" : "wait",
+              occuMedScore: assessment.score,
+              actionTag: VERDICT_TAG[assessment.verdict],
               sourceUrl: o.uiLink ?? null,
               rawJson: JSON.stringify(o),
             });
@@ -270,7 +300,7 @@ async function fetchForecast(): Promise<IntelItem[]> {
         const text = await resp.text();
         const entries = parseRssItems(text, 15);
         for (const entry of entries) {
-          const isRelevant = /health|medical|occupational|safety|workforce|doctor|nurse|clinical/i.test(entry.title + " " + (entry.description ?? ""));
+          const assessment = assess(entry.title, entry.description, "Acquisition.gov", entry.pubDate);
           items.push({
             bucket: "forecast" as const,
             sourceType: "acquisition_gov" as const,
@@ -279,8 +309,8 @@ async function fetchForecast(): Promise<IntelItem[]> {
             summary: entry.description?.slice(0, 400) ?? null,
             datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
             status: "published",
-            occuMedScore: isRelevant ? 50 : 20,
-            actionTag: isRelevant ? "monitor" : "wait",
+            occuMedScore: assessment.score,
+            actionTag: topicTag(assessment, "monitor", "wait"),
             sourceUrl: entry.link ?? null,
             rawJson: JSON.stringify(entry),
           });
@@ -293,17 +323,23 @@ async function fetchForecast(): Promise<IntelItem[]> {
   if (items.length < 5) {
     const serperConfigured = await serperProvider.isConfigured();
     if (serperConfigured) {
-      const queries = [
-        'site:sam.gov "occupational health" OR "occupational medicine" contract 2025',
-        'federal contract "medical surveillance" OR "drug testing" OR "physical exam" solicitation',
-        'site:sam.gov "employee health" OR "workforce health" NAICS 621 2025',
-      ];
+      // Search phrases come from the relevance profile's lead queries, split across three queries.
+      const leads = profileLeadQueries();
+      const year = new Date().getUTCFullYear();
+      const third = Math.max(1, Math.ceil(leads.length / 3));
+      const groups = [leads.slice(0, third), leads.slice(third, third * 2), leads.slice(third * 2)].filter((group) => group.length > 0);
+      const queries = groups.map((group, index) =>
+        index === 0
+          ? `site:sam.gov (${quotedOr(group)}) contract ${year}`
+          : `federal contract (${quotedOr(group)}) solicitation ${year}`,
+      );
       try {
-        const results = await serperProvider.searchMultiple(queries, 8);
+        const results = queries.length > 0 ? await serperProvider.searchMultiple(queries, 8) : [];
         for (const r of results) {
           const text = `${r.title} ${r.snippet ?? ""}`;
-          const score = scoreForecastItem({ title: r.title, description: r.snippet ?? "", fullParentPathName: "" });
-          const agencyMatch = text.match(/department of (defense|state|homeland|labor|justice|health)/i);
+          const assessment = assess(r.title, r.snippet, null, null);
+          // Agency name parsing only: any "Department of X" named in the result text.
+          const agencyMatch = text.match(/\bdepartment of ([a-z]+)/i);
           items.push({
             bucket: "forecast" as const,
             sourceType: "serper_search" as const,
@@ -315,8 +351,8 @@ async function fetchForecast(): Promise<IntelItem[]> {
             datePosted: new Date(),
             status: "active",
             relatedRef: null,
-            occuMedScore: score,
-            actionTag: score >= 70 ? "pursue" : score >= 45 ? "monitor" : "wait",
+            occuMedScore: assessment.score,
+            actionTag: VERDICT_TAG[assessment.verdict],
             sourceUrl: r.link ?? null,
             rawJson: JSON.stringify(r),
           });
@@ -328,23 +364,13 @@ async function fetchForecast(): Promise<IntelItem[]> {
   return items;
 }
 
-function scoreForecastItem(o: any): number {
-  const text = `${o.title ?? ""} ${o.description ?? ""} ${o.fullParentPathName ?? ""}`.toLowerCase();
-  let score = 20;
-  if (["department of defense", "department of homeland security", "department of state", "department of justice", "department of health"].some(a => text.includes(a))) score += 25;
-  // "workers comp" removed — it is an excluded service area, not a positive signal
-  if (["occupational health", "occupational medicine", "medical surveillance", "drug testing", "fit for duty", "physical exam", "dot physical", "osha", "industrial hygiene", "employee health", "health services", "medical services", "pre-employment", "fitness for duty", "audiometric", "spirometry", "deployment medical"].some(t => text.includes(t))) score += 35;
-  if (text.includes("621111") || text.includes("621999") || text.includes("621610")) score += 20;
-  return Math.min(score, 100);
-}
-
 // ── Recompete Watch: SAM.gov active notices (expiry) + USAspending ────────────
 
 async function fetchRecompeteWatch(): Promise<IntelItem[]> {
   const items: IntelItem[] = [];
   const apiKey = process.env.SAM_GOV_API_KEY;
 
-  // SAM.gov active notices for NAICS 621xxx — approaching deadline/expiry
+  // SAM.gov active notices in the profile's NAICS codes — approaching deadline/expiry
   if (apiKey) {
     try {
       const today = new Date();
@@ -360,9 +386,10 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
         postedTo: fmt(today),
         ptype: "o",
         limit: "50",
-        naics: "621111,621999,621610,561612",
         active: "Yes",
       });
+      const recompeteNaics = await profileNaicsCodes(MAX_NAICS_FILTER);
+      if (recompeteNaics.length > 0) params.set("naics", recompeteNaics.join(","));
 
       const resp = await fetch(`https://api.sam.gov/opportunities/v2/search?${params}`, {
         signal: AbortSignal.timeout(15000),
@@ -375,6 +402,7 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
             const deadlineDate = o.responseDeadLine ? new Date(o.responseDeadLine) : null;
             const daysToDeadline = deadlineDate ? Math.floor((deadlineDate.getTime() - today.getTime()) / 86400000) : null;
             const isUrgent = daysToDeadline !== null && daysToDeadline >= 0 && daysToDeadline < 90;
+            const assessment = assess(o.title, o.description, o.fullParentPathName, o.postedDate);
             items.push({
               bucket: "recompete-watch" as const,
               sourceType: "sam_gov" as const,
@@ -385,8 +413,8 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
               datePosted: o.postedDate ? new Date(o.postedDate) : null,
               status: isUrgent ? "closing-soon" : "active",
               relatedRef: o.solicitationNumber ?? null,
-              occuMedScore: isUrgent ? 75 : 45,
-              actionTag: isUrgent ? "pursue" : "monitor",
+              occuMedScore: assessment.score,
+              actionTag: isUrgent && assessment.verdict !== "reject" ? "pursue" : "monitor",
               sourceUrl: o.uiLink ?? null,
               rawJson: JSON.stringify(o),
             });
@@ -396,11 +424,11 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
     } catch (_) {}
   }
 
-  // USAspending awards for NAICS 621111 — check expiry window
+  // USAspending awards in the profile's NAICS codes — check expiry window
   try {
     const body = {
       filters: {
-        naics_codes: ["621111", "621999", "621610", "561612"],
+        naics_codes: await profileNaicsCodes(MAX_NAICS_FILTER),
         award_type_codes: ["A", "B", "C", "D"],
         time_period: [{ start_date: "2022-01-01", end_date: new Date().toISOString().slice(0, 10) }],
       },
@@ -425,6 +453,7 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
         const endDate = r["End Date"] ? new Date(r["End Date"]) : null;
         const daysToExpiry = endDate ? Math.floor((endDate.getTime() - today.getTime()) / 86400000) : null;
         const isRecompeting = daysToExpiry !== null && daysToExpiry < 548;
+        const assessment = assess(r["Description"], r["Description"], `${r["Awarding Agency"] ?? ""} ${r["Awarding Sub Agency"] ?? ""}`, r["Start Date"]);
 
         items.push({
           bucket: "recompete-watch" as const,
@@ -438,7 +467,7 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
           contractorIncumbent: r["Recipient Name"] ?? null,
           relatedRef: r["Award ID"] ?? null,
           budgetSignal: r["Award Amount"] ? `$${Number(r["Award Amount"]).toLocaleString()}` : null,
-          occuMedScore: scoreRecompeteItem(r, daysToExpiry),
+          occuMedScore: assessment.score,
           actionTag: isRecompeting ? "pursue" : "monitor",
           sourceUrl: r["Award ID"] ? `https://www.usaspending.gov/award/${encodeURIComponent(r["Award ID"])}` : null,
           rawJson: JSON.stringify(r),
@@ -450,16 +479,6 @@ async function fetchRecompeteWatch(): Promise<IntelItem[]> {
   return items;
 }
 
-function scoreRecompeteItem(r: any, daysToExpiry: number | null): number {
-  let score = 20;
-  const agency = `${r["Awarding Agency"] ?? ""} ${r["Awarding Sub Agency"] ?? ""}`.toLowerCase();
-  if (["defense", "homeland security", "state", "justice", "health", "cbp", "ice", "uscis", "bop", "opm", "osha", "fmcsa", "faa"].some(a => agency.includes(a))) score += 25;
-  if (daysToExpiry !== null && daysToExpiry < 365) score += 30;
-  else if (daysToExpiry !== null && daysToExpiry < 548) score += 15;
-  if (Number(r["Award Amount"]) > 1000000) score += 15;
-  return Math.min(score, 100);
-}
-
 // ── Agency Pain: Oversight.gov + GAO RSS + DHS/DoD OIG feeds ─────────────────
 
 async function fetchAgencyPain(): Promise<IntelItem[]> {
@@ -468,7 +487,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
   // Oversight.gov full-text search
   try {
     const url = new URL("https://efts.oversight.gov/public_search/");
-    url.searchParams.set("query", "occupational health medical services workforce");
+    url.searchParams.set("query", profileQueryText(120));
     url.searchParams.set("result_type", "report");
     url.searchParams.set("date_range_field", "report_date");
     url.searchParams.set("date_start", "2023-01-01");
@@ -485,6 +504,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
       const hits = json.hits?.hits ?? json.results ?? [];
       for (const h of hits.slice(0, 25)) {
         const src = h._source ?? h;
+        const assessment = assess(src.title ?? src.report_title, src.summary ?? src.highlights?.join(" "), src.agency_name ?? src.agency, src.report_date);
         items.push({
           bucket: "agency-pain" as const,
           sourceType: "oversight_gov" as const,
@@ -495,7 +515,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
           status: "published",
           oversightSignal: src.report_type ?? null,
           relatedRef: src.report_number ?? null,
-          occuMedScore: scoreOversightItem(src),
+          occuMedScore: assessment.score,
           actionTag: "brief",
           sourceUrl: src.url ?? (src.id ? `https://www.oversight.gov/report/${src.id}` : null),
           rawJson: JSON.stringify(src),
@@ -510,7 +530,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 15)) {
-        const isRelevant = /health|medical|workforce|safety|osha|occupational/i.test(entry.title + " " + (entry.description ?? ""));
+        const assessment = assess(entry.title, entry.description, "GAO", entry.pubDate);
         items.push({
           bucket: "agency-pain" as const,
           sourceType: "gao" as const,
@@ -520,8 +540,8 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "published",
           oversightSignal: "GAO Report",
-          occuMedScore: isRelevant ? 55 : 25,
-          actionTag: isRelevant ? "brief" : "monitor",
+          occuMedScore: assessment.score,
+          actionTag: topicTag(assessment),
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
         });
@@ -535,7 +555,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 12)) {
-        const isRelevant = /health|medical|workforce|safety|occupational|clinic/i.test(entry.title + " " + (entry.description ?? ""));
+        const assessment = assess(entry.title, entry.description, "DHS OIG", entry.pubDate);
         items.push({
           bucket: "agency-pain" as const,
           sourceType: "oig" as const,
@@ -546,8 +566,8 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "published",
           oversightSignal: "DHS OIG Report",
-          occuMedScore: isRelevant ? 60 : 30,
-          actionTag: isRelevant ? "brief" : "monitor",
+          occuMedScore: assessment.score,
+          actionTag: topicTag(assessment),
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
         });
@@ -561,7 +581,7 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
     if (!resp.ok) throw new Error("DoD OIG RSS unavailable");
     const text = await resp.text();
     for (const entry of parseRssItems(text, 12)) {
-      const isRelevant = /health|medical|workforce|safety|occupational|clinic|personnel/i.test(entry.title + " " + (entry.description ?? ""));
+      const assessment = assess(entry.title, entry.description, "DoD OIG", entry.pubDate);
       items.push({
         bucket: "agency-pain" as const,
         sourceType: "oig" as const,
@@ -572,8 +592,8 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
         datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
         status: "published",
         oversightSignal: "DoD OIG Report",
-        occuMedScore: isRelevant ? 65 : 30,
-        actionTag: isRelevant ? "brief" : "monitor",
+        occuMedScore: assessment.score,
+        actionTag: topicTag(assessment),
         sourceUrl: entry.link ?? null,
         rawJson: JSON.stringify(entry),
       });
@@ -581,14 +601,6 @@ async function fetchAgencyPain(): Promise<IntelItem[]> {
   } catch (_) {}
 
   return items;
-}
-
-function scoreOversightItem(src: any): number {
-  let score = 25;
-  const text = `${src.title ?? ""} ${src.summary ?? ""}`.toLowerCase();
-  if (["health", "medical", "workforce", "safety", "occupational", "osha", "worker"].some(t => text.includes(t))) score += 30;
-  if (["defense", "homeland", "dod", "dhs", "state", "justice", "hhs", "opm", "bop"].some(a => (src.agency_name ?? "").toLowerCase().includes(a))) score += 25;
-  return Math.min(score, 100);
 }
 
 // ── Policy Radar: Federal Register + Acquisition.gov FAR/DFARS RSS ───────────
@@ -599,7 +611,7 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
   // Federal Register articles API (no key required)
   try {
     const url = new URL("https://www.federalregister.gov/api/v1/articles.json");
-    url.searchParams.set("conditions[term]", "occupational health medical services federal workforce");
+    url.searchParams.set("conditions[term]", profileQueryText(120));
     url.searchParams.set("conditions[type][]", "RULE");
     url.searchParams.set("conditions[type][]", "PRORULE");
     url.searchParams.set("conditions[type][]", "NOTICE");
@@ -610,6 +622,7 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
     if (resp.ok) {
       const json = (await resp.json()) as any;
       for (const a of (json.results ?? []).slice(0, 25)) {
+        const assessment = assess(a.title, a.abstract, a.agencies?.[0]?.name, a.publication_date);
         items.push({
           bucket: "policy-radar" as const,
           sourceType: "federal_register" as const,
@@ -619,7 +632,7 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
           datePosted: a.publication_date ? new Date(a.publication_date) : null,
           status: a.type ?? null,
           relatedRef: a.document_number ?? null,
-          occuMedScore: scorePolicyItem(a),
+          occuMedScore: assessment.score,
           actionTag: "monitor",
           sourceUrl: a.html_url ?? null,
           rawJson: JSON.stringify(a),
@@ -639,6 +652,7 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
       if (resp.ok) {
         const text = await resp.text();
         for (const entry of parseRssItems(text, 12)) {
+          const assessment = assess(entry.title, entry.description, "Acquisition.gov", entry.pubDate);
           items.push({
             bucket: "policy-radar" as const,
             sourceType: "acquisition_gov" as const,
@@ -647,7 +661,7 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
             summary: entry.description?.slice(0, 400) ?? null,
             datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
             status: "FAR/DFARS Update",
-            occuMedScore: /health|medical|safety|occupational/i.test(entry.title) ? 50 : 20,
+            occuMedScore: assessment.score,
             actionTag: "monitor",
             sourceUrl: entry.link ?? null,
             rawJson: JSON.stringify(entry),
@@ -660,29 +674,17 @@ async function fetchPolicyRadar(): Promise<IntelItem[]> {
   return items;
 }
 
-function scorePolicyItem(a: any): number {
-  let score = 20;
-  const text = `${a.title ?? ""} ${a.abstract ?? ""}`.toLowerCase();
-  if (["occupational health", "medical", "worker health", "osha", "workforce health", "federal employee health"].some(t => text.includes(t))) score += 40;
-  if (a.type === "RULE" || a.type === "PRORULE") score += 20;
-  return Math.min(score, 100);
-}
-
 // ── Incumbent Tracker: USAspending NAICS awards at priority agencies ──────────
 
 async function fetchIncumbentTracker(): Promise<IntelItem[]> {
+  // Awarding-agency request filter: search-priority metadata from Neon (not relevance). Empty = unfiltered.
+  const awardingAgencies = awardingAgencyNames().map((name) => ({ type: "awarding", tier: "toptier", name }));
   const body = {
     filters: {
-      naics_codes: ["621111", "621999", "621610", "561612", "611519"],
+      naics_codes: await profileNaicsCodes(MAX_NAICS_FILTER),
       award_type_codes: ["A", "B", "C", "D"],
       time_period: [{ start_date: "2022-01-01", end_date: new Date().toISOString().slice(0, 10) }],
-      agencies: [
-        { type: "awarding", tier: "toptier", name: "Department of Defense" },
-        { type: "awarding", tier: "toptier", name: "Department of Homeland Security" },
-        { type: "awarding", tier: "toptier", name: "Department of State" },
-        { type: "awarding", tier: "toptier", name: "Department of Justice" },
-        { type: "awarding", tier: "toptier", name: "Department of Health and Human Services" },
-      ],
+      ...(awardingAgencies.length > 0 ? { agencies: awardingAgencies } : {}),
     },
     fields: ["Award ID", "Recipient Name", "Award Amount", "Awarding Agency", "Awarding Sub Agency", "Start Date", "End Date", "Description", "NAICS Code", "NAICS Description"],
     sort: "Award Amount",
@@ -702,32 +704,31 @@ async function fetchIncumbentTracker(): Promise<IntelItem[]> {
   const json = (await resp.json()) as any;
   const today = new Date();
 
-  return (json.results ?? []).slice(0, 40).map((r: any) => ({
-    bucket: "incumbent-tracker" as const,
-    sourceType: "usaspending" as const,
-    agency: r["Awarding Agency"] ?? null,
-    component: r["Awarding Sub Agency"] ?? null,
-    title: `${r["Recipient Name"] ?? "Unknown Recipient"} — ${r["NAICS Description"] ?? r["NAICS Code"] ?? "Healthcare"}`,
-    summary: r["Description"]?.slice(0, 400) ?? null,
-    datePosted: r["Start Date"] ? new Date(r["Start Date"]) : null,
-    status: r["End Date"] && new Date(r["End Date"]) > today ? "active" : "expired",
-    contractorIncumbent: r["Recipient Name"] ?? null,
-    relatedRef: r["Award ID"] ?? null,
-    budgetSignal: r["Award Amount"] ? `$${Number(r["Award Amount"]).toLocaleString()}` : null,
-    occuMedScore: scoreIncumbentItem(r),
-    actionTag: "monitor" as const,
-    sourceUrl: r["Award ID"] ? `https://www.usaspending.gov/award/${encodeURIComponent(r["Award ID"])}` : null,
-    rawJson: JSON.stringify(r),
-  }));
-}
-
-function scoreIncumbentItem(r: any): number {
-  let score = 30;
-  const agency = `${r["Awarding Agency"] ?? ""} ${r["Awarding Sub Agency"] ?? ""}`.toLowerCase();
-  if (["defense", "homeland", "state", "justice", "health", "cbp", "ice", "uscis", "bop", "opm"].some(a => agency.includes(a))) score += 30;
-  if (Number(r["Award Amount"]) > 5000000) score += 25;
-  else if (Number(r["Award Amount"]) > 1000000) score += 15;
-  return Math.min(score, 100);
+  return (json.results ?? []).slice(0, 40).map((r: any) => {
+    const assessment = assess(
+      r["Description"],
+      `${r["Description"] ?? ""} ${r["NAICS Description"] ?? ""}`,
+      `${r["Awarding Agency"] ?? ""} ${r["Awarding Sub Agency"] ?? ""}`,
+      r["Start Date"],
+    );
+    return {
+      bucket: "incumbent-tracker" as const,
+      sourceType: "usaspending" as const,
+      agency: r["Awarding Agency"] ?? null,
+      component: r["Awarding Sub Agency"] ?? null,
+      title: `${r["Recipient Name"] ?? "Unknown Recipient"} — ${r["NAICS Description"] ?? r["NAICS Code"] ?? "Healthcare"}`,
+      summary: r["Description"]?.slice(0, 400) ?? null,
+      datePosted: r["Start Date"] ? new Date(r["Start Date"]) : null,
+      status: r["End Date"] && new Date(r["End Date"]) > today ? "active" : "expired",
+      contractorIncumbent: r["Recipient Name"] ?? null,
+      relatedRef: r["Award ID"] ?? null,
+      budgetSignal: r["Award Amount"] ? `$${Number(r["Award Amount"]).toLocaleString()}` : null,
+      occuMedScore: assessment.score,
+      actionTag: "monitor" as const,
+      sourceUrl: r["Award ID"] ? `https://www.usaspending.gov/award/${encodeURIComponent(r["Award ID"])}` : null,
+      rawJson: JSON.stringify(r),
+    };
+  });
 }
 
 // ── Leadership Org: USAJOBS + agency pressroom RSS ────────────────────────────
@@ -735,11 +736,10 @@ function scoreIncumbentItem(r: any): number {
 async function fetchLeadershipOrg(): Promise<IntelItem[]> {
   const items: IntelItem[] = [];
 
-  // USAJOBS search — senior medical/health series postings
+  // USAJOBS search — postings matching the profile's lead service query
   try {
     const url = new URL("https://data.usajobs.gov/api/search");
-    url.searchParams.set("Keyword", "Chief Medical Officer Director Occupational Health Medical Director");
-    url.searchParams.set("PositionSeries", "0602,0610,0601");
+    url.searchParams.set("Keyword", profileLeadQueries(1)[0] ?? "");
     url.searchParams.set("ResultsPerPage", "50");
     url.searchParams.set("SortField", "DatePosted");
     url.searchParams.set("SortDirection", "Desc");
@@ -758,6 +758,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
       const json = (await resp.json()) as any;
       for (const job of (json.SearchResult?.SearchResultItems ?? []).slice(0, 30)) {
         const pos = job.MatchedObjectDescriptor ?? {};
+        const assessment = assess(pos.PositionTitle, pos.UserArea?.Details?.MajorDuties?.[0], `${pos.DepartmentName ?? ""} ${pos.OrganizationName ?? ""}`, pos.PublicationStartDate);
         items.push({
           bucket: "leadership-org" as const,
           sourceType: "usajobs" as const,
@@ -769,7 +770,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
           datePosted: pos.PublicationStartDate ? new Date(pos.PublicationStartDate) : null,
           status: pos.PositionStatus ?? "open",
           relatedRef: pos.PositionID ?? null,
-          occuMedScore: scoreLeadershipItem(pos),
+          occuMedScore: assessment.score,
           actionTag: "contact" as const,
           sourceUrl: pos.PositionURI ?? pos.ApplyURI?.[0] ?? null,
           rawJson: JSON.stringify(pos),
@@ -785,6 +786,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 8)) {
         if (/appoint|director|chief|leadership|personnel|named/i.test(entry.title + " " + (entry.description ?? ""))) {
+          const assessment = assess(entry.title, entry.description, null, entry.pubDate);
           items.push({
             bucket: "leadership-org" as const,
             sourceType: "rss_feed" as const,
@@ -793,7 +795,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
             summary: entry.description?.slice(0, 400) ?? null,
             datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
             status: "published",
-            occuMedScore: 35,
+            occuMedScore: assessment.score,
             actionTag: "monitor" as const,
             sourceUrl: entry.link ?? null,
             rawJson: JSON.stringify(entry),
@@ -810,6 +812,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 8)) {
         if (/appoint|director|chief|leadership|personnel|named/i.test(entry.title + " " + (entry.description ?? ""))) {
+          const assessment = assess(entry.title, entry.description, null, entry.pubDate);
           items.push({
             bucket: "leadership-org" as const,
             sourceType: "rss_feed" as const,
@@ -818,7 +821,7 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
             summary: entry.description?.slice(0, 400) ?? null,
             datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
             status: "published",
-            occuMedScore: 35,
+            occuMedScore: assessment.score,
             actionTag: "monitor" as const,
             sourceUrl: entry.link ?? null,
             rawJson: JSON.stringify(entry),
@@ -829,15 +832,6 @@ async function fetchLeadershipOrg(): Promise<IntelItem[]> {
   } catch (_) {}
 
   return items;
-}
-
-function scoreLeadershipItem(pos: any): number {
-  let score = 30;
-  const dept = `${pos.DepartmentName ?? ""} ${pos.OrganizationName ?? ""}`.toLowerCase();
-  if (["defense", "homeland", "state", "justice", "health", "transportation", "opm", "labor"].some(a => dept.includes(a))) score += 30;
-  const title = (pos.PositionTitle ?? "").toLowerCase();
-  if (title.includes("medical") || title.includes("health") || title.includes("occupational")) score += 25;
-  return Math.min(score, 100);
 }
 
 // ── Deployment Medical: CDC + State Dept + FAA ───────────────────────────────
@@ -851,6 +845,7 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 20)) {
+        const assessment = assess(entry.title, entry.description, "CDC", entry.pubDate);
         items.push({
           bucket: "deployment-medical" as const,
           sourceType: "cdc" as const,
@@ -861,7 +856,7 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "active",
           medicalTravelRelevance: "CDC Travel Health Notice",
-          occuMedScore: 55,
+          occuMedScore: assessment.score,
           actionTag: "brief" as const,
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
@@ -876,7 +871,9 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 20)) {
+        // Advisory severity parsing (State Department level wording), not Occu-Med relevance.
         const isHigh = /level [34]|do not travel|reconsider/i.test(entry.title + " " + (entry.description ?? ""));
+        const assessment = assess(entry.title, entry.description, "State Department", entry.pubDate);
         items.push({
           bucket: "deployment-medical" as const,
           sourceType: "state_dept" as const,
@@ -887,7 +884,7 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "active",
           medicalTravelRelevance: "Travel Advisory",
-          occuMedScore: isHigh ? 75 : 45,
+          occuMedScore: assessment.score,
           actionTag: isHigh ? "brief" : "monitor" as const,
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
@@ -902,8 +899,8 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 15)) {
-        const isRelevant = /medical|health|ame|aviation medicine|pilot|physical|flight surgeon|occupational/i.test(entry.title + " " + (entry.description ?? ""));
-        if (isRelevant) {
+        const assessment = assess(entry.title, entry.description, "FAA", entry.pubDate);
+        if (assessment.topical) {
           items.push({
             bucket: "deployment-medical" as const,
             sourceType: "faa" as const,
@@ -913,7 +910,7 @@ async function fetchDeploymentMedical(): Promise<IntelItem[]> {
             datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
             status: "published",
             medicalTravelRelevance: "FAA Aviation Medicine",
-            occuMedScore: 60,
+            occuMedScore: assessment.score,
             actionTag: "brief" as const,
             sourceUrl: entry.link ?? null,
             rawJson: JSON.stringify(entry),
@@ -940,7 +937,7 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
   // GovInfo search API (public)
   try {
     const url = new URL("https://api.govinfo.gov/search");
-    url.searchParams.set("query", "occupational health medical services workforce federal budget");
+    url.searchParams.set("query", `${profileQueryText(100)} federal budget`);
     url.searchParams.set("pageSize", "30");
     url.searchParams.set("collection", "BUDGET,OMB");
     url.searchParams.set("sortBy", "dateIssued:desc");
@@ -953,6 +950,7 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
     if (resp.ok) {
       const json = (await resp.json()) as any;
       for (const doc of (json.results ?? []).slice(0, 25)) {
+        const assessment = assess(doc.title, doc.abstractText, doc.governmentAuthor1 ?? doc.departmentName, doc.dateIssued);
         items.push({
           bucket: "budget-funding" as const,
           sourceType: "govinfo" as const,
@@ -963,7 +961,7 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
           status: doc.collectionCode ?? null,
           budgetSignal: doc.collectionCode ?? null,
           relatedRef: doc.packageId ?? null,
-          occuMedScore: scoreBudgetItem(doc),
+          occuMedScore: assessment.score,
           actionTag: "monitor" as const,
           sourceUrl: doc.packageLink ?? null,
           rawJson: JSON.stringify(doc),
@@ -978,6 +976,7 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 10)) {
+        const assessment = assess(entry.title, entry.description, "OMB", entry.pubDate);
         items.push({
           bucket: "budget-funding" as const,
           sourceType: "omb" as const,
@@ -987,7 +986,7 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "published",
           budgetSignal: "OMB Circular",
-          occuMedScore: 35,
+          occuMedScore: assessment.score,
           actionTag: "monitor" as const,
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
@@ -997,14 +996,6 @@ async function fetchBudgetFunding(): Promise<IntelItem[]> {
   } catch (_) {}
 
   return items;
-}
-
-function scoreBudgetItem(doc: any): number {
-  let score = 20;
-  const text = `${doc.title ?? ""} ${doc.abstractText ?? ""}`.toLowerCase();
-  if (/health|medical|workforce|safety|occupational/.test(text)) score += 35;
-  if (/defense|homeland|state|justice|hhs|opm/.test(text)) score += 25;
-  return Math.min(score, 100);
 }
 
 // ── Protest Litigation: GAO bid protests + Acquisition.gov FAR deviations ─────
@@ -1018,7 +1009,7 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
     if (resp.ok) {
       const text = await resp.text();
       for (const entry of parseRssItems(text, 25)) {
-        const isRelevant = /health|medical|occupational|clinical|safety|wellness/i.test(entry.title + " " + (entry.description ?? ""));
+        const assessment = assess(entry.title, entry.description, "GAO", entry.pubDate);
         items.push({
           bucket: "protest-litigation" as const,
           sourceType: "gao" as const,
@@ -1028,8 +1019,8 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
           datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
           status: "published",
           oversightSignal: "GAO Bid Protest",
-          occuMedScore: isRelevant ? 65 : 25,
-          actionTag: isRelevant ? "brief" : "monitor" as const,
+          occuMedScore: assessment.score,
+          actionTag: topicTag(assessment),
           sourceUrl: entry.link ?? null,
           rawJson: JSON.stringify(entry),
         });
@@ -1048,7 +1039,9 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
       if (resp.ok) {
         const text = await resp.text();
         for (const entry of parseRssItems(text, 10)) {
+          // FAR deviation / protest event wording: notice-type parsing, not Occu-Med relevance.
           if (/deviation|waiver|class deviation|protest/i.test(entry.title + " " + (entry.description ?? ""))) {
+            const assessment = assess(entry.title, entry.description, "Acquisition.gov", entry.pubDate);
             items.push({
               bucket: "protest-litigation" as const,
               sourceType: "acquisition_gov" as const,
@@ -1057,7 +1050,7 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
               summary: entry.description?.slice(0, 400) ?? null,
               datePosted: entry.pubDate ? new Date(entry.pubDate) : null,
               status: "FAR Deviation",
-              occuMedScore: 30,
+              occuMedScore: assessment.score,
               actionTag: "monitor" as const,
               sourceUrl: entry.link ?? null,
               rawJson: JSON.stringify(entry),
@@ -1072,7 +1065,7 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
   try {
     const body = {
       filters: {
-        naics_codes: ["621111", "621999", "621610"],
+        naics_codes: await profileNaicsCodes(MAX_NAICS_FILTER),
         award_type_codes: ["A", "B", "C", "D"],
         time_period: [{ start_date: "2024-06-01", end_date: new Date().toISOString().slice(0, 10) }],
       },
@@ -1093,6 +1086,7 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
     if (resp.ok) {
       const json = (await resp.json()) as any;
       for (const r of (json.results ?? []).slice(0, 15)) {
+        const assessment = assess(r["Description"] ?? r["Recipient Name"], r["Description"], `${r["Awarding Agency"] ?? ""} ${r["Awarding Sub Agency"] ?? ""}`, r["Start Date"]);
         items.push({
           bucket: "protest-litigation" as const,
           sourceType: "usaspending" as const,
@@ -1105,7 +1099,7 @@ async function fetchProtestLitigation(): Promise<IntelItem[]> {
           contractorIncumbent: r["Recipient Name"] ?? null,
           relatedRef: r["Award ID"] ?? null,
           budgetSignal: r["Award Amount"] ? `$${Number(r["Award Amount"]).toLocaleString()}` : null,
-          occuMedScore: 45,
+          occuMedScore: assessment.score,
           actionTag: "monitor" as const,
           sourceUrl: r["Award ID"] ? `https://www.usaspending.gov/award/${encodeURIComponent(r["Award ID"])}` : null,
           rawJson: JSON.stringify(r),

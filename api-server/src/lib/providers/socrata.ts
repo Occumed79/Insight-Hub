@@ -1,3 +1,4 @@
+import { getRelevanceProfile } from "../search/relevanceProfile";
 import type {
   DataSourceProvider,
   FetchOptions,
@@ -159,7 +160,7 @@ export class SocrataProvider implements DataSourceProvider {
       source: this.name,
       providerName: "Tyler Data & Insights / Socrata",
       status: "active" as const,
-      relevanceScore: 45,
+      relevanceScore: getRelevanceProfile().thresholds.reviewMin,
       rawData: { query, result, officialOpenData: true },
     }));
     return { records: records as any, total: records.length, errors: [] };

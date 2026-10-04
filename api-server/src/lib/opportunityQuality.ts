@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { classifyResult } from "./search/relevance";
+import { decideRelevance } from "./search/relevanceDecision";
+import { isServiceNameNotBuyer } from "./search/profileServiceName";
 
 export type OpportunityQualityClassification =
   | "verified-open"
@@ -210,9 +212,11 @@ export function classifyOpportunityQuality(
   const buyer = String(opp.agency ?? "").trim();
   const buyerKnown =
     buyer.length > 0 &&
-    !/^(unknown|unknown organization|occupational health|drug & alcohol screening|medical surveillance|government|government agency|state agency|official public rfp portal|procurement portal)$/i.test(
+    !/^(unknown|unknown organization|government|government agency|state agency|official public rfp portal|procurement portal)$/i.test(
       buyer,
-    );
+    ) &&
+    // a service line posing as the buyer is recognised from the profile, not a local list
+    !isServiceNameNotBuyer(buyer);
   const sourceConfidence = String(opp.sourceConfidence ?? "").toLowerCase();
   const confidenceOk =
     sourceConfidence === "high" || sourceConfidence === "medium";
@@ -277,8 +281,6 @@ export function classifyOpportunityQuality(
       opp.type,
       opp.solicitationNumber,
       opp.description,
-      opp.agency,
-      opp.subAgency,
       opp.naicsCode,
       opp.naicsDescription,
     ]
@@ -290,8 +292,7 @@ export function classifyOpportunityQuality(
     allowHistorical: true,
   });
   const relevanceEligible =
-    !relevance.rejected &&
-    relevance.score >= 65 &&
+    decideRelevance(relevance).verdict === "accept" &&
     relevance.confidence !== "possible_adjacent";
   const structuredDirectEvidence =
     normalizedEvidenceVerified || completeStoredDirectEvidence;
@@ -436,7 +437,7 @@ export function calculateOpportunityRank(
 ): OpportunityRankBreakdown {
   const judged = classifyResult({
     title: String(opp.title ?? ""),
-    snippet: [opp.type, opp.description, opp.agency, opp.solicitationNumber]
+    snippet: [opp.type, opp.description, opp.solicitationNumber]
       .filter(Boolean).join(" "),
     url: String(opp.samUrl ?? opp.sourceUrl ?? opp.url ?? ""),
     date: opp.postedDate,

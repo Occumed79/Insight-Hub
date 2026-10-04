@@ -475,25 +475,44 @@ function ActivitySparkline({ articles }: { articles: NewsArticle[] }) {
 
 // ── Services Radar Chart ──────────────────────────────────────────────────────
 
-const ALL_SERVICE_CATEGORIES = [
-  "Drug Testing", "DOT Physicals", "Workers Comp", "Onsite Clinics",
-  "Telehealth", "Wellness", "Mental Health", "Absence Management",
-];
+// Radar axes and the terms that evidence each axis come from the server's relevance profile (Neon);
+// this page carries no Occu-Med service vocabulary of its own.
+interface ProfileServiceCategory {
+  id: string;
+  label: string;
+  terms: string[];
+}
+
+const normalizeServiceText = (value: string): string =>
+  ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
 
 function ServicesRadar({ services }: { services: string[] }) {
-  if (services.length === 0) return null;
+  const { data: profile } = useQuery<{ categories: ProfileServiceCategory[] }>({
+    queryKey: ["relevance-profile", "service-terms"],
+    queryFn: () =>
+      fetch("/api/relevance-profile/service-terms").then((r) => {
+        if (!r.ok) throw new Error("Relevance profile unavailable");
+        return r.json();
+      }),
+    staleTime: 10 * 60 * 1000,
+  });
 
-  const lc = services.map((s) => s.toLowerCase());
-  const data = ALL_SERVICE_CATEGORIES.map((cat) => ({
-    subject: cat,
-    value: lc.some((s) => s.includes(cat.toLowerCase().split(" ")[0])) ? 1 : 0,
-  }));
+  if (services.length === 0 || !profile?.categories?.length) return null;
+
+  const lc = services.map(normalizeServiceText);
+  const data = profile.categories.map((cat) => {
+    const terms = cat.terms.map(normalizeServiceText);
+    return {
+      subject: cat.label,
+      value: lc.some((s) => terms.some((t) => s.includes(t))) ? 1 : 0,
+    };
+  });
 
   const hasAny = data.some((d) => d.value > 0);
   if (!hasAny) return null;
 
   return (
-    <ResponsiveContainer width="100%" height={150}>
+    <ResponsiveContainer width="100%" height={240}>
       <RadarChart data={data} margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
         <PolarGrid stroke="rgba(255,255,255,0.08)" />
         <PolarAngleAxis dataKey="subject" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 8 }} />

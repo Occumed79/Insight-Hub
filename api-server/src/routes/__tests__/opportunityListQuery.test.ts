@@ -39,7 +39,7 @@ describe("opportunity list PostgreSQL pattern filters", () => {
     );
   });
 
-  it("keeps text relevance OR positive SAM NAICS/PSC evidence instead of whitelisting history", () => {
+  it("filters on text evidence only and carries no classification-code vocabulary", () => {
     const query = dialect.sqlToQuery(
       opportunityServiceEvidenceFilter(opportunitiesTable, [
         "%occupational health%",
@@ -47,16 +47,14 @@ describe("opportunity list PostgreSQL pattern filters", () => {
       ]),
     );
 
-    assert.match(query.sql, / OR /i);
-    assert.match(query.sql, /naics_code/i);
-    assert.match(query.sql, /psc_code/i);
-    assert.ok(query.params.includes("%occupational health%"));
-    assert.ok(query.params.includes("sam_gov"));
-    assert.ok(query.params.includes("621498"));
-    assert.ok(query.params.includes("Q533"));
-    assert.ok(query.params.includes("Q701"));
-    assert.equal(query.params.includes("999999"), false);
-    assert.equal(query.params.includes("Z999"), false);
+    assert.match(query.sql, /LIKE ANY\(ARRAY\[\$1, \$2\]::text\[\]\)/);
+    assert.match(query.sql, /"title"/);
+    assert.match(query.sql, /"description"/);
+    assert.match(query.sql, /"agency"/);
+    assert.doesNotMatch(query.sql, / OR /i);
+    assert.doesNotMatch(query.sql, /naics_code/i);
+    assert.doesNotMatch(query.sql, /psc_code/i);
+    assert.deepEqual(query.params, ["%occupational health%", "%drug testing%"]);
   });
 
   it("casts bound feedback weights before applying unary minus", () => {

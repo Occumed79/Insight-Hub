@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useRelevanceThresholds } from "@/hooks/use-relevance-thresholds";
 
 const BASE = import.meta.env.BASE_URL;
 function api(path: string) { return `${BASE}api/${path}`; }
@@ -630,10 +631,11 @@ function BucketPanel({ state, bucket, items, isLoading, isRefreshing, lastRefres
 function StateItemCard({ item }: { item: StateItem }) {
   const typeBadge = ITEM_TYPE_BADGE[item.itemType ?? "news"] ?? ITEM_TYPE_BADGE.news;
   const score = item.relevanceScore ?? 0;
+  const thresholds = useRelevanceThresholds();
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
       className="group relative bg-white/4 hover:bg-white/7 border border-white/10 hover:border-white/20 rounded-xl p-4 transition-all cursor-default">
-      {score >= 30 && (
+      {score >= thresholds.reviewMin && (
         <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(56,139,253,0.8)]" />
       )}
       <div className="flex items-start gap-2 mb-2">

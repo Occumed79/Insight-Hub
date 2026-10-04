@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
 import { samGovClassificationEvidence } from "../providers/samGovTaxonomyEvidence";
 import { classifyResult, type RelevanceResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 import { normalizedToDbRecord } from "../search/normalization";
 import { canonicalSamOpportunityUrl } from "../opportunityQuality";
 
@@ -28,6 +29,7 @@ export const QUALITY_REJECTION_CODES = {
   hardReject: "hard_reject",
   conditionalFalsePositive: "conditional_false_positive",
   missingProcurementSignal: "missing_procurement_signal",
+  adjudicationBand: "adjudication_band",
   missingServiceEvidence: "missing_occumed_service_evidence",
   insufficientCombination: "insufficient_evidence_combination",
   manualQueryMismatch: "manual_query_mismatch",
@@ -271,18 +273,35 @@ export function decideOpportunityQuality(
       record.type,
       record.solicitationNumber,
       record.description,
-      record.agency,
       ...samTaxonomyEvidence,
     ]
       .filter(Boolean)
       .join(" "),
     url: record.sourceUrl,
     allowHistorical: true,
+    // Live-deadline and posted-date evidence travels with the notice, never with the provider.
+    deadlineInFuture:
+      record.responseDeadline instanceof Date &&
+      record.responseDeadline.getTime() > Date.now(),
+    date: record.postedDate ?? null,
   });
-  if (relevance.rejected) {
+  // One decision for every provider: the Neon evidence rules plus the canonical thresholds.
+  const decision = decideRelevance(relevance);
+  if (decision.verdict === "reject") {
     return {
       status: "rejected",
       reason: relevanceRejectionReason(relevance),
+      completenessScore,
+      sourceConfidence,
+    };
+  }
+  if (decision.verdict === "review") {
+    return {
+      status: "quarantined",
+      reason: encodedQualityReason(
+        QUALITY_REJECTION_CODES.adjudicationBand,
+        `Held for adjudication: ${decision.reason}.`,
+      ),
       completenessScore,
       sourceConfidence,
     };

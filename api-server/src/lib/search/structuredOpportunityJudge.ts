@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import type { NormalizedOpportunity } from "../providers/types";
 import { classifyProviderRecordRelevance } from "../providers/providerQueryMatch";
 import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
-import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
+import { geminiProvider } from "../providers/gemini";
+import { decideRelevance } from "./relevanceDecision";
+import { getRelevanceProfile } from "./relevanceProfile";
+import { SCOPE_BLOCK_HEADER, judgeScopeBlock, profileServiceLabels, scoreGuidance } from "./profileText";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
@@ -67,8 +70,6 @@ export const STRUCTURED_JUDGE_PROVIDER_ORDER = JUDGE_PROVIDERS.map(
 const PANEL_SIZE = 3;
 const MIN_PANEL_SIZE = 2;
 const CHUNK_SIZE = 4;
-const MIN_APPROVAL_SCORE = 76;
-const MIN_INDIVIDUAL_YES_SCORE = 68;
 const DEFAULT_CANDIDATE_LIMIT = 10;
 const PROVIDER_TIMEOUT_MS = 28_000;
 const MAX_DESCRIPTION_CHARS = 1_400;
@@ -77,7 +78,6 @@ const CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const SHORT_COOLDOWN_MS = 10 * 60 * 1_000;
 const RATE_LIMIT_COOLDOWN_MS = 20 * 60 * 1_000;
 const TERMINAL_COOLDOWN_MS = 6 * 60 * 60 * 1_000;
-const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
 
 type JsonRecord = Record<string, unknown>;
 
@@ -226,27 +226,22 @@ export function buildPrompt(
 
   return `You are one independent judge on a strict procurement relevance panel for Occu-Med.
 
-Occu-Med can perform: ${ORG_SERVICES}.
+Occu-Med can perform: ${profileServiceLabels().join("; ")}.
 Source being reviewed: ${providerName}.
 Today: ${new Date().toISOString().slice(0, 10)}.
 ${profileContext ? `\n${profileContext}\n` : ""}
-IMPORTANT SCOPE RULES:
-- Workers' compensation treatment, claims administration, and MPN/provider-panel enrollment are OUT OF SCOPE.
-- Do NOT reject an entire RFP solely because it mentions workers' compensation — if it also contains Occu-Med-relevant services, vote YES and note the out-of-scope component.
-- Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+${profileContext.includes(SCOPE_BLOCK_HEADER) ? "" : judgeScopeBlock()}
 
 A YES verdict requires all of the following:
 1. The record is a real procurement notice that is currently open for responses.
-2. The PRIMARY PURCHASED SCOPE—not incidental boilerplate—requires occupational health, employee medical examinations, drug/alcohol testing, medical surveillance, audiometry, spirometry, respirator medical evaluations or fit testing, vaccinations, deployment medical screening, fitness-for-duty evaluations, or management of a provider network delivering those services.
+2. The PRIMARY PURCHASED SCOPE (not incidental boilerplate) is within the scope policies above.
 3. Occu-Med could realistically bid as the prime or a meaningful subcontractor.
 
-Reject records where medical, health, workforce, safety, testing, or regulatory words appear only in clauses, background text, agency descriptions, or generic boilerplate. Reject construction, corrosion repair, painting, snow removal, parking garages, chillers, toilets, surveillance cameras, IT, laboratory equipment purchases, EEG systems, DNA extraction systems, weapons, facilities maintenance, and unrelated clinical treatment even when the notice contains incidental health or safety language.
-
 Return ONLY JSON in this shape:
-{"results":[{"index":0,"isOpportunity":true,"relevanceScore":92,"reason":"The core scope purchases occupational medical examinations and drug testing."}]}
+{"results":[{"index":0,"isOpportunity":true,"relevanceScore":92,"reason":"The core scope purchases ${profileServiceLabels()[0] ?? "a listed service"}."}]}
 
 Return exactly one result for every numbered item. Keep each reason under 25 words. Do not include markdown.
-Score relevance to Occu-Med from 0 to 100. Be conservative.
+${scoreGuidance()} Be conservative.
 
 ITEMS:
 ${items}`;
@@ -440,8 +435,8 @@ export function aggregateJudgePanelVotes(
   const approved =
     votes.length >= MIN_PANEL_SIZE &&
     yesVotes.length >= requiredYes &&
-    score >= MIN_APPROVAL_SCORE &&
-    yesScores.every((value) => value >= MIN_INDIVIDUAL_YES_SCORE);
+    score >= getRelevanceProfile().thresholds.acceptMin &&
+    yesScores.every((value) => value >= getRelevanceProfile().thresholds.acceptMin);
 
   return {
     approved,
@@ -554,8 +549,7 @@ export async function judgeStructuredOpportunities(
     }))
     .filter(
       ({ relevance }) =>
-        !relevance.rejected &&
-        relevance.score >= 65 &&
+        decideRelevance(relevance).verdict !== "reject" &&
         relevance.confidence !== "possible_adjacent",
     )
     .sort((left, right) => {

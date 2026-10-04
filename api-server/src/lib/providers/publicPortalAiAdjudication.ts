@@ -1,3 +1,4 @@
+import { getRelevanceProfile } from "../search/relevanceProfile";
 import type { NormalizedOpportunity, ProviderFetchResult } from "./types";
 import { extractOpportunitiesBatch, type AiExtraction } from "../search/aiExtract";
 import {
@@ -129,7 +130,7 @@ function preserveDeterministicMatch(
       aiAdjudicationUnavailable: extraction == null,
       aiAdjudicationDisagreed:
         extraction != null &&
-        (!extraction.isOpportunity || (extraction.relevanceScore ?? 0) < 50),
+        (!extraction.isOpportunity || (extraction.relevanceScore ?? 0) < getRelevanceProfile().thresholds.acceptMin),
       aiRejectionReason:
         extraction && !extraction.isOpportunity ? extraction.reason : undefined,
       aiRelevanceScore: extraction?.relevanceScore,
@@ -207,7 +208,7 @@ export async function adjudicatePublicPortalResult(
     const mismatch = record.rawData?.manualQueryMismatch === true;
     const aiAccepted =
       extraction?.isOpportunity === true &&
-      (extraction.relevanceScore ?? 0) >= 50;
+      (extraction.relevanceScore ?? 0) >= getRelevanceProfile().thresholds.acceptMin;
 
     // A record that already passed the deterministic portal query boundary is
     // authoritative. AI can enrich it, but a model disagreement must never make

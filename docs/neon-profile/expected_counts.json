@@ -1,0 +1,21 @@
+{
+ "terms": 1002,
+ "terms_checksum": "34435e49844a8b55f1b716802e496ce0",
+ "rules": 24,
+ "rules_checksum": "b68acd1baba683989c52de86bd483d5b",
+ "facts": 68,
+ "facts_checksum": "eed737785c2bd200d6aada04e15ba50a",
+ "policies": 5,
+ "policies_checksum": "6a50d63b07d4093520557e224c129d6b",
+ "by_type": {
+  "procurement_phrase": 333,
+  "component_term": 381,
+  "regulatory_reference": 46,
+  "workforce_signal": 37,
+  "procurement_stage_signal": 62,
+  "delivery_network_term": 62,
+  "buyer_sector_signal": 57,
+  "title_signal": 24
+ },
+ "checksum_note": "terms: md5 of sorted md5(phrase|term_type|match_strength|category); facts: sorted md5(fact_key|category|predicate|value_text|value_numeric); rules: sorted md5(rule_key|machine_action|Title-case hard_rule|priority|triggers comma-joined|title); policies: sorted md5(policy_key|applies_to|priority|instruction). Verified equal on the test branch."
+}

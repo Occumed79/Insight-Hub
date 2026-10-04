@@ -4,18 +4,15 @@ import type {
   ProviderFetchResult,
 } from "./types";
 import { composeAbortSignal } from "./abortSignals";
+import { profileLeadQueries } from "./profileQueryTerms";
 
 const GOVCON_BASE_URL = "https://govconapi.com/api/v1";
 const REQUEST_TIMEOUT_MS = 20_000;
 const FREE_SEARCH_WINDOW_DAYS = 90;
 const DEFAULT_QUERY_LIMIT = 100;
 
-const DEFAULT_QUERIES = [
-  "occupational health",
-  "drug testing",
-  "medical surveillance",
-  "pre-employment physical",
-] as const;
+// Free-tier allowance is small: ask for the first few profile lead queries per run.
+const DEFAULT_QUERY_COUNT = 4;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -158,7 +155,7 @@ function normalize(rawValue: unknown): NormalizedOpportunity | null {
 
 function queryList(keywords?: string): string[] {
   const requested = keywords?.trim();
-  return requested ? [requested] : [...DEFAULT_QUERIES];
+  return requested ? [requested] : profileLeadQueries(DEFAULT_QUERY_COUNT);
 }
 
 function upstreamError(status: number, body: string): Error {

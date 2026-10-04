@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { rfpDb as db } from "@workspace/db";
 import { opportunitiesTable } from "@workspace/db/schema";
 import { classifyResult } from "../lib/search/relevance";
+import { decideRelevance } from "../lib/search/relevanceDecision";
 import {
   canonicalSamOpportunityUrl,
   classifyOpportunityQuality,
@@ -105,8 +106,6 @@ function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
       opp.type,
       opp.solicitationNumber,
       opp.description,
-      opp.agency,
-      opp.subAgency,
     ]
       .filter(Boolean)
       .join(" "),
@@ -120,6 +119,7 @@ function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
   });
   const tags = parseTags(opp.tags);
   const score = classification.score;
+  const decision = decideRelevance(classification);
   const dateUnknown =
     tags.includes("date-unknown") ||
     !opp.postedDate ||
@@ -129,14 +129,18 @@ function relevanceView(opp: Record<string, any>, contextualAdjustment = 0) {
     opp.sourceConfidence === "medium" ||
     opp.sourceConfidence === "low"
       ? opp.sourceConfidence
-      : score >= 75
+      : decision.verdict === "accept"
         ? "high"
-        : score >= 50
+        : decision.verdict === "review"
           ? "medium"
           : "low";
   const globalAdjustment = feedbackAdjustment(opp.userConfidence);
   return {
     score,
+    // Canonical accept/review/reject decision and the thresholds it applied (Neon profile). The UI renders
+    // these; it never compares scores to cutoffs of its own.
+    verdict: decision.verdict,
+    thresholds: decision.thresholds,
     reasons: classification.reasons.slice(0, 4),
     category: classification.category,
     dateUnknown,

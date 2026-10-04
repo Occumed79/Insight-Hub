@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 import { getOccuMedPromptContext, renderPromptContext } from "./occumedPromptContext";
-import { geminiProvider, OCCUMED_PROFILE } from "../providers/gemini";
+import { geminiProvider, occumedProfileView } from "../providers/gemini";
+import { SCOPE_BLOCK_HEADER, judgeScopeBlock, scoreGuidance } from "./profileText";
+import { getRelevanceProfile } from "./relevanceProfile";
 import { groqProvider } from "../providers/groq";
 import { openrouterProvider } from "../providers/openrouter";
 import { minimaxProvider } from "../providers/minimax";
@@ -239,7 +241,15 @@ function extractionFromObject(
   };
 }
 
-const ORG_SERVICES = OCCUMED_PROFILE.services.join("; ");
+/** Occu-Med service lines for the prompt, read from the profile on every call (the profile can refresh). */
+function orgServices(): string {
+  return occumedProfileView().services.join("; ");
+}
+
+/** Scope rules (unless the profile context already carries them) plus the canonical score guidance. */
+function scopeAndScore(profileContext: string): string {
+  return [profileContext.includes(SCOPE_BLOCK_HEADER) ? "" : judgeScopeBlock(), scoreGuidance()].filter(Boolean).join("\n");
+}
 
 export function buildBatchPrompt(
   items: BatchExtractInput[],
@@ -257,14 +267,15 @@ export function buildBatchPrompt(
     .join("\n\n");
 
   return `You are the primary procurement intelligence engine for Occu-Med.
-Occu-Med services: ${ORG_SERVICES}.
+Occu-Med services: ${orgServices()}.
 Today's date: ${today}.
 ${profileContext ? `\n${profileContext}\n` : ""}
 Cloudflare Workers AI has already semantically prioritized this batch. Its score is supporting evidence only; independently verify the page itself.
 
-Analyze EVERY indexed item. Determine whether it is a CURRENTLY OPEN procurement opportunity that Occu-Med could realistically pursue. Understand semantic equivalents such as workforce health, employee medical surveillance, pre-placement examinations, respiratory protection programs, audiometric conservation, deployment medical screening, occupational testing, and provider-network administration.
+Analyze EVERY indexed item. Determine whether it is a CURRENTLY OPEN procurement opportunity that Occu-Med could realistically pursue. Understand semantic equivalents of the service lines listed above.
 
-Reject awards, expired or closed notices, news coverage, jobs, regulations, unrelated clinical care, insurance administration, generic staffing, and pages without evidence that proposals are currently accepted.
+Reject awards, expired or closed notices, news coverage, jobs, regulations, and pages without evidence that proposals are currently accepted.
+${scopeAndScore(profileContext)}
 
 Return ONLY a JSON array in the same order. Every object must include index and isOpportunity.
 Accepted objects must include title, agency, description, deadline (YYYY-MM-DD or null), estimatedValue, location, relevanceScore (0-100), and relevanceReason.
@@ -279,8 +290,9 @@ export function shouldCrossCheckExtraction(
 ): boolean {
   if (!extraction.isOpportunity) return false;
   const score = extraction.relevanceScore ?? 0;
+  // An accepted record scoring below the canonical accept threshold is internally inconsistent: verify it.
   return (
-    score < 68 ||
+    score < getRelevanceProfile().thresholds.acceptMin ||
     !extraction.agency?.trim() ||
     (extraction.description?.trim().length ?? 0) < 80
   );
@@ -307,7 +319,8 @@ function buildCrossCheckPrompt(
 
   return `Cross-check the following ambiguous ACCEPT decisions from the primary procurement analysis.
 Today: ${today}.
-${profileContext ? `\n${profileContext}\n` : ""}Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
+${profileContext ? `\n${profileContext}\n` : ""}${scoreGuidance()}
+Return ONLY {"results":[...]}. Preserve an acceptance only when the source supports a currently open procurement relevant to Occu-Med. Correct dates, agency names, descriptions, and scores. Each result must include index, isOpportunity, relevanceScore, validationReason, and corrected fields.
 
 ${blocks}`;
 }

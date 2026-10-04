@@ -24,18 +24,10 @@ import type {
 
 const USA_SPENDING_BASE = "https://api.usaspending.gov/api/v2";
 
-// NAICS codes covering Occu-Med's full service footprint
-const OCCU_MED_NAICS = [
-  "621111", // Offices of Physicians (except Mental Health) — primary
-  "621999", // All Other Miscellaneous Ambulatory Health Care Services
-  "621512", // Diagnostic Imaging Centers
-  "621310", // Offices of Chiropractors (DOT physicals)
-  "561320", // Temporary Help Services (staffed health programs)
-  "923120", // Administration of Public Health Programs
-  "621610", // Home Health Care Services (sometimes bundled)
-  "621910", // Ambulance Services (emergency response programs)
-  "621420", // Outpatient Mental Health / Substance Abuse (EAP)
-];
+// NAICS codes come from the relevance profile at call time (registered reference codes first, then the
+// profile's discovery codes); only the per-run request volume is bounded here.
+const MAX_NAICS_CODES = 12;
+const NAICS_BATCH_SIZE = 4;
 
 interface AwardResult {
   Award_ID?: string;
@@ -90,9 +82,11 @@ export class USASpendingProvider implements DataSourceProvider {
     const fmt = (d: Date) => d.toISOString().split("T")[0];
 
     // Run a search per NAICS code (batched to avoid timeouts)
+    const { getOccuMedSearchProfile } = await import("../search/occumedSearchProfile");
+    const naicsCodes = (await getOccuMedSearchProfile()).naics.slice(0, MAX_NAICS_CODES);
     const naicsBatches: string[][] = [];
-    for (let i = 0; i < OCCU_MED_NAICS.length; i += 3) {
-      naicsBatches.push(OCCU_MED_NAICS.slice(i, i + 3));
+    for (let i = 0; i < naicsCodes.length; i += NAICS_BATCH_SIZE) {
+      naicsBatches.push(naicsCodes.slice(i, i + NAICS_BATCH_SIZE));
     }
 
     for (const naicsBatch of naicsBatches) {
@@ -205,7 +199,7 @@ export class USASpendingProvider implements DataSourceProvider {
     // Build a meaningful title: "Re-Compete: [description] — [agency]"
     const descSnippet = description
       ? description.slice(0, 80).replace(/[^a-z0-9 ,.()\-\/]/gi, " ").trim()
-      : "Occupational Health Services";
+      : "Federal contract award";
 
     const isExpiringSoon = endDate && (endDate.getTime() - Date.now()) < 90 * 24 * 60 * 60 * 1000;
     const prefix = isExpiringSoon ? "Re-Compete (Expiring): " : "Active Contract: ";
@@ -232,7 +226,7 @@ export class USASpendingProvider implements DataSourceProvider {
 Incumbent: ${recipient || "Unknown"}. Contract expiring ${endDateStr ?? "TBD"} — potential re-compete opportunity.`
         : `Incumbent: ${recipient || "Unknown"}. Contract expiring ${endDateStr ?? "TBD"}.`,
       source: "usaSpending",
-            awardAmount: amount ? parseFloat(String(amount)) : undefined,
+      awardAmount: amount ? parseFloat(String(amount)) : undefined,
       awardee: recipient || undefined,
       rawData: award as Record<string, unknown>,
     };

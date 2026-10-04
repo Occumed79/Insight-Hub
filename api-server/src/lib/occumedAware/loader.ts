@@ -1,10 +1,13 @@
 /**
  * OCCU_MED_AWARE reference loader.
- * Builds the merged OccuMedReferenceModel. Falls back to static ontology on DB failure.
+ * Builds the merged OccuMedReferenceModel. Identity / scale / registration values fall back to static company
+ * facts when the DB is unreachable; every service, buyer-type and scope-instruction value is derived from the
+ * relevance profile (live Neon profile, or its verified cache; empty when unavailable), never from vocabulary kept in this file.
  */
 
 import type { AwareAgentPolicy, AwareRule, AwareRfpSearchTerm, OccuMedReferenceModel } from "./types";
 import { isOccuMedAwareConfigured, queryOccuMedAware } from "./db";
+import { getRelevanceProfile, type RelevanceProfile } from "../search/relevanceProfile";
 
 // ── Static fallback values ─────────────────────────────────────────────────────
 
@@ -29,58 +32,19 @@ const STATIC_NAICS = {
   productServiceCodes: ["Q403", "Q999"],
 };
 
-export const STATIC_SERVICES = [
-  "Pre-placement / pre-employment physical examinations and medical evaluations (EXAMQA)",
-  "Deployment medical readiness and pre/post-deployment health assessments",
-  "Fitness-for-duty and return-to-work evaluations (employment-related IME — NOT workers comp claims)",
-  "Periodic medical evaluations and surveillance (HAZWOPER, lead, asbestos, silica, hearing conservation, respirator)",
-  "DOT physicals and FMCSA medical examinations",
-  "DOT and non-DOT drug and alcohol testing (urine and oral fluid)",
-  "Respirator medical evaluations, clearance, and OSHA fit testing (qualitative and quantitative)",
-  "Audiometric testing and hearing conservation programs",
-  "Pulmonary function testing / spirometry",
-  "Immunizations and travel medicine (deployment and international assignments)",
-  "Embassy and visa medical clearance examinations",
-  "Psychological assessments",
-  "Public-safety medical services (NFPA 1582 firefighter physicals, law enforcement POST exams, CDL/DOT physicals)",
-  "Provider network and program management (15,000+ facilities, nationwide and international)",
-];
-
-const STATIC_CLIENT_TYPES = [
-  "Federal agencies and federal contractors (including defense/OCONUS deployments)",
-  "State, local, and municipal governments (public safety agencies, utilities, transit authorities)",
-  "Industrial, manufacturing, and construction employers",
-  "DOT-regulated carriers and commercial vehicle fleets",
-  "Public safety agencies (police, fire, EMS, corrections)",
-  "Healthcare organizations",
-  "Schools, universities, and special districts",
-];
-
-const STATIC_WORKERS_COMP_INSTRUCTION =
-  "Workers' compensation treatment, claims administration, MPN/provider-panel enrollment, " +
-  "utilization review, and managed care are EXCLUDED from Occu-Med's service scope. " +
-  "However, do NOT auto-reject an RFP solely because it mentions workers' compensation. " +
-  "If an RFP includes workers' comp language alongside genuine Occu-Med-relevant services " +
-  "(e.g., pre-employment exams, drug testing, DOT physicals, medical surveillance), treat it as " +
-  "relevant but flag the workers' comp component as out-of-scope.";
-
-const STATIC_IME_INSTRUCTION =
-  "Occu-Med performs employment-related Independent Medical Evaluations (IME) to determine " +
-  "whether an employee can safely return to work, continue working, or perform required job duties. " +
-  "This is fitness-for-duty work, NOT workers' compensation impairment or benefit determination. " +
-  "IME / fitness-for-duty / return-to-work evaluations are IN SCOPE. Do not reject opportunities " +
-  "containing 'independent medical examination' or 'IME' without confirming the context is " +
-  "workers' comp benefit/claim determination rather than employment fitness-for-duty.";
-
 // ── Profile builders ───────────────────────────────────────────────────────────
 
-function buildSemanticProfile(services: string[]): string {
-  const top = services.slice(0, 8).join(", ");
+/** Primary (non-adjacent) service-line labels of the profile: the one list of what Occu-Med sells. */
+function profileServiceLines(profile: RelevanceProfile): string[] {
+  return profile.categories.filter((c) => !c.adjacentOnly).map((c) => c.label);
+}
+
+function buildSemanticProfile(services: string[], profile: RelevanceProfile): string {
+  const lines = profileServiceLines(profile);
   return (
-    `Open government solicitation or RFP for occupational health and medical examination services including: ${top}. ` +
-    `Includes federal, state, local, and international procurement opportunities for DOT physicals, ` +
-    `drug and alcohol testing, audiometry, respirator clearance, pulmonary function testing, ` +
-    `medical surveillance, deployment medical readiness, immunizations, and provider-network program management.`
+    `Open government solicitation or RFP for ${STATIC_IDENTITY.dba} services including: ${services.slice(0, 8).join(", ")}. ` +
+    `Service lines: ${lines.join("; ")}. ` +
+    `Includes federal, state, local, and international procurement opportunities.`
   );
 }
 
@@ -96,7 +60,7 @@ function buildPromptCompanyContext(services: string[]): string {
 
 // ── Main loader ────────────────────────────────────────────────────────────────
 
-async function loadFromAware(): Promise<Partial<OccuMedReferenceModel>> {
+async function loadFromAware(): Promise<Partial<OccuMedReferenceModel> & { serviceNames?: string[] }> {
   const [caps, services, rules, policies, terms, facts] = await Promise.all([
     queryOccuMedAware<{ capability_key: string; service_name: string; active: boolean; scope_role: string | null }>(
       `SELECT capability_key, service_name, active, scope_role FROM occumed_core.service_capabilities ORDER BY scope_role, service_name`,
@@ -155,20 +119,7 @@ async function loadFromAware(): Promise<Partial<OccuMedReferenceModel>> {
   const rfpReviewPhrases = terms.filter((t) => t.term_type === "procurement_phrase" && t.match_strength === "review").map((t) => t.phrase);
   const rfpRegulatoryRefs = terms.filter((t) => t.term_type === "regulatory_reference" || t.term_type === "standard_reference").map((t) => t.phrase);
 
-  const wcRule = rules.find((r) => r.rule_key === "workers_comp_excluded");
-  const workersCompInstruction = wcRule
-    ? `${wcRule.rule_text} IMPORTANT: Do not auto-reject an RFP solely because it mentions workers' compensation. If an RFP includes workers' comp language alongside Occu-Med-relevant services, treat it as relevant but flag the workers' comp component as out-of-scope.`
-    : STATIC_WORKERS_COMP_INSTRUCTION;
-
-  const imePolicy = policies.find((p) =>
-    p.policy_key === "interpret_ime_as_employment_fitness_only" || p.policy_key === "ime_requires_employment_context",
-  );
-  const imeInstruction = imePolicy ? imePolicy.instruction : STATIC_IME_INSTRUCTION;
-
   const serviceNames = Array.from(new Set([...services.map((s) => s.name), ...documentedCapabilities.slice(0, 20)])).slice(0, 18);
-  const promptServiceList = serviceNames.length > 0 ? serviceNames : STATIC_SERVICES;
-  const semanticProfile = buildSemanticProfile(promptServiceList);
-  const promptCompanyContext = buildPromptCompanyContext(promptServiceList);
 
   return {
     ...identity,
@@ -185,18 +136,31 @@ async function loadFromAware(): Promise<Partial<OccuMedReferenceModel>> {
     hardRules: rules.filter((r) => r.hard_rule),
     allRules: rules,
     agentPolicies: policies,
-    semanticProfile,
+    serviceNames,
+  };
+}
+
+// Neon rule / policy identifiers that carry the workers' compensation and IME scope text.
+const WORKERS_COMP_RULE_KEY = "workers_comp_excluded";
+const IME_POLICY_KEYS = ["interpret_ime_as_employment_fitness_only", "ime_requires_employment_context"];
+
+/** Prompt strings derived from the relevance profile; `neonServices` only overrides the service list. */
+function profileDerived(profile: RelevanceProfile, neonServices: string[]) {
+  const lines = profileServiceLines(profile);
+  const promptServiceList = neonServices.length > 0 ? neonServices : lines;
+  const workersComp = profile.rules.find((r) => r.key === WORKERS_COMP_RULE_KEY);
+  const imePolicy = IME_POLICY_KEYS.map((k) => profile.policies.find((p) => p.policy_key === k)).find(Boolean);
+  return {
+    semanticProfile: buildSemanticProfile(promptServiceList, profile),
     promptServiceList,
-    promptClientTypes: STATIC_CLIENT_TYPES,
-    promptCompanyContext,
-    workersCompInstruction,
-    imeInstruction,
+    promptClientTypes: profile.targetBuyerTypes,
+    promptCompanyContext: buildPromptCompanyContext(promptServiceList),
+    workersCompInstruction: workersComp?.text ?? "",
+    imeInstruction: imePolicy?.instruction ?? "",
   };
 }
 
 function staticFallback(): OccuMedReferenceModel {
-  const semanticProfile = buildSemanticProfile(STATIC_SERVICES);
-  const promptCompanyContext = buildPromptCompanyContext(STATIC_SERVICES);
   return {
     builtAt: new Date().toISOString(),
     awareLoaded: false,
@@ -212,19 +176,20 @@ function staticFallback(): OccuMedReferenceModel {
     hardRules: [],
     allRules: [],
     agentPolicies: [],
-    semanticProfile,
-    promptServiceList: STATIC_SERVICES,
-    promptClientTypes: STATIC_CLIENT_TYPES,
-    promptCompanyContext,
-    workersCompInstruction: STATIC_WORKERS_COMP_INSTRUCTION,
-    imeInstruction: STATIC_IME_INSTRUCTION,
+    ...profileDerived(getRelevanceProfile(), []),
   };
 }
 
 export async function buildOccuMedReferenceModel(): Promise<OccuMedReferenceModel> {
   if (!isOccuMedAwareConfigured()) return staticFallback();
   try {
-    const aware = await loadFromAware();
+    // The relevance profile rides the same refresh cycle as the reference model, and the prompt strings
+    // below are derived from it, so it is refreshed before they are built.
+    const [aware] = await Promise.all([
+      loadFromAware(),
+      import("./relevanceProfileLoader").then((m) => m.ensureRelevanceProfile()).catch(() => undefined),
+    ]);
+    const derived = profileDerived(getRelevanceProfile(), aware.serviceNames ?? []);
     return {
       builtAt: new Date().toISOString(),
       awareLoaded: true,
@@ -249,12 +214,7 @@ export async function buildOccuMedReferenceModel(): Promise<OccuMedReferenceMode
       hardRules: aware.hardRules ?? [],
       allRules: aware.allRules ?? [],
       agentPolicies: aware.agentPolicies ?? [],
-      semanticProfile: aware.semanticProfile ?? buildSemanticProfile(STATIC_SERVICES),
-      promptServiceList: aware.promptServiceList ?? STATIC_SERVICES,
-      promptClientTypes: aware.promptClientTypes ?? STATIC_CLIENT_TYPES,
-      promptCompanyContext: aware.promptCompanyContext ?? buildPromptCompanyContext(STATIC_SERVICES),
-      workersCompInstruction: aware.workersCompInstruction ?? STATIC_WORKERS_COMP_INSTRUCTION,
-      imeInstruction: aware.imeInstruction ?? STATIC_IME_INSTRUCTION,
+      ...derived,
     };
   } catch (error) {
     console.warn(JSON.stringify({

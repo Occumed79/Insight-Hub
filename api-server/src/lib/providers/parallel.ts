@@ -1,3 +1,4 @@
+import { getRelevanceProfile } from "../search/relevanceProfile";
 import type {
   DataSourceProvider,
   FetchOptions,
@@ -95,7 +96,7 @@ export class ParallelProvider implements DataSourceProvider {
       source: this.name,
       providerName: "Parallel",
       status: "active" as const,
-      relevanceScore: 50,
+      relevanceScore: getRelevanceProfile().thresholds.reviewMin,
       rawData: { query, result },
     }));
     return { records: records as any, total: records.length, errors: [] };

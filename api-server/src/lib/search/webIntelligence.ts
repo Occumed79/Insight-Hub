@@ -24,6 +24,16 @@ import {
   isRfpCandidate as isRfpCandidateShared,
   type RelevanceResult,
 } from "./relevance";
+import { decideRelevance } from "./relevanceDecision";
+import { getRelevanceProfile } from "./relevanceProfile";
+import {
+  profileBooleanQueries,
+  profileExclusionOperators,
+  profileLeadPhrases,
+  profileNaturalQueries,
+  profileProcurementTerms,
+  profileScopeOperand,
+} from "./profileWebQueries";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
@@ -48,30 +58,14 @@ type SearchCandidateProvider =
   | "socrata"
   | "websearch";
 
+/** Boolean-operator queries, one per profile search bundle (rendered at call time from the Neon profile). */
 function occumedWebQueries(year: number): string[] {
-  return [
-    `("occupational health services" OR "employee health services") (RFP OR RFQ OR solicitation) (state OR city OR county OR "school district" OR university) ${year} -awarded -jobs`,
-    `("medical surveillance" OR "pre-employment physicals") (RFP OR bid OR solicitation) (state OR local OR municipal OR university) ${year} -awarded -jobs`,
-    `("drug and alcohol testing" OR "DOT physical") (RFP OR RFQ OR "request for proposal") (city OR county OR transit OR utility) ${year} -awarded -jobs`,
-    `("respirator fit testing" OR audiometric OR spirometry) (RFP OR solicitation OR bid) (government OR university OR hospital) ${year} -awarded -jobs`,
-    `("request for proposal" OR RFP) ("occupational health" OR "employee medical services") (supplier OR vendor OR subcontractor) ${year} -awarded -jobs`,
-    `("occupational medical services" OR "medical screening services") (RFP OR RFQ OR "supplier opportunity") (defense OR aerospace OR logistics OR manufacturing) ${year} -awarded -jobs`,
-    `("drug testing services" OR "fitness for duty") (RFP OR "vendor opportunity" OR procurement) (transportation OR utility OR construction OR industrial) ${year} -awarded -jobs`,
-    `("clinic network" OR "nationwide occupational health") (RFP OR "request for proposal" OR subcontract) ${year} -awarded -jobs`,
-  ];
+  return profileBooleanQueries(year);
 }
 
+/** Natural-language queries for neural engines, one per profile search bundle. */
 function exaQueries(year: number): string[] {
-  return [
-    `active government RFP for occupational health services ${year}`,
-    `open solicitation drug testing pre-employment physical services government ${year}`,
-    `government contract opportunity occupational medicine DOT physical ${year}`,
-    `LOGCAP V2X Amentum KBR subcontractor occupational health deployment medical screening ${year}`,
-    `defense contractor deployment medical clearance pre-employment physical RFP ${year}`,
-    `provider network clinic occupational health employee health government procurement ${year}`,
-    `private company RFP occupational health medical surveillance supplier ${year}`,
-    `utility transportation manufacturing RFP employee medical testing drug testing ${year}`,
-  ];
+  return profileNaturalQueries(year);
 }
 
 function boundedDateRange(value: number | undefined): number {
@@ -292,9 +286,11 @@ export async function webIntelligenceFetch(options: {
   let baseQueries = [...occumedWebQueries(runtimeYear), ...exaQueries(runtimeYear)];
   if (options.keywords?.trim()) {
     const kw = options.keywords.trim();
+    const procurement = profileProcurementTerms(getRelevanceProfile(), 5).map((t) => (/\s/.test(t) ? `"${t}"` : t)).join(" OR ");
+    const scope = profileScopeOperand();
     baseQueries.unshift(
-      `(${kw}) ("request for proposal" OR solicitation OR "bid opportunity" OR RFQ OR RFP) ("occupational health" OR "drug testing" OR "medical examination" OR "employee health") government ${runtimeYear} -awarded -"contract award"`,
-      `active open government procurement opportunity for ${kw} occupational health medical screening drug testing services ${runtimeYear}`,
+      [`(${kw})`, procurement ? `(${procurement})` : "", scope, "government", String(runtimeYear), profileExclusionOperators()].filter(Boolean).join(" "),
+      `active open government procurement opportunity for ${kw} ${profileLeadPhrases(undefined, 3).join(" ")} ${runtimeYear}`.replace(/\s+/g, " "),
     );
   }
 
@@ -485,7 +481,7 @@ export async function webIntelligenceFetch(options: {
     if (useSocrata) attempts.push({
       name: "socrata",
       isConfigured: () => socrataProvider.isConfigured(),
-      run: async (attemptSignal) => (await socrataProvider.search(options.keywords?.trim() || "procurement bids solicitations occupational health", attemptSignal ?? options.signal)).map((result) => ({
+      run: async (attemptSignal) => (await socrataProvider.search(options.keywords?.trim() || `procurement bids solicitations ${profileLeadPhrases(undefined, 1).join(" ")}`.trim(), attemptSignal ?? options.signal)).map((result) => ({
         title: result.title,
         url: result.url,
         content: result.description,
@@ -621,7 +617,7 @@ export async function webIntelligenceFetch(options: {
       if (extraction?.isOpportunity) {
         const deadline = extraction.deadline ? new Date(extraction.deadline) : undefined;
         const validDeadline = deadline && !Number.isNaN(deadline.getTime()) ? deadline : undefined;
-        if (isExpiredDeadline(validDeadline) || (extraction.relevanceScore ?? 0) < 45) {
+        if (isExpiredDeadline(validDeadline) || (extraction.relevanceScore ?? 0) < getRelevanceProfile().thresholds.reviewMin) {
           stats.expiredRejected += isExpiredDeadline(validDeadline) ? 1 : 0;
           stats.rejected++;
           return;
@@ -635,7 +631,7 @@ export async function webIntelligenceFetch(options: {
           deadlineInFuture: !!validDeadline,
           keywords: options.keywords,
         });
-        if (cls.rejected) {
+        if (decideRelevance(cls).verdict === "reject") {
           stats.rejected++;
           return;
         }
@@ -657,7 +653,7 @@ export async function webIntelligenceFetch(options: {
       }
 
       const cls = classifyResult({ title: candidate.title, snippet: candidate.content, url: candidate.url, date: candidate.dateRaw, keywords: options.keywords });
-      if (cls.rejected || cls.score < 50) {
+      if (decideRelevance(cls).verdict === "reject") {
         stats.rejected++;
         return;
       }

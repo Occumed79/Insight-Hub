@@ -11,6 +11,7 @@ import {
   isBidReadySamOpportunity,
   type SamOpportunity,
 } from "./samGovQuality";
+import { profileDirectPhrases } from "../search/occumedSearchProfile";
 import {
   buildSamGovClassificationQueries,
   type SamGovClassificationQuery,
@@ -215,7 +216,8 @@ export class SamGovProvider implements DataSourceProvider {
     const explicit = buildSamGovTitleQueries(keywords);
     if (explicit.length > 0) return explicit.slice(0, 2);
     const queries = buildSamGovAutonomousTitleQueries(autonomousQueryCursor, SAM_GOV_AUTONOMOUS_QUERY_COUNT);
-    autonomousQueryCursor = (autonomousQueryCursor + SAM_GOV_AUTONOMOUS_QUERY_COUNT) % 8;
+    // The title portfolio comes from the profile and can change size on refresh; the query builder wraps the cursor.
+    autonomousQueryCursor = (autonomousQueryCursor + SAM_GOV_AUTONOMOUS_QUERY_COUNT) % 1_000_000;
     return queries;
   }
 
@@ -227,11 +229,15 @@ export class SamGovProvider implements DataSourceProvider {
       .filter(Boolean)
       .map((title) => `"${title.replace(/"/g, "")}"`)
       .join(" OR ");
+    const profileFocus = profileDirectPhrases()
+      .slice(0, 6)
+      .map((phrase) => `"${phrase.replace(/"/g, "")}"`)
+      .join(" OR ");
     const samSearch = [
       "site:sam.gov/opp/ inurl:/view",
-      quotedFocus ? `(${quotedFocus})` : "(occupational OR medical OR health OR testing OR surveillance)",
+      quotedFocus ? `(${quotedFocus})` : profileFocus ? `(${profileFocus})` : "",
       '(solicitation OR "combined synopsis/solicitation")',
-    ].join(" ");
+    ].filter(Boolean).join(" ");
 
     try {
       const { webIntelligenceFetch } = await import("../search/webIntelligence");

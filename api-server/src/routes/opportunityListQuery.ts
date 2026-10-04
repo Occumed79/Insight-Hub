@@ -1,5 +1,4 @@
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
-import { SAM_GOV_DISCOVERY_CLASSIFICATION_CODES } from "../lib/providers/samGovTaxonomyEvidence";
+import { sql, type SQL } from "drizzle-orm";
 
 /**
  * Build a PostgreSQL text[] literal with each value kept as a bound parameter.
@@ -31,35 +30,23 @@ export function notLikeAnyText(
 }
 
 /**
- * Read-time evidence gate for the Opportunities page.
+ * Text evidence filter for the Opportunities page.
  *
- * Text relevance is always one independent path. Official SAM rows discovered
- * through an Occu-Med taxonomy classification are a second preservation path,
- * so a thin but potentially relevant SAM record can reach the downstream
- * quality classifier instead of disappearing before semantic review. The
- * classification path is additive only: unknown/new codes can still pass via
- * their actual opportunity text, and taxonomy membership alone does not make a
- * record actionable.
+ * Matches the caller-supplied service patterns against title, description and
+ * agency. It carries no relevance vocabulary or classification codes of its own:
+ * the patterns come from the caller (derived from the relevance profile), and
+ * classification-code evidence is applied by the relevance decision
+ * (`decideRelevanceWithCodes`), not by this SQL helper.
  */
 export function opportunityServiceEvidenceFilter(
   table: typeof import("@workspace/db/schema").opportunitiesTable,
   servicePatterns: readonly string[],
 ): SQL {
-  const textEvidence = likeAnyText(sql`(
+  return likeAnyText(sql`(
     lower(${table.title}) || ' ' ||
     lower(coalesce(${table.description}, '')) || ' ' ||
     lower(coalesce(${table.agency}, ''))
   )`, servicePatterns);
-
-  const samTaxonomyEvidence = and(
-    eq(table.source, "sam_gov"),
-    or(
-      inArray(table.naicsCode, [...SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.naics]),
-      inArray(table.pscCode, [...SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.psc]),
-    ),
-  );
-
-  return or(textEvidence, samTaxonomyEvidence)!;
 }
 
 /** Keep numeric constants bound while giving PostgreSQL enough type context

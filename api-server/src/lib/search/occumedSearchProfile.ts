@@ -1,15 +1,11 @@
 /**
  * The Occu-Med search profile: the NAICS/PSC codes and direct RFP phrases that
- * should steer lookups and the relevance gate. Comes from the live reference
- * profile (OCCU_MED_AWARE) merged with the built-in SAM taxonomy, so a profile
- * edit changes what is searched without a code change. Best-effort: on any
- * failure it returns the built-in taxonomy only.
+ * steer lookups. Every value comes from the Neon relevance profile (discovery
+ * codes and curated phrases) plus the registered codes in the reference facts,
+ * so a profile edit changes what is searched without a code change. If the profile is
+ * unavailable (fail closed) no codes or phrases are emitted.
  */
-import {
-  SAM_GOV_DISCOVERY_TAXONOMY,
-  type SamGovTaxonomyTier,
-} from "../providers/samGovTaxonomy";
-import { setProfileDirectPhrases } from "./relevance";
+import { getRelevanceProfile, type RelevanceProfile } from "./relevanceProfile";
 
 export interface OccuMedSearchProfile {
   naics: string[];
@@ -21,34 +17,38 @@ export interface OccuMedSearchProfile {
 const LOAD_TIMEOUT_MS = 3_000;
 const CACHE_TTL_MS = 10 * 60_000;
 const MAX_CODES = 25;
-const PRIORITY: SamGovTaxonomyTier[] = ["registered", "capability", "classification-drift", "secondary-adjacent"];
+const TIER_ORDER = ["registered", "capability", "classification-drift", "secondary-adjacent"];
 
 function uniq(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-/** Built-in codes, most important tiers first. */
-export function builtInCodes(): { naics: string[]; psc: string[] } {
-  const ordered = (entries: readonly { code: string; tier: SamGovTaxonomyTier }[]) =>
-    [...entries]
-      .sort((a, b) => PRIORITY.indexOf(a.tier) - PRIORITY.indexOf(b.tier))
-      .map((entry) => entry.code);
-  return {
-    naics: uniq(ordered(SAM_GOV_DISCOVERY_TAXONOMY.naics)),
-    psc: uniq(ordered(SAM_GOV_DISCOVERY_TAXONOMY.psc)),
-  };
+/** Discovery codes from the relevance profile, most important tiers first. Prefix families are not search codes. */
+export function profileDiscoveryCodes(profile: RelevanceProfile = getRelevanceProfile()): { naics: string[]; psc: string[] } {
+  const ordered = (system: string) =>
+    profile.discoveryCodes
+      .filter((c) => c.system.toUpperCase().startsWith(system) && c.match === "exact" && c.effect.startsWith("include"))
+      .sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier))
+      .map((c) => c.code);
+  return { naics: uniq(ordered("NAICS")), psc: uniq(ordered("PSC")) };
 }
 
-/** Pure merge: profile codes first (the team's own list), then built-ins. */
+/** Direct phrases from the relevance profile (named categories first, then uncategorised direct phrases). */
+export function profileDirectPhrases(profile: RelevanceProfile = getRelevanceProfile()): string[] {
+  return uniq([...profile.categories.flatMap((c) => c.explicit), ...profile.generalExplicit]);
+}
+
+/** Pure merge: registered/reference codes first (the team's own list), then the profile's discovery codes. */
 export function mergeSearchProfile(
-  profile: { naics: string[]; psc: string[]; directPhrases: string[] } | null,
+  reference: { naics: string[]; psc: string[] } | null,
+  profile: RelevanceProfile = getRelevanceProfile(),
 ): OccuMedSearchProfile {
-  const base = builtInCodes();
+  const base = profileDiscoveryCodes(profile);
   return {
-    naics: uniq([...(profile?.naics ?? []), ...base.naics]).slice(0, MAX_CODES),
-    psc: uniq([...(profile?.psc ?? []), ...base.psc]).slice(0, MAX_CODES),
-    directPhrases: uniq(profile?.directPhrases ?? []),
-    loaded: profile != null,
+    naics: uniq([...(reference?.naics ?? []), ...base.naics]).slice(0, MAX_CODES),
+    psc: uniq([...(reference?.psc ?? []), ...base.psc]).slice(0, MAX_CODES),
+    directPhrases: profileDirectPhrases(profile),
+    loaded: reference != null || profile.source !== "unavailable",
   };
 }
 
@@ -56,7 +56,7 @@ let cached: { value: OccuMedSearchProfile; expiresAt: number } | null = null;
 
 export async function getOccuMedSearchProfile(): Promise<OccuMedSearchProfile> {
   if (cached && Date.now() < cached.expiresAt) return cached.value;
-  let profile: { naics: string[]; psc: string[]; directPhrases: string[] } | null = null;
+  let reference: { naics: string[]; psc: string[] } | null = null;
   try {
     const { getOccuMedReference } = await import("../occumedAware/index");
     const ref = await Promise.race([
@@ -66,19 +66,16 @@ export async function getOccuMedSearchProfile(): Promise<OccuMedSearchProfile> {
       ),
     ]);
     if (ref.awareLoaded) {
-      profile = {
+      reference = {
         naics: [ref.primaryNaics, ...ref.additionalNaics].filter((code) => /^\d{6}$/.test(code)),
         psc: ref.productServiceCodes.filter((code) => /^[A-Z0-9]\d{2}\w?$/.test(code)),
-        directPhrases: ref.rfpDirectPhrases,
       };
     }
   } catch {
-    profile = null;
+    reference = null;
   }
-  const value = mergeSearchProfile(profile);
-  // The gate reads phrases synchronously, so publish them whenever we load.
-  if (profile) setProfileDirectPhrases(profile.directPhrases);
-  cached = { value, expiresAt: Date.now() + (profile ? CACHE_TTL_MS : 60_000) };
+  const value = mergeSearchProfile(reference);
+  cached = { value, expiresAt: Date.now() + (reference ? CACHE_TTL_MS : 60_000) };
   return value;
 }
 

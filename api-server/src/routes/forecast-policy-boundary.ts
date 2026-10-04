@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { Router } from "express";
 import { intelDb as db } from "@workspace/db";
 import { federalIntelItemsTable } from "@workspace/db/schema";
+import { assessIntelText } from "../lib/intelligence/profileIntelRelevance";
+import { getRelevanceProfile } from "../lib/search/relevanceProfile";
 
 const router = Router();
 const FEDERAL_REGISTER_API = "https://www.federalregister.gov/api/v1/documents.json";
@@ -77,12 +79,9 @@ export function policyFeedDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function scorePolicy(text: string): number {
-  let score = 20;
-  if (/health|medical|occupational|workforce|employee/i.test(text)) score += 25;
-  if (/small business|set.aside|service contract|professional services/i.test(text)) score += 15;
-  if (/far|dfars|acquisition regulation|clause|rule/i.test(text)) score += 10;
-  return Math.min(100, score);
+/** Policy relevance is the canonical Neon assessment of the document text; there is no policy-specific scoring. */
+function scorePolicy(entry: PolicyEntry): number {
+  return assessIntelText({ title: entry.title, text: entry.description ?? "" }).score;
 }
 
 router.get("/federal-intel/forecast", (_req, res) =>
@@ -127,8 +126,7 @@ router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
 
       let count = 0;
       for (const entry of parsed) {
-        const text = `${entry.title} ${entry.description ?? ""}`;
-        const score = scorePolicy(text);
+        const score = scorePolicy(entry);
         const dedupe = entry.documentNumber ?? entry.link ?? `${search.name}:${entry.title}`;
         const hash = createHash("sha256")
           .update(`policy-radar:${dedupe}`)
@@ -155,7 +153,7 @@ router.post("/federal-intel/policy-radar/refresh", async (req, res) => {
             status: "published",
             relatedRef: entry.documentNumber ?? search.name,
             occuMedScore: score,
-            actionTag: score >= 50 ? "monitor" : "wait",
+            actionTag: score >= getRelevanceProfile().thresholds.reviewMin ? "monitor" : "wait",
             sourceUrl: entry.link,
             rawJson: JSON.stringify(entry.raw),
             fetchedAt: now,

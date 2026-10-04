@@ -3,6 +3,9 @@ import {
   type DirectRfpPortal,
 } from "./directRfpPortals";
 import type { PortalFit } from "./portalRelevance";
+import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
+import { getRelevanceProfile, type RelevanceProfile } from "../search/relevanceProfile";
 
 export type DirectRfpPortalBuyerSector =
   | "federal_government"
@@ -81,16 +84,14 @@ const VERIFIED_DATE = "2026-07-12";
 
 const VERIFIED_OFFICIAL_EVIDENCE: Record<
   string,
-  Omit<DirectRfpPortalRelevanceRecord, "portalId" | "lastRelevanceVerified">
+  Omit<
+    DirectRfpPortalRelevanceRecord,
+    "portalId" | "lastRelevanceVerified" | "occumedServiceCategories"
+  >
 > = {
   "us-sam-gov": {
     occumedFit: "verified_high",
     buyerSector: "federal_government",
-    occumedServiceCategories: [
-      "Occupational / Employee Medical Services",
-      "Deployment / Military / Overseas Medical Readiness",
-      "Provider Network / Program Management / Reporting",
-    ],
     relevanceReasonCodes: ["portal_verified"],
     relevanceEvidence: [
       "SAM.gov has published official federal opportunities for Local Nationals Occupational Health Examinations and Federal Occupational Health clinical support.",
@@ -104,10 +105,6 @@ const VERIFIED_OFFICIAL_EVIDENCE: Record<
   "or-oregonbuys": {
     occumedFit: "verified_high",
     buyerSector: "state_government",
-    occumedServiceCategories: [
-      "Respiratory Protection / Fit Testing",
-      "Medical Surveillance / Exposure Programs",
-    ],
     relevanceReasonCodes: ["portal_verified"],
     relevanceEvidence: [
       "OregonBuys hosted an official Oregon solicitation for a respirator fit-testing system, demonstrating relevant respiratory-protection procurement activity.",
@@ -120,12 +117,6 @@ const VERIFIED_OFFICIAL_EVIDENCE: Record<
   "nc-evp": {
     occumedFit: "verified_high",
     buyerSector: "state_government",
-    occumedServiceCategories: [
-      "Pre-Employment / Post-Offer / Pre-Placement Examinations",
-      "Drug / Alcohol Testing and Program Administration",
-      "Laboratory / Diagnostic / Exam Components",
-      "Medical Suitability / Job Compatibility / Exam Review",
-    ],
     relevanceReasonCodes: ["portal_verified"],
     relevanceEvidence: [
       "North Carolina eVP published an official Department of Public Safety RFQ for pre-employment physicals, drug testing, TB testing, essential-job-function review, and medical suitability determinations.",
@@ -138,11 +129,6 @@ const VERIFIED_OFFICIAL_EVIDENCE: Record<
   "ma-commbuys": {
     occumedFit: "verified_high",
     buyerSector: "state_government",
-    occumedServiceCategories: [
-      "Occupational / Employee Medical Services",
-      "Pre-Employment / Post-Offer / Pre-Placement Examinations",
-      "Medical Surveillance / Exposure Programs",
-    ],
     relevanceReasonCodes: ["portal_verified"],
     relevanceEvidence: [
       "COMMBUYS hosted an official Employee Occupational Health Services solicitation for employee physicals, pre-placement examinations, clinical testing, fitness-for-duty review, and medical surveillance.",
@@ -154,112 +140,46 @@ const VERIFIED_OFFICIAL_EVIDENCE: Record<
   },
 };
 
-const HIGH_PROPENSITY_SECTORS = new Set<DirectRfpPortalBuyerSector>([
-  "defense",
-  "law_enforcement",
-  "fire_rescue",
-  "emergency_medical_services",
-  "corrections",
-  "juvenile_justice",
-  "transportation_department",
-  "transit_authority",
-  "airport_authority",
-  "port_authority",
-  "water_wastewater_utility",
-  "electric_energy_utility",
-  "public_works",
-  "environmental_hazmat",
-  "emergency_management",
-  "public_health",
-]);
+const NOT_A_BUYER_WORD = new Set(["and", "of", "the", "for"]);
+const words = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !NOT_A_BUYER_WORD.has(w));
 
-const SERVICE_CATEGORIES_BY_SECTOR: Partial<
-  Record<DirectRfpPortalBuyerSector, string[]>
-> = {
-  defense: [
-    "Deployment / Military / Overseas Medical Readiness",
-    "Occupational / Employee Medical Services",
-    "Provider Network / Program Management / Reporting",
-  ],
-  law_enforcement: [
-    "Public-Safety Medical Services",
-    "Pre-Employment / Post-Offer / Pre-Placement Examinations",
-    "Fitness-for-Duty / Return-to-Work / Work Capacity",
-    "Drug / Alcohol Testing and Program Administration",
-  ],
-  fire_rescue: [
-    "Public-Safety Medical Services",
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Hearing Conservation / Audiometry",
-  ],
-  emergency_medical_services: [
-    "Public-Safety Medical Services",
-    "Occupational / Employee Medical Services",
-    "Immunizations / Travel Health",
-  ],
-  corrections: [
-    "Public-Safety Medical Services",
-    "Pre-Employment / Post-Offer / Pre-Placement Examinations",
-    "Drug / Alcohol Testing and Program Administration",
-  ],
-  juvenile_justice: [
-    "Pre-Employment / Post-Offer / Pre-Placement Examinations",
-    "Drug / Alcohol Testing and Program Administration",
-    "Medical Suitability / Job Compatibility / Exam Review",
-  ],
-  transportation_department: [
-    "Drug / Alcohol Testing and Program Administration",
-    "Public-Safety Medical Services",
-    "Medical Surveillance / Exposure Programs",
-  ],
-  transit_authority: [
-    "Drug / Alcohol Testing and Program Administration",
-    "Public-Safety Medical Services",
-    "Fitness-for-Duty / Return-to-Work / Work Capacity",
-  ],
-  airport_authority: [
-    "Drug / Alcohol Testing and Program Administration",
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-  ],
-  port_authority: [
-    "Drug / Alcohol Testing and Program Administration",
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Hearing Conservation / Audiometry",
-  ],
-  water_wastewater_utility: [
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Hearing Conservation / Audiometry",
-  ],
-  electric_energy_utility: [
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Hearing Conservation / Audiometry",
-  ],
-  public_works: [
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Drug / Alcohol Testing and Program Administration",
-  ],
-  environmental_hazmat: [
-    "Medical Surveillance / Exposure Programs",
-    "Respiratory Protection / Fit Testing",
-    "Laboratory / Diagnostic / Exam Components",
-  ],
-  emergency_management: [
-    "Public-Safety Medical Services",
-    "Respiratory Protection / Fit Testing",
-    "Immunizations / Travel Health",
-  ],
-  public_health: [
-    "Occupational / Employee Medical Services",
-    "Immunizations / Travel Health",
-    "Laboratory / Diagnostic / Exam Components",
-  ],
-};
+/**
+ * High-propensity buyer test, driven by the profile's buyer-sector rows (propensity "high"). A portal is a
+ * high-propensity buyer when its own text names one of those buyers, or when its inferred sector label is
+ * made of the same words as one of them (for example `transit_authority` / "transit authority").
+ */
+function isHighPropensityBuyer(
+  portal: DirectRfpPortal,
+  sector: DirectRfpPortalBuyerSector,
+  profile: RelevanceProfile,
+): boolean {
+  const text = ` ${words(normalizedPortalText(portal)).join(" ")} `;
+  const sectorWords = new Set(words(sector));
+  return profile.buyerSectors
+    .filter((b) => b.propensity === "high")
+    .some((b) => {
+      const phrase = words(b.phrase);
+      if (phrase.length === 0) return false;
+      return text.includes(` ${phrase.join(" ")} `) || phrase.every((w) => sectorWords.has(w));
+    });
+}
+
+/** Profile categories the portal evidence sentence supports, by running the one classifier over it. */
+function categoryLabelsSupportedBy(evidence: string, profile: RelevanceProfile): string[] {
+  const result = classifyResult({ title: evidence, snippet: "", allowHistorical: true });
+  if (decideRelevance(result, profile).verdict === "reject") return [];
+  const known = new Set(profile.categories.map((c) => c.label));
+  return result.matchedServiceCategories.filter((label) => known.has(label));
+}
+
+/** A high-propensity buyer population has recurring need across the profile's primary service lines. */
+function primaryCategoryLabels(profile: RelevanceProfile): string[] {
+  return profile.categories.filter((c) => !c.adjacentOnly).map((c) => c.label);
+}
 
 function normalizedPortalText(portal: DirectRfpPortal): string {
   return `${portal.id} ${portal.name} ${portal.jurisdiction} ${portal.notes}`.toLowerCase();
@@ -320,19 +240,24 @@ export function inferPortalBuyerSector(
 
 function buildBaselineRecord(
   portal: DirectRfpPortal,
+  profile: RelevanceProfile,
 ): DirectRfpPortalRelevanceRecord {
   const verified = VERIFIED_OFFICIAL_EVIDENCE[portal.id];
   if (verified) {
     return {
       portalId: portal.id,
       ...verified,
+      occumedServiceCategories: categoryLabelsSupportedBy(
+        verified.relevanceEvidence.join(" "),
+        profile,
+      ),
       lastRelevanceVerified: VERIFIED_DATE,
     };
   }
 
   const buyerSector = inferPortalBuyerSector(portal);
   const officialEvidenceUrl = portal.searchUrl || portal.url;
-  const likely = HIGH_PROPENSITY_SECTORS.has(buyerSector);
+  const likely = isHighPropensityBuyer(portal, buyerSector, profile);
   const hasOfficialEvidence = Boolean(
     officialEvidenceUrl &&
       portal.domain &&
@@ -346,7 +271,7 @@ function buildBaselineRecord(
       portalId: portal.id,
       occumedFit: "likely",
       buyerSector,
-      occumedServiceCategories: SERVICE_CATEGORIES_BY_SECTOR[buyerSector] ?? [],
+      occumedServiceCategories: primaryCategoryLabels(profile),
       relevanceReasonCodes: ["portal_likely"],
       relevanceEvidence: [
         `${portal.name} is an official ${buyerSector.replace(/_/g, " ")} procurement source. That buyer population has recurring occupational-medical, safety-sensitive, exposure-surveillance, public-safety, or regulated-testing needs; no direct matching solicitation is claimed by this baseline classification.`,
@@ -388,18 +313,21 @@ function buildBaselineRecord(
   };
 }
 
-export const DIRECT_RFP_PORTAL_RELEVANCE_RECORDS: DirectRfpPortalRelevanceRecord[] =
-  DIRECT_RFP_PORTALS.map(buildBaselineRecord).sort((a, b) =>
-    a.portalId.localeCompare(b.portalId),
-  );
+/** Records for every direct portal, derived from the given relevance profile. */
+export function buildDirectRfpPortalRelevanceRecords(
+  profile: RelevanceProfile = getRelevanceProfile(),
+): DirectRfpPortalRelevanceRecord[] {
+  return DIRECT_RFP_PORTALS.map((portal) =>
+    buildBaselineRecord(portal, profile),
+  ).sort((a, b) => a.portalId.localeCompare(b.portalId));
+}
 
-export const DIRECT_RFP_PORTAL_RELEVANCE_BY_ID = new Map(
-  DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.map((record) => [record.portalId, record]),
-);
-
-export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
-  DIRECT_RFP_PORTALS.map((portal) => {
-    const record = DIRECT_RFP_PORTAL_RELEVANCE_BY_ID.get(portal.id);
+function enrichPortals(
+  records: DirectRfpPortalRelevanceRecord[],
+): EnrichedDirectRfpPortal[] {
+  const byId = new Map(records.map((record) => [record.portalId, record]));
+  return DIRECT_RFP_PORTALS.map((portal) => {
+    const record = byId.get(portal.id);
     if (!record) {
       throw new Error(`Missing Occu-Med relevance record for ${portal.id}`);
     }
@@ -415,6 +343,32 @@ export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
       reviewMethod: record.reviewMethod,
     };
   });
+}
+
+// Module-load snapshot kept for static consumers. Search ordering reads `currentEnrichedPortals()` instead,
+// which rebuilds when the relevance profile is refreshed from Neon.
+const loadTimeProfile = getRelevanceProfile();
+export const DIRECT_RFP_PORTAL_RELEVANCE_RECORDS: DirectRfpPortalRelevanceRecord[] =
+  buildDirectRfpPortalRelevanceRecords(loadTimeProfile);
+
+export const DIRECT_RFP_PORTAL_RELEVANCE_BY_ID = new Map(
+  DIRECT_RFP_PORTAL_RELEVANCE_RECORDS.map((record) => [record.portalId, record]),
+);
+
+export const ENRICHED_DIRECT_RFP_PORTALS: EnrichedDirectRfpPortal[] =
+  enrichPortals(DIRECT_RFP_PORTAL_RELEVANCE_RECORDS);
+
+let enrichedFor: RelevanceProfile = loadTimeProfile;
+let enrichedCache: EnrichedDirectRfpPortal[] = ENRICHED_DIRECT_RFP_PORTALS;
+/** Enriched portals for the profile in force now (memoized per profile object). */
+export function currentEnrichedPortals(): EnrichedDirectRfpPortal[] {
+  const profile = getRelevanceProfile();
+  if (enrichedFor !== profile) {
+    enrichedCache = enrichPortals(buildDirectRfpPortalRelevanceRecords(profile));
+    enrichedFor = profile;
+  }
+  return enrichedCache;
+}
 
 const FIT_ORDER: Record<PortalFit | "unclassified", number> = {
   verified_high: 0,
@@ -434,7 +388,7 @@ export function enrichedDirectRfpPortalsForOccuMedSearch(
 ): EnrichedDirectRfpPortal[] {
   const includeTier3 = options.includeTier3 ?? true;
   const minimum = options.minimumFit ? FIT_ORDER[options.minimumFit] : null;
-  return ENRICHED_DIRECT_RFP_PORTALS.filter(
+  return currentEnrichedPortals().filter(
     (portal) =>
       portal.level !== "federal" &&
       (includeTier3 || portal.tier !== 3) &&

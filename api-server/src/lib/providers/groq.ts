@@ -12,7 +12,7 @@ import type {
   ProviderStatus,
 } from "./types";
 import { resolveCredential } from "../config/providerConfig";
-import { OCCUMED_PROFILE, OCCUMED_DEFAULT_QUERIES } from "./gemini";
+import { occumedDefaultQueries, occumedExtractionGuidance, occumedScopeSummary } from "./gemini";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
 
 const GROQ_BASE = "https://api.groq.com/openai/v1";
@@ -94,7 +94,7 @@ export class GroqProvider implements DataSourceProvider {
 
   async generateSearchQueries(customKeywords?: string): Promise<string[]> {
     const QUERY_YEAR = new Date().getFullYear();
-    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.\n\nOccu-Med provides: ${OCCUMED_PROFILE.services.slice(0, 8).join("; ")}.\nThey serve: ${OCCUMED_PROFILE.clientTypes.join(", ")}. Workers' compensation treatment is excluded. Employment-related fitness-for-duty and IME evaluations are in scope.\n${customKeywords ? `User focus: ${customKeywords}` : ""}\n\nGenerate exactly 8 targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.\n\nRules:\n- Google search strings only (not URLs)\n- Include year ${QUERY_YEAR} in each query\n- Mix different Occu-Med service lines\n- Use terms: RFP, solicitation, bid, contract, procurement\n\nRespond ONLY with a JSON array: ["query1", ..., "query8"]`;
+    const prompt = `You are a procurement intelligence specialist helping Occu-Med find government contracting opportunities.\n\n${occumedScopeSummary()}\n${customKeywords ? `User focus: ${customKeywords}` : ""}\n\nGenerate exactly 8 targeted Google search queries to find ACTIVE RFPs and solicitations for ${QUERY_YEAR}.\n\nRules:\n- Google search strings only (not URLs)\n- Include year ${QUERY_YEAR} in each query\n- Mix different Occu-Med service lines\n- Use terms: RFP, solicitation, bid, contract, procurement\n\nRespond ONLY with a JSON array: ["query1", ..., "query8"]`;
 
     try {
       const text = await this.complete(prompt, 600);
@@ -102,7 +102,7 @@ export class GroqProvider implements DataSourceProvider {
       const queries = JSON.parse(cleaned);
       if (Array.isArray(queries) && queries.length > 0) return queries as string[];
     } catch {}
-    return OCCUMED_DEFAULT_QUERIES;
+    return occumedDefaultQueries(QUERY_YEAR);
   }
 
   async extractOpportunityFromWebResult(
@@ -122,7 +122,7 @@ export class GroqProvider implements DataSourceProvider {
     reason?: string;
   } | null> {
     const today = new Date().toISOString().split("T")[0];
-    const prompt = `Procurement analyst for Occu-Med (occupational health services).\nToday: ${today}\n\nIs this an ACTIVE, OPEN solicitation Occu-Med could bid on?\n\nTitle: ${title}\nURL: ${url}\nContent: ${content.slice(0, 2000)}\n\nIf YES, respond with JSON only:\n{"isOpportunity":true,"title":"...","agency":"...","description":"...","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city/state or null","relevanceScore":0-100,"relevanceReason":"..."}\n\nIf NO:\n{"isOpportunity":false,"reason":"..."}`;
+    const prompt = `Procurement analyst for Occu-Med.\nToday: ${today}\n\nIs this an ACTIVE, OPEN solicitation Occu-Med could bid on?\n${occumedExtractionGuidance()}\n\nTitle: ${title}\nURL: ${url}\nContent: ${content.slice(0, 2000)}\n\nIf YES, respond with JSON only:\n{"isOpportunity":true,"title":"...","agency":"...","description":"...","deadline":"YYYY-MM-DD or null","estimatedValue":number or null,"location":"city/state or null","relevanceScore":0-100,"relevanceReason":"..."}\n\nIf NO:\n{"isOpportunity":false,"reason":"..."}`;
 
     try {
       const text = await this.complete(prompt, 400);

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { serperProvider } from "../providers/serper";
 import { langsearchProvider } from "../providers/langsearch";
+import { assessIntelText } from "./profileIntelRelevance";
+import { profileLeadQueries, profileSemanticQuery, quotedOr } from "../providers/profileQueryTerms";
 import {
   recordProviderFailure,
   recordProviderSuccess,
@@ -61,8 +63,6 @@ const OFFICIAL_HOSTS = [
 
 const FORECAST_RE =
   /forecast|planned procurement|planned acquisition|anticipated procurement|acquisition planning|contracting opportunities/i;
-const OCCUMED_RE =
-  /occupational health|occupational medicine|medical exam|physical exam|drug testing|medical surveillance|audiogram|audiometric|spirometry|respirator|employee health|workforce health|deployment medical|vaccination|immunization|laboratory testing/i;
 
 function hostAllowed(url: string): boolean {
   try {
@@ -143,7 +143,10 @@ function normalizeHit(hit: SearchHit): AgencyForecastLead | null {
     return null;
   }
   const combined = `${hit.title} ${hit.text}`.replace(/\s+/g, " ").trim();
-  if (!FORECAST_RE.test(combined) || !OCCUMED_RE.test(combined)) return null;
+  if (!FORECAST_RE.test(combined)) return null;
+  // Occu-Med relevance is the canonical profile decision (no local service vocabulary).
+  const assessment = assessIntelText({ title: hit.title, text: hit.text, url: hit.url, date: hit.date });
+  if (assessment.verdict === "reject") return null;
   const hash = createHash("sha256")
     .update(`${hit.url}|${hit.title}`)
     .digest("hex")
@@ -178,13 +181,13 @@ function normalizeHit(hit: SearchHit): AgencyForecastLead | null {
 
 function queries(focus?: string): string[] {
   const year = new Date().getUTCFullYear();
-  const scope = focus?.trim()
-    ? focus.trim().slice(0, 120)
-    : "occupational health medical examinations drug testing medical surveillance";
+  // Default scope and the third query come from the relevance profile's lead queries.
+  const scope = focus?.trim() ? focus.trim().slice(0, 120) : profileSemanticQuery(120);
+  const leads = profileLeadQueries(3);
   return [
     `Forecast of Contracting Opportunities ${scope} acquisitiongateway.gov ${year}`,
     `federal agency acquisition forecast ${scope} ${year}`,
-    `planned procurement employee health occupational medicine ${year}`,
+    ...(leads.length > 0 ? [`planned procurement (${quotedOr(leads)}) ${year}`] : []),
   ];
 }
 

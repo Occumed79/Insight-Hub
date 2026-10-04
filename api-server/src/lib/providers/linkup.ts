@@ -1,3 +1,4 @@
+import { getRelevanceProfile } from "../search/relevanceProfile";
 import type {
   DataSourceProvider,
   FetchOptions,
@@ -96,7 +97,7 @@ export class LinkupProvider implements DataSourceProvider {
       source: this.name,
       providerName: "Linkup",
       status: "active" as const,
-      relevanceScore: 50,
+      relevanceScore: getRelevanceProfile().thresholds.reviewMin,
       rawData: { query, result },
     }));
     return { records: records as any, total: records.length, errors: [] };

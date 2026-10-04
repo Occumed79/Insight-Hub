@@ -1,5 +1,5 @@
 import { cloudflareWorkersAi } from "../providers/cloudflareWorkersAi";
-import { OCCUMED_SEMANTIC_PROFILE } from "./semanticRerank";
+import { occumedSemanticProfile } from "./semanticRerank";
 
 const EMBEDDING_BATCH_SIZE = 48;
 const DIRECT_RERANK_LIMIT = 80;
@@ -89,8 +89,8 @@ function candidateText(candidate: SemanticPriorityCandidate): string {
 function semanticQuery(focus?: string): string {
   const normalized = focus?.trim();
   return normalized
-    ? `${OCCUMED_SEMANTIC_PROFILE} Current search focus: ${normalized}. Rank currently open procurement evidence above generic mentions.`
-    : `${OCCUMED_SEMANTIC_PROFILE} Rank currently open procurement evidence above generic mentions.`;
+    ? `${occumedSemanticProfile()} Current search focus: ${normalized}. Rank currently open procurement evidence above generic mentions.`
+    : `${occumedSemanticProfile()} Rank currently open procurement evidence above generic mentions.`;
 }
 
 function deduplicateBySemanticEvidence<T extends SemanticPriorityCandidate>(

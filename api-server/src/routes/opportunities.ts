@@ -6,13 +6,13 @@ import { importFromCsv } from "../lib/csv-service";
 import { jinaProvider } from "../lib/providers/jina";
 import { groqProvider } from "../lib/providers/groq";
 import { openrouterProvider } from "../lib/providers/openrouter";
-import {
-  isSamGovEvidenceRecord,
-  samGovOpportunityClassificationEvidence,
-  SAM_GOV_DISCOVERY_CLASSIFICATION_CODES,
-} from "../lib/providers/samGovTaxonomyEvidence";
+import { samGovOpportunityClassificationEvidence } from "../lib/providers/samGovTaxonomyEvidence";
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
+import { decideRelevanceWithCodes } from "../lib/search/relevanceDecision";
+import { getRelevanceProfile } from "../lib/search/relevanceProfile";
+import { matchedServiceLines } from "../lib/search/profileServiceLines";
+import { judgeScopeBlock, profileServiceLabels } from "../lib/search/profileText";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
 import {
   cancelManualIngestion,
@@ -25,12 +25,7 @@ import {
   startManualIngestion,
 } from "../lib/ingestion/manualIngestion";
 import { createStartIngestionHandler } from "./opportunityIngestionHandlers";
-import {
-  notLikeAnyText,
-  opportunityListErrorDetail,
-  opportunityListSelection,
-  opportunityServiceEvidenceFilter,
-} from "./opportunityListQuery";
+import { opportunityListErrorDetail, opportunityListSelection } from "./opportunityListQuery";
 import multer from "multer";
 import { OpportunityQualityPageAccumulator, type OpportunityViewMode } from "../lib/opportunityQuality";
 
@@ -54,101 +49,6 @@ function feedbackAdjustment(userConfidence: unknown): number {
   return Math.max(-FEEDBACK_RANK_WEIGHT, Math.min(FEEDBACK_RANK_WEIGHT, delta));
 }
 
-// ── Hard-reject: ANY match → discard immediately ──────────────────────────────
-// Expanded significantly to block all the junk categories that keep slipping through.
-const HARD_REJECT_SIGNALS = [
-  // Emergency / EMS
-  "ambulance", "emergency medical services", " ems ", "paramedic", "emt ", "first responder",
-  // Nursing / staffing noise
-  "lvn", "lpn", "registered nurse", " rn ", "nursing services", "nurse staffing",
-  "medical staffing", "staff augmentation", "temporary staffing", "per diem staff",
-  "locum", "travel nurse",
-  // Job postings (not contracts)
-  "job posting", "job opening", "career opportunity", "now hiring", " hiring ",
-  "position available", "employment opportunity", "job advertisement", "job vacancy",
-  "we are looking for", "apply now", "submit resume", "send resume",
-  // Blanket / consulting noise
-  "blanket purchase agreement", "regional medical consultant", "medical consultant",
-  "disability adjudication", "disability determination", "social security disability",
-  // NOTE: "independent medical examination" removed — Occu-Med performs employment-related IME / fitness-for-duty.
-  // Only workers' comp claim panels are excluded, handled contextually below.
-  "ime panel",
-  // Pharmacy / dispensing / lab
-  "pharmacy", "pharmaceutical", "marijuana", "cannabis", "dispensary",
-  "phlebotomist", "perfusion", "ray tech", "x-ray tech", "radiology technologist",
-  "mri tech", "ct tech", "sonographer", "ultrasound technologist",
-  "dental assistant", "dental hygienist", "dental care",
-  // Behavioral / mental health
-  "mental health therapy", "behavioral health treatment", "substance abuse treatment",
-  "addiction treatment", "detox program", "psychiatric", "psychotherapy",
-  "counseling services", "crisis intervention", "suicide prevention",
-  "childrens mental health", "children's mental health",
-  // Insurance / claims / benefits admin
-  "health insurance", "health benefits", "claims administration", "claims data",
-  "medical claims", "insurance enrollment", "benefits administration",
-  "cobra administration", "hmo", "health plan",
-  // Already awarded / closed
-  "contract awarded", "award notice", "awarded to", "selected vendor",
-  "notice of award", "bid tabulation", "intent to award", "sole source award",
-  "contract modification", "delivery order", "task order modification",
-  // Nutrition / food / non-occ-health
-  "nutrition program", "food service", "meal delivery", "wic program",
-  "school lunch", "head start nutrition",
-  // IT / software (not medical)
-  "electronic health record", "ehr implementation", "emr system", "hospital information",
-  "telehealth platform", "telemedicine software",
-  // Misc junk
-  "seaborn", "needed", "veterinary", "animal health", "pest control",
-  "janitorial", "landscaping", "construction",
-];
-
-// ── Must have at least ONE of these to pass ───────────────────────────────────
-// Tightened to Occu-Med's actual service lines only.
-const OCCUMED_SERVICE_SIGNALS = [
-  // Core occupational health
-  "occupational health", "occupational medicine", "occupational health services",
-  "occupational medical", "occ health", "occmed",
-  // Drug & alcohol testing
-  "drug testing", "drug screening", "drug test", "alcohol testing",
-  "dot drug", "dot alcohol", "substance abuse testing", "random drug testing",
-  "urine drug screen", "hair follicle test", "breath alcohol",
-  // Physical examinations
-  "dot physical", "dot examination", "dot medical", "fmcsa physical",
-  "pre-employment physical", "pre employment physical", "pre-placement physical",
-  "annual physical", "periodic medical", "medical fitness",
-  "return to work physical", "return to duty physical",
-  // Employee health programs
-  "employee health services", "employee health program", "workplace health",
-  "workforce health", "worker health screening",
-  // Surveillance & monitoring
-  "medical surveillance", "health surveillance", "biological monitoring",
-  "bloodborne pathogen", "hazmat medical", "hazardous material medical",
-  // Fitness for duty
-  "fit for duty", "fitness for duty", "work capacity evaluation",
-  "functional capacity", "work hardening",
-  // Respiratory / pulmonary
-  "respirator fit", "respirator fit test", "fit testing", "pulmonary function",
-  "spirometry", "pfft", "quantitative fit",
-  // Hearing / audiometry
-  "audiogram", "audiometric", "hearing conservation", "hearing test",
-  "noise-induced hearing",
-  // Immunization / preventive
-  "vaccination", "immunization", "flu shot", "influenza vaccination",
-  "titer", "tb test", "tuberculosis testing", "ppd test", "quantiferon",
-  "covid testing", "respirator medical evaluation",
-  // Military / government specific
-  "deployment medical", "pre-deployment", "periodic health assessment",
-  "separation physical", "military physical", "pha exam",
-];
-
-function normalizeForQuality(value: string): string {
-  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
-}
-
-function hasSignal(text: string, signals: string[]): boolean {
-  return signals.some((signal) => text.includes(normalizeForQuality(signal)));
-}
-
 function hasStaleYearOnly(raw: string): boolean {
   const years = Array.from(raw.matchAll(/\b20\d{2}\b/g)).map((m) => Number(m[0]));
   if (years.length === 0) return false;
@@ -157,16 +57,11 @@ function hasStaleYearOnly(raw: string): boolean {
   return hasOld && !hasCurrentOrFuture;
 }
 
-function hasSamDiscoveryClassification(opp: any): boolean {
-  if (!isSamGovEvidenceRecord(opp)) return false;
-  const naics = typeof opp.naicsCode === "string" ? opp.naicsCode.trim().toUpperCase() : "";
-  const psc = typeof opp.pscCode === "string" ? opp.pscCode.trim().toUpperCase() : "";
-  return (
-    (Boolean(naics) && SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.naics.includes(naics as any)) ||
-    (Boolean(psc) && SAM_GOV_DISCOVERY_CLASSIFICATION_CODES.psc.includes(psc as any))
-  );
-}
-
+/**
+ * Read-time gate. Whether a record is Occu-Med relevant is the one canonical Neon decision (rules + thresholds +
+ * classification-code discovery facts); this function only adds source hygiene (untitled stubs, stale-year-only
+ * records), which is date/identity validation and not relevance vocabulary.
+ */
 function shouldShowOpportunity(opp: any): boolean {
   const raw = [
     opp.title,
@@ -177,7 +72,6 @@ function shouldShowOpportunity(opp: any): boolean {
     opp.solicitationNumber,
     opp.samUrl,
   ].filter(Boolean).join(" ");
-  const text = normalizeForQuality(raw);
 
   // Reject untitled / suspiciously short titles
   const title = (opp.title ?? "").trim();
@@ -186,20 +80,27 @@ function shouldShowOpportunity(opp: any): boolean {
   // Reject stale-year-only records (old archived RFPs from past years)
   if (hasStaleYearOnly(raw)) return false;
 
-  // Hard reject — any match on these = instant discard
-  if (hasSignal(text, HARD_REJECT_SIGNALS)) return false;
-
-  // Text relevance and taxonomy discovery are independent positive paths. A
-  // SAM taxonomy match preserves the record for downstream quality reasoning;
-  // it does not automatically make the opportunity actionable.
-  if (!hasSignal(text, OCCUMED_SERVICE_SIGNALS) && !hasSamDiscoveryClassification(opp)) return false;
-
-  // Extra: reject if title alone contains obvious job-ad language
-  const titleNorm = normalizeForQuality(title);
-  const JOB_TITLE_SIGNALS = [" wanted", " needed", "apply ", "we are hiring", "position ", "vacancy"];
-  if (JOB_TITLE_SIGNALS.some(s => titleNorm.includes(s))) return false;
-
-  return true;
+  const result = classifyResult({
+    title,
+    snippet: [
+      opp.type,
+      opp.solicitationNumber,
+      opp.description,
+      opp.naicsDescription,
+      ...samGovOpportunityClassificationEvidence(opp),
+    ].filter(Boolean).join(" "),
+    url: opp.samUrl,
+    date: opp.postedDate,
+    deadlineInFuture: Boolean(
+      opp.responseDeadline && new Date(opp.responseDeadline).getTime() > Date.now(),
+    ),
+    allowHistorical: true,
+  });
+  const decision = decideRelevanceWithCodes(result, [
+    { system: "NAICS 2022", code: opp.naicsCode },
+    { system: "PSC", code: opp.pscCode },
+  ]);
+  return decision.verdict !== "reject";
 }
 
 // Shared with enrichment and read-time presentation. Manual ingestion applies
@@ -270,10 +171,11 @@ function buildRelevanceView(opp: any) {
 
   const dateUnknown = tags.includes("date-unknown");
   const stale = tags.includes("stale") || cls.stale;
+  const thresholds = getRelevanceProfile().thresholds;
   const confidence: "high" | "medium" | "low" =
     opp.sourceConfidence === "high" || opp.sourceConfidence === "medium" || opp.sourceConfidence === "low"
       ? opp.sourceConfidence
-      : score >= 75 ? "high" : score >= 50 ? "medium" : "low";
+      : score >= thresholds.acceptMin ? "high" : score >= thresholds.reviewMin ? "medium" : "low";
 
   return {
     score,
@@ -384,32 +286,9 @@ router.get("/opportunities", async (req, res) => {
     // Rule 1: title must be >= 10 characters (catches untitled stubs).
     conditions.push(sql`length(${opportunitiesTable.title}) >= 10` as any);
 
-    // Rule 2: preserve records supported either by actual Occu-Med service text
-    // OR by an official SAM classification in the discovery taxonomy. Taxonomy
-    // membership only gets the row to downstream quality reasoning; it is not
-    // an automatic relevance or actionable decision.
-    {
-      const servicePatterns = OCCUMED_SERVICE_SIGNALS.map((s) => `%${s}%`);
-      conditions.push(
-        opportunityServiceEvidenceFilter(opportunitiesTable, servicePatterns) as any,
-      );
-    }
-
-    // Rule 3: Hard-reject signals — none may appear in the combined text.
-    // NOT (... LIKE ANY(ARRAY[...])) — same safe bound-array pattern.
-    {
-      const rejectPatterns = HARD_REJECT_SIGNALS.map((s) => `%${s}%`);
-      conditions.push(
-        notLikeAnyText(sql`(
-          lower(${opportunitiesTable.title}) || ' ' ||
-          lower(coalesce(${opportunitiesTable.description}, '')) || ' ' ||
-          lower(coalesce(${opportunitiesTable.agency}, '')) || ' ' ||
-          lower(coalesce(${opportunitiesTable.providerName}, '')) || ' ' ||
-          lower(coalesce(${opportunitiesTable.samUrl}, ''))
-        )`, rejectPatterns) as any,
-      );
-    }
-
+    // Occu-Med relevance is not decided in SQL. The canonical Neon decision (rules, thresholds, discovery
+    // codes) is applied to every candidate row in the batch loop below via shouldShowOpportunity().
+    //
     // Rule 4: Stale-year-only records.
     // hasStaleYearOnly() rejects records whose concatenated text mentions ONLY
     // years before the current year, with no current or near-future year present.
@@ -440,22 +319,6 @@ router.get("/opportunities", async (req, res) => {
           ${wideText} ~ '\\m20[0-9]{2}\\M'
           AND NOT ${wideText} ~ ${`\\m(${CURRENT_YEAR}|${CURRENT_YEAR + 1}|${CURRENT_YEAR + 2})\\M`}
         )` as any,
-      );
-    }
-
-    // Rule 5: Job-advertisement title signals (title-only check, mirrors the
-    // JS JOB_TITLE_SIGNALS check in shouldShowOpportunity).
-    // The normalised title is lower-cased and padded with a leading/trailing
-    // space to match the original ` signal ` boundary logic.
-    {
-      const jobTitlePatterns = [" wanted", " needed", "apply ", "we are hiring", "position ", "vacancy"].map(
-        (s) => `%${s}%`,
-      );
-      conditions.push(
-        notLikeAnyText(
-          sql`(' ' || lower(${opportunitiesTable.title}) || ' ')`,
-          jobTitlePatterns,
-        ) as any,
       );
     }
 
@@ -490,7 +353,7 @@ router.get("/opportunities", async (req, res) => {
         .orderBy(asc(opportunitiesTable.id))
         .limit(batchSize);
       if (batch.length === 0) break;
-      batch.map(mapOpportunity).forEach((row: any) => qualityPageAccumulator.add(row));
+      batch.filter(shouldShowOpportunity).map(mapOpportunity).forEach((row: any) => qualityPageAccumulator.add(row));
       if (batch.length < batchSize) break;
       cursor = String(batch[batch.length - 1].id);
     }
@@ -675,16 +538,8 @@ function formatCurrency(value: number | string | null | undefined): string | nul
 }
 
 function detectServiceLines(text: string): string[] {
-  const t = text.toLowerCase();
-  const lines: string[] = [];
-  if (/(drug test|drug screen|alcohol test|substance abuse|dot drug)/.test(t)) lines.push("Drug & alcohol testing");
-  if (/(dot physical|dot medical|dot exam|pre-employment physical|pre employment physical|medical exam|fitness for duty)/.test(t)) lines.push("Physical exams / fitness for duty");
-  if (/(respirator fit|fit test|pft|spirometry|pulmonary function)/.test(t)) lines.push("Respiratory / PFT fit testing");
-  if (/(audiogram|hearing conservation|hearing test)/.test(t)) lines.push("Hearing / audiograms");
-  if (/(vaccine|titer|tb test|tuberculosis|flu shot|immunization)/.test(t)) lines.push("Vaccines / titers / TB testing");
-  if (/(medical surveillance|osha|occupational health|occupational medicine)/.test(t)) lines.push("Occupational health / medical surveillance");
-  if (lines.length === 0) lines.push("General occupational health");
-  return lines;
+  // Service lines are the Neon profile's categories evidenced by the text.
+  return matchedServiceLines(text);
 }
 
 function buildFallbackSummary(opp: any) {
@@ -702,7 +557,7 @@ function buildFallbackSummary(opp: any) {
 
   const fitReason = opp.relevance?.reasons?.length
     ? opp.relevance.reasons.slice(0, 2).join(" ")
-    : `Mentions ${lines.slice(0, 2).join(" and ") || "occupational health"}.`;
+    : `Mentions ${lines.slice(0, 2).join(" and ") || "the Occu-Med service profile"}.`;
 
   const missing: string[] = [];
   if (!due) missing.push("Response deadline");
@@ -744,15 +599,11 @@ function buildSummaryPrompt(opp: any, extractedContent: string | null, companyCo
   const reasons = opp.relevance?.reasons?.join(" · ") ?? (typeof opp.notes === "string" ? opp.notes : "");
 
   const companyBlock = companyContext ??
-    "Occu-Med is an occupational health and medical exam coordination company providing: " +
-    "pre-employment physicals, DOT physicals, drug and alcohol testing, medical surveillance, " +
-    "audiograms, spirometry/PFT, respirator fit testing, vaccines/titers/TB testing, deployment medical exams, " +
-    "fitness-for-duty and return-to-work evaluations, and provider-network program management.";
+    `Occu-Med provides: ${profileServiceLabels().join("; ")}.`;
 
   return `You are an RFP analyst for Occu-Med. ${companyBlock}
 
-Workers' compensation treatment and claims administration are NOT Occu-Med services. However, do not reject an RFP solely because it mentions workers' comp — flag it as out-of-scope if present alongside relevant services.
-Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+${judgeScopeBlock()}
 
 Analyze the opportunity below and produce a concise procurement brief.
 

@@ -1,67 +1,82 @@
-import { SAM_GOV_DISCOVERY_TAXONOMY } from "./samGovTaxonomy";
+import { getRelevanceProfile, type ProfileDiscoveryCode, type RelevanceProfile } from "../search/relevanceProfile";
+import { samGovDiscoveryTaxonomy } from "./samGovTaxonomy";
 
 /**
  * A taxonomy match is positive evidence, never an exclusion boundary.
  *
- * All taxonomy codes are searched. Only classifications with a sufficiently
- * direct Occu-Med service relationship receive synthetic semantic phrases;
- * broad management/general-health codes still enter discovery but must earn
- * relevance from the actual opportunity text.
+ * All taxonomy codes are searched. Only classifications whose Neon discovery-code
+ * fact carries `relevance_phrases` (a sufficiently direct Occu-Med service
+ * relationship) receive synthetic semantic phrases; broad management/general-health
+ * codes still enter discovery but must earn relevance from the actual opportunity text.
+ * Codes, titles and phrases are read from the relevance profile at call time.
  */
-const CLASSIFICATION_RELEVANCE_PHRASES: Readonly<Record<string, readonly string[]>> = {
-  // Core occupational / medical screening classifications.
-  Q403: ["occupational health", "medical evaluation", "medical screening"],
-  Q533: ["occupational health services", "public health services"],
-  Q701: ["medical support", "referral management", "medical evaluation"],
-  Q702: ["medical readiness", "deployment medical"],
-  Q801: ["medical appointment scheduling"],
+type ClassificationKind = "naics" | "psc";
 
-  // Component services Occu-Med directly performs or coordinates.
-  Q301: ["laboratory testing"],
-  Q503: ["dental examination"],
-  Q511: ["vision examination", "optometry"],
-  Q514: ["audiology", "hearing test", "hearing conservation"],
-  Q515: ["laboratory testing"],
-  Q521: ["pulmonary function", "spirometry"],
-  Q522: ["diagnostic imaging", "chest x-ray", "radiology"],
+const SYSTEM_PREFIX: Record<ClassificationKind, string> = { naics: "NAICS", psc: "PSC" };
 
-  // Narrower health-delivery NAICS with direct service correspondence.
-  "621210": ["dental examination"],
-  "621320": ["vision examination", "optometry"],
-  "621340": ["audiology", "hearing test"],
-  "621511": ["laboratory testing"],
-  "621512": ["diagnostic imaging", "chest x-ray"],
-};
+function systemMatches(entry: ProfileDiscoveryCode, kind: ClassificationKind): boolean {
+  return entry.system.toUpperCase().startsWith(SYSTEM_PREFIX[kind]);
+}
 
-const classificationEvidenceCodes = Object.keys(CLASSIFICATION_RELEVANCE_PHRASES);
+/** Discovery-code facts matching a code: exact facts first, then prefix families. */
+function discoveryFactsFor(profile: RelevanceProfile, kind: ClassificationKind, code: string): ProfileDiscoveryCode[] {
+  const upper = code.toUpperCase();
+  const matches = profile.discoveryCodes.filter(
+    (d) =>
+      systemMatches(d, kind) &&
+      d.effect.startsWith("include") &&
+      (d.match === "prefix" ? upper.startsWith(d.code.toUpperCase()) : upper === d.code.toUpperCase()),
+  );
+  return matches.sort((a, b) => Number(a.match === "prefix") - Number(b.match === "prefix"));
+}
+
+/** Synthetic relevance phrases per classification code, derived from the profile. */
+export function samGovClassificationRelevancePhrases(
+  profile: RelevanceProfile = getRelevanceProfile(),
+): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  for (const d of profile.discoveryCodes) {
+    if (d.match !== "exact" || !d.effect.startsWith("include") || d.relevancePhrases.length === 0) continue;
+    if (!systemMatches(d, "naics") && !systemMatches(d, "psc")) continue;
+    out[d.code.toUpperCase()] = d.relevancePhrases;
+  }
+  return out;
+}
 
 /**
  * Every taxonomy code is allowed to preserve a SAM candidate through the
  * pre-classification read gate. This is not an automatic relevance decision:
  * broad codes still face the downstream semantic/quality classifier.
  */
-export const SAM_GOV_DISCOVERY_CLASSIFICATION_CODES = {
-  naics: SAM_GOV_DISCOVERY_TAXONOMY.naics.map((entry) => entry.code),
-  psc: SAM_GOV_DISCOVERY_TAXONOMY.psc.map((entry) => entry.code),
-} as const;
+export function samGovDiscoveryClassificationCodes(
+  profile: RelevanceProfile = getRelevanceProfile(),
+): { naics: string[]; psc: string[] } {
+  const taxonomy = samGovDiscoveryTaxonomy(profile);
+  return {
+    naics: taxonomy.naics.map((entry) => entry.code),
+    psc: taxonomy.psc.map((entry) => entry.code),
+  };
+}
 
 /**
  * Codes strong enough to contribute synthetic service evidence to semantic
  * relevance. This is deliberately narrower than the discovery taxonomy so a
  * broad classification never becomes a relevance whitelist by itself.
  */
-export const SAM_GOV_STRONG_CLASSIFICATION_CODES = {
-  naics: classificationEvidenceCodes.filter((code) => /^\d{6}$/.test(code)),
-  psc: classificationEvidenceCodes.filter((code) => /^[A-Z]\d{3}$/.test(code)),
-} as const;
+export function samGovStrongClassificationCodes(
+  profile: RelevanceProfile = getRelevanceProfile(),
+): { naics: string[]; psc: string[] } {
+  const phrases = samGovClassificationRelevancePhrases(profile);
+  const codes = Object.keys(phrases);
+  return {
+    naics: codes.filter((code) => /^\d{6}$/.test(code)),
+    psc: codes.filter((code) => /^[A-Z]\d{3}$/.test(code)),
+  };
+}
 
 function normalizedCode(value: string | null | undefined): string | null {
   const code = value?.trim().toUpperCase();
   return code ? code : null;
-}
-
-function taxonomyEntry(kind: "naics" | "psc", code: string) {
-  return SAM_GOV_DISCOVERY_TAXONOMY[kind].find((entry) => entry.code === code);
 }
 
 /**
@@ -71,23 +86,18 @@ function taxonomyEntry(kind: "naics" | "psc", code: string) {
 export function samGovClassificationEvidence(
   naicsCode?: string | null,
   pscCode?: string | null,
+  profile: RelevanceProfile = getRelevanceProfile(),
 ): string[] {
   const evidence: string[] = [];
   const seen = new Set<string>();
 
-  const append = (kind: "naics" | "psc", rawCode: string | null | undefined) => {
+  const append = (kind: ClassificationKind, rawCode: string | null | undefined) => {
     const code = normalizedCode(rawCode);
     if (!code) return;
-    const entry = taxonomyEntry(kind, code);
-    if (!entry) return;
+    const fact = discoveryFactsFor(profile, kind, code).find((d) => d.relevancePhrases.length > 0);
+    if (!fact) return;
 
-    const prefix = kind === "naics" ? "NAICS" : "PSC";
-    const phrases = CLASSIFICATION_RELEVANCE_PHRASES[code] ?? [];
-    if (phrases.length === 0) return;
-    const text = [
-      `${prefix} ${entry.code}: ${entry.title}`,
-      ...phrases,
-    ].join("; ");
+    const text = [`${SYSTEM_PREFIX[kind]} ${code}: ${fact.title}`, ...fact.relevancePhrases].join("; ");
     if (!seen.has(text)) {
       seen.add(text);
       evidence.push(text);

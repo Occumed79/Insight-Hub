@@ -1,5 +1,7 @@
 import type { NormalizedOpportunity } from "./types";
 import { classifyResult, type RelevanceResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
+import { getRelevanceProfile } from "../search/relevanceProfile";
 
 const GENERIC_QUERY_TERMS = new Set([
   "a",
@@ -28,12 +30,6 @@ const GENERIC_QUERY_TERMS = new Set([
   "the",
   "vendor",
   "vendors",
-]);
-
-const OCCUMED_PROFILE_QUERIES = new Set([
-  "occupational health",
-  "occupational health service",
-  "occupational health services",
 ]);
 
 function normalizedWords(value: string): string[] {
@@ -90,8 +86,21 @@ export function meaningfulProviderQueryTerms(query?: string): string[] {
   return meaningful.length > 0 ? meaningful : words;
 }
 
+/**
+ * A query is the Occu-Med profile query when it is exactly one of the profile's own service phrases (a category
+ * label, any category/bundle service term). Such a query asks "is this an Occu-Med opportunity", which the
+ * canonical decision answers; any other query is a plain keyword match.
+ */
 export function isOccuMedProfileQuery(query?: string): boolean {
-  return OCCUMED_PROFILE_QUERIES.has(normalizedWords(query ?? "").join(" "));
+  const wanted = normalizedWords(query ?? "").join(" ");
+  if (!wanted) return false;
+  const profile = getRelevanceProfile();
+  const phrases = [
+    ...profile.categories.map((c) => c.label),
+    ...profile.allServiceTerms,
+    ...profile.searchBundles.flatMap((b) => b.serviceTerms),
+  ];
+  return phrases.some((phrase) => normalizedWords(phrase).join(" ") === wanted);
 }
 
 export function classifyProviderRecordRelevance(
@@ -103,8 +112,6 @@ export function classifyProviderRecordRelevance(
       record.type,
       record.solicitationNumber,
       record.description,
-      record.agency,
-      record.subAgency,
       record.naicsDescription,
     ]
       .filter(Boolean)
@@ -140,7 +147,7 @@ export function recordMatchesProviderQuery(
 ): boolean {
   if (!query?.trim()) return true;
   if (isOccuMedProfileQuery(query)) {
-    return !classifyProviderRecordRelevance(record).rejected;
+    return decideRelevance(classifyProviderRecordRelevance(record)).verdict !== "reject";
   }
 
   const terms = meaningfulProviderQueryTerms(query);

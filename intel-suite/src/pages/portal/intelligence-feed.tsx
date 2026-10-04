@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useRelevanceThresholds } from "@/hooks/use-relevance-thresholds";
 import {
   Select,
   SelectContent,
@@ -427,6 +428,7 @@ interface IntelCardProps {
 }
 
 function IntelCard({ item, onFeedback, isMutating }: IntelCardProps) {
+  const thresholds = useRelevanceThresholds();
   const signal = getSignalConfig(item.signalType);
   const isSaved = item.feedback === "saved";
   const isDismissed = item.feedback === "dismissed";
@@ -456,7 +458,7 @@ function IntelCard({ item, onFeedback, isMutating }: IntelCardProps) {
           {signal.label}
         </span>
         <div className="flex items-center gap-1.5">
-          {item.relevanceScore >= 70 && (
+          {item.relevanceScore >= thresholds.acceptMin && (
             <span className="text-[9px] text-emerald-400/80 font-medium bg-emerald-500/10 border border-emerald-500/20 rounded-full px-1.5 py-0.5">
               High relevance
             </span>

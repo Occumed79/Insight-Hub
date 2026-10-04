@@ -185,6 +185,19 @@ async function bootstrap(): Promise<void> {
   );
 
   logger.info("Automatic crawler scheduler disabled; ingestion is manual-only");
+
+  // Load the Neon relevance profile for the classifier, and keep it fresh. If Neon is unreachable the verified
+  // last-known-good cache is used; with neither, relevance fails closed (everything is held for review).
+  const { ensureRelevanceProfile } = await import("./lib/occumedAware/relevanceProfileLoader");
+  const { getRelevanceProfile } = await import("./lib/search/relevanceProfile");
+  const { runLegacyFeedbackScopeMigration } = await import("./lib/learning/legacyFeedbackScopeMigration");
+  // One-time carry-over of learned feedback recorded under the old scope names (idempotent; keyed to the profile version).
+  const afterProfileLoad = () => void runLegacyFeedbackScopeMigration(getRelevanceProfile());
+  void ensureRelevanceProfile(true).then((result) => {
+    logger.info({ applied: result.applied, source: result.source, version: result.version, missing: result.missing, error: result.error }, "Relevance profile load");
+    afterProfileLoad();
+  });
+  setInterval(() => void ensureRelevanceProfile(true).then(afterProfileLoad), 10 * 60_000).unref();
 }
 
 bootstrap().catch((error) => {

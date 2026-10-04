@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import { composeAbortSignal } from "./abortSignals";
 import { FreeTierCredentialPool } from "./freeTierCredentialPool";
+import { keywordQueries, profileNaturalQueries, spreadSample } from "../search/profileWebQueries";
 
 const EXA_BASE = "https://api.exa.ai";
 const EXA_REQUEST_TIMEOUT_MS = 30_000;
@@ -222,16 +223,10 @@ export class ExaProvider implements DataSourceProvider {
   /** Find active RFPs and procurement opportunities via neural search. */
   async findOpportunities(keywords?: string): Promise<ExaResult[]> {
     const year = new Date().getFullYear();
+    // Query text comes from the profile at call time (search bundles), spread across bundles.
     const queries = keywords
-      ? [
-          `${keywords} RFP solicitation government contract ${year}`,
-          `${keywords} bid procurement open ${year}`,
-        ]
-      : [
-          `occupational health services RFP government contract ${year}`,
-          `employee health drug testing solicitation open ${year}`,
-          `DOT physical occupational medicine government bid ${year}`,
-        ];
+      ? keywordQueries(keywords, year).slice(0, 2)
+      : spreadSample(profileNaturalQueries(year), 3);
 
     return this.searchMultiple(queries, 10);
   }

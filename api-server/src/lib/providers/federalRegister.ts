@@ -1,18 +1,13 @@
 import { createHash } from "crypto";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
+import { profileLeadQueries } from "./profileQueryTerms";
 
 const DEFAULT_BASE = process.env.FEDERAL_REGISTER_API_BASE || "https://www.federalregister.gov/api/v1";
 
-const OCCU_MED_TERMS = [
-  "occupational health",
-  "medical surveillance",
-  "drug testing",
-  "physical examination",
-  "respirator medical evaluation",
-  "workplace health",
-  "employee health",
-  "fitness for duty",
-];
+// Federal Register is a regulatory feed: the search terms are the profile's service lead queries,
+// read at call time. Keep the per-run request count bounded.
+const MAX_TERMS_PER_RUN = 8;
+const MAX_TERMS_WITH_KEYWORDS = 4;
 
 interface FederalRegisterDocument {
   document_number?: string;
@@ -46,8 +41,8 @@ export class FederalRegisterProvider implements DataSourceProvider {
     const seen = new Set<string>();
     const errors: string[] = [];
     const terms = options.keywords?.trim()
-      ? [options.keywords.trim(), ...OCCU_MED_TERMS.slice(0, 4)]
-      : OCCU_MED_TERMS;
+      ? [options.keywords.trim(), ...profileLeadQueries(MAX_TERMS_WITH_KEYWORDS)]
+      : profileLeadQueries(MAX_TERMS_PER_RUN);
 
     for (const term of terms) {
       try {

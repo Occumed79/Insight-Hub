@@ -1,42 +1,17 @@
 import { createHash } from "crypto";
 
+import { agencyPriority } from "../search/agencyPriority";
+import { profileLeadQueries } from "../providers/profileQueryTerms";
+import { evidenceScore, profileEvidence } from "./profileIntelRelevance";
+
 const USAJOBS_SEARCH_URL = "https://data.usajobs.gov/api/search";
 const MAX_API_DATE_RANGE_DAYS = 60;
 const DEFAULT_RESULT_LIMIT = 150;
 
-const DEFAULT_SEARCH_TERMS = [
-  "occupational health",
-  "occupational medicine",
-  "safety occupational health",
-  "industrial hygiene",
-  "medical surveillance",
-  "employee health",
-  "public health advisor",
-  "medical officer",
-  "preventive medicine",
-  "deployment health",
-];
-
-const HIGH_SIGNAL_PATTERNS = [
-  /occupational health/i,
-  /occupational medicine/i,
-  /safety and occupational health|safety occupational health/i,
-  /industrial hygien/i,
-  /medical surveillance|health surveillance/i,
-  /employee health|workforce health/i,
-  /fitness for duty|fit for duty/i,
-  /pre[- ]employment (physical|medical|screening)/i,
-  /drug testing|drug screening|alcohol testing/i,
-  /medical officer/i,
-  /public health advisor|public health analyst/i,
-  /preventive medicine/i,
-  /deployment health|force health protection/i,
-  /health physicist|radiation safety/i,
-  /audiometric|hearing conservation|spirometry|respirator fit/i,
-];
-
-const PRIORITY_AGENCY_PATTERN =
-  /department of defense|department of the army|department of the navy|department of the air force|defense health agency|department of veterans affairs|department of homeland security|department of labor|occupational safety and health administration|centers for disease control|health resources and services administration/i;
+// Search terms and relevance both come from the Neon-backed relevance profile (read at call time):
+// the profile's lead service queries drive the USAJOBS keyword searches, and a posting is relevant when it
+// names profile service terms. No vocabulary or agency list is defined here.
+const MAX_SEARCH_TERMS = 10;
 
 interface UsaJobsLocation {
   LocationName?: string;
@@ -165,25 +140,14 @@ function recordText(descriptor: UsaJobsDescriptor): string {
     .join(" ");
 }
 
-function isRelevant(descriptor: UsaJobsDescriptor): boolean {
-  const text = recordText(descriptor);
-  return HIGH_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function relevanceScore(descriptor: UsaJobsDescriptor): number {
-  const text = recordText(descriptor);
-  const title = descriptor.PositionTitle ?? "";
-  const matchedSignals = HIGH_SIGNAL_PATTERNS.filter((pattern) => pattern.test(text)).length;
-  const titleMatch = HIGH_SIGNAL_PATTERNS.some((pattern) => pattern.test(title));
-  const priorityAgency = PRIORITY_AGENCY_PATTERN.test(
-    `${descriptor.OrganizationName ?? ""} ${descriptor.DepartmentName ?? ""}`,
-  );
-  const multipleLocations = (descriptor.PositionLocation?.length ?? 0) > 1;
-
-  return Math.min(
-    98,
-    52 + matchedSignals * 7 + (titleMatch ? 12 : 0) + (priorityAgency ? 7 : 0) + (multipleLocations ? 3 : 0),
-  );
+/**
+ * A job posting is a workforce signal, not a procurement notice, so it is judged on profile evidence (the
+ * service terms it names) rather than the procurement-notice rules. Returns null when it names none.
+ */
+function profileRelevance(descriptor: UsaJobsDescriptor): { score: number } | null {
+  const evidence = profileEvidence(recordText(descriptor));
+  if (evidence.total === 0) return null;
+  return { score: evidenceScore(evidence) };
 }
 
 function buildSummary(descriptor: UsaJobsDescriptor): string | null {
@@ -226,7 +190,8 @@ function buildSummary(descriptor: UsaJobsDescriptor): string | null {
 function toRecord(item: UsaJobsSearchItem): UsaJobsWorkforceRecord | null {
   const descriptor = item.MatchedObjectDescriptor;
   if (!descriptor || !descriptor.PositionTitle?.trim()) return null;
-  if (!isRelevant(descriptor)) return null;
+  const relevance = profileRelevance(descriptor);
+  if (!relevance) return null;
 
   const stableId = descriptor.PositionID?.trim() || item.MatchedObjectId?.trim();
   if (!stableId) return null;
@@ -243,7 +208,7 @@ function toRecord(item: UsaJobsSearchItem): UsaJobsWorkforceRecord | null {
     summary: buildSummary(descriptor),
     sourceUrl: descriptor.PositionURI?.trim() || null,
     publishedDate: safeDate(descriptor.PublicationStartDate),
-    relevanceScore: relevanceScore(descriptor),
+    relevanceScore: relevance.score,
     rawData: {
       matchedObjectId: item.MatchedObjectId ?? null,
       relevanceRank: item.RelevanceRank ?? null,
@@ -322,7 +287,7 @@ export async function fetchUsaJobsWorkforceIntelligence(options: {
   const terms = Array.from(
     new Set([
       ...(options.keywords?.trim() ? [options.keywords.trim()] : []),
-      ...DEFAULT_SEARCH_TERMS,
+      ...profileLeadQueries(MAX_SEARCH_TERMS),
     ]),
   );
 
@@ -359,6 +324,9 @@ export async function fetchUsaJobsWorkforceIntelligence(options: {
   records.sort((a, b) => {
     const scoreDifference = b.relevanceScore - a.relevanceScore;
     if (scoreDifference !== 0) return scoreDifference;
+    // Search priority only (Neon): preferred agencies first among equally relevant postings.
+    const priorityDifference = agencyPriority(b.agency) - agencyPriority(a.agency);
+    if (priorityDifference !== 0) return priorityDifference;
     return (b.publishedDate?.getTime() ?? 0) - (a.publishedDate?.getTime() ?? 0);
   });
 

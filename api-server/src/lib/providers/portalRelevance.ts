@@ -1,9 +1,7 @@
-import {
-  BUYER_SECTOR_SIGNALS,
-  REASON_CODES,
-  SERVICE_CATEGORIES,
-} from "../search/occumedProcurementOntology";
+import { REASON_CODES } from "../search/relevanceReasonCodes";
 import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
+import { getRelevanceProfile } from "../search/relevanceProfile";
 
 export type PortalFit =
   | "verified_high"
@@ -52,6 +50,20 @@ function norm(s: string | undefined | null): string {
 function uniq<T>(a: T[]): T[] {
   return Array.from(new Set(a));
 }
+/** Leading word boundary only, so "ems" does not match inside "systems" but plurals still match. */
+function mentions(text: string, phrase: string): boolean {
+  const p = phrase.toLowerCase().trim();
+  if (!p) return false;
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(p, from);
+    if (at < 0) return false;
+    if (at === 0 || !/[a-z0-9]/.test(text[at - 1]!)) return true;
+    from = at + 1;
+  }
+}
+/** Buyer-sector signals come from the profile (rows with a high/medium propensity); prime-contractor names are not portal buyers. */
+const PORTAL_BUYER_PROPENSITIES = new Set(["high", "medium"]);
 
 export function scorePortalForOccuMed(
   input: PortalRelevanceInput,
@@ -94,7 +106,7 @@ export function scorePortalForOccuMed(
       allowHistorical: true,
     }),
   );
-  const matches = classified.filter((r) => !r.rejected);
+  const matches = classified.filter((r) => decideRelevance(r).verdict !== "reject");
   const serviceCategories = uniq(
     matches.flatMap((m) => m.matchedServiceCategories),
   );
@@ -118,11 +130,11 @@ export function scorePortalForOccuMed(
       .filter(Boolean)
       .join(" "),
   );
-  const buyerSectorSignals = BUYER_SECTOR_SIGNALS.flatMap((group) =>
-    group.phrases
-      .filter((p) => buyerText.includes(p.toLowerCase()))
-      .map((p) => `${group.propensity}:${p}`),
-  );
+  const profile = getRelevanceProfile();
+  const thresholds = profile.thresholds;
+  const buyerSectorSignals = profile.buyerSectors
+    .filter((b) => b.propensity !== null && PORTAL_BUYER_PROPENSITIES.has(b.propensity) && mentions(buyerText, b.phrase))
+    .map((b) => `${b.propensity}:${b.phrase}`);
   const officialProcurementEvidence =
     input.isOfficialPortal !== false &&
     /\b(procurement|purchasing|solicitation|bid|rfp|contract|vendor)\b/i.test(
@@ -133,7 +145,7 @@ export function scorePortalForOccuMed(
     (input.evidenceUrls?.length || officialProcurementEvidence)
   ) {
     return {
-      score: Math.min(100, 82 + Math.min(15, matches.length * 4)),
+      score: Math.min(100, thresholds.acceptMin + 12 + Math.min(15, matches.length * 4)),
       fit: "verified_high",
       likelyServiceCategories: serviceCategories,
       matchedTerms,
@@ -149,13 +161,11 @@ export function scorePortalForOccuMed(
   }
   const highBuyer = buyerSectorSignals.some((s) => s.startsWith("high:"));
   if (officialProcurementEvidence && highBuyer) {
-    const categoryHints = SERVICE_CATEGORIES.filter((c) =>
-      c.explicitPhrases
-        .concat(c.componentTerms)
-        .some((t) => buyerText.includes(t.toLowerCase())),
-    ).map((c) => c.label);
+    const categoryHints = profile.categories
+      .filter((c) => [...c.explicit, ...c.component].some((t) => mentions(buyerText, t)))
+      .map((c) => c.label);
     return {
-      score: 68,
+      score: Math.round((thresholds.reviewMin + thresholds.acceptMin) / 2),
       fit: "likely",
       likelyServiceCategories: uniq(categoryHints),
       matchedTerms: [],
@@ -171,7 +181,7 @@ export function scorePortalForOccuMed(
   }
   if (officialProcurementEvidence)
     return {
-      score: 40,
+      score: Math.max(0, thresholds.reviewMin - 5),
       fit: "broad",
       likelyServiceCategories: [],
       matchedTerms: [],
@@ -184,7 +194,7 @@ export function scorePortalForOccuMed(
       lastVerifiedDate: input.lastVerifiedDate ?? today,
     };
   return {
-    score: 20,
+    score: Math.round(thresholds.reviewMin / 2),
     fit: "insufficient_evidence",
     likelyServiceCategories: [],
     matchedTerms: [],

@@ -2,9 +2,10 @@ import { createHash } from "crypto";
 
 import type { NormalizedOpportunity } from "../types";
 import type { PublicPortalSource } from "./catalog";
+import { classifyResult } from "../../search/relevance";
+import { decideRelevance } from "../../search/relevanceDecision";
 
 const PROCUREMENT_TERMS = ["RFP", "RFQ", "RFB", "IFB", "ITB", "bid", "bids", "solicitation", "request for proposal", "request for qualifications", "request for bid", "request for quote", "current opportunities", "open bids", "bid opportunities"];
-const OCCU_MED_TERMS = ["occupational health", "occupational medicine", "medical services", "medical exams", "physical exams", "pre-employment physical", "fitness for duty", "drug testing", "drug screening", "alcohol testing", "DOT physical", "DOT drug testing", "employee health", "medical surveillance", "respirator fit testing", "pulmonary function", "spirometry", "audiometric testing", "hearing conservation", "vaccinations", "immunizations", "TB testing", "laboratory testing", "x-ray", "radiology", "EKG", "firefighter physical", "police physical", "public safety medical exams"];
 const NAVIGATION_TITLES = new Set([
   "about",
   "account",
@@ -112,8 +113,20 @@ function uniqueTags(value: unknown, additions: string[]): string[] {
 }
 
 export function withPublicPortalMetadata(record: NormalizedOpportunity, source: PublicPortalSource): NormalizedOpportunity {
-  const haystack = `${record.title} ${record.description ?? ""}`;
-  const occuMedMatched = containsAny(haystack, OCCU_MED_TERMS);
+  // Relevance is the profile's decision (one classifier + one decision), never a term list kept here.
+  const classification = classifyResult({
+    title: record.title,
+    description: record.description ?? "",
+    allowHistorical: true,
+  });
+  const occuMedMatched = decideRelevance(classification).verdict !== "reject";
+  const occuMedMatchTerms = Array.from(
+    new Set([
+      ...classification.matchedExplicitPhrases,
+      ...classification.matchedComponentTerms,
+      ...classification.matchedRegulatorySignals,
+    ]),
+  );
   const existingConfidence = record.rawData?.sourceConfidence;
   return {
     ...record,
@@ -137,7 +150,7 @@ export function withPublicPortalMetadata(record: NormalizedOpportunity, source: 
         source.scraperType === "existing_parser" ? "dedicated-adapter" : "generic-page-extraction",
       ]),
       occuMedMatched,
-      occuMedMatchTerms: OCCU_MED_TERMS.filter((term) => haystack.toLowerCase().includes(term.toLowerCase())),
+      occuMedMatchTerms,
     },
   };
 }

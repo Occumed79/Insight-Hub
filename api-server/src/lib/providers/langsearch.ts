@@ -18,6 +18,8 @@ import {
   recordProviderFailure,
   recordProviderSuccess,
 } from "../providerBudget";
+import { getRelevanceProfile } from "../search/relevanceProfile";
+import { keywordQueries, profileNaturalQueries, spreadSample } from "../search/profileWebQueries";
 
 const LANGSEARCH_BASE = "https://api.langsearch.com/v1";
 const LANGSEARCH_REQUEST_TIMEOUT_MS = 30_000;
@@ -322,7 +324,8 @@ export class LangsearchProvider implements DataSourceProvider {
           source: "langsearch" as const,
           providerName: "LangSearch",
           status: "active" as const,
-          relevanceScore: 50,
+          // Unscored search hit: the canonical review floor, so only the relevance gate can promote it.
+          relevanceScore: getRelevanceProfile().thresholds.reviewMin,
           rawData: { query, page, keySlot: result.slot },
         });
       }
@@ -344,18 +347,8 @@ export class LangsearchProvider implements DataSourceProvider {
 
   private buildQueries(keywords?: string): string[] {
     const year = new Date().getFullYear();
-    return keywords
-      ? [
-          `${keywords} RFP solicitation ${year}`,
-          `${keywords} government bid procurement ${year}`,
-          `${keywords} request for proposal occupational health drug testing medical screening ${year}`,
-        ]
-      : [
-          `occupational health RFP solicitation government ${year}`,
-          `drug testing employee health services contract bid ${year}`,
-          `DOT physicals workplace safety government procurement ${year}`,
-          `employee wellness occupational medicine RFP ${year}`,
-        ];
+    // Query text comes from the profile at call time; fetch() runs the first four, so spread them across bundles.
+    return keywords ? keywordQueries(keywords, year) : spreadSample(profileNaturalQueries(year), 4);
   }
 
   async getStatus(): Promise<ProviderStatus> {

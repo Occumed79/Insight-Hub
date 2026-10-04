@@ -14,6 +14,7 @@
 import { desc, inArray, isNotNull, and } from "drizzle-orm";
 import { opportunitiesTable, rfpDb } from "@workspace/db";
 import type { OccuMedReferenceModel } from "../occumedAware/types";
+import { judgeScopeBlock } from "./profileText";
 
 export interface OccuMedPromptContext {
   /** Authoritative profile block, or "" when the live profile is unavailable. */
@@ -31,10 +32,6 @@ const EMPTY: OccuMedPromptContext = {
 
 const CACHE_TTL_MS = 10 * 60_000;
 const LOAD_TIMEOUT_MS = 3_000;
-const MAX_RULES = 20;
-const MAX_POLICIES = 12;
-const MAX_DIRECT_PHRASES = 25;
-const MAX_REVIEW_PHRASES = 15;
 const MAX_GOOD_EXAMPLES = 6;
 const MAX_BAD_EXAMPLES = 8;
 
@@ -51,14 +48,6 @@ function list(label: string, values: string[], max: number): string {
 /** Pure: render the reference model into prompt text. Exported for tests. */
 export function buildProfileBlock(ref: OccuMedReferenceModel): string {
   if (!ref.awareLoaded) return "";
-  const rules = ref.hardRules
-    .slice(0, MAX_RULES)
-    .map((rule) => `- ${clip(rule.title, 80)}: ${clip(rule.rule_text, 240)}`);
-  const policies = ref.agentPolicies
-    .filter((policy) => policy.must_follow)
-    .slice(0, MAX_POLICIES)
-    .map((policy) => `- ${clip(policy.title, 80)}: ${clip(policy.instruction, 240)}`);
-
   const lines = [
     "OCCU-MED REFERENCE PROFILE (authoritative; if it conflicts with the generic rules below, follow the profile):",
     `Company: ${ref.legalName}${ref.dba && ref.dba !== ref.legalName ? ` (dba ${ref.dba})` : ""}.`,
@@ -67,13 +56,11 @@ export function buildProfileBlock(ref: OccuMedReferenceModel): string {
     list("Capabilities Occu-Med can arrange through its provider network", ref.arrangeableCapabilities, 20),
     list("Registered NAICS", [ref.primaryNaics, ...ref.additionalNaics], 20),
     list("Product/service codes", ref.productServiceCodes, 20),
-    list("Phrases that directly indicate a relevant procurement", ref.rfpDirectPhrases, MAX_DIRECT_PHRASES),
-    list("Phrases that need review before counting as relevant", ref.rfpReviewPhrases, MAX_REVIEW_PHRASES),
-    list("Regulatory and standards references", ref.rfpRegulatoryRefs, 15),
+    list("Phrases that directly indicate a relevant procurement", ref.rfpDirectPhrases, Infinity),
+    list("Phrases that need review before counting as relevant", ref.rfpReviewPhrases, Infinity),
+    list("Regulatory and standards references", ref.rfpRegulatoryRefs, Infinity),
     ref.workersCompInstruction ? `Workers' compensation: ${clip(ref.workersCompInstruction, 500)}` : "",
     ref.imeInstruction ? `IME: ${clip(ref.imeInstruction, 400)}` : "",
-    rules.length > 0 ? `HARD RULES:\n${rules.join("\n")}` : "",
-    policies.length > 0 ? `POLICIES YOU MUST FOLLOW:\n${policies.join("\n")}` : "",
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -184,5 +171,5 @@ export function clearOccuMedPromptContextCache(): void {
 
 /** Joins the non-empty context blocks for insertion into a prompt. */
 export function renderPromptContext(context: OccuMedPromptContext): string {
-  return [context.profileBlock, context.examplesBlock].filter(Boolean).join("\n\n");
+  return [context.profileBlock, judgeScopeBlock(), context.examplesBlock].filter(Boolean).join("\n\n");
 }

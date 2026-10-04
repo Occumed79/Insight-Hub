@@ -23,22 +23,14 @@ import type {
   ProviderFetchResult,
   ProviderStatus,
 } from "./types";
+import { profileSearchPhrases } from "./profileQueryTerms";
 
 const GRANTS_GOV_BASE = "https://api.grants.gov/v1/api";
 
-// Keyword searches targeted at opportunities that need occupational health vendors
-const OCCU_MED_GRANT_QUERIES = [
-  "occupational health services",
-  "drug testing screening employees",
-  "pre-employment medical examination",
-  "DOT physical examination",
-  "employee health wellness program",
-  "workplace medical surveillance",
-  "fit for duty examination",
-  "substance abuse employee assistance",
-  "medical review officer",
-  "occupational medicine clinic",
-];
+// Keyword searches come from the relevance profile at call time (search-bundle lead queries first,
+// then direct phrases); the per-run request count is bounded here.
+const MAX_GRANT_QUERIES = 10;
+const MAX_GRANT_QUERIES_WITH_KEYWORDS = 4;
 
 interface GrantsGovOpportunity {
   id?: number;
@@ -78,8 +70,8 @@ export class GrantsGovProvider implements DataSourceProvider {
 
     // Determine which queries to run based on provided keywords
     const queriesToRun = options.keywords?.trim()
-      ? [options.keywords.trim(), ...OCCU_MED_GRANT_QUERIES.slice(0, 4)]
-      : OCCU_MED_GRANT_QUERIES;
+      ? [options.keywords.trim(), ...profileSearchPhrases(MAX_GRANT_QUERIES_WITH_KEYWORDS)]
+      : profileSearchPhrases(MAX_GRANT_QUERIES);
 
     // Run queries sequentially to avoid hammering the API
     for (const keyword of queriesToRun) {
