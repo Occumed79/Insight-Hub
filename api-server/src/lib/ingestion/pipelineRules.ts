@@ -1,4 +1,6 @@
 import type { OpportunityDedupeKey } from "./opportunityIdentity";
+import { evaluateOpportunityExpiration } from "./opportunityExpiration";
+import type { NormalizedOpportunity } from "../providers/types";
 
 export const ACTIVE_INGESTION_STATUSES = new Set(["queued", "running"]);
 export const STALE_INGESTION_RUN_AFTER_MS = 30 * 60 * 1000;
@@ -156,9 +158,62 @@ function strongerConfidence(existing: unknown, incoming: unknown): unknown {
     : existing;
 }
 
+function asDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function expirationView(record: Record<string, unknown>): NormalizedOpportunity {
+  return {
+    status: record.status,
+    responseDeadline: asDate(record.responseDeadline),
+    rawData: (record.rawData ?? undefined) as Record<string, unknown> | undefined,
+  } as unknown as NormalizedOpportunity;
+}
+
+/**
+ * Lifecycle status after a source refresh.
+ *
+ * Rediscovery is not evidence that an opportunity is open again. A record that
+ * is archived/expired stays archived unless the incoming record carries an
+ * affirmative, later, still-open response deadline (a genuine extension or
+ * re-issue). A record whose merged state is expired (past deadline, closed or
+ * awarded source status) is archived rather than left active. Authority of the
+ * rediscovering provider is irrelevant to lifecycle status.
+ */
+function refreshedStatus(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  merged: Record<string, unknown>,
+  now: Date,
+): unknown {
+  const wasClosed =
+    existing.status === "archived" ||
+    evaluateOpportunityExpiration(expirationView(existing), now).expired;
+  if (wasClosed) {
+    const incomingDeadline = asDate(incoming.responseDeadline);
+    const existingDeadline = asDate(existing.responseDeadline);
+    const extended =
+      incomingDeadline !== null &&
+      (existingDeadline === null || incomingDeadline.getTime() > existingDeadline.getTime()) &&
+      !evaluateOpportunityExpiration(
+        expirationView({ ...incoming, status: incoming.status ?? "active" }),
+        now,
+      ).expired;
+    if (!extended) return "archived";
+  }
+  if (evaluateOpportunityExpiration(expirationView(merged), now).expired) return "archived";
+  return merged.status;
+}
+
 export function mergeSourceRefresh<T extends Record<string, unknown>>(
   existing: T,
   sourceFields: T,
+  now: Date = new Date(),
 ): T {
   const existingOwner = ownerIdentity(existing);
   const incomingOwner = ownerIdentity(sourceFields);
@@ -191,6 +246,9 @@ export function mergeSourceRefresh<T extends Record<string, unknown>>(
 
   for (const field of PRESERVED_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(existing, field)) merged[field] = existing[field];
+  }
+  if (Object.prototype.hasOwnProperty.call(existing, "status") || "status" in sourceFields) {
+    merged.status = refreshedStatus(existing, sourceFields, merged, now);
   }
   return merged as T;
 }
