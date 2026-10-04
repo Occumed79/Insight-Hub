@@ -18,7 +18,6 @@ const GOVCON_BASE_URL = "https://govconapi.com/api/v1";
 const REQUEST_TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 10 * 60_000;
 const MAX_CACHE_ENTRIES = 40;
-const RELEVANCE_THRESHOLD = 44;
 const DAY_MS = 86_400_000;
 
 type JsonRecord = Record<string, unknown>;
@@ -474,7 +473,7 @@ async function buildForecastDataset(
   );
   const ranked = await rankGovConRecords(unsuppressed, "forecast", focus);
   const records = fitOnly
-    ? ranked.filter((record) => record.relevance.score >= RELEVANCE_THRESHOLD)
+    ? ranked.filter((record) => record.relevance.verdict !== "reject")
     : ranked;
 
   return {
@@ -487,7 +486,7 @@ async function buildForecastDataset(
     ),
     suppressedCount: combined.length - unsuppressed.length,
     lowRelevanceCount: ranked.filter(
-      (record) => record.relevance.score < RELEVANCE_THRESHOLD,
+      (record) => record.relevance.verdict === "reject",
     ).length,
     filtersApplied: filters,
     semanticProvider: records.some(

@@ -16,6 +16,7 @@ import { createHash } from "crypto";
 import type { DataSourceProvider, FetchOptions, NormalizedOpportunity, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
 import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 
 interface EmailConfig {
   host: string;
@@ -94,7 +95,7 @@ export class EmailNotificationProvider implements DataSourceProvider {
             allowHistorical: true,
           });
 
-          if (!relevance.rejected && relevance.score >= 40) {
+          if (decideRelevance(relevance).verdict !== "reject") {
             records.push(opp);
           }
         }

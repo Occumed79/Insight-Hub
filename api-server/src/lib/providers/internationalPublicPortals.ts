@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { webIntelligenceFetch } from "../search/webIntelligence";
 import { classifyResult } from "../search/relevance";
+import { decideRelevance, matchDiscoveryCode } from "../search/relevanceDecision";
 import { verifyCanadaBuysRecords } from "./canadaBuysPageVerification";
 import { summarizeSamVerification } from "./samGovPageVerification";
 
@@ -149,7 +150,6 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
   ]
     .filter(Boolean)
     .join("\n\n") || undefined;
-  const rawText = `${title} ${description ?? ""}`;
   const classification = classifyResult({
     title,
     snippet: description ?? "",
@@ -157,9 +157,11 @@ function tedRecordToOpportunity(record: Record<string, unknown>): NormalizedOppo
     allowHistorical: false,
   });
   const cpv = tedField(record, "classification-cpv", "classificationCpv");
-  const serviceMatch = /occupational|company health|employee health|medical surveillance|health surveillance|fitness.{0,3}(?:for|to).{0,3}duty|pre[- ]employment|drug testing|alcohol testing|audiometr|spirometr|respirator fit/i.test(rawText);
-  if (classification.rejected && cpv !== "85147000") return null;
-  if (!serviceMatch && cpv !== "85147000") return null;
+  // Service evidence and the Occu-Med classification anchor both come from the Neon profile.
+  const cpvAnchor = matchDiscoveryCode("CPV", cpv)?.effect === "include_anchor";
+  const decision = decideRelevance(classification);
+  if (classification.matchedServiceCategories.length === 0 && !cpvAnchor) return null;
+  if (decision.verdict === "reject" && !cpvAnchor) return null;
 
   const postedDate = parseDate(tedField(record, "publication-date", "publicationDate", "dispatch-date"));
   const deadline = parseDate(

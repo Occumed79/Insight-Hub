@@ -1,5 +1,7 @@
 import { embedTexts } from "../search/embeddings";
 import { getOccuMedSemanticProfile } from "../search/semanticRerank";
+import { classifyResult } from "../search/relevance";
+import { decideRelevanceWithCodes, type RelevanceVerdict } from "../search/relevanceDecision";
 
 export type GovConIntelligenceMode = "forecast" | "recompete";
 
@@ -17,51 +19,13 @@ export interface GovConRankableRecord {
 
 export interface GovConRelevance {
   score: number;
+  /** Canonical Neon decision: accept -> strong, review -> possible, reject -> low. */
+  verdict: RelevanceVerdict;
   classification: "strong" | "possible" | "low";
   semanticSimilarity: number | null;
   provider: "gemini" | "deterministic";
   reasons: string[];
 }
-
-const POSITIVE_TERMS: Array<[string, number, string]> = [
-  ["occupational health", 18, "Occupational-health requirement"],
-  ["occupational medicine", 18, "Occupational-medicine requirement"],
-  ["employee health", 14, "Employee-health program"],
-  ["workforce care", 13, "Workforce-care requirement"],
-  ["medical exam", 12, "Medical examinations"],
-  ["physical exam", 12, "Physical examinations"],
-  ["pre-employment", 11, "Pre-employment services"],
-  ["fitness for duty", 11, "Fitness-for-duty services"],
-  ["drug testing", 11, "Drug-testing services"],
-  ["drug collection", 9, "Specimen collection"],
-  ["medical surveillance", 13, "Medical-surveillance program"],
-  ["audiogram", 10, "Audiometric testing"],
-  ["hearing conservation", 10, "Hearing-conservation services"],
-  ["spirometry", 10, "Pulmonary testing"],
-  ["pulmonary function", 10, "Pulmonary-function testing"],
-  ["respirator", 9, "Respirator-related services"],
-  ["vaccination", 7, "Vaccination services"],
-  ["immunization", 7, "Immunization services"],
-  ["deployment medical", 14, "Deployment medical services"],
-  ["clinic", 5, "Clinical-services signal"],
-  ["laboratory", 4, "Laboratory-services signal"],
-];
-
-const NEGATIVE_TERMS: Array<[string, number]> = [
-  ["starlink", 55],
-  ["satellite", 35],
-  ["software license", 35],
-  ["information technology", 30],
-  ["cybersecurity", 35],
-  ["construction", 30],
-  ["janitorial", 40],
-  ["landscaping", 40],
-  ["weapons", 45],
-  ["ammunition", 45],
-  ["vehicle maintenance", 35],
-  ["food service", 35],
-  ["veterinary", 35],
-];
 
 function normalizedText(record: GovConRankableRecord): string {
   return [
@@ -81,42 +45,32 @@ function normalizedText(record: GovConRankableRecord): string {
     .slice(0, 12_000);
 }
 
+/**
+ * GovCon forecast/recompete records are judged by the same Neon-backed classifier and the same canonical
+ * thresholds as every other notice. There is no GovCon vocabulary or weighting here: the per-term `govcon_weight`
+ * values are kept in Neon term metadata only, and the NAICS preferences are the Neon discovery-code facts.
+ */
 function deterministicScore(record: GovConRankableRecord, mode: GovConIntelligenceMode): {
   score: number;
+  verdict: RelevanceVerdict;
   reasons: string[];
 } {
-  const text = normalizedText(record).toLowerCase();
-  const reasons: string[] = [];
-  let score = 10;
-
-  if (record.naics?.startsWith("621")) {
-    score += 30;
-    reasons.push("Health-care NAICS 621");
-  } else if (record.naics?.startsWith("5613")) {
-    score += 17;
-    reasons.push("Workforce-support NAICS");
-  } else if (record.naics === "923120") {
-    score += 20;
-    reasons.push("Public-health administration NAICS");
-  }
-
-  for (const [term, weight, reason] of POSITIVE_TERMS) {
-    if (!text.includes(term)) continue;
-    score += weight;
-    if (reasons.length < 5) reasons.push(reason);
-  }
-
-  for (const [term, penalty] of NEGATIVE_TERMS) {
-    if (text.includes(term)) score -= penalty;
-  }
-
+  const result = classifyResult({
+    title: record.title,
+    snippet: [record.agency, record.subAgency, record.description, record.naics, record.setAside].filter(Boolean).join(" "),
+    allowHistorical: true,
+  });
+  const decision = decideRelevanceWithCodes(result, [{ system: "NAICS 2022", code: record.naics }]);
+  const reasons = result.rejected
+    ? [result.rejectReason ?? decision.reason]
+    : result.reasons.slice(0, 4);
+  if (decision.discovery) reasons.push(`Occu-Med classification code ${decision.discovery.system} ${decision.discovery.code}`);
   if (mode === "recompete" && (record.incumbentName || record.isRecompete)) {
-    score += 8;
     reasons.push("Published recompete or incumbent signal");
   }
-
   return {
-    score: Math.max(0, Math.min(70, score)),
+    score: result.score,
+    verdict: decision.verdict,
     reasons: Array.from(new Set(reasons)).slice(0, 5),
   };
 }
@@ -137,10 +91,8 @@ function cosine(left: number[], right: number[]): number {
   return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
 }
 
-function classify(score: number): GovConRelevance["classification"] {
-  if (score >= 68) return "strong";
-  if (score >= 44) return "possible";
-  return "low";
+function classify(verdict: RelevanceVerdict): GovConRelevance["classification"] {
+  return verdict === "accept" ? "strong" : verdict === "review" ? "possible" : "low";
 }
 
 export async function rankGovConRecords<T extends GovConRankableRecord>(
@@ -189,10 +141,10 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
 
   return records
     .map((record, index): T & { relevance: GovConRelevance } => {
-      const base = deterministic[index] ?? { score: 0, reasons: [] };
+      const base = deterministic[index] ?? { score: 0, verdict: "reject" as RelevanceVerdict, reasons: [] };
       const semanticSimilarity = similarities?.[index] ?? null;
-      const semanticPoints = semanticSimilarity === null ? 0 : semanticSimilarity * 30;
-      const score = Math.round(Math.max(0, Math.min(100, base.score + semanticPoints)));
+      // The verdict is the canonical Neon decision. Optional semantic similarity only orders records within it.
+      const score = Math.round(base.score);
       const reasons = [...base.reasons];
       if (semanticSimilarity !== null) {
         reasons.unshift(`Gemini semantic match ${Math.round(semanticSimilarity * 100)}%`);
@@ -203,12 +155,20 @@ export async function rankGovConRecords<T extends GovConRankableRecord>(
         ...record,
         relevance: {
           score,
-          classification: classify(score),
+          verdict: base.verdict,
+          classification: classify(base.verdict),
           semanticSimilarity,
           provider,
           reasons: Array.from(new Set(reasons)).slice(0, 6),
         },
       };
     })
-    .sort((left, right) => right.relevance.score - left.relevance.score);
+    .sort((left, right) => {
+      const rank = (r: GovConRelevance) => (r.verdict === "accept" ? 2 : r.verdict === "review" ? 1 : 0);
+      return (
+        rank(right.relevance) - rank(left.relevance) ||
+        right.relevance.score - left.relevance.score ||
+        (right.relevance.semanticSimilarity ?? 0) - (left.relevance.semanticSimilarity ?? 0)
+      );
+    });
 }

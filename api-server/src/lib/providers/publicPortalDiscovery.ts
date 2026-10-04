@@ -13,6 +13,7 @@ import {
 } from "./portal-parsers";
 import { buildOccuMedSearchQueries } from "../search/occumedProcurementOntology";
 import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 import {
   discoverNativePortal,
   type NativeDiscoveryDiagnostics,
@@ -147,7 +148,7 @@ function isUsefulPortalResult(
     snippet,
     allowHistorical: false,
   });
-  return !classification.rejected;
+  return decideRelevance(classification).verdict !== "reject";
 }
 
 function countByFit(

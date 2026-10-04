@@ -9,6 +9,7 @@ import {
   hostFromUrl,
   type RelevanceResult,
 } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 import type { PortalFit } from "./portalRelevance";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -249,13 +250,7 @@ export function classifyPortalEvidenceResult(
     date: result.date,
     allowHistorical: true,
   });
-  if (classification.rejected || classification.score < 60) return null;
-  if (
-    classification.confidence !== "verified_explicit" &&
-    classification.confidence !== "strong_combination"
-  ) {
-    return null;
-  }
+  if (decideRelevance(classification).verdict !== "accept") return null;
   if (
     classification.matchedServiceCategories.length === 0 ||
     classification.matchedProcurementSignals.length === 0

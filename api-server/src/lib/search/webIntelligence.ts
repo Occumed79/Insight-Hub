@@ -24,6 +24,7 @@ import {
   isRfpCandidate as isRfpCandidateShared,
   type RelevanceResult,
 } from "./relevance";
+import { decideRelevance } from "./relevanceDecision";
 import type { NormalizedOpportunity } from "../providers/types";
 import type { ProviderName } from "../config/providerConfig";
 import { buildSignalWeights } from "../learning/feedbackModel";
@@ -635,7 +636,7 @@ export async function webIntelligenceFetch(options: {
           deadlineInFuture: !!validDeadline,
           keywords: options.keywords,
         });
-        if (cls.rejected) {
+        if (decideRelevance(cls).verdict === "reject") {
           stats.rejected++;
           return;
         }
@@ -657,7 +658,7 @@ export async function webIntelligenceFetch(options: {
       }
 
       const cls = classifyResult({ title: candidate.title, snippet: candidate.content, url: candidate.url, date: candidate.dateRaw, keywords: options.keywords });
-      if (cls.rejected || cls.score < 50) {
+      if (decideRelevance(cls).verdict === "reject") {
         stats.rejected++;
         return;
       }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { classifyResult } from "./search/relevance";
+import { decideRelevance } from "./search/relevanceDecision";
 
 export type OpportunityQualityClassification =
   | "verified-open"
@@ -290,8 +291,7 @@ export function classifyOpportunityQuality(
     allowHistorical: true,
   });
   const relevanceEligible =
-    !relevance.rejected &&
-    relevance.score >= 65 &&
+    decideRelevance(relevance).verdict === "accept" &&
     relevance.confidence !== "possible_adjacent";
   const structuredDirectEvidence =
     normalizedEvidenceVerified || completeStoredDirectEvidence;

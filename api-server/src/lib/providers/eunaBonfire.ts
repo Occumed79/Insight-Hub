@@ -10,6 +10,7 @@ import type {
 import { serperProvider, type SerperSearchResult } from "./serper";
 import { extractMetadataFromText } from "../search/heuristicExtract";
 import { classifyResult } from "../search/relevance";
+import { decideRelevance } from "../search/relevanceDecision";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_RESULT_LIMIT = 50;
@@ -85,7 +86,7 @@ function isUsefulResult(result: SerperSearchResult): boolean {
     allowHistorical: false,
   });
 
-  if (classification.rejected) return false;
+  if (decideRelevance(classification).verdict === "reject") return false;
   return isLikelyOpportunityPath(parsed) || /\b(rfp|rfq|bid|solicitation|tender|procurement)\b/i.test(raw);
 }
 
