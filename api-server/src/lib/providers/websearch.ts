@@ -7,6 +7,8 @@
  * API: https://websearch.io or compatible endpoint
  */
 
+import { profileNaturalQueries, spreadSample } from "../search/profileWebQueries";
+import { getRelevanceProfile } from "../search/relevanceProfile";
 import type { DataSourceProvider, FetchOptions, ProviderFetchResult, ProviderStatus } from "./types";
 import { resolveCredential } from "../config/providerConfig";
 
@@ -68,7 +70,7 @@ export class WebsearchProvider implements DataSourceProvider {
             source: "websearch" as const,
             providerName: "WebSearch API",
             status: "active" as const,
-            relevanceScore: 50,
+            relevanceScore: getRelevanceProfile().thresholds.reviewMin,
             rawData: { query, item },
           });
         }
@@ -84,12 +86,7 @@ export class WebsearchProvider implements DataSourceProvider {
     const year = new Date().getFullYear();
     return keywords
       ? [`${keywords} RFP bid ${year}`, `${keywords} government contract solicitation ${year}`]
-      : [
-          `occupational health RFP government contract ${year}`,
-          `drug screening employee health services bid ${year}`,
-          `workplace safety DOT compliance contract ${year}`,
-          `employee wellness program government solicitation ${year}`,
-        ];
+      : spreadSample(profileNaturalQueries(year), 4);
   }
 
   async getStatus(): Promise<ProviderStatus> {

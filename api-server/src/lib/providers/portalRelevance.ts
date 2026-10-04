@@ -1,4 +1,4 @@
-import { REASON_CODES } from "../search/occumedProcurementOntology";
+import { REASON_CODES } from "../search/relevanceReasonCodes";
 import { classifyResult } from "../search/relevance";
 import { decideRelevance } from "../search/relevanceDecision";
 import { getRelevanceProfile } from "../search/relevanceProfile";
@@ -131,6 +131,7 @@ export function scorePortalForOccuMed(
       .join(" "),
   );
   const profile = getRelevanceProfile();
+  const thresholds = profile.thresholds;
   const buyerSectorSignals = profile.buyerSectors
     .filter((b) => b.propensity !== null && PORTAL_BUYER_PROPENSITIES.has(b.propensity) && mentions(buyerText, b.phrase))
     .map((b) => `${b.propensity}:${b.phrase}`);
@@ -144,7 +145,7 @@ export function scorePortalForOccuMed(
     (input.evidenceUrls?.length || officialProcurementEvidence)
   ) {
     return {
-      score: Math.min(100, 82 + Math.min(15, matches.length * 4)),
+      score: Math.min(100, thresholds.acceptMin + 12 + Math.min(15, matches.length * 4)),
       fit: "verified_high",
       likelyServiceCategories: serviceCategories,
       matchedTerms,
@@ -164,7 +165,7 @@ export function scorePortalForOccuMed(
       .filter((c) => [...c.explicit, ...c.component].some((t) => mentions(buyerText, t)))
       .map((c) => c.label);
     return {
-      score: 68,
+      score: Math.round((thresholds.reviewMin + thresholds.acceptMin) / 2),
       fit: "likely",
       likelyServiceCategories: uniq(categoryHints),
       matchedTerms: [],
@@ -180,7 +181,7 @@ export function scorePortalForOccuMed(
   }
   if (officialProcurementEvidence)
     return {
-      score: 40,
+      score: Math.max(0, thresholds.reviewMin - 5),
       fit: "broad",
       likelyServiceCategories: [],
       matchedTerms: [],
@@ -193,7 +194,7 @@ export function scorePortalForOccuMed(
       lastVerifiedDate: input.lastVerifiedDate ?? today,
     };
   return {
-    score: 20,
+    score: Math.round(thresholds.reviewMin / 2),
     fit: "insufficient_evidence",
     likelyServiceCategories: [],
     matchedTerms: [],

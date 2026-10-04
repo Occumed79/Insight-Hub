@@ -10,6 +10,9 @@ import { samGovOpportunityClassificationEvidence } from "../lib/providers/samGov
 import { extractMetadataFromText } from "../lib/search/heuristicExtract";
 import { classifyResult } from "../lib/search/relevance";
 import { decideRelevanceWithCodes } from "../lib/search/relevanceDecision";
+import { getRelevanceProfile } from "../lib/search/relevanceProfile";
+import { matchedServiceLines } from "../lib/search/profileServiceLines";
+import { judgeScopeBlock, profileServiceLabels } from "../lib/search/profileText";
 import { semanticRerank, isSemanticRerankEnabled } from "../lib/search/semanticRerank";
 import {
   cancelManualIngestion,
@@ -170,10 +173,11 @@ function buildRelevanceView(opp: any) {
 
   const dateUnknown = tags.includes("date-unknown");
   const stale = tags.includes("stale") || cls.stale;
+  const thresholds = getRelevanceProfile().thresholds;
   const confidence: "high" | "medium" | "low" =
     opp.sourceConfidence === "high" || opp.sourceConfidence === "medium" || opp.sourceConfidence === "low"
       ? opp.sourceConfidence
-      : score >= 75 ? "high" : score >= 50 ? "medium" : "low";
+      : score >= thresholds.acceptMin ? "high" : score >= thresholds.reviewMin ? "medium" : "low";
 
   return {
     score,
@@ -536,16 +540,8 @@ function formatCurrency(value: number | string | null | undefined): string | nul
 }
 
 function detectServiceLines(text: string): string[] {
-  const t = text.toLowerCase();
-  const lines: string[] = [];
-  if (/(drug test|drug screen|alcohol test|substance abuse|dot drug)/.test(t)) lines.push("Drug & alcohol testing");
-  if (/(dot physical|dot medical|dot exam|pre-employment physical|pre employment physical|medical exam|fitness for duty)/.test(t)) lines.push("Physical exams / fitness for duty");
-  if (/(respirator fit|fit test|pft|spirometry|pulmonary function)/.test(t)) lines.push("Respiratory / PFT fit testing");
-  if (/(audiogram|hearing conservation|hearing test)/.test(t)) lines.push("Hearing / audiograms");
-  if (/(vaccine|titer|tb test|tuberculosis|flu shot|immunization)/.test(t)) lines.push("Vaccines / titers / TB testing");
-  if (/(medical surveillance|osha|occupational health|occupational medicine)/.test(t)) lines.push("Occupational health / medical surveillance");
-  if (lines.length === 0) lines.push("General occupational health");
-  return lines;
+  // Service lines are the Neon profile's categories evidenced by the text.
+  return matchedServiceLines(text);
 }
 
 function buildFallbackSummary(opp: any) {
@@ -563,7 +559,7 @@ function buildFallbackSummary(opp: any) {
 
   const fitReason = opp.relevance?.reasons?.length
     ? opp.relevance.reasons.slice(0, 2).join(" ")
-    : `Mentions ${lines.slice(0, 2).join(" and ") || "occupational health"}.`;
+    : `Mentions ${lines.slice(0, 2).join(" and ") || "the Occu-Med service profile"}.`;
 
   const missing: string[] = [];
   if (!due) missing.push("Response deadline");
@@ -605,15 +601,11 @@ function buildSummaryPrompt(opp: any, extractedContent: string | null, companyCo
   const reasons = opp.relevance?.reasons?.join(" · ") ?? (typeof opp.notes === "string" ? opp.notes : "");
 
   const companyBlock = companyContext ??
-    "Occu-Med is an occupational health and medical exam coordination company providing: " +
-    "pre-employment physicals, DOT physicals, drug and alcohol testing, medical surveillance, " +
-    "audiograms, spirometry/PFT, respirator fit testing, vaccines/titers/TB testing, deployment medical exams, " +
-    "fitness-for-duty and return-to-work evaluations, and provider-network program management.";
+    `Occu-Med provides: ${profileServiceLabels().join("; ")}.`;
 
   return `You are an RFP analyst for Occu-Med. ${companyBlock}
 
-Workers' compensation treatment and claims administration are NOT Occu-Med services. However, do not reject an RFP solely because it mentions workers' comp — flag it as out-of-scope if present alongside relevant services.
-Employment-related IME / fitness-for-duty / return-to-work evaluations ARE in scope.
+${judgeScopeBlock()}
 
 Analyze the opportunity below and produce a concise procurement brief.
 

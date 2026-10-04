@@ -1,5 +1,5 @@
 /** Shared Occu-Med opportunity relevance engine powered by the procurement ontology. */
-import { REASON_CODES } from "./occumedProcurementOntology";
+import { REASON_CODES } from "./relevanceReasonCodes";
 import { getRelevanceProfile } from "./relevanceProfile";
 import { evaluateRules } from "./profileRules";
 
@@ -341,7 +341,7 @@ export function classifyResult(input: RelevanceInput): RelevanceResult {
   }
   score = Math.max(0, Math.min(100, score - conditionalPenalty));
   const confidence: RelevanceConfidence = !accepted
-    ? score >= 40
+    ? score >= profile.thresholds.reviewMin
       ? "insufficient"
       : "rejected"
     : pathA

@@ -24,6 +24,12 @@ router.get("/relevance-profile/service-terms", (_req, res) => {
   });
 });
 
+/** The two canonical thresholds (Neon facts relevance.accept_min / relevance.review_min). */
+router.get("/relevance-profile/thresholds", (_req, res) => {
+  const profile = getRelevanceProfile();
+  res.json({ source: profile.source, ...profile.thresholds });
+});
+
 /** Suggested discovery queries, one per profile search bundle. */
 router.get("/relevance-profile/search-presets", (_req, res) => {
   const profile = getRelevanceProfile();

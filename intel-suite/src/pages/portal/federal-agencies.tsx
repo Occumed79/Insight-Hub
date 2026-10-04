@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useRelevanceThresholds } from "@/hooks/use-relevance-thresholds";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -101,9 +102,9 @@ function actionTagStyle(tag: ActionTag) {
   }
 }
 
-function scoreColor(score: number) {
-  if (score >= 70) return "bg-emerald-500";
-  if (score >= 45) return "bg-amber-500";
+function scoreColor(score: number, t: { acceptMin: number; reviewMin: number }) {
+  if (score >= t.acceptMin) return "bg-emerald-500";
+  if (score >= t.reviewMin) return "bg-amber-500";
   return "bg-white/20";
 }
 
@@ -138,6 +139,7 @@ function getApiBase(): string {
 // ── Intel Card ────────────────────────────────────────────────────────────────
 
 function IntelCard({ item, onTagChange }: { item: IntelItem; onTagChange: (id: string, tag: ActionTag) => void }) {
+  const thresholds = useRelevanceThresholds();
   const priority = isPriorityAgency(item.agency, item.component);
 
   return (
@@ -224,7 +226,7 @@ function IntelCard({ item, onTagChange }: { item: IntelItem; onTagChange: (id: s
           <span className="text-[10px] text-white/40 uppercase tracking-wide whitespace-nowrap">Relevance</span>
           <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${scoreColor(item.occuMedScore ?? 0)}`}
+              className={`h-full rounded-full transition-all ${scoreColor(item.occuMedScore ?? 0, thresholds)}`}
               style={{ width: `${item.occuMedScore ?? 0}%` }}
             />
           </div>
