@@ -78,7 +78,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "react-simple-maps": "^3.0.0",
+    "react-simple-maps": "^5.0.5",
     "topojson-client": "^3.1.0"
   }
 }
